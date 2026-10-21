@@ -1,5 +1,15 @@
 import {
   Archive,
+  Ban,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  Clock,
+  Image,
+  MailCheck,
+  Send,
+  Server,
+  Undo2,
+  Upload,
   ArchiveRestore,
   ArrowDown,
   ArrowDownRight,
@@ -157,6 +167,18 @@ const ICONS = {
   keyboard: Keyboard,
   filter: ListFilter,
   sort: ArrowDownUp,
+  // Organization settings (redesign package 2): the save bar at rest, sending a test e-mail, uploads,
+  // Undo, expand / collapse all, the sender card, image rows and deactivate.
+  clock: Clock,
+  send: Send,
+  upload: Upload,
+  undo: Undo2,
+  'expand-all': ChevronsUpDown,
+  'collapse-all': ChevronsDownUp,
+  'mail-check': MailCheck,
+  server: Server,
+  image: Image,
+  ban: Ban,
 } as const satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;
@@ -168,6 +190,7 @@ const MIRRORED: ReadonlySet<IconName> = new Set([
   'chevron-end',
   'sidebar',
   'arrow-end',
+  'undo',
   'trend-up',
   'trend-down',
 ]);

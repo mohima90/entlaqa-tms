@@ -104,6 +104,19 @@ function Toast({
         <p className="m-0 font-medium">{item.message}</p>
         {item.description ? <p className="m-0">{item.description}</p> : null}
       </div>
+      {item.action ? (
+        <button
+          type="button"
+          onClick={() => {
+            store.dismiss(item.id);
+            item.action?.onClick();
+          }}
+          className="-my-1 inline-flex min-h-8.5 shrink-0 items-center rounded-full px-2.5 font-semibold text-inverse-text underline underline-offset-3 hover:bg-inverse-text/20 pointer-coarse:min-h-11"
+          data-testid="toast-action"
+        >
+          {item.action.label}
+        </button>
+      ) : null}
       <button
         type="button"
         aria-label={closeLabel}

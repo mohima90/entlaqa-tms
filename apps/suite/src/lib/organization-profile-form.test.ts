@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   type ProfileFormValues,
+  changedFields,
   cleanName,
+  clockChoices,
+  sameProfile,
   firstInvalidField,
   validateOrganizationName,
   normalizeClock,
@@ -98,5 +101,36 @@ describe('organization profile form (T-M2-22)', () => {
       'timeZone',
     );
     expect(firstInvalidField({})).toBeNull();
+  });
+});
+
+describe('organization profile, redesign package 2', () => {
+  it('offers the working hours in 30-minute steps, keeping a saved time between them', () => {
+    const choices = clockChoices();
+    expect(choices).toHaveLength(48);
+    expect(choices.slice(0, 3)).toEqual(['00:00', '00:30', '01:00']);
+    expect(choices.at(-1)).toBe('23:30');
+    const withSaved = clockChoices(['08:15', '٠٩:٠٠', 'nonsense']);
+    expect(withSaved).toHaveLength(49);
+    expect(withSaved.indexOf('08:15')).toBe(withSaved.indexOf('08:00') + 1);
+  });
+
+  it('compares values (times normalized, the week in order)', () => {
+    expect(sameProfile(values, { ...values })).toBe(true);
+    expect(sameProfile(values, { ...values, workStartsAt: '8:00' })).toBe(true);
+    expect(sameProfile(values, { ...values, workingDays: [0, 1, 2, 3] })).toBe(false);
+    expect(sameProfile(values, { ...values, industry: 'other' })).toBe(false);
+  });
+
+  it('lists the fields a country filled in (not the country itself)', () => {
+    const after: ProfileFormValues = {
+      ...values,
+      countryCode: 'AE',
+      currencyCode: 'AED',
+      timeZone: 'Asia/Dubai',
+      workingDays: [1, 2, 3, 4, 5],
+    };
+    expect(changedFields(values, after)).toEqual(['currencyCode', 'timeZone', 'workingDays']);
+    expect(changedFields(values, values)).toEqual([]);
   });
 });

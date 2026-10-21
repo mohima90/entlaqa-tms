@@ -4,6 +4,7 @@ import { type Root, createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  ACTION_TOAST_DURATION,
   DEFAULT_TOAST_DURATION,
   type ToastStore,
   Toaster,
@@ -163,6 +164,29 @@ describe('Toaster', () => {
     act(() => {
       vi.advanceTimersByTime(1);
     });
+    expect(items(container)).toHaveLength(0);
+  });
+
+  it('an action (Undo): a button that runs it once and closes the toast; it stays longer', () => {
+    vi.useFakeTimers();
+    const undo = vi.fn();
+    const container = mount(<Toaster label="Notifications" closeLabel="Close" store={store} />);
+    act(() => {
+      store.add('success', 'Dammam branch deactivated.', {
+        action: { label: 'Undo', onClick: undo },
+      });
+    });
+    expect(store.items()[0]?.duration).toBe(ACTION_TOAST_DURATION);
+    act(() => {
+      vi.advanceTimersByTime(DEFAULT_TOAST_DURATION);
+    });
+    const button = container.querySelector<HTMLButtonElement>('[data-testid="toast-action"]')!;
+    expect(button.textContent).toBe('Undo');
+    expect(button.type).toBe('button');
+    act(() => {
+      button.click();
+    });
+    expect(undo).toHaveBeenCalledTimes(1);
     expect(items(container)).toHaveLength(0);
   });
 

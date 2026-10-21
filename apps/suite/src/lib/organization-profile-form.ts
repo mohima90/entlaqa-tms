@@ -139,3 +139,40 @@ export function profileInput(values: ProfileFormValues) {
     workEndsAt: normalizeClock(values.workEndsAt),
   };
 }
+
+/**
+ * The working-hours choices (redesign package 2): 24-hour times in 30-minute steps, 00:00 to 23:30 — the
+ * values the field always took, chosen instead of typed. A saved time between the steps (e.g. 08:15) is
+ * kept in the list, in order, so nothing changes silently.
+ */
+export function clockChoices(current: readonly string[] = []): string[] {
+  const steps = Array.from({ length: 48 }, (_, index) => {
+    const hours = Math.floor(index / 2);
+    return `${String(hours).padStart(2, '0')}:${index % 2 === 0 ? '00' : '30'}`;
+  });
+  const extra = current
+    .map(normalizeClock)
+    .filter((value) => CLOCK.test(value) && !steps.includes(value));
+  return [...new Set([...steps, ...extra])].sort();
+}
+
+/** Do two sets of values say the same (the save bar's «unsaved changes»)? */
+export function sameProfile(a: ProfileFormValues, b: ProfileFormValues): boolean {
+  return PROFILE_FIELD_ORDER.every((field) => {
+    const left = a[field];
+    const right = b[field];
+    return Array.isArray(left) && Array.isArray(right)
+      ? left.length === right.length && left.every((value, index) => value === right[index])
+      : field === 'workStartsAt' || field === 'workEndsAt'
+        ? normalizeClock(String(left)) === normalizeClock(String(right))
+        : left === right;
+  });
+}
+
+/** The fields a country's suggestions changed (each gets a «Suggested» tag until Undo or Save). */
+export function changedFields(before: ProfileFormValues, after: ProfileFormValues): ProfileField[] {
+  return PROFILE_FIELD_ORDER.filter(
+    (field) =>
+      field !== 'countryCode' && !sameProfile({ ...before, [field]: after[field] }, before),
+  );
+}

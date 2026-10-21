@@ -6,8 +6,16 @@
  */
 export type ToastTone = 'default' | 'success' | 'error' | 'warning' | 'info';
 
+/** One next step inside a toast, e.g. «تراجع» / "Undo" after a reversible change (redesign package 2). */
+export interface ToastAction {
+  readonly label: string;
+  readonly onClick: () => void;
+}
+
 export interface ToastOptions {
   readonly description?: string | undefined;
+  /** A button in the toast; clicking it runs `onClick` and closes the toast. */
+  readonly action?: ToastAction | undefined;
   /** Milliseconds before it hides itself; `null` keeps it until closed (errors by default). */
   readonly duration?: number | null | undefined;
 }
@@ -18,10 +26,13 @@ export interface ToastItem {
   readonly message: string;
   readonly description: string | undefined;
   readonly duration: number | null;
+  readonly action: ToastAction | undefined;
 }
 
 /** Long enough to read a sentence (WCAG 2.2.1: hover or focus also pauses it). */
 export const DEFAULT_TOAST_DURATION = 6000;
+/** A toast with an action (Undo) stays longer: time to read it and reach the button (WCAG 2.2.1). */
+export const ACTION_TOAST_DURATION = 10000;
 /** At most this many at once; the oldest goes first. */
 export const MAX_TOASTS = 4;
 
@@ -49,11 +60,14 @@ export function createToastStore(): ToastStore {
         options.duration === undefined
           ? tone === 'error'
             ? null
-            : DEFAULT_TOAST_DURATION
+            : options.action
+              ? ACTION_TOAST_DURATION
+              : DEFAULT_TOAST_DURATION
           : options.duration;
-      items = [...items, { id, tone, message, description: options.description, duration }].slice(
-        -MAX_TOASTS,
-      );
+      items = [
+        ...items,
+        { id, tone, message, description: options.description, duration, action: options.action },
+      ].slice(-MAX_TOASTS);
       emit();
       return id;
     },

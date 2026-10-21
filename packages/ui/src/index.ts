@@ -116,6 +116,8 @@ export {
   DEFAULT_TOAST_DURATION,
   MAX_TOASTS,
   type ToastItem,
+  ACTION_TOAST_DURATION,
+  type ToastAction,
   type ToastOptions,
   type ToastStore,
   type ToastTone,

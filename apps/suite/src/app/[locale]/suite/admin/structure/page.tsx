@@ -3,14 +3,14 @@ import type { StructureLevelRow } from '@jadarat/platform-db';
 import { type AppLocale, getMessages } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import type { StructurePageView } from '@jadarat/platform-rbac';
-import { Alert, PageHeader, StatCard, StatGrid, TabNav } from '@jadarat/ui';
+import { Alert, type Breadcrumb, Icon, PageHeader, TabNav, buttonClasses, cn } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { type LevelView, LevelsCard } from '../../../../../components/structure/levels-card';
 import { StructureTree } from '../../../../../components/structure/structure-tree';
-import type { UnitView } from '../../../../../components/structure/unit-dialog';
+import type { UnitView } from '../../../../../components/structure/unit-panel';
 import { SuiteShell } from '../../../../../components/suite-shell';
 import { flattenTexts } from '../../../../../lib/flatten-texts';
 import { profileErrorTexts } from '../../../../../lib/profile-texts';
@@ -35,7 +35,9 @@ const DEFAULT_LEVELS: readonly StructureLevelRow[] = [
  * docs/business-flows/EP-ORG-organization-structure.md, PO 17 Oct 2026; Kawadir's Departments page): summary
  * cards, then two views — the tree («Add <first level>», each row's menu «Add <next level>», edit, deactivate,
  * delete) and the organization's own levels. Everyone who reads the structure (`platform.org.read`) sees it;
- * the HR Manager (`platform.org.manage`) changes it.
+ * the HR Manager (`platform.org.manage`) changes it. Direction C (redesign package 2, PO 21 Oct 2026):
+ * breadcrumbs, a compact summary strip, the views «Units» and «Levels» (Q2-10) with the level chain
+ * beside them, «+ Add» on each row, a side panel for the form and Undo after deactivating.
  */
 export default async function StructurePage({
   params,
@@ -50,6 +52,17 @@ export default async function StructurePage({
   const view: View = query.view === 'levels' ? 'levels' : 'tree';
   const context = await getSuiteContext(locale);
   const t = await getTranslations({ locale, namespace: 'structure' });
+  const common = await getTranslations({ locale, namespace: 'common' });
+  const shell = await getTranslations({ locale, namespace: 'shell' });
+  const header = {
+    title: t('title'),
+    description: t('intro'),
+    breadcrumbs: [
+      { label: shell('groupOrganization') },
+      { label: shell('structure') },
+    ] as Breadcrumb[],
+    breadcrumbsLabel: common('breadcrumbLabel'),
+  };
 
   let content: ReactNode;
   let data: StructurePageView | null = null;
@@ -70,7 +83,19 @@ export default async function StructurePage({
         content = <Alert tone="warning">{errors('forbidden')}</Alert>;
       } else {
         content = (
-          <Alert tone="danger">
+          <Alert
+            tone="danger"
+            data-testid="structure-load-failed"
+            action={
+              <a
+                href={`/${locale}${PATH}`}
+                className={buttonClasses({ variant: 'secondary', size: 'sm' })}
+              >
+                <Icon name="sync" />
+                {common('tryAgain')}
+              </a>
+            }
+          >
             {t('loadFailed', { correlationId: error.correlationId ?? '' })}
           </Alert>
         );
@@ -92,11 +117,14 @@ export default async function StructurePage({
       current="structure"
       path={view === 'levels' ? `${PATH}?view=levels` : PATH}
     >
-      <PageHeader title={t('title')} description={t('intro')} />
-      <div className="flex flex-col gap-6">
-        {content}
-        {data ? <Structure locale={locale} view={view} data={data} /> : null}
-      </div>
+      {data ? (
+        <Structure locale={locale} view={view} data={data} header={header} notice={content} />
+      ) : (
+        <>
+          <PageHeader {...header} />
+          {content}
+        </>
+      )}
     </SuiteShell>
   );
 }
@@ -105,10 +133,14 @@ async function Structure({
   locale,
   view,
   data,
+  header,
+  notice,
 }: {
   locale: AppLocale;
   view: View;
   data: StructurePageView;
+  header: Parameters<typeof StructureTree>[0]['header'];
+  notice: ReactNode;
 }) {
   const t = await getTranslations({ locale, namespace: 'structure' });
   const format = await getFormatter({ locale });
@@ -161,36 +193,82 @@ async function Structure({
     roleScopeCount: unit.roleScopeCount,
   }));
   const first = labels[0];
+  const inactive = data.units.filter((u) => u.status !== 'active').length;
+  // A compact summary (no status colour without a status: amber only for inactive units, when any).
+  const stats = [
+    { key: 'levels', value: data.levels.length, warn: false },
+    { key: 'units', value: data.units.length, warn: false },
+    {
+      key: 'withHead',
+      value: data.units.filter((u) => u.headPersonId !== null).length,
+      warn: false,
+    },
+    { key: 'inactive', value: inactive, warn: inactive > 0 },
+  ] as const;
+  const levelNames = data.levels.map((level) => (locale === 'ar' ? level.nameAr : level.nameEn));
+
+  const top = (
+    <>
+      {notice}
+      <section
+        aria-label={t('stats.label')}
+        className="rounded-xl border border-border bg-surface px-5 py-3.5"
+        data-testid="structure-stats"
+      >
+        <dl className="m-0 flex flex-wrap gap-x-8 gap-y-2">
+          {stats.map((stat) => (
+            <div key={stat.key} className="flex items-baseline gap-2">
+              <dt className="order-2 text-text-muted">{t(`stats.${stat.key}`)}</dt>
+              <dd
+                className={cn(
+                  'order-1 m-0 text-2xl font-bold tabular-nums',
+                  stat.warn && 'text-warning',
+                )}
+              >
+                {number(stat.value)}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+      <div className="flex flex-wrap items-end gap-x-6 gap-y-2 border-b border-border">
+        <TabNav
+          variant="underline"
+          label={t('tabsLabel')}
+          current={view}
+          className="-mb-px [&_ul]:border-b-0"
+          items={VIEWS.map((key) => ({
+            key,
+            href: key === 'tree' ? `/${locale}${PATH}` : `/${locale}${PATH}?view=levels`,
+            label: t(`tabs.${key}`),
+            icon: key === 'tree' ? 'structure' : 'plan',
+          }))}
+          data-testid="structure-views"
+        />
+        {levelNames.length > 0 ? (
+          <p
+            className="m-0 flex flex-wrap items-center gap-1.5 pb-2.5 text-sm text-text-muted"
+            data-testid="structure-chain"
+          >
+            <span>{t('levels.caption')}:</span>
+            {levelNames.map((name, index) => (
+              <span key={index} className="flex items-center gap-1.5">
+                {index > 0 ? (
+                  <Icon name="arrow-end" className="size-3.5" aria-hidden="true" />
+                ) : null}
+                <span className="rounded-full border border-border bg-surface px-2.5 py-0.5 font-semibold text-text">
+                  {name}
+                </span>
+              </span>
+            ))}
+          </p>
+        ) : null}
+      </div>
+    </>
+  );
 
   return (
     <>
-      <StatGrid label={t('stats.label')} data-testid="structure-stats">
-        <StatCard label={t('stats.levels')} value={number(data.levels.length)} icon="plan" />
-        <StatCard label={t('stats.units')} value={number(data.units.length)} icon="structure" />
-        <StatCard
-          label={t('stats.withHead')}
-          value={number(data.units.filter((u) => u.headPersonId !== null).length)}
-          icon="user"
-          tone="success"
-        />
-        <StatCard
-          label={t('stats.inactive')}
-          value={number(data.units.filter((u) => u.status !== 'active').length)}
-          icon="warning"
-          tone="warning"
-        />
-      </StatGrid>
-      <TabNav
-        label={t('tabsLabel')}
-        current={view}
-        items={VIEWS.map((key) => ({
-          key,
-          href: key === 'tree' ? `/${locale}${PATH}` : `/${locale}${PATH}?view=levels`,
-          label: t(`tabs.${key}`),
-          icon: key === 'tree' ? 'structure' : 'plan',
-        }))}
-        data-testid="structure-views"
-      />
       {view === 'tree' ? (
         <StructureTree
           units={units}
@@ -207,18 +285,26 @@ async function Structure({
               : localizedName(locale, p.nameAr, p.nameEn),
           }))}
           texts={texts}
+          undoLabel={(await getTranslations({ locale, namespace: 'common' }))('undo')}
           errors={errors}
           locale={locale}
+          header={header}
+          top={top}
+          levelsHref={`/${locale}${PATH}?view=levels`}
         />
       ) : (
-        <LevelsCard
-          levels={levels}
-          canManage={data.canManage}
-          maxLevels={MAX_LEVELS}
-          texts={texts}
-          errors={errors}
-          locale={locale}
-        />
+        <>
+          <PageHeader {...header} />
+          <div className="mb-5 flex flex-col gap-5">{top}</div>
+          <LevelsCard
+            levels={levels}
+            canManage={data.canManage}
+            maxLevels={MAX_LEVELS}
+            texts={texts}
+            errors={errors}
+            locale={locale}
+          />
+        </>
       )}
     </>
   );

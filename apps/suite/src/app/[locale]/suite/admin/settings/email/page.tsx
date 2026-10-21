@@ -1,7 +1,15 @@
 import { toClientError } from '@jadarat/platform-core';
 import { type AppLocale, getMessages } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
-import { Alert, Card, PageHeader } from '@jadarat/ui';
+import {
+  Alert,
+  Icon,
+  ListCard,
+  ListCards,
+  PageHeader,
+  buttonClasses,
+  tableClasses,
+} from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
@@ -16,6 +24,7 @@ import { reasonText } from '../../../../../../lib/email-reasons';
 import { templateKey } from '../../../../../../lib/email-settings-form';
 import { flattenTexts } from '../../../../../../lib/flatten-texts';
 import { pageDates } from '../../../../../../lib/page-dates';
+import { pageStepUp, sessionEmail, settingsCommonTexts } from '../../../../../../lib/settings-page';
 import { type SuiteContext, getSuiteContext } from '../../../../../../lib/suite-context';
 import { SUITE_PATHS } from '../../../../../../lib/suite-navigation';
 
@@ -28,7 +37,9 @@ const PATH = SUITE_PATHS.emailIntegration;
  * enabled; the Organization Admin can switch back at any time. Waiting messages and the latest delivery
  * errors (the recipient's domain only) are shown here — no automatic switch to another sender (PO, 17 Oct
  * 2026). Members with platform.tenant.read see it read-only; everyone else is refused. The secrets are never
- * shown.
+ * shown. Direction C (redesign package 2, PO 21 Oct 2026): «Who sends your e-mails», the set-up in three
+ * numbered steps (the test inline, «Use my provider» in the test step), toasts, and the delivery errors
+ * as a table on a desktop and cards on a phone.
  */
 export default async function EmailIntegrationPage({
   params,
@@ -59,7 +70,19 @@ export default async function EmailIntegrationPage({
             {errors('forbidden')}
           </Alert>
         ) : (
-          <Alert tone="danger">
+          <Alert
+            tone="danger"
+            data-testid="email-integration-load-failed"
+            action={
+              <a
+                href={`/${locale}${PATH}`}
+                className={buttonClasses({ variant: 'secondary', size: 'sm' })}
+              >
+                <Icon name="sync" />
+                {(await getTranslations({ locale, namespace: 'common' }))('tryAgain')}
+              </a>
+            }
+          >
             {errors('internalError', { correlationId: error.correlationId ?? '' })}
           </Alert>
         );
@@ -71,15 +94,11 @@ export default async function EmailIntegrationPage({
   return (
     <SuiteShell locale={locale} context={context} current="emailIntegration" path={PATH}>
       <PageHeader
-        eyebrow={
-          <nav aria-label={t('integration.breadcrumbLabel')}>
-            <ol className="m-0 flex list-none flex-wrap gap-1.5 p-0">
-              <li>{t('integration.breadcrumbSection')}</li>
-              <li aria-hidden="true">/</li>
-              <li aria-current="page">{t('integration.title')}</li>
-            </ol>
-          </nav>
-        }
+        breadcrumbs={[
+          { label: t('integration.breadcrumbSection') },
+          { label: t('integration.title') },
+        ]}
+        breadcrumbsLabel={t('integration.breadcrumbLabel')}
         title={t('integration.title')}
         description={t('integration.intro')}
       />
@@ -112,7 +131,7 @@ async function Integration({
   const testing = sender?.test?.status === 'queued' || sender?.test?.status === 'sending';
   const organizationName = context.organizationName ?? '';
   return (
-    <div className="flex max-w-4xl flex-col gap-6">
+    <div className="flex max-w-5xl flex-col gap-5">
       <RefreshWhileTesting active={testing} />
       {editAccess === 'denied' ? (
         <Alert tone="info" data-testid="email-integration-read-only">
@@ -128,9 +147,6 @@ async function Integration({
         <Alert tone="warning" data-testid="email-integration-waiting">
           {t('integration.waiting', { count: settings.waitingCount })}
         </Alert>
-      ) : null}
-      {sender?.test ? (
-        <EmailTestLine test={sender.test} texts={texts} format={(d) => dates.dateTime(d)} />
       ) : null}
       <EmailIntegrationForm
         saved={
@@ -152,60 +168,115 @@ async function Integration({
         keyReady={settings.keyReady}
         editable={editAccess === 'allowed'}
         organizationName={organizationName}
+        ownEmail={(await sessionEmail()) ?? ''}
+        verifiedLabel={
+          sender?.status === 'verified' && sender.verifiedAt
+            ? t('integration.verified', { date: dates.dateTime(sender.verifiedAt) })
+            : null
+        }
+        testLine={
+          sender?.test ? (
+            <EmailTestLine test={sender.test} texts={texts} format={(d) => dates.dateTime(d)} />
+          ) : null
+        }
         texts={texts}
+        common={await settingsCommonTexts(locale)}
         errors={await authErrorTexts(locale)}
+        stepUp={await pageStepUp(locale, PATH, 'platform.tenant.manage')}
       />
-      <Card
+      <section
         aria-labelledby="email-failures"
-        titleId="email-failures"
-        title={t('integration.failuresTitle')}
-        description={t('integration.failuresIntro')}
-        icon="mail"
-        className="flex flex-col gap-4 overflow-x-auto *:first:mb-0"
+        className="overflow-hidden rounded-xl border border-border bg-surface"
       >
+        <div className="flex items-start gap-3 p-5 sm:p-6">
+          <span
+            aria-hidden="true"
+            className="grid size-10 shrink-0 place-items-center rounded-md bg-primary-subtle text-primary-text"
+          >
+            <Icon name="error" />
+          </span>
+          <div>
+            <h2 id="email-failures" className="m-0 text-lg font-bold">
+              {t('integration.failuresTitle')}
+            </h2>
+            <p className="m-0 text-sm text-text-muted">{t('integration.failuresIntro')}</p>
+          </div>
+        </div>
         {failures.length === 0 ? (
-          <p className="m-0 text-text-muted" data-testid="email-failures-empty">
+          <p
+            className="m-0 flex items-center gap-2 px-5 pb-6 font-semibold text-success sm:px-6"
+            data-testid="email-failures-empty"
+          >
+            <Icon name="success" />
             {t('integration.failuresEmpty')}
           </p>
         ) : (
-          <table className="w-full border-collapse text-start text-sm" data-testid="email-failures">
-            <caption className="sr-only">{t('integration.failuresCaption')}</caption>
-            <thead className="bg-surface-sunken">
-              <tr>
-                {(['colWhen', 'colEmail', 'colRecipient', 'colSender', 'colReason'] as const).map(
-                  (key) => (
-                    <th
-                      key={key}
-                      scope="col"
-                      className="whitespace-nowrap px-3 py-2 text-start font-semibold"
+          <>
+            <div
+              className={`${tableClasses.wrapper} hidden border-t border-border md:block`}
+              // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrollable region takes focus
+              tabIndex={0}
+              role="region"
+              aria-label={t('integration.failuresCaption')}
+            >
+              <table className={tableClasses.table} data-testid="email-failures">
+                <caption className="sr-only">{t('integration.failuresCaption')}</caption>
+                <thead className={tableClasses.header}>
+                  <tr>
+                    {(
+                      ['colWhen', 'colEmail', 'colRecipient', 'colSender', 'colReason'] as const
+                    ).map((key) => (
+                      <th key={key} scope="col" className={tableClasses.head}>
+                        {t(`integration.${key}`)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {failures.map((failure, index) => (
+                    <tr
+                      key={`${failure.failedAt.toISOString()}-${String(index)}`}
+                      className={tableClasses.row}
                     >
-                      {t(`integration.${key}`)}
-                    </th>
-                  ),
-                )}
-              </tr>
-            </thead>
-            <tbody>
+                      <td className={tableClasses.cell}>{dates.dateTime(failure.failedAt)}</td>
+                      <td className={tableClasses.cell}>
+                        {t(`templates.${templateKey(failure.template)}`)}
+                      </td>
+                      <td className={tableClasses.cell}>
+                        <bdi dir="ltr">{failure.recipientDomain ?? '—'}</bdi>
+                      </td>
+                      <td className={tableClasses.cell}>
+                        {t(`senders.${failure.sender ?? 'unknown'}`)}
+                      </td>
+                      <td className={tableClasses.cell}>{reasonText(failure.errorCode, texts)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <ListCards className="border-t border-border" data-testid="email-failures-cards">
               {failures.map((failure, index) => (
-                <tr
+                <ListCard
                   key={`${failure.failedAt.toISOString()}-${String(index)}`}
-                  className="border-t border-border align-top"
-                >
-                  <td className="whitespace-nowrap px-3 py-2">
-                    {dates.dateTime(failure.failedAt)}
-                  </td>
-                  <td className="px-3 py-2">{t(`templates.${templateKey(failure.template)}`)}</td>
-                  <td className="px-3 py-2">
-                    <bdi dir="ltr">{failure.recipientDomain ?? '—'}</bdi>
-                  </td>
-                  <td className="px-3 py-2">{t(`senders.${failure.sender ?? 'unknown'}`)}</td>
-                  <td className="px-3 py-2">{reasonText(failure.errorCode, texts)}</td>
-                </tr>
+                  title={t(`templates.${templateKey(failure.template)}`)}
+                  detail={
+                    <>
+                      {dates.dateTime(failure.failedAt)} ·{' '}
+                      <bdi dir="ltr">{failure.recipientDomain ?? '—'}</bdi> ·{' '}
+                      {t(`senders.${failure.sender ?? 'unknown'}`)}
+                    </>
+                  }
+                  status={
+                    <span className="text-sm text-danger">
+                      {reasonText(failure.errorCode, texts)}
+                    </span>
+                  }
+                />
               ))}
-            </tbody>
-          </table>
+            </ListCards>
+          </>
         )}
-      </Card>
+      </section>
     </div>
   );
 }

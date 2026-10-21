@@ -1,6 +1,18 @@
 'use client';
 import { imageSize } from '@jadarat/platform-files/images';
-import { Alert, Button, Card, Icon, TextField, cn } from '@jadarat/ui';
+import {
+  Alert,
+  Button,
+  Card,
+  Dialog,
+  FieldError,
+  Icon,
+  SaveBar,
+  Spinner,
+  TextField,
+  cn,
+  toast,
+} from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import {
   type ReactNode,
@@ -42,6 +54,9 @@ import { fillText } from '../../lib/fill-text';
 import { cleanName, validateOrganizationName } from '../../lib/organization-profile-form';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
+import { LeaveGuard } from '../settings/leave-guard';
+import type { SettingsCommonTexts } from '../settings/settings-texts';
+import { StepUpBanner } from '../settings/step-up-banner';
 
 /**
  * Organization → Branding (WP-ADM-02, FR-ADM-07; business flow EP-BRAND; Kawadir /org/branding): the
@@ -53,7 +68,14 @@ import { useSessionRefusal } from '../auth/session-refusal';
  * and publishes them — not virus-scanned, PO 20 Oct 2026, like Kawadir: they show as soon as the save is
  * done); uploaded at once, used once saved. A failed replacement puts the image the slot had back
  * (lib/brand-image-slot.ts). Progress and results are announced politely (aria-live). «Reset to the
- * Jadarat look» puts the Jadarat colours back (images stay unless removed).
+ * Jadarat look» puts the Jadarat colours back (images stay unless removed) — in the form only, with
+ * «Undo» in its toast.
+ *
+ * Direction C (redesign package 2; approved direction, comparison §2): the cards on the start side
+ * (names with the website, one compact row per image with its status, brand colours with named presets),
+ * the live preview beside them and sticky on a desktop (a «Preview» sheet from the save bar on a phone),
+ * the floating save bar, toasts on save, the leave guard (Q2-2), and the step-up banner when saving would
+ * need a fresh authenticator code (Q2-1; none today).
  *
  * The CSP allows no style attributes: colours reach the preview and the swatches through CSS custom
  * properties set with the CSSOM after hydration (preset swatches are static classes).
@@ -99,7 +121,12 @@ export interface BrandingFormProps {
   readonly texts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
   readonly lastChanged: string;
+  readonly common: SettingsCommonTexts;
+  /** The /mfa link back here, and whether saving needs a fresh authenticator code first (Q2-1). */
+  readonly stepUp: { readonly href: string; readonly needed: boolean };
 }
+
+const FORM_ID = 'branding-form';
 
 interface Message {
   readonly tone: 'success' | 'warning' | 'danger' | 'info';
@@ -248,19 +275,29 @@ function formatBytes(bytes: number, locale: 'ar' | 'en'): string {
 }
 
 export function BrandingForm(props: BrandingFormProps) {
-  const { texts, editable, live, locale } = props;
+  const { texts, live, locale, common } = props;
   const t = useCallback((key: string) => texts[key] ?? key, [texts]);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
   const [values, setValues] = useState<BrandingFormValues>(props.initial);
+  // What the page shows as saved: the save bar and the leave guard compare against it.
+  const [baseline, setBaseline] = useState<BrandingFormValues>(props.initial);
+  const [baselineFiles, setBaselineFiles] = useState<Record<BrandSlot, string | null>>(() => ({
+    logo: props.images.logo?.fileId ?? null,
+    favicon: props.images.favicon?.fileId ?? null,
+    sign_in_image: props.images.sign_in_image?.fileId ?? null,
+  }));
   const [slots, setSlots] = useState<Record<BrandSlot, SlotState>>(() => ({
     logo: initialSlot(props.images.logo),
     favicon: initialSlot(props.images.favicon),
     sign_in_image: initialSlot(props.images.sign_in_image),
   }));
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<Field, string>>>({});
+  const [refused, setRefused] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
+  const [stepUp, setStepUp] = useState(props.stepUp.needed);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [savedVersion, setSavedVersion] = useState(props.version);
   // After a save the page's data is refreshed: the slots then show what was published (or that an image
   // is not shown yet) instead of the picked files.
@@ -274,6 +311,7 @@ export function BrandingForm(props: BrandingFormProps) {
     });
   }
   const version = Math.max(props.version, savedVersion);
+  const editable = props.editable && !stepUp;
   const disabled = !editable || pending;
   const inputs = useRef<Partial<Record<BrandSlot, HTMLInputElement | null>>>({});
   const blobs = useRef(new Set<string>());
@@ -288,9 +326,22 @@ export function BrandingForm(props: BrandingFormProps) {
   const colors = validColors(values);
   const mode = useSyncExternalStore(subscribeMode, currentMode, () => 'light' as const);
   const previewRef = useCssVariables(brandProperties(colors, mode));
+  const sheetPreviewRef = useCssVariables(brandProperties(colors, mode));
+
+  const dirty =
+    (Object.keys(values) as (keyof BrandingFormValues)[]).some(
+      (field) => values[field] !== baseline[field],
+    ) ||
+    SLOTS.some(
+      (slot) =>
+        slots[slot].fileId !== baselineFiles[slot] ||
+        slots[slot].phase === 'previewOnly' ||
+        slots[slot].phase === 'uploading',
+    );
 
   const set = <K extends keyof BrandingFormValues>(field: K, value: BrandingFormValues[K]) => {
     setValues((current) => ({ ...current, [field]: value }));
+    setRefused(false);
   };
   const updateSlot = (slot: BrandSlot, change: (state: SlotState) => SlotState) => {
     setSlots((current) => ({ ...current, [slot]: change(current[slot]) }));
@@ -416,7 +467,13 @@ export function BrandingForm(props: BrandingFormProps) {
     updateSlot(slot, removed);
   }
 
+  /** «Reset to the Jadarat look»: the form only (until Save), with «Undo» in the toast. */
   function reset() {
+    const before = {
+      primaryColor: values.primaryColor,
+      secondaryColor: values.secondaryColor,
+      useGradient: values.useGradient,
+    };
     setValues((current) => ({
       ...current,
       primaryColor: JADARAT_BRAND.primary,
@@ -424,7 +481,15 @@ export function BrandingForm(props: BrandingFormProps) {
       useGradient: true,
     }));
     setFieldErrors(withoutColorErrors);
-    setMessage({ tone: 'info', text: t('colors.resetDone') });
+    setRefused(false);
+    toast.info(t('colors.resetDone'), {
+      action: {
+        label: common.undo,
+        onClick: () => {
+          setValues((current) => ({ ...current, ...before }));
+        },
+      },
+    });
   }
 
   function validate(): Partial<Record<Field, string>> {
@@ -433,25 +498,26 @@ export function BrandingForm(props: BrandingFormProps) {
       const problem = validateOrganizationName(values[field]);
       if (problem) errors[field] = t(`fieldErrors.${problem}`);
     }
+    if (!websiteLooksValid(values.websiteUrl)) errors.websiteUrl = t('website.invalid');
     if (!parseBrandColor(values.primaryColor)) errors.primaryColor = t('colors.hexInvalid');
     if (values.useGradient && !parseBrandColor(values.secondaryColor)) {
       errors.secondaryColor = t('colors.hexInvalid');
     }
-    if (!websiteLooksValid(values.websiteUrl)) errors.websiteUrl = t('website.invalid');
     return errors;
   }
 
+  const firstInvalid = FIELD_ORDER.find((field) => fieldErrors[field] !== undefined) ?? null;
+
   function onSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!editable) return;
     setMessage(null);
     const found = validate();
     setFieldErrors(found);
-    const first = (
-      ['nameEn', 'nameAr', 'primaryColor', 'secondaryColor', 'websiteUrl'] as const
-    ).find((field) => found[field] !== undefined);
+    const first = FIELD_ORDER.find((field) => found[field] !== undefined);
     if (first) {
+      setRefused(true);
       document.getElementById(`brand-${first}`)?.focus();
-      setMessage({ tone: 'danger', text: props.errors['errors.validationFailed'] ?? '' });
       return;
     }
     if (!live) {
@@ -476,24 +542,30 @@ export function BrandingForm(props: BrandingFormProps) {
       });
       if (result.ok) {
         setSavedVersion(result.value.version);
+        setBaseline(values);
+        setBaselineFiles({
+          logo: slots.logo.fileId,
+          favicon: slots.favicon.fileId,
+          sign_in_image: slots.sign_in_image.fileId,
+        });
         setSlots((current) => ({
           logo: afterSave(current.logo),
           favicon: afterSave(current.favicon),
           sign_in_image: afterSave(current.sign_in_image),
         }));
-        setMessage({
-          tone: 'success',
-          text:
-            result.value.changed.length === 0
-              ? t('noChanges')
-              : result.value.pendingImages.length > 0
-                ? t('savedPendingImages')
-                : t('saved'),
-        });
+        if (result.value.changed.length === 0) toast.info(t('noChanges'));
+        else
+          toast.success(
+            result.value.pendingImages.length > 0 ? t('savedPendingImages') : t('saved'),
+          );
         router.refresh();
         return;
       }
       if (sessionRefused(result.error)) return;
+      if (result.error.code === 'STEP_UP_REQUIRED') {
+        setStepUp(true);
+        return;
+      }
       if (result.error.code === 'VALIDATION_FAILED') {
         const fromServer: Partial<Record<Field, string>> = {};
         for (const fieldError of result.error.fieldErrors ?? []) {
@@ -520,19 +592,21 @@ export function BrandingForm(props: BrandingFormProps) {
           }
         }
         setFieldErrors(fromServer);
+        setRefused(Object.keys(fromServer).length > 0);
       }
       setMessage({ tone: 'danger', text: errorText(result.error, props.errors) });
     });
   }
 
   function cancel() {
-    setValues(props.initial);
+    setValues(baseline);
     setSlots({
       logo: initialSlot(props.images.logo),
       favicon: initialSlot(props.images.favicon),
       sign_in_image: initialSlot(props.images.sign_in_image),
     });
     setFieldErrors({});
+    setRefused(false);
     setMessage(null);
   }
 
@@ -565,7 +639,26 @@ export function BrandingForm(props: BrandingFormProps) {
                 ? t('images.published')
                 : t('images.pendingPublish')
               : null;
-    return text ? <span className="text-xs text-text-muted">{text}</span> : null;
+    if (!text) return null;
+    const done = state.phase === 'ready' || (state.phase === 'saved' && state.src !== null);
+    return (
+      <span
+        className={cn(
+          'flex items-start gap-1.5 text-[13px]',
+          done ? 'font-semibold text-success' : 'text-text-muted',
+        )}
+      >
+        {state.phase === 'uploading' ? (
+          <Spinner className="mt-0.5 size-3.5" />
+        ) : done ? (
+          <Icon name="success" className="mt-0.5 size-3.5" />
+        ) : null}
+        <span>
+          {state.name ? `${fillText(t('images.chosen'), { name: state.name }, locale)} · ` : null}
+          {text}
+        </span>
+      </span>
+    );
   }
 
   /** The slot's problem: the last refusal, or a saved image the worker could not prepare. */
@@ -575,16 +668,12 @@ export function BrandingForm(props: BrandingFormProps) {
   const imageSlot = (slot: BrandSlot) => {
     const state = slots[slot];
     const id = `brand-image-${slot}`;
+    const has = state.src !== null || state.fileId !== null;
     return (
-      <div className="flex flex-col gap-2" data-testid={`brand-slot-${slot}`}>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-sm font-medium text-text" id={`${id}-label`}>
-            {slotLabel[slot]}
-          </span>
-        </div>
-        <p className="m-0 text-xs text-text-muted" id={`${id}-hint`}>
-          {slotHint[slot]}
-        </p>
+      <div
+        className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-border py-4 first:pt-0 last:border-b-0 last:pb-0"
+        data-testid={`brand-slot-${slot}`}
+      >
         <input
           ref={(element) => {
             inputs.current[slot] = element;
@@ -604,12 +693,12 @@ export function BrandingForm(props: BrandingFormProps) {
           }}
           data-testid={`${id}-input`}
         />
-        <div
+        <span
           className={cn(
-            'flex flex-wrap items-center gap-4 rounded-xl p-4',
-            state.src || state.fileId
-              ? 'bg-surface-sunken'
-              : 'border-2 border-dashed border-border-strong',
+            'grid size-16 shrink-0 place-items-center overflow-hidden rounded-lg',
+            state.src
+              ? 'border border-border bg-surface-sunken'
+              : 'border-[1.5px] border-dashed border-border-strong text-text-subtle',
           )}
         >
           {state.src ? (
@@ -622,60 +711,60 @@ export function BrandingForm(props: BrandingFormProps) {
                 slot === 'favicon'
                   ? 'size-8'
                   : slot === 'logo'
-                    ? 'max-h-16 max-w-32'
-                    : 'h-24 w-40 rounded-lg object-cover',
+                    ? 'max-h-12 max-w-14'
+                    : 'size-full object-cover',
               )}
               data-testid={`${id}-preview`}
             />
           ) : (
-            <Icon name="palette" className="size-8 text-text-subtle" />
+            <Icon name="image" className="size-6" />
           )}
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            {state.name ? (
-              <span className="truncate text-sm text-text" dir="auto">
-                {fillText(t('images.chosen'), { name: state.name }, locale)}
-              </span>
-            ) : null}
-            {/* Progress is announced politely as it changes (security review L12). */}
-            <div aria-live="polite" aria-atomic="true" data-testid={`${id}-status`}>
-              {imageNote(state)}
-            </div>
+        </span>
+        <div className="flex min-w-0 flex-[1_1_14rem] flex-col gap-1">
+          <span className="font-semibold text-text" id={`${id}-label`}>
+            {slotLabel[slot]}
+          </span>
+          <p className="m-0 text-[13px] text-text-muted" id={`${id}-hint`}>
+            {slotHint[slot]}
+          </p>
+          {/* Progress is announced politely as it changes (security review L12). */}
+          <div aria-live="polite" aria-atomic="true" data-testid={`${id}-status`}>
+            {imageNote(state)}
           </div>
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={disabled || state.phase === 'uploading'}
-              onClick={() => inputs.current[slot]?.click()}
-              aria-describedby={`${id}-hint`}
-              data-testid={`${id}-upload`}
-            >
-              <Icon name="plus" />
-              {state.src || state.fileId ? t('images.replace') : t('images.upload')}
-              <span className="sr-only"> · {slotLabel[slot]}</span>
-            </Button>
-            {state.src || state.fileId ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={disabled}
-                onClick={() => {
-                  remove(slot);
-                }}
-                data-testid={`${id}-remove`}
-              >
-                <Icon name="trash" />
-                {t('images.remove')}
-                <span className="sr-only"> · {slotLabel[slot]}</span>
-              </Button>
+          <div aria-live="polite" aria-atomic="true">
+            {slotError(state) ? (
+              <FieldError id={`${id}-error`}>
+                <span data-testid={`${id}-error`}>{slotError(state)}</span>
+              </FieldError>
             ) : null}
           </div>
         </div>
-        <div aria-live="polite" aria-atomic="true">
-          {slotError(state) ? (
-            <p className="m-0 text-sm text-danger-text" data-testid={`${id}-error`}>
-              {slotError(state)}
-            </p>
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={disabled || state.phase === 'uploading'}
+            onClick={() => inputs.current[slot]?.click()}
+            aria-describedby={`${id}-hint`}
+            data-testid={`${id}-upload`}
+          >
+            {has ? null : <Icon name="upload" />}
+            {has ? t('images.replace') : t('images.upload')}
+            <span className="sr-only"> · {slotLabel[slot]}</span>
+          </Button>
+          {has ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={disabled}
+              onClick={() => {
+                remove(slot);
+              }}
+              data-testid={`${id}-remove`}
+            >
+              {t('images.remove')}
+              <span className="sr-only"> · {slotLabel[slot]}</span>
+            </Button>
           ) : null}
         </div>
       </div>
@@ -685,14 +774,88 @@ export function BrandingForm(props: BrandingFormProps) {
   const logoSrc = slots.logo.src;
   const signInSrc = slots.sign_in_image.src;
 
+  /** The preview's content (decorative: the form says everything; no tab stops). */
+  const previewBody = (testIds: boolean) => (
+    <div className="flex flex-col gap-4">
+      <span className="text-xs font-bold tracking-wide text-text-muted uppercase">
+        {t('preview.menu')}
+      </span>
+      {/* The menu, as the shell shows it. */}
+      <div className="flex flex-col gap-1.5 rounded-xl bg-nav-gradient p-3">
+        <div className="flex h-10 items-center gap-2 px-1.5">
+          {logoSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element -- a preview (blob:) or a same-origin copy
+            <img src={logoSrc} alt="" className="max-h-8 max-w-full object-contain" />
+          ) : (
+            <span className="truncate font-bold text-on-nav">{name}</span>
+          )}
+        </div>
+        <span
+          className="rounded-lg bg-nav-current px-3 py-2 text-sm font-semibold text-on-nav-item-current"
+          data-testid={testIds ? 'brand-preview-current' : undefined}
+        >
+          {t('preview.menuHome')}
+        </span>
+        <span className="px-3 py-2 text-sm text-on-nav">{t('preview.menuTeam')}</span>
+        <span className="px-3 py-2 text-sm text-on-nav">{t('preview.menuSettings')}</span>
+      </div>
+      <span className="text-xs font-bold tracking-wide text-text-muted uppercase">
+        {t('preview.button')}
+      </span>
+      <div className="flex flex-wrap items-center gap-3">
+        <span
+          className="inline-flex min-h-9 items-center rounded-full bg-brand-gradient px-4 text-sm font-semibold text-on-brand shadow-brand-glow"
+          data-testid={testIds ? 'brand-preview-button' : undefined}
+        >
+          {t('preview.button')}
+        </span>
+        <span className="text-sm font-semibold text-primary-text underline">
+          {t('website.title')}
+        </span>
+      </div>
+      <span className="text-xs font-bold tracking-wide text-text-muted uppercase">
+        {t('preview.signIn')}
+      </span>
+      {/* The sign-in page: the form column and the brand panel with the picture. */}
+      <div className="flex min-h-40 overflow-hidden rounded-xl border border-border bg-bg">
+        <div className="flex flex-1 flex-col justify-center gap-2 p-3.5">
+          {logoSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element -- a preview (blob:) or a same-origin copy
+            <img
+              src={logoSrc}
+              alt={fillText(t('preview.logoAlt'), { name })}
+              className="max-h-7 max-w-28 object-contain"
+              data-testid={testIds ? 'brand-preview-logo' : undefined}
+            />
+          ) : (
+            <span className="text-brand-gradient text-sm font-bold">{name}</span>
+          )}
+          <span className="text-sm font-semibold text-text">{t('preview.signInWelcome')}</span>
+          <span className="h-5 rounded-md border border-border bg-surface" />
+          <span className="h-5 rounded-md border border-border bg-surface" />
+          <span className="inline-flex h-6 items-center justify-center rounded-full bg-brand-gradient text-xs font-semibold text-on-brand">
+            {t('preview.signInButton')}
+          </span>
+        </div>
+        <div className="relative flex-1 bg-brand-panel">
+          {signInSrc ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element -- a preview (blob:) or a same-origin copy */}
+              <img src={signInSrc} alt="" className="absolute inset-0 size-full object-cover" />
+              <span className="absolute inset-0 bg-brand-panel opacity-90" />
+            </>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+
+  const presetName = (id: string) => t(`presetNames.${id}`);
+
   return (
-    <form
-      className="flex flex-col gap-6"
-      onSubmit={onSubmit}
-      noValidate
-      data-testid="branding-form"
-    >
-      {/* Results are announced politely as they appear (security review L12). */}
+    <>
+      {stepUp ? <StepUpBanner href={props.stepUp.href} texts={common} /> : null}
+      {/* Refusals and the preview's note are announced politely as they appear (security review L12). */}
       <div aria-live="polite" aria-atomic="true">
         {message ? (
           <Alert tone={message.tone} data-testid="branding-message">
@@ -700,369 +863,360 @@ export function BrandingForm(props: BrandingFormProps) {
           </Alert>
         ) : null}
       </div>
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card
-          title={t('names.title')}
-          titleId="brand-card-names"
-          aria-labelledby="brand-card-names"
-          description={t('names.intro')}
-          icon="building"
-          className="flex flex-col gap-4"
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(17rem,22rem)]">
+        <form
+          id={FORM_ID}
+          className="flex min-w-0 flex-col gap-5"
+          onSubmit={onSubmit}
+          onReset={(event) => {
+            event.preventDefault();
+            cancel();
+          }}
+          noValidate
+          data-testid="branding-form"
         >
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-4">
+          <Card
+            title={t('names.title')}
+            titleId="brand-card-names"
+            aria-labelledby="brand-card-names"
+            description={t('names.intro')}
+            icon="building"
+            className="flex flex-col gap-4"
+          >
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-4">
+              <TextField
+                id="brand-nameEn"
+                dir="ltr"
+                lang="en"
+                autoComplete="organization"
+                label={t('names.nameEn')}
+                marker={common.required}
+                hint={t('names.hint')}
+                error={fieldErrors.nameEn}
+                value={values.nameEn}
+                onChange={(event) => {
+                  set('nameEn', event.target.value);
+                }}
+                disabled={disabled}
+                data-testid="brand-nameEn"
+              />
+              <TextField
+                id="brand-nameAr"
+                dir="rtl"
+                lang="ar"
+                label={t('names.nameAr')}
+                marker={common.required}
+                hint={t('names.hint')}
+                error={fieldErrors.nameAr}
+                value={values.nameAr}
+                onChange={(event) => {
+                  set('nameAr', event.target.value);
+                }}
+                disabled={disabled}
+                data-testid="brand-nameAr"
+              />
+            </div>
             <TextField
-              id="brand-nameEn"
+              id="brand-websiteUrl"
+              type="url"
               dir="ltr"
               lang="en"
-              autoComplete="organization"
-              label={t('names.nameEn')}
-              hint={t('names.hint')}
-              error={fieldErrors.nameEn}
-              value={values.nameEn}
+              inputMode="url"
+              autoComplete="url"
+              label={t('website.label')}
+              hint={t('website.hint')}
+              error={fieldErrors.websiteUrl}
+              value={values.websiteUrl}
+              placeholder="https://www.example.com"
               onChange={(event) => {
-                set('nameEn', event.target.value);
+                set('websiteUrl', event.target.value);
               }}
               disabled={disabled}
-              data-testid="brand-nameEn"
+              data-testid="brand-websiteUrl"
             />
-            <TextField
-              id="brand-nameAr"
-              dir="rtl"
-              lang="ar"
-              label={t('names.nameAr')}
-              hint={t('names.hint')}
-              error={fieldErrors.nameAr}
-              value={values.nameAr}
-              onChange={(event) => {
-                set('nameAr', event.target.value);
-              }}
-              disabled={disabled}
-              data-testid="brand-nameAr"
-            />
-          </div>
-        </Card>
+          </Card>
 
-        <Card
-          title={t('images.title')}
-          titleId="brand-card-images"
-          aria-labelledby="brand-card-images"
-          description={t('images.intro')}
-          icon="palette"
-          className="flex flex-col gap-5"
-        >
-          {imageSlot('logo')}
-          {imageSlot('favicon')}
-        </Card>
+          <Card
+            title={t('images.title')}
+            titleId="brand-card-images"
+            aria-labelledby="brand-card-images"
+            description={t('images.intro')}
+            icon="image"
+            className="flex flex-col"
+          >
+            {imageSlot('logo')}
+            {imageSlot('favicon')}
+            {imageSlot('sign_in_image')}
+          </Card>
 
-        <Card
-          title={t('images.signInImage')}
-          titleId="brand-card-sign-in"
-          aria-labelledby="brand-card-sign-in"
-          description={t('images.intro')}
-          icon="monitor"
-          className="flex flex-col gap-5 lg:col-span-2"
-        >
-          {imageSlot('sign_in_image')}
-        </Card>
+          <Card
+            title={t('colors.title')}
+            titleId="brand-card-colors"
+            aria-labelledby="brand-card-colors"
+            description={t('colors.intro')}
+            icon="palette"
+            className="flex flex-col gap-5"
+            actions={
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={reset}
+                disabled={disabled}
+                data-testid="brand-reset"
+              >
+                <Icon name="repeat" />
+                {t('colors.reset')}
+              </Button>
+            }
+          >
+            <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
+              <legend className="mb-2.5 p-0 text-sm font-semibold text-text">
+                {t('colors.presets')}
+              </legend>
+              <div className="flex flex-wrap gap-2">
+                {BRAND_PRESETS.map((preset) => {
+                  const chosen =
+                    parseBrandColor(values.primaryColor) === preset.primary &&
+                    (!values.useGradient ||
+                      parseBrandColor(values.secondaryColor) === preset.secondary);
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      aria-pressed={chosen}
+                      aria-label={fillText(t('colors.presetChoose'), {
+                        name: presetName(preset.id),
+                      })}
+                      disabled={disabled}
+                      onClick={() => {
+                        setValues((current) => ({
+                          ...current,
+                          primaryColor: preset.primary,
+                          secondaryColor: preset.secondary,
+                        }));
+                        setFieldErrors(withoutColorErrors);
+                      }}
+                      className={cn(
+                        'inline-flex min-h-11 items-center gap-2 rounded-full border-[1.5px] py-1 pe-3.5 ps-1.5 text-[14.5px] font-semibold disabled:cursor-not-allowed disabled:opacity-70',
+                        chosen
+                          ? 'border-primary bg-primary-subtle text-primary-text'
+                          : 'border-border-strong bg-surface text-text hover:bg-surface-hover',
+                      )}
+                      data-testid={`brand-preset-${preset.id}`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={cn('size-7 rounded-full', PRESET_CLASSES[preset.id])}
+                      />
+                      {presetName(preset.id)}
+                      {chosen ? <Icon name="check" className="size-4" /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </fieldset>
 
-        <Card
-          title={t('colors.title')}
-          titleId="brand-card-colors"
-          aria-labelledby="brand-card-colors"
-          description={t('colors.intro')}
-          icon="palette"
-          className="flex flex-col gap-5"
-          actions={
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={reset}
-              disabled={disabled}
-              data-testid="brand-reset"
-            >
-              <Icon name="repeat" />
-              {t('colors.reset')}
-            </Button>
-          }
-        >
-          <div className="flex items-start justify-between gap-4 rounded-xl border border-border bg-surface-sunken p-4">
-            <div className="flex flex-col gap-1">
-              <span className="text-sm font-medium text-text" id="brand-gradient-label">
-                {t('colors.useGradient')}
-              </span>
-              <span className="text-xs text-text-muted" id="brand-gradient-hint">
-                {values.useGradient ? t('colors.gradientOnHint') : t('colors.gradientOffHint')}
-              </span>
+            <div className="flex items-start justify-between gap-4 border-y border-border py-4">
+              <div className="flex flex-col gap-1">
+                <span className="font-semibold text-text" id="brand-gradient-label">
+                  {t('colors.useGradient')}
+                </span>
+                <span className="text-sm text-text-muted" id="brand-gradient-hint">
+                  {values.useGradient ? t('colors.gradientOnHint') : t('colors.gradientOffHint')}
+                </span>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={values.useGradient}
+                aria-labelledby="brand-gradient-label"
+                aria-describedby="brand-gradient-hint"
+                disabled={disabled}
+                onClick={() => {
+                  set('useGradient', !values.useGradient);
+                }}
+                className={cn(
+                  'relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors disabled:cursor-not-allowed disabled:opacity-60',
+                  values.useGradient ? 'bg-primary' : 'bg-border-strong',
+                )}
+                data-testid="brand-gradient"
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'inline-block size-6 rounded-full bg-surface shadow-1 transition-transform motion-reduce:transition-none',
+                    values.useGradient ? 'translate-x-5 rtl:-translate-x-5' : 'translate-x-0',
+                  )}
+                />
+              </button>
             </div>
+
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(15rem,1fr))] gap-5">
+              <ColorField
+                id="brand-primaryColor"
+                label={values.useGradient ? t('colors.primary') : t('colors.brandColor')}
+                value={values.primaryColor}
+                error={fieldErrors.primaryColor}
+                disabled={disabled}
+                texts={{
+                  hex: fillText(t('colors.hexLabel'), {
+                    name: values.useGradient ? t('colors.primary') : t('colors.brandColor'),
+                  }),
+                  picker: fillText(t('colors.pickerLabel'), {
+                    name: values.useGradient ? t('colors.primary') : t('colors.brandColor'),
+                  }),
+                }}
+                onChange={(value) => {
+                  set('primaryColor', value);
+                }}
+              />
+              {values.useGradient ? (
+                <ColorField
+                  id="brand-secondaryColor"
+                  label={t('colors.secondary')}
+                  value={values.secondaryColor}
+                  error={fieldErrors.secondaryColor}
+                  disabled={disabled}
+                  texts={{
+                    hex: fillText(t('colors.hexLabel'), { name: t('colors.secondary') }),
+                    picker: fillText(t('colors.pickerLabel'), { name: t('colors.secondary') }),
+                  }}
+                  onChange={(value) => {
+                    set('secondaryColor', value);
+                  }}
+                />
+              ) : null}
+            </div>
+
+            {failing.length > 0 ? (
+              <Alert
+                tone="warning"
+                title={t('colors.contrastTitle')}
+                data-testid="brand-contrast-warning"
+              >
+                <p className="m-0 mb-2">{t('colors.contrastIntro')}</p>
+                <ul className="m-0 flex list-disc flex-col gap-1 ps-5">
+                  {failing.map((check) => (
+                    <li key={check.id} data-testid={`brand-contrast-${check.id}`}>
+                      {fillText(
+                        t(`colors.contrast${check.id.charAt(0).toUpperCase()}${check.id.slice(1)}`),
+                        { ratio: displayRatio(check.ratio) },
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </Alert>
+            ) : (
+              <p
+                className="m-0 flex items-center gap-2 text-sm font-semibold text-success"
+                data-testid="brand-contrast-ok"
+              >
+                <Icon name="success" />
+                {t('colors.contrastOk')}
+              </p>
+            )}
+          </Card>
+        </form>
+
+        {/* The live preview: beside the form on a desktop (it stays in view while scrolling), behind the
+            save bar's «Preview» button on a phone. Decorative: no tab stops, nothing to read twice. */}
+        <aside
+          aria-labelledby="brand-card-preview"
+          className="sticky top-24 hidden rounded-xl border border-border bg-surface p-5 lg:block"
+        >
+          <h2 id="brand-card-preview" className="m-0 flex items-center gap-2 text-lg font-bold">
+            <Icon name="eye" />
+            {t('preview.title')}
+          </h2>
+          <p className="m-0 mb-4 text-sm text-text-muted">{t('preview.intro')}</p>
+          <div ref={previewRef} aria-hidden="true" data-testid="brand-preview">
+            {previewBody(true)}
+          </div>
+        </aside>
+      </div>
+
+      {editable ? (
+        <SaveBar
+          state={pending ? 'saving' : refused ? 'invalid' : dirty ? 'unsaved' : 'idle'}
+          form={FORM_ID}
+          texts={{
+            unsaved: common.unsavedChanges,
+            saving: t('saving'),
+            saved: <span data-testid="branding-last-changed">{props.lastChanged}</span>,
+            save: t('save'),
+            cancel: t('cancel'),
+            invalid: common.invalid,
+          }}
+          fix={
+            firstInvalid
+              ? {
+                  label: fillText(common.goToField, { field: fieldLabel(firstInvalid, t) }),
+                  onClick: () => {
+                    document.getElementById(`brand-${firstInvalid}`)?.focus();
+                  },
+                }
+              : undefined
+          }
+          extra={
             <button
               type="button"
-              role="switch"
-              aria-checked={values.useGradient}
-              aria-labelledby="brand-gradient-label"
-              aria-describedby="brand-gradient-hint"
-              disabled={disabled}
               onClick={() => {
-                set('useGradient', !values.useGradient);
+                setPreviewOpen(true);
               }}
               className={cn(
-                'relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors disabled:cursor-not-allowed disabled:opacity-60',
-                values.useGradient ? 'bg-primary' : 'bg-border-strong',
+                'inline-flex min-h-9 items-center gap-1.5 rounded-full border-[1.5px] px-3.5 text-sm font-semibold pointer-coarse:min-h-11 lg:hidden',
+                dirty || pending || refused
+                  ? 'border-inverse-text/60 text-inverse-text'
+                  : 'border-border-strong text-text',
               )}
-              data-testid="brand-gradient"
+              data-testid="brand-preview-open"
             >
-              <span
-                aria-hidden="true"
-                className={cn(
-                  'inline-block size-6 rounded-full bg-surface shadow-1 transition-transform',
-                  values.useGradient ? 'translate-x-5 rtl:-translate-x-5' : 'translate-x-0',
-                )}
-              />
+              <Icon name="eye" />
+              {t('preview.title')}
             </button>
-          </div>
-
-          <ColorField
-            id="brand-primaryColor"
-            label={values.useGradient ? t('colors.primary') : t('colors.brandColor')}
-            value={values.primaryColor}
-            error={fieldErrors.primaryColor}
-            disabled={disabled}
-            texts={{
-              hex: fillText(t('colors.hexLabel'), {
-                name: values.useGradient ? t('colors.primary') : t('colors.brandColor'),
-              }),
-              picker: fillText(t('colors.pickerLabel'), {
-                name: values.useGradient ? t('colors.primary') : t('colors.brandColor'),
-              }),
-            }}
-            onChange={(value) => {
-              set('primaryColor', value);
-            }}
-          />
-          {values.useGradient ? (
-            <ColorField
-              id="brand-secondaryColor"
-              label={t('colors.secondary')}
-              value={values.secondaryColor}
-              error={fieldErrors.secondaryColor}
-              disabled={disabled}
-              texts={{
-                hex: fillText(t('colors.hexLabel'), { name: t('colors.secondary') }),
-                picker: fillText(t('colors.pickerLabel'), { name: t('colors.secondary') }),
-              }}
-              onChange={(value) => {
-                set('secondaryColor', value);
-              }}
-            />
-          ) : null}
-
-          <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
-            <legend className="mb-2 p-0 text-sm font-medium text-text">
-              {t('colors.presets')}
-            </legend>
-            <div className="flex flex-wrap gap-2">
-              {BRAND_PRESETS.map((preset) => {
-                const presetName = t(`presetNames.${preset.id}`);
-                const chosen =
-                  parseBrandColor(values.primaryColor) === preset.primary &&
-                  (!values.useGradient ||
-                    parseBrandColor(values.secondaryColor) === preset.secondary);
-                return (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    aria-pressed={chosen}
-                    aria-label={fillText(t('colors.presetChoose'), { name: presetName })}
-                    title={presetName}
-                    disabled={disabled}
-                    onClick={() => {
-                      setValues((current) => ({
-                        ...current,
-                        primaryColor: preset.primary,
-                        secondaryColor: preset.secondary,
-                      }));
-                      setFieldErrors(withoutColorErrors);
-                    }}
-                    className={cn(
-                      'relative inline-flex size-11 items-center justify-center rounded-xl border-2 text-[#FFFFFF]',
-                      chosen ? 'border-text' : 'border-transparent',
-                      PRESET_CLASSES[preset.id],
-                    )}
-                    data-testid={`brand-preset-${preset.id}`}
-                  >
-                    {chosen ? <Icon name="check" className="size-5" /> : null}
-                  </button>
-                );
-              })}
-            </div>
-          </fieldset>
-
-          {failing.length > 0 ? (
-            <Alert
-              tone="warning"
-              title={t('colors.contrastTitle')}
-              data-testid="brand-contrast-warning"
-            >
-              <p className="m-0 mb-2">{t('colors.contrastIntro')}</p>
-              <ul className="m-0 flex list-disc flex-col gap-1 ps-5">
-                {failing.map((check) => (
-                  <li key={check.id} data-testid={`brand-contrast-${check.id}`}>
-                    {fillText(
-                      t(`colors.contrast${check.id.charAt(0).toUpperCase()}${check.id.slice(1)}`),
-                      { ratio: displayRatio(check.ratio) },
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </Alert>
-          ) : (
-            <p
-              className="m-0 flex items-center gap-2 text-sm text-success-text"
-              data-testid="brand-contrast-ok"
-            >
-              <Icon name="success" />
-              {t('colors.contrastOk')}
-            </p>
-          )}
-        </Card>
-
-        <Card
-          title={t('website.title')}
-          titleId="brand-card-website"
-          aria-labelledby="brand-card-website"
-          description={t('website.intro')}
-          icon="globe"
-          className="flex flex-col gap-4"
+          }
+        />
+      ) : (
+        <p
+          className="m-0 mt-5 flex items-center gap-2 text-sm text-text-muted"
+          data-testid="branding-last-changed"
         >
-          <TextField
-            id="brand-websiteUrl"
-            type="url"
-            dir="ltr"
-            lang="en"
-            inputMode="url"
-            autoComplete="url"
-            label={t('website.label')}
-            hint={t('website.hint')}
-            error={fieldErrors.websiteUrl}
-            value={values.websiteUrl}
-            placeholder="https://www.example.com"
-            onChange={(event) => {
-              set('websiteUrl', event.target.value);
-            }}
-            disabled={disabled}
-            data-testid="brand-websiteUrl"
-          />
-        </Card>
-      </div>
-
-      <Card
-        title={t('preview.title')}
-        titleId="brand-card-preview"
-        aria-labelledby="brand-card-preview"
-        description={t('preview.intro')}
-        icon="eye"
-      >
-        <div
-          ref={previewRef}
-          className="grid gap-4 md:grid-cols-[16rem_1fr]"
-          data-testid="brand-preview"
-        >
-          {/* The menu, as the shell shows it. */}
-          <div
-            className="flex flex-col gap-2 rounded-xl border border-border bg-nav p-3"
-            aria-hidden="true"
-          >
-            <div className="flex h-12 items-center px-2">
-              {logoSrc ? (
-                // eslint-disable-next-line @next/next/no-img-element -- a preview (blob:) or a same-origin copy
-                <img src={logoSrc} alt="" className="max-h-10 max-w-full object-contain" />
-              ) : (
-                <span className="text-brand-gradient truncate text-lg font-extrabold">{name}</span>
-              )}
-            </div>
-            <span
-              className="rounded-xl bg-brand-gradient px-3 py-2 text-sm font-medium text-on-brand shadow-brand-glow"
-              data-testid="brand-preview-current"
-            >
-              {t('preview.menuHome')}
-            </span>
-            <span className="px-3 py-2 text-sm text-on-nav">{t('preview.menuTeam')}</span>
-            <span className="px-3 py-2 text-sm text-on-nav">{t('preview.menuSettings')}</span>
-          </div>
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <span
-                className="inline-flex min-h-9 items-center rounded-md bg-brand-gradient px-4 text-sm font-medium text-on-brand shadow-brand-glow"
-                data-testid="brand-preview-button"
-              >
-                {t('preview.button')}
-              </span>
-              <span className="text-sm font-semibold text-primary-text">{t('website.title')}</span>
-            </div>
-            {/* The sign-in page: the form column and the brand panel with the picture. */}
-            <div className="flex min-h-48 overflow-hidden rounded-xl border border-border bg-bg">
-              <div className="flex flex-1 flex-col justify-center gap-2 p-4">
-                {logoSrc ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- a preview (blob:) or a same-origin copy
-                  <img
-                    src={logoSrc}
-                    alt={fillText(t('preview.logoAlt'), { name })}
-                    className="max-h-8 max-w-32 object-contain"
-                    data-testid="brand-preview-logo"
-                  />
-                ) : (
-                  <span className="text-brand-gradient text-sm font-bold">{name}</span>
-                )}
-                <span className="text-sm font-semibold text-text">
-                  {t('preview.signInWelcome')}
-                </span>
-                <span
-                  aria-hidden="true"
-                  className="h-6 rounded-md border border-border bg-surface"
-                />
-                <span
-                  aria-hidden="true"
-                  className="h-6 rounded-md border border-border bg-surface"
-                />
-                <span className="inline-flex h-7 items-center justify-center rounded-md bg-brand-gradient text-xs font-medium text-on-brand">
-                  {t('preview.signInButton')}
-                </span>
-              </div>
-              <div className="relative flex-1 bg-brand-panel" aria-hidden="true">
-                {signInSrc ? (
-                  <>
-                    {/* eslint-disable-next-line @next/next/no-img-element -- a preview (blob:) or a same-origin copy */}
-                    <img
-                      src={signInSrc}
-                      alt=""
-                      className="absolute inset-0 size-full object-cover"
-                    />
-                    <span className="absolute inset-0 bg-brand-panel opacity-90" />
-                  </>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      <div className="sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 py-3 shadow-2">
-        <span className="text-sm text-text-muted" data-testid="branding-last-changed">
+          <Icon name="clock" />
           {props.lastChanged}
-        </span>
-        <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            onClick={cancel}
-            disabled={disabled}
-            data-testid="branding-cancel"
-          >
-            {t('cancel')}
-          </Button>
-          <Button type="submit" disabled={disabled} data-testid="branding-save">
-            {pending ? t('saving') : t('save')}
-          </Button>
+        </p>
+      )}
+
+      <Dialog
+        open={previewOpen}
+        onClose={() => {
+          setPreviewOpen(false);
+        }}
+        title={t('preview.title')}
+        description={t('preview.intro')}
+        closeLabel={common.close}
+        className="mb-0 rounded-b-none sm:mb-auto sm:rounded-b-xl"
+        data-testid="brand-preview-sheet"
+      >
+        <div ref={sheetPreviewRef} aria-hidden="true">
+          {previewBody(false)}
         </div>
-      </div>
-    </form>
+      </Dialog>
+      <LeaveGuard active={editable && dirty && !pending} texts={common} />
+    </>
   );
+}
+
+/** The form's fields in page order (the first one with an error gets the focus). */
+const FIELD_ORDER = ['nameEn', 'nameAr', 'websiteUrl', 'primaryColor', 'secondaryColor'] as const;
+
+/** A field's visible label (the save bar's «Go to …»). */
+function fieldLabel(field: Field, t: (key: string) => string): string {
+  const keys: Record<Field, string> = {
+    nameEn: 'names.nameEn',
+    nameAr: 'names.nameAr',
+    websiteUrl: 'website.label',
+    primaryColor: 'colors.primary',
+    secondaryColor: 'colors.secondary',
+  };
+  return t(keys[field]);
 }

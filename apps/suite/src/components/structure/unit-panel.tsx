@@ -1,10 +1,11 @@
 'use client';
-import { Alert, Button, Dialog, TextField, toast } from '@jadarat/ui';
+import { Alert, Button, Icon, SidePanel, TextField, toast } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { type SyntheticEvent, useState, useTransition } from 'react';
 import { createStructureUnitAction, updateStructureUnitAction } from '../../actions/structure';
 import { fillText } from '../../lib/fill-text';
 import { unitFieldText } from '../../lib/structure-form';
+import { unitDeleteBlockers } from '../../lib/structure-view';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { SelectField } from '../select-field';
@@ -43,7 +44,7 @@ export type UnitDialogMode =
   | { readonly kind: 'create'; readonly parent: UnitView | null; readonly levelName: string }
   | { readonly kind: 'edit'; readonly unit: UnitView };
 
-export interface UnitDialogProps {
+export interface UnitPanelProps {
   readonly mode: UnitDialogMode;
   readonly branches: readonly Choice[];
   readonly people: readonly Choice[];
@@ -52,14 +53,22 @@ export interface UnitDialogProps {
   readonly errors: ErrorTexts;
   readonly locale: 'ar' | 'en';
   readonly onClose: () => void;
+  /** Edit: deactivate or activate the unit (the tree runs it, with Undo or its confirmation). */
+  readonly onStatus?: ((unit: UnitView) => void) | undefined;
+  /** Edit: delete the unit (the tree's red confirmation). */
+  readonly onDelete?: ((unit: UnitView) => void) | undefined;
 }
 
+const FORM_ID = 'unit-form';
+
 /**
- * Add or edit a unit (Kawadir's department dialog; FR-ADM-05, EP-ORG): names in English and Arabic, code,
- * branch and head (any active person). Its level follows from where it sits: at the top, or one level
- * below its parent (the database decides and refuses a unit below the last level).
+ * Add or edit a unit (FR-ADM-05, EP-ORG) in a side panel with the tree still in view (redesign package 2;
+ * approved direction, comparison §3): names in English and Arabic, code, branch and head (any active
+ * person). Its level follows from where it sits: at the top, or one level below its parent (the database
+ * decides and refuses a unit below the last level). Editing also shows Deactivate and Delete with their
+ * consequences — Delete with what still depends on the unit, and only offered when nothing does.
  */
-export function UnitDialog({
+export function UnitPanel({
   mode,
   branches,
   people,
@@ -67,7 +76,9 @@ export function UnitDialog({
   errors,
   locale,
   onClose,
-}: UnitDialogProps) {
+  onStatus,
+  onDelete,
+}: UnitPanelProps) {
   const text = (key: string) => texts[key] ?? key;
   const fill = (key: string, values: Record<string, string | number>) =>
     fillText(text(key), values, locale);
@@ -75,8 +86,9 @@ export function UnitDialog({
   const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
   const [failure, setFailure] = useState<Failure>({ fields: {}, message: null });
-  // Closing goes through the native dialog (focus returns to the menu button that opened it).
+  // Closing goes through the native dialog (focus returns to the button that opened it).
   const [open, setOpen] = useState(true);
+  const [after, setAfter] = useState<(() => void) | null>(null);
   const unit = mode.kind === 'edit' ? mode.unit : null;
   const [branchId, setBranchId] = useState(unit?.branchId ?? '');
   const [headPersonId, setHeadPersonId] = useState(unit?.headPersonId ?? '');
@@ -100,6 +112,12 @@ export function UnitDialog({
       : mode.parent
         ? fill('form.underDescription', { level: mode.levelName, parent: mode.parent.name })
         : text('form.topDescription');
+
+  /** Closes the panel, then runs a follow-up (a confirmation must not open under the modal panel). */
+  function closeThen(next: () => void) {
+    setAfter(() => next);
+    setOpen(false);
+  }
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -139,17 +157,53 @@ export function UnitDialog({
     });
   }
 
+  const blockers = unit ? unitDeleteBlockers(unit) : [];
+
   return (
-    <Dialog
+    <SidePanel
       open={open}
-      onClose={onClose}
+      onClose={() => {
+        onClose();
+        after?.();
+      }}
       title={title}
       description={description}
       closeLabel={text('form.close')}
-      size="lg"
       data-testid="unit-dialog"
+      footer={
+        <>
+          <p className="m-0 flex w-full items-center gap-2 text-[13px] text-text-muted">
+            <Icon name="shield-outline" />
+            {text('form.audited')}
+          </p>
+          <div className="ms-auto flex gap-2.5">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setOpen(false);
+              }}
+              disabled={pending}
+            >
+              {text('form.cancel')}
+            </Button>
+            <Button
+              type="submit"
+              form={FORM_ID}
+              disabled={pending}
+              aria-busy={pending || undefined}
+              data-testid="unit-dialog-submit"
+            >
+              {pending
+                ? text('form.saving')
+                : mode.kind === 'create'
+                  ? text('form.create')
+                  : text('form.save')}
+            </Button>
+          </div>
+        </>
+      }
     >
-      <form className="flex flex-col gap-4" onSubmit={onSubmit} noValidate>
+      <form id={FORM_ID} className="flex flex-col gap-4" onSubmit={onSubmit} noValidate>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <TextField
             id="unit-nameEn"
@@ -179,20 +233,22 @@ export function UnitDialog({
             error={failure.fields.nameAr}
             disabled={pending}
           />
-          <TextField
-            id="unit-code"
-            name="code"
-            label={text('form.code')}
-            marker={text('required')}
-            hint={text('form.codeHint')}
-            required
-            dir="ltr"
-            maxLength={32}
-            autoComplete="off"
-            defaultValue={unit?.code ?? ''}
-            error={failure.fields.code}
-            disabled={pending}
-          />
+        </div>
+        <TextField
+          id="unit-code"
+          name="code"
+          label={text('form.code')}
+          marker={text('required')}
+          hint={text('form.codeHint')}
+          required
+          dir="ltr"
+          maxLength={32}
+          autoComplete="off"
+          defaultValue={unit?.code ?? ''}
+          error={failure.fields.code}
+          disabled={pending}
+        />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <SelectField
             id="unit-branch"
             label={text('form.branch')}
@@ -211,53 +267,92 @@ export function UnitDialog({
               </option>
             ))}
           </SelectField>
-          <div className="sm:col-span-2">
-            <SelectField
-              id="unit-head"
-              label={text('form.head')}
-              marker={text('optional')}
-              hint={text('form.headHint')}
-              value={headPersonId}
-              onChange={(event) => {
-                setHeadPersonId(event.target.value);
-              }}
-              error={failure.fields.headPersonId}
-              disabled={pending}
-            >
-              <option value="">{text('form.noHead')}</option>
-              {peopleChoices.map((choice) => (
-                <option key={choice.value} value={choice.value}>
-                  {choice.label}
-                </option>
-              ))}
-            </SelectField>
-          </div>
+          <SelectField
+            id="unit-head"
+            label={text('form.head')}
+            marker={text('optional')}
+            hint={text('form.headHint')}
+            value={headPersonId}
+            onChange={(event) => {
+              setHeadPersonId(event.target.value);
+            }}
+            error={failure.fields.headPersonId}
+            disabled={pending}
+          >
+            <option value="">{text('form.noHead')}</option>
+            {peopleChoices.map((choice) => (
+              <option key={choice.value} value={choice.value}>
+                {choice.label}
+              </option>
+            ))}
+          </SelectField>
         </div>
-        <p className="m-0 text-sm text-text-muted">{text('form.audited')}</p>
         {failure.message ? (
           <Alert tone="danger" data-testid="unit-dialog-message">
             {failure.message}
           </Alert>
         ) : null}
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button
-            variant="secondary"
-            onClick={() => {
-              setOpen(false);
-            }}
-            disabled={pending}
-          >
-            {text('form.cancel')}
-          </Button>
-          <Button type="submit" disabled={pending} data-testid="unit-dialog-submit">
-            {pending
-              ? text('form.saving')
-              : mode.kind === 'create'
-                ? text('form.create')
-                : text('form.save')}
-          </Button>
-        </div>
+        {unit && (onStatus || onDelete) ? (
+          <div className="flex flex-col gap-4 border-t border-border pt-4">
+            {onStatus ? (
+              <div className="flex flex-wrap items-start gap-3">
+                <div className="min-w-0 flex-[1_1_14rem]">
+                  <p className="m-0 font-semibold">
+                    {unit.active ? text('deactivate') : text('activate')}
+                  </p>
+                  <p className="m-0 text-sm text-text-muted">
+                    {unit.active ? text('status.deactivateText') : text('status.activateText')}
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={pending}
+                  onClick={() => {
+                    closeThen(() => {
+                      onStatus(unit);
+                    });
+                  }}
+                  data-testid="unit-panel-status"
+                >
+                  {unit.active ? text('deactivate') : text('activate')}
+                </Button>
+              </div>
+            ) : null}
+            {onDelete ? (
+              <div className="flex flex-wrap items-start gap-3">
+                <div className="min-w-0 flex-[1_1_14rem]">
+                  <p className="m-0 font-semibold">{text('delete')}</p>
+                  <p className="m-0 text-sm text-text-muted">{text('remove.text')}</p>
+                  {blockers.length > 0 ? (
+                    <p
+                      id="unit-delete-blockers"
+                      className="m-0 mt-1 text-sm text-text-muted"
+                      data-testid="unit-delete-reason"
+                    >
+                      {blockers.map((item) => fill(item.key, { count: item.count })).join(' · ')}
+                    </p>
+                  ) : null}
+                </div>
+                <Button
+                  variant={blockers.length > 0 ? 'secondary' : 'danger'}
+                  size="sm"
+                  disabled={pending || blockers.length > 0}
+                  aria-describedby={blockers.length > 0 ? 'unit-delete-blockers' : undefined}
+                  onClick={() => {
+                    closeThen(() => {
+                      onDelete(unit);
+                    });
+                  }}
+                  data-testid="unit-panel-delete"
+                >
+                  {text('delete')}
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </form>
-    </Dialog>
+    </SidePanel>
   );
 }

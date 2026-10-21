@@ -52,7 +52,7 @@ Order: E-mail sending → Branding → Audit log → people record completion �
 
 #### WP-ADM-03 Audit log screen
 
-**Claimed by:** — · **Business flow:** in discussion with the PO — `docs/business-flows/EP-AUD-audit-log.md` (T-M2-50) · **Depends on:** —
+**Claimed by:** — · **Business flow:** on hold (PO, 21 Oct 2026) — `docs/business-flows/EP-AUD-audit-log.md` (T-M2-50) · **Depends on:** —
 
 | ID | Task | WP | Owner | Status | Notes / PR |
 |---|---|---|---|---|---|
@@ -61,7 +61,7 @@ Order: E-mail sending → Branding → Audit log → people record completion �
 
 #### WP-ADM-04 People record completion
 
-**Claimed by:** — · **Business flow:** in discussion with the PO — `docs/business-flows/EP-PEOPLE-photo-hr-fields.md` (T-M2-51) · **Depends on:** WP-FIX-01 (same person forms)
+**Claimed by:** — · **Business flow:** Agreed (PO, 21 Oct 2026) — `docs/business-flows/EP-PEOPLE-photo-hr-fields.md` (T-M2-51) · **Depends on:** WP-FIX-01 (same person forms)
 
 | ID | Task | WP | Owner | Status | Notes / PR |
 |---|---|---|---|---|---|
@@ -71,7 +71,7 @@ Order: E-mail sending → Branding → Audit log → people record completion �
 
 #### WP-ADM-05 Sign-in extras
 
-**Claimed by:** — · **Business flow:** in discussion with the PO — `docs/business-flows/EP-AUTH-signin-extras.md` (T-M2-52) · **Depends on:** WP-ADM-01
+**Claimed by:** — · **Business flow:** Agreed (PO, 21 Oct 2026) — `docs/business-flows/EP-AUTH-signin-extras.md` (T-M2-52) · **Depends on:** WP-ADM-01
 
 | ID | Task | WP | Owner | Status | Notes / PR |
 |---|---|---|---|---|---|

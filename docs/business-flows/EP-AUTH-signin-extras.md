@@ -4,7 +4,7 @@
 |---|---|
 | **Work package** | WP-ADM-05 (ROADMAP-by-role) · BACKLOG T-M2-52 (this flow), T-M2-28 (build) · addendum to EP-KAW-AUTH |
 | **Requirements** | FR-IAM-12 (MFA: authenticator app **and e-mail code**, no SMS; off / optional / required for all / for selected roles; grace period; **trusted-device duration**) · FR-IAM-13 (lockout, sessions) · FR-NTF-11 / EP-EMAIL (who sends the e-mails) · FR-AUD-01 |
-| **Status** | **In discussion with the PO (answers 21 Oct 2026; Q1 × Q7 to confirm)** (21 Oct 2026) |
+| **Status** | ****Agreed (PO, 21 Oct 2026)** — with the PO answers below** (21 Oct 2026) |
 | **Copied from Kawadir** | Kawadir ATS sign-in: e-mail first, then **password** or **«Email me a code instead»** — a 6-digit code that **replaces the password**, valid 10 minutes, 5 wrong tries per code, a new code at most once a minute, the same answer whether or not the address has an account, always sent by **Kawadir's own platform sender** in the organization's look; the browser remembers the method used last. Kawadir has **no second factor** (its «Require 2FA for admins» switch says «not enforced yet») and **no trusted devices**. **We copy:** the code rules (6 digits, 10 minutes, 5 tries, 1 minute between codes, same answer), the platform sender in the organization's look, remembering the last method. **We do not copy:** a code *instead of* the password (question 1) |
 
 ## 1. Goal
@@ -86,11 +86,11 @@ People who do not want an authenticator app can still use a second step at sign-
 ## PO answers (21 Oct 2026)
 | # | PO answer |
 |---|---|
-| 1 | **Yes — the e-mail code can replace the password** (sign in with e-mail + code, as in Kawadir) — interaction with Q7 to confirm |
+| 1 | **Yes — the e-mail code can replace the password** for people whose role does **not** require MFA (e-mail + code, as in Kawadir). **Roles with MFA required** sign in with password + e-mail code, or with the authenticator app — confirmed |
 | 2 | Approved — 6 digits, 10 minutes, 5 tries, one new code a minute |
 | 3 | Approved — someone with an authenticator app cannot use an e-mail code instead |
 | 4 | **No — codes go through the organization's own e-mail sender when it is set up, otherwise the platform sender** (the WP-ADM-01 sender rule) |
 | 5 | Approved — remember this device: Off / 1 / 7 / 14 / 30 days, default Off |
 | 6 | **No — keep «Code by text message» and «Block reuse of earlier passwords» on the Security page** («Coming soon») |
-| 7 | Approved — an e-mail code satisfies MFA required for roles — to confirm with Q1 |
+| 7 | Approved — an e-mail code is the second step after the password for roles with MFA required (never both factors at once) — confirmed |
 | 8 | Approved — e-mail codes stay off in production until delivery is fast |

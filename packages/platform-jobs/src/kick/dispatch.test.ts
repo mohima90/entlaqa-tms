@@ -23,7 +23,8 @@ const PKCS1_PEM = privateKey.export({ type: 'pkcs1', format: 'pem' }).toString()
 const EC_PEM = generateKeyPairSync('ec', { namedCurve: 'P-256' })
   .privateKey.export({ type: 'pkcs8', format: 'pem' })
   .toString();
-const INSTALLATION_TOKEN = 'ghs_16C7e42F292c6912E7710c838347Ae178B4a';
+// Low-entropy fake (the secret-scanning gate refuses realistic tokens, even in tests).
+const INSTALLATION_TOKEN = 'ghs_test_installation_token_xxxxxxxx';
 const ENV = {
   JOBS_DISPATCH_APP_ID: '123456',
   JOBS_DISPATCH_APP_PRIVATE_KEY: PEM,

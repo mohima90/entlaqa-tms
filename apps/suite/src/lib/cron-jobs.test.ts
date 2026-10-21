@@ -6,7 +6,7 @@ import {
   handleCronJobsRequest,
 } from './cron-jobs';
 
-const SECRET = 'cron-secret-0123456789abcdef';
+const SECRET = 'cron-secret-xxxxxxxxxxxxxxxx';
 
 function call(authorization?: string) {
   return new Request('https://tms.example.com/api/cron/jobs', {

@@ -62,7 +62,7 @@ describe('server settings at start-up (T-M2-17, T-M2-11)', () => {
       { action: 'app.start', reason: 'cron_secret_missing' },
     );
     log.warn.mockClear();
-    checkServerSettings({ ...on, CRON_SECRET: '0123456789abcdef0123' });
+    checkServerSettings({ ...on, CRON_SECRET: 'xxxxxxxxxxxxxxxxxxxx' });
     expect(log.warn).not.toHaveBeenCalledWith(expect.anything(), {
       action: 'app.start',
       reason: 'cron_secret_missing',

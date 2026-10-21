@@ -77,15 +77,26 @@ async function expectNoSeriousViolations(page: Page) {
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
     .analyze();
-  expect(
-    results.violations
-      .filter((v) => v.impact === 'serious' || v.impact === 'critical')
-      // The elements' selectors too, so a failure in CI says which control it is.
-      .map(
-        (v) =>
-          `${v.id}: ${v.help} (${v.nodes.length}) ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`,
-      ),
-  ).toEqual([]);
+  const serious = results.violations.filter(
+    (v) => v.impact === 'serious' || v.impact === 'critical',
+  );
+  // Where each failing element is and what sits on top of it, so a failure in CI names its cause.
+  const details = await Promise.all(
+    serious.flatMap((v) =>
+      v.nodes.map(async (n) => {
+        const selector = n.target.join(' ');
+        const where = await page.evaluate((sel) => {
+          const element = document.querySelector(sel);
+          if (!element) return 'not found';
+          const r = element.getBoundingClientRect();
+          const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+          return `rect ${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}×${Math.round(r.height)} · scrollY ${Math.round(window.scrollY)} · on top: ${top?.tagName ?? '-'}[${top?.getAttribute('data-testid') ?? ''}]`;
+        }, selector);
+        return `${v.id}: ${v.help} — ${selector} — ${n.failureSummary ?? ''} — ${where}`;
+      }),
+    ),
+  );
+  expect(details).toEqual([]);
 }
 
 /** A colour role as the live preview has it (its own custom properties, set from the unsaved values). */

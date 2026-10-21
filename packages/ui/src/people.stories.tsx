@@ -533,7 +533,7 @@ export const PersonProfile: Story = {
         <div className="flex flex-col gap-5">
           <TabNav
             variant="underline"
-            label={pick(globals, { ar: 'أقسام الملف', en: 'Profile sections' })}
+            label={pick(globals, { ar: 'أجزاء الملف', en: 'Profile sections' })}
             current="overview"
             items={[
               {

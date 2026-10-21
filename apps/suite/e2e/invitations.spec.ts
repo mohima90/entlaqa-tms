@@ -170,8 +170,18 @@ test.describe('invitations (admin side)', () => {
     await expect(form.getByRole('combobox', { name: /^Role/ })).toHaveValue('training_coordinator');
     await expect(form.locator('#invite-email')).toHaveValue('');
 
-    // Closing returns to the list (focus on «Invite user»); the Pending invites view shows the invitation.
+    // Something typed: closing asks first (as Edit details; review, 21 Oct 2026).
+    await form.locator('#invite-email').fill('draft@sovereign.example');
     await page.keyboard.press('Escape');
+    const discard = page.getByTestId('discard-dialog');
+    await expect(discard).toBeVisible();
+    await discard.getByRole('button', { name: 'Keep editing' }).last().click();
+    await expect(discard).toBeHidden();
+    await expect(form.locator('#invite-email')).toHaveValue('draft@sovereign.example');
+    await page.keyboard.press('Escape');
+    await discard.getByTestId('discard-confirm').click();
+
+    // Closing returns to the list (focus on «Invite user»); the Pending invites view shows the invitation.
     await expect(page).toHaveURL(/\/en\/suite\/admin\/users$/);
     await expect(page.getByTestId('invite-user-link')).toBeFocused();
     await page.getByRole('link', { name: /Pending invites/ }).click();

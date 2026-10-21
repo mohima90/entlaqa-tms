@@ -135,6 +135,11 @@ export interface RolesSaved {
   /** The unit of a department-limited role before and after (EP-ORG), or null. */
   readonly beforeUnit: string | null;
   readonly afterUnit: string | null;
+  /**
+   * The stored role's version token after the change (redesign package 3): «Undo» in the toast puts the
+   * previous role back through this same action, against this version.
+   */
+  readonly version: string;
 }
 
 function roleAction(
@@ -181,6 +186,7 @@ function roleAction(
         input.scopeUnitId,
       );
       if (!outcome.ok) return err(refusalError(outcome.refusal));
+      const saved = await getEditableRole(ctx.tx, input.personId);
       return ok({
         personId: input.personId,
         changed: outcome.changed,
@@ -188,6 +194,7 @@ function roleAction(
         after: outcome.after,
         beforeUnit: outcome.beforeUnit,
         afterUnit: outcome.afterUnit,
+        version: saved?.version ?? input.version,
       });
     },
     audit: (_input, output) =>

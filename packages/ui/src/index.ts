@@ -70,6 +70,17 @@ export {
   type SortHeaderProps,
   TableSkeleton,
 } from './list-patterns';
+// Redesign package 3 (People & roles, PO 21 Oct 2026): choice cards, instant filter pills, the attention
+// strip and copy buttons.
+export { ChoiceCard, type ChoiceCardProps } from './choice-card';
+export { FilterMenu, type FilterMenuOption, type FilterMenuProps } from './filter-menu';
+export {
+  AttentionItem,
+  type AttentionItemProps,
+  AttentionStrip,
+  type AttentionStripProps,
+} from './attention-strip';
+export { CopyButton, type CopyButtonProps } from './copy-button';
 export { SaveBar, type SaveBarProps, type SaveBarState } from './save-bar';
 export { FormSection, type FormSectionProps, SidePanel, type SidePanelProps } from './side-panel';
 export { type Shortcut, ShortcutsDialog, type ShortcutsDialogProps } from './shortcuts-dialog';
@@ -115,6 +126,7 @@ export {
 export {
   DEFAULT_TOAST_DURATION,
   MAX_TOASTS,
+  type ToastAction,
   type ToastItem,
   type ToastOptions,
   type ToastStore,

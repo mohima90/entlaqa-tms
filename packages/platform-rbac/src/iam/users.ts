@@ -94,6 +94,11 @@ export interface UsersListView {
   readonly scopeUnits: ScopeUnitChoices;
   /** Privileged roles may be given here (the Organization Admin). */
   readonly canAssignPrivileged: boolean;
+  /**
+   * «Edit details» in the row menu (redesign package 3): `platform.user.update`. The rows then say whether
+   * the member may manage each person (`mayManage`); the edit panel checks again (editUserQuery).
+   */
+  readonly canEditDetails: boolean;
   /** The signed-in member's own person (nobody changes their own role: no ⋯ menu on that row). */
   readonly selfPersonId: string | null;
 }
@@ -128,6 +133,7 @@ export function usersListQueryDefinition(): QueryDefinition<
         : null;
       const canDeactivate = ctx.can(p['platform.user.deactivate'], 'tenant');
       const canAssignRoles = canReadRoles && ctx.can(p['platform.role.assign'], 'tenant');
+      const canEditDetails = ctx.can(p['platform.user.update'], 'tenant');
       const list = await listUsers(ctx.tx, {
         scope: personScopeFromGrants(ctx.grants, p['platform.user.read']),
         actorPersonId: ctx.actor.personId,
@@ -139,9 +145,8 @@ export function usersListQueryDefinition(): QueryDefinition<
         ...(input.branch && orgUnits ? { branchId: input.branch } : {}),
         limit: USERS_PAGE_SIZE,
         offset: (input.page - 1) * USERS_PAGE_SIZE,
-        ...((canDeactivate && input.tab === 'deactivated') || canAssignRoles
-          ? { includeManageable: true }
-          : {}),
+        // The row menu (redesign package 3) offers edit, role and deactivation per manageable person.
+        ...(canDeactivate || canAssignRoles || canEditDetails ? { includeManageable: true } : {}),
       });
       return ok({
         list,
@@ -158,6 +163,7 @@ export function usersListQueryDefinition(): QueryDefinition<
         canAssignRoles,
         scopeUnits: canAssignRoles ? await loadScopeUnitChoices(ctx) : NO_SCOPE_UNITS,
         canAssignPrivileged: ctx.can(p['platform.role.assign_privileged'], 'tenant'),
+        canEditDetails,
         selfPersonId: ctx.actor.personId ?? null,
       });
     },

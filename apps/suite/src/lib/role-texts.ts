@@ -24,6 +24,8 @@ const EDIT_ROLE_KEYS = [
   'editRole',
   'dialogTitle',
   'close',
+  // The change-role panel (redesign package 3).
+  'current',
 ] as const;
 
 /** Keys whose text keeps a `{name}` placeholder (filled in on the client per member). */
@@ -34,6 +36,9 @@ export async function editRoleLabels(locale: 'ar' | 'en'): Promise<Record<string
   const t = await getTranslations({ locale, namespace: 'editRoles' });
   const labels: Record<string, string> = Object.fromEntries(EDIT_ROLE_KEYS.map((k) => [k, t(k)]));
   for (const key of NAMED_KEYS) labels[key] = t(key, { name: '{name}' });
+  // Raw: the panel fills `{name}` (and the Undo toast `{role}`) on the client.
+  labels.titleFor = String(t.raw('titleFor'));
+  labels.undone = String(t.raw('undone'));
   return labels;
 }
 

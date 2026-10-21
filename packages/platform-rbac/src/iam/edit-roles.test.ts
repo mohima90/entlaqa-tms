@@ -249,6 +249,12 @@ describe('changing the role', () => {
   it('HR Manager: an ordinary role, audited with the role before and after', async () => {
     const { rt, writeAudit } = runtime(['hr_manager']);
     const save = createDefineAction(rt)(updateMemberRolesActionDefinition());
+    // The stored role is read again after the change: its new version lets «Undo» (redesign package 3)
+    // put the previous role back through this same action.
+    const NEW_TOKEN = 'learner:5c1d2b3f-9a4e-4d2f-8b8c-3e6f7a8b9c0e:1';
+    db.getEditableRole
+      .mockResolvedValueOnce(editable())
+      .mockResolvedValueOnce(editable({ roleCode: 'learner', version: NEW_TOKEN }));
     expect(await save(form('learner'))).toEqual(
       ok({
         personId: SARA,
@@ -257,6 +263,7 @@ describe('changing the role', () => {
         after: 'learner',
         beforeUnit: null,
         afterUnit: null,
+        version: NEW_TOKEN,
       }),
     );
     // The organization's role lock comes first: the roles are read after it (security review L5).
@@ -437,7 +444,7 @@ describe('changing the role', () => {
       changed: false,
     });
     expect(await save(form('learner'))).toEqual(
-      ok({ personId: SARA, changed: false, before: 'learner', after: 'learner' }),
+      ok({ personId: SARA, changed: false, before: 'learner', after: 'learner', version: TOKEN }),
     );
     expect(writeAudit).not.toHaveBeenCalled();
   });

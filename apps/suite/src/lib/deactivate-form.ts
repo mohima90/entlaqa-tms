@@ -5,11 +5,6 @@ import type { AppError } from '@jadarat/platform-core';
  * (client). The server repeats every rule; these only shape the input and the messages.
  */
 
-/** Users-list flash after a deactivation (`?tab=deactivated&deactivated=1`). */
-export const DEACTIVATED_FLASH_PARAM = 'deactivated';
-/** Flash after a reactivation, on the profile or the users list (`?reactivated=1`). */
-export const REACTIVATED_FLASH_PARAM = 'reactivated';
-
 /** One kind of item the person is responsible for, as the form shows it. */
 export interface DeactivationKindView {
   readonly code: string;

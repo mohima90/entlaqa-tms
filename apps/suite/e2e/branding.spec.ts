@@ -74,6 +74,12 @@ const SVG = Buffer.from(
 );
 
 async function expectNoSeriousViolations(page: Page) {
+  // From the top of the page: after an image is removed the form gets shorter, and the scroll position
+  // can leave a control half behind the sticky top bar, which axe then measures as obscured (2.5.8:
+  // in CI the browser-icon Upload button under the language switch). Axe still checks every element.
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+  });
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
     .analyze();

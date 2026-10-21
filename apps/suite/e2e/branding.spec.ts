@@ -238,8 +238,8 @@ test.describe('branding saved', () => {
     await expect(page).toHaveURL(/\/en\/(suite|mfa)$/, afterSignIn);
     await page.goto('/en/suite/admin/branding');
     await page.getByRole('button', { name: 'Use the Burgundy colours' }).click();
-    await page.getByTestId('branding-save').click();
-    await expect(page.getByTestId('branding-message')).toContainText('Branding saved');
+    await page.getByTestId('save-bar-save').click();
+    await expect(page.getByText('Branding saved', { exact: false })).toBeVisible();
     await page.reload();
     const current = await page
       .locator('html')
@@ -247,8 +247,8 @@ test.describe('branding saved', () => {
     expect(current).toBe('#7A1F2B');
     // Back to the Jadarat look for the next run.
     await page.getByTestId('brand-reset').click();
-    await page.getByTestId('branding-save').click();
-    await expect(page.getByTestId('branding-message')).toContainText('Branding saved');
+    await page.getByTestId('save-bar-save').click();
+    await expect(page.getByText('Branding saved', { exact: false })).toBeVisible();
   });
 
   test('an HR Manager is refused', async ({ page }) => {

@@ -431,7 +431,8 @@ test.describe('organization structure (HR Manager)', () => {
     // Deactivate the team, then delete it and its parent.
     await team.getByTestId('unit-menu').click();
     await hrPage.getByTestId('unit-menu-status').click();
-    await hrPage.getByTestId('unit-status-dialog').getByTestId('confirm-dialog-confirm').click();
+    await expect(hrPage.getByTestId('unit-status-dialog')).toHaveCount(0);
+    await expect(hrPage.getByTestId('toast-action')).toHaveText('Undo');
     await expect(team.getByTestId('unit-inactive')).toHaveText('Inactive');
     await team.getByTestId('unit-menu').click();
     await hrPage.getByTestId('unit-menu-delete').click();

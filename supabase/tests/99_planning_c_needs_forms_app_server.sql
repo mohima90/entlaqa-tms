@@ -4,6 +4,7 @@
 -- a form a cycle uses cannot be deleted, and another organization's form is never a cycle's form. Fixtures:
 -- 00_helpers_and_fixtures.sql (forms a7…01 / b7…01, cycle ae…01), 99_planning_a_fixtures_owner.sql (uL, the
 -- L&D Manager of A; open cycle ae…02 past its deadline). Each block is rolled back.
+-- Dates are the organization's calendar day (private.plan_cycle_today), as the guards use — never current_date.
 \set ON_ERROR_STOP on
 
 -- ---- default form, other organizations' forms -----------------------------------------------------
@@ -18,17 +19,17 @@ declare
 begin
   perform tests.assert(v_default is not null, 'tenant A has a default needs form');
   insert into tms.plan_cycles (name_ar, name_en, period_start_on, period_end_on, deadline_on)
-    values ('خطة', 'Plan', current_date, current_date + 300, current_date + 10) returning id into v_id;
+    values ('خطة', 'Plan', private.plan_cycle_today('a0000000-0000-4000-8000-000000000001'), private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 300, private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 10) returning id into v_id;
   perform tests.assert_eq((select needs_form_id from tms.plan_cycles where id = v_id), v_default,
     'a new cycle without a chosen form gets the organization''s default form');
   insert into tms.plan_cycles (name_ar, name_en, period_start_on, period_end_on, deadline_on, needs_form_id)
-    values ('خطة ٢', 'Plan 2', current_date, current_date + 300, current_date + 10, 'a7000000-0000-4000-8000-000000000001')
+    values ('خطة ٢', 'Plan 2', private.plan_cycle_today('a0000000-0000-4000-8000-000000000001'), private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 300, private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 10, 'a7000000-0000-4000-8000-000000000001')
     returning id into v_id;
   perform tests.assert_eq((select needs_form_id from tms.plan_cycles where id = v_id),
     'a7000000-0000-4000-8000-000000000001'::uuid, 'a chosen form is kept');
 
   -- Tenant B's form (b7…01): the composite foreign key refuses it on insert and on update.
-  perform tests.assert_fails($q$insert into tms.plan_cycles (name_ar, name_en, period_start_on, period_end_on, deadline_on, needs_form_id) values ('دخيل', 'Intruder', current_date, current_date + 300, current_date + 10, 'b7000000-0000-4000-8000-000000000001')$q$,
+  perform tests.assert_fails($q$insert into tms.plan_cycles (name_ar, name_en, period_start_on, period_end_on, deadline_on, needs_form_id) values ('دخيل', 'Intruder', private.plan_cycle_today('a0000000-0000-4000-8000-000000000001'), private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 300, private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 10, 'b7000000-0000-4000-8000-000000000001')$q$,
     array['23503'], 'a new cycle never uses another organization''s form');
   perform tests.assert_fails($q$update tms.plan_cycles set needs_form_id = 'b7000000-0000-4000-8000-000000000001' where id = 'ae000000-0000-4000-8000-000000000001'$q$,
     array['23503'], 'a draft never moves to another organization''s form');
@@ -113,7 +114,7 @@ declare
   v_id uuid;
 begin
   insert into tms.plan_cycles (name_ar, name_en, period_start_on, period_end_on, deadline_on)
-    values ('خطة', 'Plan', current_date, current_date + 300, current_date + 10) returning id into v_id;
+    values ('خطة', 'Plan', private.plan_cycle_today('b0000000-0000-4000-8000-000000000001'), private.plan_cycle_today('b0000000-0000-4000-8000-000000000001') + 300, private.plan_cycle_today('b0000000-0000-4000-8000-000000000001') + 10) returning id into v_id;
   perform tests.assert((select c.needs_form_id = f.id and f.tenant_id = 'b0000000-0000-4000-8000-000000000001'::uuid
                         from tms.plan_cycles c join tms.needs_forms f on f.id = c.needs_form_id where c.id = v_id),
     'tenant B''s new cycle gets tenant B''s default form');

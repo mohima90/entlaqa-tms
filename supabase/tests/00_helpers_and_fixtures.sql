@@ -413,9 +413,9 @@ insert into tms.planning_default_steps (tenant_id, position, kind, name_ar, name
   ('b0000000-0000-4000-8000-000000000001', 1, 'department_heads', 'رؤساء الأقسام', 'Department Heads', null);
 insert into tms.plan_cycles (id, tenant_id, name_ar, name_en, period_start_on, period_end_on, deadline_on) values
   ('ae000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'خطة ٢٠٢٧', 'Plan 2027',
-   current_date + 60, current_date + 424, current_date + 30),
+   private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 60, private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 424, private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 30),
   ('be000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'خطة ب', 'Plan B',
-   current_date + 60, current_date + 424, current_date + 30);
+   private.plan_cycle_today('b0000000-0000-4000-8000-000000000001') + 60, private.plan_cycle_today('b0000000-0000-4000-8000-000000000001') + 424, private.plan_cycle_today('b0000000-0000-4000-8000-000000000001') + 30);
 insert into tms.plan_cycle_scope (tenant_id, cycle_id, department_id, branch_id) values
   ('a0000000-0000-4000-8000-000000000001', 'ae000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001', null),
   ('b0000000-0000-4000-8000-000000000001', 'be000000-0000-4000-8000-000000000001', null, 'b2000000-0000-4000-8000-000000000001');

@@ -484,7 +484,7 @@ select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1'
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
 do $$
 begin
-  perform tests.assert_rls_violation($q$insert into tms.plan_cycles (tenant_id, name_ar, name_en, period_start_on, period_end_on, deadline_on) values ('b0000000-0000-4000-8000-000000000001', 'دخيل', 'Intruder', current_date, current_date + 300, current_date + 10)$q$,
+  perform tests.assert_rls_violation($q$insert into tms.plan_cycles (tenant_id, name_ar, name_en, period_start_on, period_end_on, deadline_on) values ('b0000000-0000-4000-8000-000000000001', 'دخيل', 'Intruder', private.plan_cycle_today('b0000000-0000-4000-8000-000000000001'), private.plan_cycle_today('b0000000-0000-4000-8000-000000000001') + 300, private.plan_cycle_today('b0000000-0000-4000-8000-000000000001') + 10)$q$,
     'plan_cycles: insert with tenant B tenant_id is rejected by RLS');
   perform tests.assert_eq(tests.rows_affected($q$update tms.plan_cycles set name_en = 'x' where id = 'be000000-0000-4000-8000-000000000001'$q$),
     0::bigint, 'plan_cycles: RLS filters tenant B cycle by id');

@@ -71,6 +71,7 @@
     "notificationsEmptyTitle": "لا توجد إشعارات بعد",
     "notificationsEmptyBody": "ستظهر هنا الإشعارات المتعلقة بالتدريب والموافقات.",
     "statusMessages": "رسائل الحالة",
+    "toastActionHint": "يمكنك استخدام «{action}» من هذه الرسالة إلى أن تغلقها.",
     "accountSubtitle": "{organization} · {role}",
     "myAccount": "حسابي",
     "groupOrganization": "المنشأة",

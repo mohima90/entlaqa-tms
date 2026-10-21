@@ -19,16 +19,22 @@ export interface ToasterProps {
   readonly closeLabel: string;
   /** The queue (tests and stories pass their own). */
   readonly store?: ToastStore | undefined;
+  /**
+   * Read by screen readers after a toast with an action, `{action}` replaced by its button: says the action
+   * is there and stays until the toast is closed (e.g. "You can use “Undo” from this message until you
+   * close it.").
+   */
+  readonly actionHint?: string | undefined;
 }
 
 /**
  * The toasts of the page (direction C: dark rounded toasts at the bottom end): a polite live region,
  * newest last, each with an icon, its text and a close button. The icon is in the toast's text colour
  * (the words say what happened). A toast hides itself after its duration unless the pointer
- * or focus is on it (WCAG 2.2.1); errors stay until closed. Bottom end = bottom right in English,
- * bottom left in Arabic.
+ * or focus is on it (WCAG 2.2.1); errors and toasts with an action (Undo…) stay until closed, and the
+ * announcement says the action is there. Bottom end = bottom right in English, bottom left in Arabic.
  */
-export function Toaster({ label, closeLabel, store = toastStore }: ToasterProps) {
+export function Toaster({ label, closeLabel, store = toastStore, actionHint }: ToasterProps) {
   const items = useSyncExternalStore(store.subscribe, store.items, () => EMPTY);
   return (
     <section
@@ -39,7 +45,13 @@ export function Toaster({ label, closeLabel, store = toastStore }: ToasterProps)
     >
       <ol className="m-0 flex list-none flex-col gap-2 p-0">
         {items.map((item) => (
-          <Toast key={item.id} item={item} closeLabel={closeLabel} store={store} />
+          <Toast
+            key={item.id}
+            item={item}
+            closeLabel={closeLabel}
+            store={store}
+            actionHint={actionHint}
+          />
         ))}
       </ol>
     </section>
@@ -52,10 +64,12 @@ function Toast({
   item,
   closeLabel,
   store,
+  actionHint,
 }: {
   readonly item: ToastItem;
   readonly closeLabel: string;
   readonly store: ToastStore;
+  readonly actionHint: string | undefined;
 }) {
   const [paused, setPaused] = useState(false);
   const remaining = useRef(item.duration);
@@ -103,6 +117,11 @@ function Toast({
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <p className="m-0 font-medium">{item.message}</p>
         {item.description ? <p className="m-0">{item.description}</p> : null}
+        {item.action && actionHint ? (
+          <p className="sr-only" data-testid="toast-action-hint">
+            {actionHint.split('{action}').join(item.action.label)}
+          </p>
+        ) : null}
       </div>
       {item.action ? (
         // The toast's one action (Undo, Reactivate…): underlined text on the dark pill, 44 px on touch.

@@ -4,7 +4,7 @@
 |---|---|
 | **Work package** | WP-ADM-04 (ROADMAP-by-role) · BACKLOG T-M2-51 (this flow), T-M2-15b (photo), T-M2-25 (fields) |
 | **Requirements** | FR-IAM-16 (My profile: own photo) · FR-IAM-01 (photo, grade) · FR-IAM-02 (gender, date of birth, employment category — restricted to HR / Compliance) · FR-IAM-04 (import columns) · NFR-SEC-08 (uploads scanned, type-checked, private) · FR-AUD-01 |
-| **Status** | **Draft — for PO review** (21 Oct 2026) |
+| **Status** | **In discussion with the PO (answers 21 Oct 2026; Q3, Q4 to confirm)** (21 Oct 2026) |
 | **Copied from Kawadir** | Kawadir ATS **My profile** (`/org/profile`): a round photo with **Upload photo** («JPG, PNG or GIF, max 2 MB»), shown in the header and on the Team members list; the person uploads their own photo only; there is no remove button. Files go to a public folder of the organization, any image type is accepted by its declared type (SVG and GIF included) and nothing is scanned. Kawadir has **no** gender / date of birth / category fields for staff (only for candidates); its **grades** are an HR-managed list (English/Arabic name, grade range) used on jobs. **We copy:** own photo on My profile, the 2 MB limit, where the photo shows. **We do not copy:** public files, SVG/GIF, type by declared name, no scanning; we add **Remove**. Gender, date of birth, category and grade come from the BRD, not Kawadir |
 
 ## 1. Goal
@@ -84,3 +84,17 @@ Everyone can put a face to a name: each person adds their own photo, seen wherev
 | 7 | Size limit: Kawadir's **2 MB**, with big phone photos shrunk automatically before upload? | **Yes** | |
 | 8 | May HR Manager / Organization Admin **remove** (never upload) someone's photo? | **Yes**, with a reason; the person is e-mailed | |
 | 9 | May the HR Manager fill HR-only fields for privileged members (BR-PPL-f)? | **Yes** — the fields give no access | |
+
+
+## PO answers (21 Oct 2026)
+| # | PO answer |
+|---|---|
+| 1 | Approved — the Organization Admin does not see or edit the HR-only fields (gender, date of birth, employment category) |
+| 2 | **Grade is not HR-only: the Organization Admin sees and edits it as well** (with HR) |
+| 3 | **Grade is not free text:** a number, or a symbol + number (e.g. `7`, `G7`), and **unique** — to confirm: the organization keeps a list of grade codes, each code unique, and a person is given one of them |
+| 4 | Clarification asked (employment category list) |
+| 5 | Approved — a person sees their own HR details, read-only |
+| 6 | **Not approved — profile photos are not virus-scanned** (same rule as branding images: type by content, size, metadata removal) |
+| 7 | Approved — up to 2 MB, large phone photos shrunk |
+| 8 | **No — nobody can remove another person's photo** (only the person changes or removes their own) |
+| 9 | Approved — HR may fill HR-only fields for privileged members |

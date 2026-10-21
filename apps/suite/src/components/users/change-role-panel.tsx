@@ -1,7 +1,7 @@
 'use client';
 import { Alert, Avatar, Badge, Button, ChoiceCard, SidePanel, toast } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
-import { type SyntheticEvent, useId, useState, useTransition } from 'react';
+import { type SyntheticEvent, useCallback, useId, useState, useTransition } from 'react';
 import { updateMemberPrivilegedRolesAction, updateMemberRolesAction } from '../../actions/users';
 import { fillText } from '../../lib/fill-text';
 import {
@@ -32,6 +32,10 @@ export interface RoleTarget {
 
 export interface ChangeRolePanelProps {
   readonly open: boolean;
+  /**
+   * Called once the panel has closed (Escape, ✕, Cancel, saved) — always through the native dialog, so its
+   * focus return runs first; the caller then removes it and may move focus to a known element.
+   */
   readonly onClose: () => void;
   readonly target: RoleTarget;
   readonly options: readonly RoleOption[];
@@ -54,9 +58,10 @@ export interface ChangeRolePanelProps {
  * current one marked; roles the member may not give are greyed with the reason (privileged roles: the
  * Organization Admin). A department-limited custom role asks for its unit inside its card. Same rules,
  * actions and audit as before (T-M2-14, FR-IAM-07/08; EP-ROLES; EP-ORG). Saved → the panel closes with a
- * toast offering «Undo» for about 10 seconds — only when the member may give the previous role back; Undo
- * is a normal role change back through the same action and checks, so it writes its own audit entry (PO,
- * 21 Oct 2026).
+ * toast offering «Undo» — only when the member may give the previous role back; Undo is a normal role
+ * change back through the same action and checks, so it writes its own audit entry (PO, 21 Oct 2026). The
+ * PO asked for about 10 seconds; the review of 21 Oct 2026 keeps a toast with an action until it is closed
+ * (WCAG 2.2.1 / 2.1.1: keyboard and screen-reader users must be able to reach it).
  */
 export function ChangeRolePanel(props: ChangeRolePanelProps) {
   const { labels, options, target } = props;
@@ -79,9 +84,14 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
     props.scopeUnits.some((u) => u.id === target.currentUnit && !u.active);
   const nameOf = (code: string) => options.find((o) => o.code === code)?.name ?? code;
 
+  // Closing goes through the dialog (`open` false → native close → focus return → `onClose`), never by
+  // removing an open dialog (focus would be lost; review, 21 Oct 2026).
+  const [shown, setShown] = useState(true);
   const close = () => {
-    if (!pending) props.onClose();
+    if (!pending) setShown(false);
   };
+  // Escape, ✕ and the backdrop wait while the change is being saved.
+  const canClose = useCallback(() => !pending, [pending]);
 
   /** Puts the previous role (and unit) back: a role change like any other (same action, own audit entry). */
   const undo = (version: string, previous: string, previousUnit: string | null, next: string) => {
@@ -149,7 +159,6 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
             ? previous
             : null;
         toast.success(text('saved'), {
-          duration: 10_000,
           action:
             undoTo === null
               ? undefined
@@ -160,7 +169,7 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
                   },
                 },
         });
-        props.onClose();
+        setShown(false);
         router.refresh();
         return;
       }
@@ -239,8 +248,9 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
 
   return (
     <SidePanel
-      open={props.open}
-      onClose={close}
+      open={props.open && shown}
+      onClose={props.onClose}
+      canClose={canClose}
       title={
         <span className="flex items-center gap-3">
           <Avatar name={target.name} size="md" />

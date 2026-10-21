@@ -201,7 +201,8 @@ test.describe('sign-in protection', () => {
     const t = TEXTS[locale];
     const admin = await freshBrowser(browser);
     await signIn(admin.page, locale, email ?? '', password ?? '');
-    await admin.page.goto(`/${locale}/suite/admin/users/${memberPersonId ?? ''}`);
+    // Sign-in and security: the profile's own tab since redesign package 3.
+    await admin.page.goto(`/${locale}/suite/admin/users/${memberPersonId ?? ''}?tab=security`);
     const lock = admin.page.getByTestId('sign-in-lock');
     await expect(lock).toContainText(t.lockTitle);
     await lock.getByRole('button', { name: t.unlock }).click();

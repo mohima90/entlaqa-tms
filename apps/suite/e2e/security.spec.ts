@@ -545,7 +545,8 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
 
       // The admin's own sign-in now needs the code too (required for everyone).
       await signInWithCode(admin, 'en', adminEmail, adminPassword, adminKey);
-      await admin.goto(`/en/suite/admin/users/${MONA}`);
+      // Sign-in and security: the profile's own tab since redesign package 3.
+      await admin.goto(`/en/suite/admin/users/${MONA}?tab=security`);
       await expect(admin.getByTestId('user-mfa-status')).toContainText(
         'On · authenticator app since',
       );
@@ -587,7 +588,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     await expireAccessToken(context);
     await page.goto('/en/suite/admin/security');
     await expect(page.getByTestId('security-passwordMinLength')).toBeEnabled();
-    const profile = `/en/suite/admin/users/${MONA}`;
+    const profile = `/en/suite/admin/users/${MONA}?tab=security`;
     await page.goto(profile);
     await expect(page.getByTestId('user-mfa-reset-support')).toContainText('ENTLAQA support');
 
@@ -622,7 +623,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
       await enterMailedCode(member, mailedCode(memberEmail, 4));
       await expect(member).toHaveURL(/\/en\/suite$/, afterSignIn);
       // A line manager (no user management): her report's profile has no sessions and no reset.
-      await member.goto(`/en/suite/admin/users/${KHALID}`);
+      await member.goto(`/en/suite/admin/users/${KHALID}?tab=security`);
       await expect(member.getByTestId('user-profile')).toBeVisible();
       await expect(member.getByTestId('user-mfa-reset')).toHaveCount(0);
       await expect(member.getByTestId('sessions-member')).toHaveCount(0);
@@ -630,7 +631,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
 
     await withContext(browser, async (admin) => {
       await signInWithCode(admin, 'ar', adminEmail, adminPassword, adminKey);
-      await admin.goto(`/ar/suite/admin/users/${MONA}`);
+      await admin.goto(`/ar/suite/admin/users/${MONA}?tab=security`);
       await expect(admin.locator('html')).toHaveAttribute('dir', 'rtl');
       await expect(admin.getByTestId('user-mfa-status')).toContainText(
         'مفعّل · تطبيق المصادقة منذ',

@@ -302,6 +302,7 @@ export function MembersTable(props: MembersTableProps) {
               <span className="flex flex-wrap items-center gap-2.5 text-[13px] text-text-muted">
                 {status(row)}
                 {row.employeeNumber ? <bdi dir="ltr">{row.employeeNumber}</bdi> : null}
+                <span data-testid="user-last-sign-in">{row.lastSignIn}</span>
               </span>
             }
             action={reactivate(row) ?? menu(row)}

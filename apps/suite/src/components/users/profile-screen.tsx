@@ -363,6 +363,7 @@ async function profilePage(
 
   const header = (
     <PageHeader
+      data-testid="profile-header"
       breadcrumbs={[
         { label: t('breadcrumb'), href: `/${locale}/suite/admin/users` },
         { label: name },

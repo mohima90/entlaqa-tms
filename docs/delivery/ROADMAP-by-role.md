@@ -331,7 +331,7 @@ Role order (PO, 17 Oct 2026). Within a role, top to bottom. **A free account tak
 | 8 | WP-ADM-08 | Consent settings | Legal answers first |
 | 9 | WP-ADM-09 | Suite / standalone mode | Flow to write |
 | 10 | WP-ADM-10 | LMS connection | Jadarat LMS APIs |
-| 11 | WP-ADM-11 | Self-service sign-up + wizard | PO decision first |
+| 11 | WP-ADM-11 | Self-service sign-up + wizard | R1 confirmed (PO, 21 Oct 2026) — flow to write |
 | 12 | WP-ADM-12 | Admin home | Last |
 | 13 | WP-HR-01 | Structure completion (cost centres, move, CSV, branch GPS / hours) | Flow addendum; after WP-FIX-01 |
 | 14 | WP-HR-02 | Compliance | M5 |

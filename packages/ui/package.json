@@ -25,32 +25,32 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@axe-core/playwright": "4.13.0",
+    "@axe-core/playwright": "4.14.0",
     "@jadarat/config": "workspace:*",
-    "@playwright/test": "1.64.0",
-    "@storybook/addon-a11y": "10.6.1",
-    "@storybook/react-vite": "10.6.1",
+    "@playwright/test": "1.64.1",
+    "@storybook/addon-a11y": "10.6.2",
+    "@storybook/react-vite": "10.6.2",
     "@tailwindcss/vite": "4.3.3",
-    "@types/node": "24.19.1",
+    "@types/node": "24.19.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "@vitest/coverage-v8": "5.0.3",
+    "@vitest/coverage-v8": "5.0.5",
     "happy-dom": "20.14.5",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
-    "storybook": "10.6.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "storybook": "10.6.2",
     "tailwindcss": "4.3.3",
     "typescript": "6.0.3",
     "vite": "8.3.4",
-    "vitest": "5.0.3"
+    "vitest": "5.0.5"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "5.3.0",
     "@fontsource/ibm-plex-sans-arabic": "5.3.0",
     "@fontsource/poppins": "5.3.0",
-    "@radix-ui/react-dropdown-menu": "2.1.24",
-    "@radix-ui/react-tooltip": "1.2.16",
+    "@radix-ui/react-dropdown-menu": "2.2.1",
+    "@radix-ui/react-tooltip": "1.4.1",
     "cmdk": "1.1.1",
-    "lucide-react": "1.48.0"
+    "lucide-react": "1.59.0"
   }
 }

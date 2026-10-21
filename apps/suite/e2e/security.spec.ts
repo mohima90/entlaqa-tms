@@ -335,6 +335,8 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
       'The code is incorrect. Check the newest email and try again.',
       afterSignIn,
     );
+    // Focus moves to the code field (its description reads the message out).
+    await expect(page.getByTestId('mfa-email-code')).toBeFocused();
     // "Send the email again": not within 2 minutes of the last one…
     await page.getByTestId('mfa-pending-resend').click();
     await expect(page.getByTestId('mfa-pending-message')).toHaveText(
@@ -510,6 +512,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
       'الرمز غير صحيح أو انتهت صلاحيته. يمكنك إدخال الرمز الظاهر الآن في التطبيق.',
       afterSignIn,
     );
+    await expect(page.getByTestId('mfa-code')).toBeFocused();
     await expectNoSeriousA11yViolations(page);
     await enterCode(page, memberKey);
     await expect(page).toHaveURL(/\/ar\/suite$/, afterSignIn);

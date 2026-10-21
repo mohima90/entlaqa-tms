@@ -1,7 +1,7 @@
 'use client';
-import { Alert, Button, TextField, buttonClasses } from '@jadarat/ui';
+import { Alert, Button, buttonClasses } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
-import { type SyntheticEvent, useState, useTransition } from 'react';
+import { type SyntheticEvent, useEffect, useRef, useState, useTransition } from 'react';
 import {
   confirmMfaSetupAction,
   dismissMfaPromptAction,
@@ -11,7 +11,15 @@ import {
   verifyTotpCodeAction,
 } from '../../auth/mfa';
 import { looksLikeEmailSetupCode, looksLikeTotpCode } from '../../lib/totp-code-shape';
+import { AuthField, AuthSpinner, authPrimaryButton } from '../auth/auth-field';
+import { AuthIcon } from '../auth/auth-icons';
 import { type ErrorTexts, errorText } from '../auth/error-text';
+
+/**
+ * A wrong code is said ON the code field (direction C, redesign package 1; same texts); any other refusal
+ * (too many tries, an expired set-up, an outage) stays a banner.
+ */
+const WRONG_CODE = new Set(['MFA_CODE_INVALID', 'MFA_EMAIL_CODE_INVALID']);
 
 /**
  * The authenticator-app steps of the /mfa page (FR-IAM-12, T-M2-10; screen 8 step 2): a code from the
@@ -112,6 +120,17 @@ function CodeForm({
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<string | undefined>(undefined);
+  // The field's error is the server's answer to a wrong code (test id `mfa-error`), or its format.
+  const [fieldErrorFromServer, setFieldErrorFromServer] = useState(false);
+  const codeRef = useRef<HTMLInputElement>(null);
+  // The code field is disabled while checking, so focus moves to it once a wrong code is shown.
+  const focusCode = useRef(false);
+
+  useEffect(() => {
+    if (pending || !focusCode.current) return;
+    focusCode.current = false;
+    codeRef.current?.focus();
+  }, [pending, fieldError]);
 
   function submit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -119,21 +138,30 @@ function CodeForm({
     const code = typeof value === 'string' ? value : '';
     setMessage(null);
     setFieldError(undefined);
+    setFieldErrorFromServer(false);
     if (!field.looksValid(code)) {
       setFieldError(field.formatError);
+      codeRef.current?.focus();
       return;
     }
     startTransition(async () => {
       const result = await onSubmit(code);
-      if (!result.ok) setMessage(errorText(result.error, errors));
+      if (result.ok) return;
+      if (WRONG_CODE.has(result.error.code)) {
+        setFieldError(errorText(result.error, errors));
+        setFieldErrorFromServer(true);
+        focusCode.current = true;
+      } else setMessage(errorText(result.error, errors));
     });
   }
 
   return (
-    <form className="flex max-w-sm flex-col gap-4" onSubmit={submit} noValidate>
-      <TextField
+    <form className="flex flex-col gap-4" onSubmit={submit} noValidate>
+      {/* One large spaced code field (one input, `one-time-code` autofill). */}
+      <AuthField
         id={id}
         name="code"
+        shape="box"
         label={field.label}
         hint={field.hint}
         inputMode="numeric"
@@ -141,8 +169,17 @@ function CodeForm({
         maxLength={16}
         required
         dir="ltr"
+        ref={codeRef}
+        onChange={() => {
+          if (fieldError) {
+            setFieldError(undefined);
+            setFieldErrorFromServer(false);
+          }
+        }}
         error={fieldError}
+        errorTestId={fieldErrorFromServer ? 'mfa-error' : undefined}
         disabled={pending}
+        inputClassName="min-h-16 text-center font-mono text-[26px] tracking-[0.5em]"
         data-testid={field.testId}
       />
       {message ? (
@@ -150,11 +187,17 @@ function CodeForm({
           {message}
         </Alert>
       ) : null}
-      <div>
-        <Button type="submit" disabled={pending} data-testid={`${field.testId}-submit`}>
-          {pending ? pendingLabel : submitLabel}
-        </Button>
-      </div>
+      <button
+        type="submit"
+        disabled={pending}
+        aria-busy={pending || undefined}
+        className={authPrimaryButton}
+        data-testid={`${field.testId}-submit`}
+      >
+        {pending ? <AuthSpinner /> : null}
+        {pending ? pendingLabel : submitLabel}
+        {pending ? null : <AuthIcon name="arrow" />}
+      </button>
     </form>
   );
 }
@@ -198,6 +241,18 @@ interface Setup {
   readonly factorId: string;
   readonly qrCode: string;
   readonly secret: string;
+}
+
+/** A step's number in a gradient circle (decorative: the steps are in reading order). */
+function StepNumber({ n }: { readonly n: number }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="grid size-6.5 shrink-0 place-items-center rounded-full bg-brand-gradient text-[13px] font-bold text-on-brand"
+    >
+      {n}
+    </span>
+  );
 }
 
 /** The secret in groups of four, for typing it into an app. */
@@ -254,13 +309,21 @@ export function MfaSetup({
             </Alert>
           ) : null}
           <div className="flex flex-wrap gap-3">
-            <Button type="button" onClick={start} disabled={pending} data-testid="mfa-start">
+            <Button
+              type="button"
+              size="lg"
+              onClick={start}
+              disabled={pending}
+              busy={pending}
+              data-testid="mfa-start"
+            >
               {pending ? texts.starting : texts.start}
             </Button>
             {skip ? (
               <Button
                 type="button"
                 variant="secondary"
+                size="lg"
                 onClick={later}
                 disabled={pending}
                 data-testid="mfa-skip"
@@ -275,32 +338,42 @@ export function MfaSetup({
         </>
       ) : (
         <>
-          <div className="flex flex-col gap-3">
-            <p className="m-0 font-medium">{texts.scanStep}</p>
+          {/* Numbered steps (direction C): the QR code next to the key, then the first code. */}
+          <div className="flex flex-col gap-5 md:flex-row md:items-start">
             {/* Auth's QR code (an SVG data URL; CSP img-src allows data:). */}
             {/* eslint-disable-next-line @next/next/no-img-element -- a data URL, not an optimisable image */}
             <img
               src={setup.qrCode}
               alt={texts.qrAlt}
-              width={200}
-              height={200}
-              className="rounded-md border border-border bg-white p-2"
+              width={184}
+              height={184}
+              className="shrink-0 self-center rounded-lg border border-border bg-white p-2 md:self-start"
               data-testid="mfa-qr"
             />
-            <p className="m-0 text-sm text-text-muted">{texts.keyStep}</p>
-            <p className="m-0">
-              <span className="sr-only">{texts.keyLabel}: </span>
-              <code
-                dir="ltr"
-                className="inline-block select-all rounded-md bg-surface-hover px-3 py-2 font-mono text-base tracking-wider"
-                data-testid="mfa-secret"
-              >
-                {grouped(setup.secret)}
-              </code>
-            </p>
+            <div className="flex min-w-0 flex-col gap-3">
+              <p className="m-0 flex items-start gap-3 font-semibold">
+                <StepNumber n={1} />
+                {texts.scanStep}
+              </p>
+              <p className="m-0 text-sm text-text-muted">{texts.keyStep}</p>
+              <p className="m-0">
+                <span className="sr-only">{texts.keyLabel}: </span>
+                <code
+                  dir="ltr"
+                  className="inline-block select-all rounded-md bg-surface-hover px-3.5 py-2.5 font-mono text-base tracking-[0.12em]"
+                  data-testid="mfa-secret"
+                >
+                  {grouped(setup.secret)}
+                </code>
+              </p>
+            </div>
           </div>
+          <div className="h-px bg-border" role="presentation" />
           <div className="flex flex-col gap-3">
-            <p className="m-0 font-medium">{texts.codeStep}</p>
+            <p className="m-0 flex items-start gap-3 font-semibold">
+              <StepNumber n={2} />
+              {texts.codeStep}
+            </p>
             <CodeForm
               id="mfa-setup-code"
               field={appCodeField(texts)}
@@ -410,6 +483,7 @@ export function MfaPending({
           variant="secondary"
           onClick={resend}
           disabled={pending}
+          busy={pending && running === 'resend'}
           data-testid="mfa-pending-resend"
         >
           {pending && running === 'resend' ? texts.resending : texts.resend}
@@ -517,6 +591,7 @@ export function MfaElsewhere({
           variant="danger"
           onClick={remove}
           disabled={pending}
+          busy={pending}
           data-testid="mfa-elsewhere-remove"
         >
           {pending ? texts.removing : texts.remove}

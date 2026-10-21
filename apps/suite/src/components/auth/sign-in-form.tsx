@@ -16,10 +16,13 @@ import {
   readPreferredMethod,
   rememberMethod,
 } from '../../lib/sign-in-steps';
-import { AuthField, RevealButton, authPrimaryButton } from './auth-field';
+import { AuthField, AuthSpinner, RevealButton, authPrimaryButton } from './auth-field';
 import { AuthIcon } from './auth-icons';
 import { type AuthBrand, AuthShell, type AuthPanelTexts, type AuthShellTexts } from './auth-shell';
 import { type ErrorTexts, errorText } from './error-text';
+
+/** The generic answer for a wrong e-mail or password (never says which: no account enumeration). */
+const INVALID_CREDENTIALS = 'auth.errors.invalidCredentials';
 
 export interface SignInFormLabels {
   readonly email: string;
@@ -61,6 +64,12 @@ export interface SignInFormProps {
  * sign-in protection (T-M2-11), the organization's MFA step (T-M2-10) and the same answer for a wrong
  * e-mail or password — stays in `signInAction` (ADR 0003 §2). «تذكّر هذا المتصفح» / "Remember this
  * browser": a native check box, unticked by default, its explanation tied to it (aria-describedby).
+ *
+ * Direction C (redesign package 1, PO 21 Oct 2026): the main buttons are never disabled because a field
+ * is empty — they check when pressed — and the errors sit on the field: an unusable e-mail on the e-mail
+ * field, the generic «wrong e-mail or password» (also for an empty password, without asking the server)
+ * on the password field. «Too many attempts» and any other refusal (e.g. an outage with its reference)
+ * stay a banner. Only "sign-in not configured" disables the password step.
  */
 export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInFormProps) {
   const router = useRouter();
@@ -70,11 +79,20 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState<string | undefined>(undefined);
   const [password, setPassword] = useState('');
+  const [passwordError, setPasswordError] = useState<string | undefined>(undefined);
   const [reveal, setReveal] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const moved = useRef(false);
+  // The password field is disabled while signing in, so focus moves to it once the answer is shown.
+  const focusPassword = useRef(false);
+
+  useEffect(() => {
+    if (pending || !focusPassword.current) return;
+    focusPassword.current = false;
+    passwordRef.current?.focus();
+  }, [pending, passwordError]);
 
   useEffect(() => {
     onStep?.(step);
@@ -87,6 +105,7 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
   function goToMethod() {
     if (!looksLikeEmail(email)) {
       setEmailError(labels.emailInvalid);
+      emailRef.current?.focus();
       return;
     }
     setEmailError(undefined);
@@ -104,6 +123,12 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
     }
     const remember = new FormData(event.currentTarget).get('remember') === 'on';
     setMessage(null);
+    setPasswordError(undefined);
+    if (password === '') {
+      setPasswordError(errors[INVALID_CREDENTIALS]);
+      passwordRef.current?.focus();
+      return;
+    }
     rememberMethod(method);
     startTransition(async () => {
       const result = await signInAction({ email: email.trim(), password, remember });
@@ -118,6 +143,9 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
         // 'mfa': the organization asks for an authenticator code or app first (T-M2-10).
         router.replace(`/${locale}${paths[result.value.next]}`);
         router.refresh();
+      } else if (result.error.messageKey === INVALID_CREDENTIALS) {
+        setPasswordError(errorText(result.error, errors));
+        focusPassword.current = true;
       } else {
         setMessage(errorText(result.error, errors));
       }
@@ -148,7 +176,7 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
             }}
             error={emailError}
           />
-          <button type="submit" className={authPrimaryButton} disabled={email.trim() === ''}>
+          <button type="submit" className={authPrimaryButton}>
             {labels.continue}
             <AuthIcon name="arrow" />
           </button>
@@ -157,22 +185,29 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
         <>
           {/* The settled address with one way back (Kawadir's identity chip). Kept in the form as the
               account name for password managers. */}
-          <div className="flex items-center justify-between gap-3 rounded-xl bg-primary-subtle px-3.5 py-2.5 text-[13px]">
+          <div className="flex min-h-14.5 items-center gap-3 rounded-full border border-border bg-surface-sunken pe-1.5 ps-2.5">
+            <span
+              aria-hidden="true"
+              className="grid size-9.5 shrink-0 place-items-center rounded-full bg-brand-gradient text-[13px] font-semibold text-on-brand"
+            >
+              {(email.trim()[0] ?? '').toUpperCase()}
+            </span>
             <bdi
               dir="ltr"
-              className="font-semibold text-text [overflow-wrap:anywhere]"
+              className="min-w-0 flex-1 text-[15px] font-semibold text-text [overflow-wrap:anywhere]"
               data-testid="sign-in-email"
             >
               {email.trim()}
             </bdi>
             <button
               type="button"
-              className="min-h-11 shrink-0 rounded-md px-2 font-medium text-primary-text hover:underline"
+              className="min-h-11 shrink-0 rounded-full px-3.5 text-sm font-medium text-primary-text hover:bg-primary-subtle"
               aria-label={labels.changeEmailAria}
               disabled={pending}
               onClick={() => {
                 moved.current = true;
                 setMessage(null);
+                setPasswordError(undefined);
                 setPassword('');
                 setStep('email');
               }}
@@ -207,12 +242,15 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
               value={password}
               onChange={(event) => {
                 setPassword(event.target.value);
+                if (passwordError) setPasswordError(undefined);
               }}
               disabled={disabled || pending}
+              error={passwordError}
+              errorTestId="sign-in-error"
               labelEnd={
                 <a
                   href={`/${locale}/forgot-password`}
-                  className="text-[13px] font-medium text-primary-text no-underline hover:underline"
+                  className="text-sm font-semibold text-primary-text no-underline hover:underline"
                   title={labels.forgotShortAria}
                   data-testid="forgot-password-link"
                 >
@@ -232,21 +270,24 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
                 />
               }
             />
-            <div className="flex flex-col gap-1">
-              <label className="flex min-h-11 items-center gap-3">
-                <input
-                  type="checkbox"
-                  name="remember"
-                  aria-describedby="remember-browser-hint"
-                  disabled={disabled || pending}
-                  className="size-5 shrink-0"
-                  data-testid="remember-browser"
-                />
-                {labels.rememberBrowser}
-              </label>
-              <p id="remember-browser-hint" className="m-0 ms-8 text-sm text-text-muted">
-                {labels.rememberBrowserHint}
-              </p>
+            <div className="flex items-start gap-3">
+              <input
+                id="remember-browser"
+                type="checkbox"
+                name="remember"
+                aria-describedby="remember-browser-hint"
+                disabled={disabled || pending}
+                className="mt-0.5 size-5.5 shrink-0 accent-[var(--color-primary)]"
+                data-testid="remember-browser"
+              />
+              <div className="flex flex-col gap-0.5">
+                <label htmlFor="remember-browser" className="font-medium">
+                  {labels.rememberBrowser}
+                </label>
+                <p id="remember-browser-hint" className="m-0 text-[13.5px] text-text-muted">
+                  {labels.rememberBrowserHint}
+                </p>
+              </div>
             </div>
           </>
           {message ? (
@@ -257,8 +298,10 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
           <button
             type="submit"
             className={authPrimaryButton}
-            disabled={disabled || pending || password === ''}
+            disabled={disabled || pending}
+            aria-busy={pending || undefined}
           >
+            {pending ? <AuthSpinner /> : null}
             {pending ? labels.submitting : labels.submit}
             {pending ? null : <AuthIcon name="arrow" />}
           </button>
@@ -306,7 +349,7 @@ export function SignInView({
       panel={panel}
       languageSwitch={languageSwitch}
       title={title}
-      subtitle={<p className="m-0">{step === 'email' ? subtitles.email : subtitles.method}</p>}
+      subtitle={<p>{step === 'email' ? subtitles.email : subtitles.method}</p>}
       notices={notices}
       after={after}
     >

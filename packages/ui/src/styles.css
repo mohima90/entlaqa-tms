@@ -13,45 +13,43 @@
 /* Self-hosted fonts (Poppins, IBM Plex Sans Arabic, IBM Plex Mono) — src/fonts.css. */
 @import './fonts.css';
 
-/* The side navigation's panel: from `nav` to `nav-end` (one colour — white — in the Kawadir layout; a
-   plain colour first, for forced-colours mode and old browsers). */
+/* The side navigation's panel, top (`nav`) to bottom (`nav-end`): the brand gradient in light mode
+   (direction C «Bold product»), the dark surfaces in dark mode. A plain colour first, for forced-colours
+   mode and old browsers. */
 @utility bg-nav-gradient {
   background-color: var(--color-nav);
-  background-image: linear-gradient(170deg, var(--color-nav), var(--color-nav-end));
+  background-image: linear-gradient(180deg, var(--color-nav), var(--color-nav-end));
 }
 
-/* The Jadarat brand gradient (135°, slate → steel; Kawadir layout): the current navigation entry, primary
-   buttons, the avatar and brand accents. The organization's colours replace it (FR-ADM-07). Text on it:
-   `text-on-nav-item-current`. */
+/* The current navigation entry: a white pill on the gradient (light), the brand gradient (dark). */
+@utility bg-nav-current {
+  background-color: var(--color-nav-item-current);
+  background-image: linear-gradient(
+    135deg,
+    var(--color-nav-item-current),
+    var(--color-nav-item-current-end)
+  );
+}
+
+/* The brand gradient (135°, Jadarat slate → steel): primary buttons, the current view card, the avatar
+   and brand accents. The organization's colours replace it (FR-ADM-07). Text on it: `text-on-brand`. */
 @utility bg-brand-gradient {
-  background-color: var(--color-nav-item-current);
-  background-image: linear-gradient(
-    135deg,
-    var(--color-nav-item-current),
-    var(--color-nav-item-current-end)
-  );
+  background-color: var(--color-brand);
+  background-image: linear-gradient(135deg, var(--color-brand), var(--color-brand-end));
 }
 
-/* The same gradient, 160°, on a large surface: the brand panel of the sign-in pages (Kawadir login).
-   Text on it: `text-on-nav-item-current` (checked on both ends). */
+/* The same gradient, 150°, on a large surface: the brand panel of the sign-in pages. Text on it:
+   `text-on-brand` (checked on both ends). */
 @utility bg-brand-panel {
-  background-color: var(--color-nav-item-current);
-  background-image: linear-gradient(
-    160deg,
-    var(--color-nav-item-current),
-    var(--color-nav-item-current-end)
-  );
+  background-color: var(--color-brand);
+  background-image: linear-gradient(150deg, var(--color-brand), var(--color-brand-end));
 }
 
-/* Gradient text in the brand colours (Kawadir «Analytics Dashboard» title). Large headings only; a plain
-   colour first, so forced-colours mode and old browsers still show readable text. */
+/* Gradient text in the brand colours (large headings only); a plain colour first, so forced-colours
+   mode and old browsers still show readable text. */
 @utility text-brand-gradient {
-  color: var(--color-nav-item-current);
-  background-image: linear-gradient(
-    135deg,
-    var(--color-nav-item-current),
-    var(--color-nav-item-current-end)
-  );
+  color: var(--color-brand);
+  background-image: linear-gradient(135deg, var(--color-brand), var(--color-brand-end));
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -62,25 +60,53 @@
   }
 }
 
-/* Kawadir's coloured glow under a gradient fill (the current navigation entry, primary buttons). */
+/* The coloured glow under a brand-gradient fill (direction C: soft, offset down). */
 @utility shadow-brand-glow {
-  box-shadow: 0 4px 14px -3px var(--color-nav-item-current);
+  box-shadow: 0 14px 28px -14px var(--color-brand);
 }
 @utility shadow-brand-glow-lg {
-  box-shadow: 0 8px 25px -5px var(--color-nav-item-current);
+  box-shadow: 0 18px 34px -14px var(--color-brand);
 }
 
-/* The summary (KPI) cards (Kawadir layout): the brand gradient (135°) with a soft glow tinted from it —
-   one hue family, so an organization's colours recolour the cards too (FR-ADM-07). Text:
-   `text-on-nav-item-current` (checked on both ends). */
+/* The current view card / summary (KPI) cards: the brand gradient with its glow — one hue family, so an
+   organization's colours recolour them too (FR-ADM-07). Text: `text-on-brand`. */
 @utility bg-stat-gradient {
-  background-color: var(--color-nav-item-current);
+  background-color: var(--color-brand);
+  background-image: linear-gradient(135deg, var(--color-brand), var(--color-brand-end));
+  box-shadow: 0 14px 28px -14px var(--color-brand);
+}
+
+/* The sign-in pages' brand panel (direction C): the navigation's colours at 150° — the brand gradient
+   in light mode (the organization's colours replace it), the dark surfaces in dark mode. Text on it:
+   `text-on-nav` (checked on both ends). */
+@utility bg-nav-panel {
+  background-color: var(--color-nav);
+  background-image: linear-gradient(150deg, var(--color-nav), var(--color-nav-end));
+}
+
+/* A loading placeholder (direction C): a soft shimmer, still under reduced motion. */
+@utility skeleton {
+  background-color: var(--color-surface-hover);
   background-image: linear-gradient(
-    135deg,
-    var(--color-nav-item-current),
-    var(--color-nav-item-current-end)
+    90deg,
+    var(--color-surface-hover) 25%,
+    var(--color-surface-sunken) 50%,
+    var(--color-surface-hover) 75%
   );
-  box-shadow: 0 10px 24px -12px var(--color-nav-item-current);
+  background-size: 200% 100%;
+
+  @media (prefers-reduced-motion: no-preference) {
+    animation: jadarat-shimmer 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes jadarat-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
 }
 
 /* A native <select> with Kawadir's small chevron at the inline end (drawn in the text colour, so it
@@ -105,8 +131,8 @@
   }
 }
 
-/* Styles for the collapsed side navigation (72 px, icons only): only from the desktop width (--bp-lg)
-   up, never in the phone drawer. The shell's navigation carries data-nav-collapsed="true". */
+/* Styles for the collapsed side navigation (84 px rail, icons only): only from the desktop width
+   (--bp-lg) up, never in the phone drawer. The shell's navigation carries data-nav-collapsed="true". */
 @custom-variant nav-collapsed {
   @media (min-width: 900px) {
     &:where([data-nav-collapsed='true'], [data-nav-collapsed='true'] *) {

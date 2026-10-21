@@ -16,6 +16,12 @@ export interface CommandPaletteTexts {
   readonly empty: string;
   /** «إغلاق» / "Close". */
   readonly close: string;
+  /**
+   * Key hints in the dialog's footer (direction C): «للتنقل» / "to navigate", «للفتح» / "to open»,
+   * «للإغلاق» / "to close". Without them there is no footer.
+   */
+  readonly hints?:
+    { readonly navigate: string; readonly open: string; readonly close: string } | undefined;
 }
 
 export interface CommandPaletteProps {
@@ -27,8 +33,10 @@ export interface CommandPaletteProps {
 }
 
 /**
- * The ⌘K / Ctrl K command palette of the top bar (Kawadir; cmdk): a search button that shows the
- * shortcut, and a modal search over the pages the member may open, grouped like the menu. The dialog
+ * The ⌘K / Ctrl K command palette of the top bar (cmdk): a search pill that shows the shortcut, and a
+ * modal search over the pages the member may open, grouped like the menu, with key hints in its footer
+ * (direction C; the hints repeat what the keys do and are hidden from screen readers, which announce the
+ * combobox and its options themselves). The dialog
  * is a native `<dialog>` (page inert, Tab kept inside, Escape closes) and focus returns to the
  * control that opened it. The search field is a combobox over a listbox (cmdk): arrow keys move,
  * Enter opens.
@@ -103,18 +111,18 @@ export function CommandPalette({ items, texts, onNavigate }: CommandPaletteProps
         aria-keyshortcuts="Control+K Meta+K"
         data-testid="command-palette-trigger"
         className={cn(
-          // Kawadir search pill: 40 px, rounded-xl, a soft muted fill, the placeholder centred, ⌘K badge.
-          'flex min-h-9 items-center gap-3 rounded-xl border border-border bg-surface-hover/50 text-text-muted transition-colors hover:border-border-strong hover:bg-surface-hover hover:text-text pointer-coarse:min-h-11',
-          'size-9 shrink-0 justify-center pointer-coarse:size-11 xl:h-10 xl:w-80 xl:shrink xl:justify-start xl:px-4',
+          // Direction C search pill: 46 px, round, the page colour, the placeholder text, Ctrl K at the end.
+          'flex items-center gap-3 rounded-full border border-border bg-bg text-text-muted transition-colors hover:border-border-strong hover:text-text',
+          'size-11 shrink-0 justify-center md:h-11.5 md:w-72 md:shrink md:justify-start md:px-4.5 xl:w-105',
         )}
       >
-        <Icon name="search" />
-        <span className="sr-only xl:not-sr-only xl:flex-1 xl:text-center xl:text-sm">
+        <Icon name="search" className="size-[18px]" />
+        <span className="sr-only md:not-sr-only md:flex-1 md:truncate md:text-start md:text-[15px]">
           {texts.trigger}
         </span>
         <kbd
           aria-hidden="true"
-          className="hidden h-6 items-center gap-1 rounded-md border border-border bg-surface px-2 font-mono text-[11px] font-medium xl:inline-flex"
+          className="hidden h-6 items-center gap-1 rounded-[7px] border border-border bg-surface px-2 font-sans text-[11.5px] font-medium md:inline-flex"
           dir="ltr"
         >
           {apple ? '⌘' : 'Ctrl'} K
@@ -124,23 +132,23 @@ export function CommandPalette({ items, texts, onNavigate }: CommandPaletteProps
         ref={dialog}
         aria-label={texts.title}
         data-testid="command-palette"
-        className="mx-auto mt-[12vh] w-[calc(100%-2rem)] max-w-xl overflow-hidden rounded-xl border border-border bg-surface p-0 text-text shadow-4 backdrop:bg-overlay"
+        className="mx-auto mt-[12vh] w-[calc(100%-1.5rem)] max-w-[620px] overflow-hidden rounded-[22px] border border-border bg-surface-raised p-0 text-text shadow-4 backdrop:bg-overlay"
       >
         {open ? (
           <Command label={texts.title} loop className="flex flex-col">
-            <div className="flex items-center gap-2 border-b border-border px-4">
-              <Icon name="search" className="text-text-muted" />
+            <div className="flex min-h-15 items-center gap-3 border-b border-border px-4.5">
+              <Icon name="search" className="size-5 text-text-subtle" />
               <Command.Input
                 ref={input}
                 placeholder={texts.placeholder}
                 aria-label={texts.title}
-                className="h-12 min-w-0 flex-1 border-0 bg-transparent text-sm text-text outline-none placeholder:text-text-subtle"
+                className="h-14 min-w-0 flex-1 border-0 bg-transparent text-[17px] text-text outline-none placeholder:text-text-subtle"
               />
               <button
                 type="button"
                 onClick={hide}
                 aria-label={texts.close}
-                className="grid size-8 shrink-0 place-items-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text pointer-coarse:size-11"
+                className="grid size-9 shrink-0 place-items-center rounded-full text-text-muted hover:bg-surface-hover hover:text-text pointer-coarse:size-11"
               >
                 <Icon name="close" />
               </button>
@@ -154,7 +162,7 @@ export function CommandPalette({ items, texts, onNavigate }: CommandPaletteProps
                 <Command.Group
                   key={group}
                   heading={group}
-                  className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:text-text-muted"
+                  className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:pt-2 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:text-text-muted"
                 >
                   {groupList.map((item) => (
                     <Command.Item
@@ -164,27 +172,56 @@ export function CommandPalette({ items, texts, onNavigate }: CommandPaletteProps
                         hide();
                         navigate(item.href);
                       }}
-                      className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-sm data-[selected=true]:bg-surface-hover"
+                      className="flex min-h-11 cursor-pointer items-center gap-3 rounded-[12px] px-3 py-2 text-sm data-[selected=true]:bg-primary-subtle data-[selected=true]:font-semibold data-[selected=true]:text-primary-text"
                     >
                       <span
                         aria-hidden="true"
-                        className="grid size-8 shrink-0 place-items-center rounded-lg bg-surface-hover text-text-muted"
+                        className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-surface-hover text-text-muted"
                       >
                         <Icon name={item.icon ?? 'chevron-end'} />
                       </span>
                       <span className="flex min-w-0 flex-col">
                         <span className="font-medium">{item.label}</span>
-                        <span className="text-xs text-text-muted">{item.group}</span>
+                        <span className="text-xs font-normal text-text-muted">{item.group}</span>
                       </span>
                     </Command.Item>
                   ))}
                 </Command.Group>
               ))}
             </Command.List>
+            {texts.hints ? (
+              <div
+                aria-hidden="true"
+                className="flex flex-wrap gap-4 border-t border-border bg-surface-sunken px-4.5 py-2.5 text-[13px] text-text-muted"
+              >
+                <KeyHint keys={['↑', '↓']} text={texts.hints.navigate} />
+                <KeyHint keys={['↵']} text={texts.hints.open} />
+                <KeyHint keys={['Esc']} text={texts.hints.close} />
+              </div>
+            ) : null}
           </Command>
         ) : null}
       </dialog>
     </>
+  );
+}
+
+/** A key hint of the footer: the keys (always left to right) and what they do. */
+function KeyHint({ keys, text }: { readonly keys: readonly string[]; readonly text: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="inline-flex gap-1" dir="ltr">
+        {keys.map((key) => (
+          <kbd
+            key={key}
+            className="rounded-[7px] border border-border bg-surface px-1.5 py-0.5 font-sans text-[11.5px] font-medium leading-none"
+          >
+            {key}
+          </kbd>
+        ))}
+      </span>
+      {text}
+    </span>
   );
 }
 

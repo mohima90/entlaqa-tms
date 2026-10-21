@@ -82,7 +82,16 @@
     "idleSignOut": "تسجيل الخروج",
     "needsForms": "نماذج الاحتياجات",
     "structure": "الهيكل التنظيمي",
-    "branches": "الفروع"
+    "branches": "الفروع",
+    "searchHintNavigate": "للتنقل",
+    "searchHintOpen": "للفتح",
+    "searchHintClose": "للإغلاق",
+    "shortcutsTitle": "اختصارات لوحة المفاتيح",
+    "shortcuts": {
+      "close": "إغلاق اللوحة أو القائمة أو النافذة",
+      "rows": "التنقل بين الصفوف",
+      "open": "فتح الصف المحدد"
+    }
   },
   "errors": {
     "malformedRequest": "تعذّر فهم الطلب. حدّث الصفحة ثم أعد المحاولة.",

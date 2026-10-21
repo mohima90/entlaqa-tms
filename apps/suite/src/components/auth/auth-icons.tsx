@@ -89,11 +89,63 @@ const PATHS = {
       <path d="M12 7v5l3 2" />
     </>
   ),
+  // Direction C (redesign package 1): the brand panel's features, the focused pages' tiles and actions.
+  calendar: (
+    <>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M8 3v4M16 3v4M3 10h18" />
+    </>
+  ),
+  userCheck: (
+    <>
+      <circle cx="9" cy="8" r="4" />
+      <path d="M2 21a7 7 0 0 1 14 0M16 11l2 2 4-4" />
+    </>
+  ),
+  award: (
+    <>
+      <circle cx="12" cy="9" r="6" />
+      <path d="M8.5 14 7 22l5-3 5 3-1.5-8" />
+    </>
+  ),
+  chart: <path d="M4 20V10M10 20V4M16 20v-7M3 20h18" />,
+  shield: (
+    <>
+      <path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z" />
+      <path d="m9 12 2 2 4-4" />
+    </>
+  ),
+  phone: (
+    <>
+      <rect x="6" y="2" width="12" height="20" rx="2.5" />
+      <path d="M11 18h2" />
+    </>
+  ),
+  building: (
+    <>
+      <rect x="5" y="3" width="14" height="18" rx="1.5" />
+      <path d="M9 7h1M14 7h1M9 11h1M14 11h1M9 15h1M14 15h1M10 21v-3h4v3" />
+    </>
+  ),
+  logout: <path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11" />,
+  mailCheck: (
+    <>
+      <path d="M21 12V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h8" />
+      <path d="m3 7 9 6 9-6M16 18l2 2 4-4" />
+    </>
+  ),
+  chevron: <path d="m9 6 6 6-6 6" />,
+  info: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5M12 8h.01" />
+    </>
+  ),
 } satisfies Record<string, ReactNode>;
 
 export type AuthIconName = keyof typeof PATHS;
 
-const DIRECTIONAL: ReadonlySet<AuthIconName> = new Set(['arrow', 'back']);
+const DIRECTIONAL: ReadonlySet<AuthIconName> = new Set(['arrow', 'back', 'chevron', 'logout']);
 
 export function AuthIcon({
   name,

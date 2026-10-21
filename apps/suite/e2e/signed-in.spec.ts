@@ -15,12 +15,18 @@ test.describe('signed-in flow', () => {
   test.skip(!email || !password || !organization, 'SIGNED_IN_E2E_* not set');
   test.describe.configure({ mode: 'serial' });
 
-  test('a wrong password gets the generic message', async ({ page }) => {
+  test('a wrong password gets the generic message, on the password field', async ({ page }) => {
     await submitSignIn(page, email, 'not-the-password');
     await expect(page.getByTestId('sign-in-error')).toHaveText(
       'The email or password is incorrect.',
       afterSignIn,
     );
+    // Direction C: the message sits on the field — marked invalid and described by it.
+    const field = page.locator('#password');
+    await expect(field).toHaveAttribute('aria-invalid', 'true');
+    await expect(field).toHaveAccessibleDescription(/The email or password is incorrect\./);
+    // Focus moves to the field, so a screen reader reads the message out.
+    await expect(field).toBeFocused();
   });
 
   test('sign in shows the organization; sign out protects the suite again', async ({

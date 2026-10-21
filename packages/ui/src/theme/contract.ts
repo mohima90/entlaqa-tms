@@ -53,12 +53,19 @@ export const COLOR_ROLES = [
   'inverse-surface',
   'inverse-text',
   'overlay',
+  // The brand gradient (direction C «Bold product», PO 21 Oct 2026): 135° from `brand` to `brand-end` —
+  // the side navigation panel, primary buttons, the current view card, the avatar, the sign-in panel
+  // and brand accents. Text on it: `on-brand` (checked on both ends). An organization's colours
+  // (FR-ADM-07) replace it everywhere.
+  'brand',
+  /** End of the brand gradient (same as `brand` for a plain fill, «Use gradient» off). */
+  'brand-end',
+  'on-brand',
   // Suite shell (header and side navigation). The navigation panel runs from `nav` (top) to `nav-end`
-  // (bottom); a plain panel — the Kawadir layout's white one (T-M2-43) — sets both to the same colour.
-  // The current entry is filled with the brand gradient (135°) from `nav-item-current` to
-  // `nav-item-current-end` — the one brand gradient of the product: primary buttons, summary (KPI)
-  // cards, the avatar, the dashboard title and the sign-in panel use these same roles, so an
-  // organization's colours (FR-ADM-07) recolour all of them.
+  // (bottom) — in direction C the brand gradient in light mode (aliases of `brand` / `brand-end`, so an
+  // organization's colours (FR-ADM-07) recolour it) and the dark surfaces in dark mode. The current
+  // entry is a pill from `nav-item-current` to `nav-item-current-end` (white in light mode, the brand
+  // gradient in dark mode) with `on-nav-item-current` text.
   'header',
   'on-header',
   'on-header-muted',
@@ -85,11 +92,15 @@ export const BRAND_ROLES = {
 } as const satisfies Record<string, readonly ColorRole[]>;
 
 /**
- * Side-navigation roles an organization's brand may replace (T-M2-21, T-M2-43): the current entry's
- * gradient — the brand gradient used everywhere — is derived from the organization's colours, so its
- * branding replaces the Jadarat gradient (on the navigation, buttons, summary cards and sign-in panel).
+ * Side-navigation and brand-gradient roles an organization's brand may replace (T-M2-21, T-M2-43,
+ * direction C): the brand gradient (`brand`, `brand-end`, `on-brand`) is derived from the
+ * organization's colours — it fills the navigation panel, buttons, the current view card and the
+ * sign-in panel — and with it the navigation's hover fill and current entry.
  */
 export const NAV_ROLES = [
+  'brand',
+  'brand-end',
+  'on-brand',
   'nav',
   'nav-end',
   'on-nav',
@@ -233,10 +244,14 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   pair('on-nav-muted', 'nav-item-hover', 'text'),
   pair('on-nav-item-current', 'nav-item-current', 'text'),
   pair('on-nav-item-current', 'nav-item-current-end', 'text'),
-  // The same brand gradient fills primary buttons, the summary (KPI) cards, the avatar and the sign-in
-  // panel (their text is `on-nav-item-current`, checked on both ends above), and colours the large
-  // dashboard title; on the page background both ends must stand out (3 : 1, SC 1.4.11 — and the
-  // large-text bar of SC 1.4.3 for the 30 px bold title).
-  pair('nav-item-current', 'bg', 'ui'),
-  pair('nav-item-current-end', 'bg', 'ui'),
+  // The brand gradient fills primary buttons, the current view card, the avatar, the navigation and the
+  // sign-in panel: its text is checked on both ends; on the page background and on a card both ends
+  // must stand out (3 : 1, SC 1.4.11 — and the large-text bar of SC 1.4.3 for the bold dashboard
+  // title in gradient text).
+  pair('on-brand', 'brand', 'on-fill'),
+  pair('on-brand', 'brand-end', 'on-fill'),
+  ...(['bg', 'surface'] as const).flatMap((bg) => [
+    pair('brand', bg, 'ui'),
+    pair('brand-end', bg, 'ui'),
+  ]),
 ];

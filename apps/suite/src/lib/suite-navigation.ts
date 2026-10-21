@@ -76,24 +76,6 @@ export const SUITE_PATHS = {
   needsForms: '/suite/planning/needs-forms',
 } as const satisfies Record<SuitePage, string>;
 
-/** The page title in the top bar (message key, namespace `shell`) for each page of the menu. */
-export const PAGE_TITLE_KEYS = {
-  home: 'home',
-  courses: 'courses',
-  users: 'teamMembers',
-  structure: 'structure',
-  branches: 'branches',
-  roles: 'roles',
-  general: 'general',
-  emailIntegration: 'emailIntegration',
-  branding: 'branding',
-  security: 'security',
-  profile: 'myProfile',
-  planningCycles: 'planningCycles',
-  planningSettings: 'planningSettings',
-  needsForms: 'needsForms',
-} as const satisfies Record<SuitePage, string>;
-
 const TMS_ICONS: Readonly<Record<(typeof tmsNavigation)[number]['key'], IconName>> = {
   home: 'home',
   calendar: 'calendar',

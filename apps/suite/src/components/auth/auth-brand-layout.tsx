@@ -38,24 +38,3 @@ export default async function AuthBrandLayout({
     </>
   );
 }
-
-/** The header's name line on the sign-in code pages: the organization's logo, else the product's name. */
-export async function AuthHeaderBrand({
-  locale,
-  productName,
-}: {
-  readonly locale: 'ar' | 'en';
-  readonly productName: string;
-}) {
-  const brand = await signInBrand(locale);
-  if (!brand?.logoSrc) return <span className="text-lg font-semibold">{productName}</span>;
-  return (
-    // eslint-disable-next-line @next/next/no-img-element -- the organization's published copy (same origin)
-    <img
-      src={brand.logoSrc}
-      alt={brand.name}
-      className="max-h-8 max-w-40 object-contain"
-      data-testid="auth-header-logo"
-    />
-  );
-}

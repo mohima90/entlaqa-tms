@@ -23,11 +23,11 @@ export async function signInPanelTexts(locale: AppLocale): Promise<AuthPanelText
     accent: t('panelAccent'),
     text: t('panelText'),
     features: [
-      { icon: 'key', text: t('features.plan') },
+      { icon: 'calendar', text: t('features.plan') },
       { icon: 'clock', text: t('features.schedule') },
-      { icon: 'userPlus', text: t('features.enroll') },
-      { icon: 'check', text: t('features.assess') },
-      { icon: 'link', text: t('features.report') },
+      { icon: 'userCheck', text: t('features.enroll') },
+      { icon: 'award', text: t('features.assess') },
+      { icon: 'chart', text: t('features.report') },
     ],
   };
 }

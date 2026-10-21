@@ -1,6 +1,11 @@
 import type { ThemeDefinition } from '../contract';
 
 /**
+ * Direction C «Bold product» (redesign package 1, approved by the PO on 21 Oct 2026): the side
+ * navigation is the brand gradient (slate → steel) with a white pill for the current entry, the top
+ * bar is white, shapes are rounder (radius 10–32 px, pill buttons) and the brand gradient fills primary
+ * buttons and the current view card. The palette below is unchanged. Earlier:
+ *
  * The Jadarat look: the Jadarat palette of «Meridian» (UI design approved by the PO on 14 Oct 2026,
  * T-M2-21) in the Kawadir ATS layout (PO, 15 Oct 2026 — docs/design/kawadir-alignment.md; T-M2-43):
  * calm slate neutrals on a muted page with white cards, hairline borders, one steel-blue accent for
@@ -21,7 +26,7 @@ export const jadaratTheme: ThemeDefinition = {
   name: { ar: 'جدارات', en: 'Jadarat' },
   status: 'active',
   source:
-    'Jadarat palette of «Meridian» (PO, 14 Oct 2026, T-M2-21) in the Kawadir ATS layout (PO, 15 Oct 2026, T-M2-43)',
+    'Jadarat palette of «Meridian» (PO, 14 Oct 2026, T-M2-21) in the Kawadir ATS layout (PO, 15 Oct 2026, T-M2-43), direction C «Bold product» (PO, 21 Oct 2026)',
   palette: {
     neutral: {
       0: '#FFFFFF',
@@ -116,26 +121,30 @@ export const jadaratTheme: ThemeDefinition = {
       'inverse-surface': '{color.neutral.900}',
       'inverse-text': '{color.neutral.50}',
       overlay: 'rgba(15, 26, 34, 0.55)',
-      // Kawadir: the top bar sits on the page background (a hairline under it), not on white.
-      header: '{semantic.bg}',
+      // The Jadarat brand gradient (135°, slate → steel; direction C): the navigation panel, primary
+      // buttons, the current view card, the avatar and the sign-in panel. White text on both ends.
+      brand: '{color.jadarat.slate}',
+      'brand-end': '{color.jadarat.steel}',
+      'on-brand': '{color.neutral.0}',
+      // Direction C: the top bar is white, with a hairline under it.
+      header: '{semantic.surface}',
       'on-header': '{semantic.text}',
       'on-header-muted': '{semantic.text-muted}',
       'header-border': '{semantic.border}',
-      // Side navigation (Kawadir layout, T-M2-43): a white panel like the cards; muted entries, a
-      // light hover fill, and the current entry filled with the brand gradient (135°, from
-      // `nav-item-current` to `nav-item-current-end`) with white text.
-      nav: '{semantic.surface}',
-      'nav-end': '{semantic.nav}',
-      'on-nav': '{semantic.text-muted}',
-      'on-nav-muted': '{semantic.text-subtle}',
-      'nav-border': '{semantic.border}',
-      'nav-item-hover': '{semantic.surface-hover}',
-      // The Jadarat brand gradient (135°, slate → steel), also on primary buttons, the summary cards,
-      // the dashboard title and the sign-in panel.
-      'nav-item-current': '{color.jadarat.slate}',
-      'nav-item-current-end': '{color.jadarat.steel}',
-      'on-nav-item-current': '{color.neutral.0}',
-      'nav-focus-ring': '{semantic.focus-ring}',
+      // Side navigation (direction C «Bold product», PO 21 Oct 2026): the brand gradient from top
+      // (`nav`) to bottom (`nav-end`) with white entries, a translucent white hover fill (as a solid:
+      // white 10 % over steel, where white text has the least contrast), hairlines in white 22 %, and
+      // the current entry as a white pill with slate text.
+      nav: '{semantic.brand}',
+      'nav-end': '{semantic.brand-end}',
+      'on-nav': '{semantic.on-brand}',
+      'on-nav-muted': '{semantic.on-nav}',
+      'nav-border': 'rgba(255, 255, 255, 0.22)',
+      'nav-item-hover': '#477496',
+      'nav-item-current': '{semantic.surface}',
+      'nav-item-current-end': '{semantic.nav-item-current}',
+      'on-nav-item-current': '{semantic.brand}',
+      'nav-focus-ring': '{semantic.on-nav}',
     },
     dark: {
       bg: '{color.night.900}',
@@ -170,11 +179,23 @@ export const jadaratTheme: ThemeDefinition = {
       'inverse-surface': '{color.night.50}',
       'inverse-text': '{color.neutral.900}',
       overlay: 'rgba(0, 0, 0, 0.65)',
-      // The navigation panel and its text follow the dark surface (aliases); the brand gradient is the
-      // light Jadarat one (sky → light steel) with very dark text, so it stands out on the dark panel.
-      'nav-item-current': '{color.jadarat.sky}',
-      'nav-item-current-end': '{color.jadarat.steel-light}',
-      'on-nav-item-current': '{color.brand.950}',
+      // The brand gradient in dark mode: the light Jadarat one (sky → light steel) with very dark text.
+      brand: '{color.jadarat.sky}',
+      'brand-end': '{color.jadarat.steel-light}',
+      'on-brand': '{color.brand.950}',
+      header: '{semantic.surface}',
+      // The navigation panel in dark mode runs over the dark surfaces (night 850 → 800) with light
+      // entries; the current entry carries the brand gradient with its very dark text.
+      nav: '{color.night.850}',
+      'nav-end': '{color.night.800}',
+      'on-nav': '{semantic.text}',
+      'on-nav-muted': '{semantic.text-muted}',
+      'nav-border': '{semantic.border}',
+      'nav-item-hover': '{semantic.surface-hover}',
+      'nav-item-current': '{semantic.brand}',
+      'nav-item-current-end': '{semantic.brand-end}',
+      'on-nav-item-current': '{semantic.on-brand}',
+      'nav-focus-ring': '{semantic.focus-ring}',
     },
   },
   font: {
@@ -201,15 +222,17 @@ export const jadaratTheme: ThemeDefinition = {
     ],
     mono: ['IBM Plex Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
   },
-  // Kawadir: base radius 0.75rem (`lg`); `md` for buttons and inputs, `xl` for cards (rounded-xl).
-  radius: { sm: '8px', md: '10px', lg: '12px', xl: '16px' },
+  // Direction C «Bold product» (PO, 21 Oct 2026): rounder shapes — `sm` 10 px (small controls, menu
+  // entries), `md` 14 px (inputs), `lg` 18 px (view cards, panels), `xl` 24 px (cards, tables,
+  // dialogs); buttons and filters are pills (`full`); `2xl` 32 px (the sign-in panel) is in tokens.css.
+  radius: { sm: '10px', md: '14px', lg: '18px', xl: '24px' },
   // Soft, low-contrast shadows (Kawadir): 1 cards, 2 menus and popovers, 3 dialogs, 4 drawers.
   elevation: {
     light: {
       1: '0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04)',
       2: '0 4px 12px rgba(15, 23, 42, 0.06)',
       3: '0 12px 40px rgba(15, 23, 42, 0.08)',
-      4: '0 24px 60px rgba(15, 23, 42, 0.12)',
+      4: '0 24px 60px rgba(15, 23, 42, 0.14)',
     },
     dark: {
       1: '0 1px 2px rgba(0, 0, 0, 0.20)',

@@ -71,7 +71,8 @@ function Shell({ collapsible = false, initialCollapsed = false }) {
   return (
     <AppShell
       {...labels}
-      title="Team members"
+      organizationInitials="AR"
+      organizationDetail="Organization Admin"
       headerStart={<button type="button">Search</button>}
       headerEnd={<span>EN</span>}
       navigation={
@@ -215,29 +216,42 @@ describe('AppShell drawer below 900 px (modal dialog)', () => {
   });
 });
 
-describe('AppShell collapse on a desktop (260 → 72 px, remembered)', () => {
-  it('collapses and expands, moves focus to the button now shown and remembers the choice', () => {
+describe('AppShell collapse on a desktop (264 → 84 px rail, remembered)', () => {
+  it('collapses and expands with one top-bar toggle that keeps focus, and remembers the choice', () => {
     mount(<Shell collapsible />);
-    const collapse = q('[data-testid="nav-collapse"]');
-    expect(collapse.getAttribute('aria-expanded')).toBe('true');
+    const toggle = q('[data-testid="nav-collapse"]');
+    expect(toggle.closest('header')).not.toBeNull();
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.getAttribute('aria-label')).toBe('Collapse menu');
+    expect(toggle.getAttribute('aria-controls')).toBe('app-navigation');
+    expect(drawer().className).toContain('lg:w-66');
     expect(document.body.textContent).toContain('Powered by Jadarat');
+    toggle.focus();
     act(() => {
-      collapse.click();
+      toggle.click();
     });
     expect(drawer().dataset.navCollapsed).toBe('true');
-    expect(drawer().className).toContain('lg:w-18');
+    expect(drawer().className).toContain('lg:w-21');
     expect(document.cookie).toContain(`${NAV_COOKIE}=collapsed`);
-    const expand = q('[data-testid="nav-expand"]');
-    expect(document.activeElement).toBe(expand);
-    expect(expand.getAttribute('aria-expanded')).toBe('false');
-    expect(document.querySelector('[data-testid="nav-collapse"]')).toBeNull();
+    expect(document.activeElement).toBe(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.getAttribute('aria-label')).toBe('Expand menu');
     expect(document.body.textContent).not.toContain('Powered by Jadarat');
     act(() => {
-      expand.click();
+      toggle.click();
     });
     expect(drawer().hasAttribute('data-nav-collapsed')).toBe(false);
     expect(document.cookie).toContain(`${NAV_COOKIE}=expanded`);
-    expect(document.activeElement).toBe(q('[data-testid="nav-collapse"]'));
+    expect(document.activeElement).toBe(toggle);
+    expect(toggle.getAttribute('aria-label')).toBe('Collapse menu');
+  });
+
+  it("shows the organization's chip: initials, name and the member's role", () => {
+    mount(<Shell collapsible />);
+    const chip = q('[data-testid="nav-wordmark"]').parentElement!;
+    expect(chip.textContent).toContain('Al Raya');
+    expect(chip.textContent).toContain('Organization Admin');
+    expect(document.body.textContent).toContain('AR');
   });
 
   it('shows the labels in the phone drawer even when collapsed on a desktop', () => {

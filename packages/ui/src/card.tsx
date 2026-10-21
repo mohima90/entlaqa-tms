@@ -44,7 +44,7 @@ export function Card({
   return (
     <section
       className={cn(
-        'rounded-xl border border-border bg-surface text-text shadow-1',
+        'rounded-xl border border-border bg-surface text-text shadow-2',
         flush ? 'overflow-hidden' : 'p-6',
         className,
       )}
@@ -54,14 +54,14 @@ export function Card({
         <div
           className={cn(
             'flex flex-wrap items-start justify-between gap-3',
-            flush ? 'border-b border-border px-6 py-4' : 'mb-4',
+            flush ? 'border-b border-border px-5.5 py-4' : 'mb-4',
           )}
         >
           <div className="flex min-w-0 flex-col gap-1">
             {title ? (
               <Heading
                 id={titleId}
-                className="m-0 flex items-center gap-2 text-lg font-semibold leading-tight tracking-tight"
+                className="m-0 flex items-center gap-2 text-lg font-bold leading-tight tracking-tight"
               >
                 {icon ? <Icon name={icon} className="size-5 text-primary-text" /> : null}
                 {title}

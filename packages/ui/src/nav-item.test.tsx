@@ -18,8 +18,8 @@ describe('navigation entries (shell roles)', () => {
       </NavItem>,
     );
     expect(current).toContain('aria-current="page"');
-    // Kawadir: the current entry is filled with the brand gradient (nav-item-current → -end).
-    expect(current).toContain('bg-brand-gradient');
+    // Direction C: the current entry is a pill (white on the gradient; the brand gradient in dark mode).
+    expect(current).toContain('bg-nav-current');
     expect(current).toContain('text-on-nav-item-current');
     const other = renderToStaticMarkup(<NavItem href="/ar/suite">الرئيسية</NavItem>);
     expect(other).not.toContain('aria-current');

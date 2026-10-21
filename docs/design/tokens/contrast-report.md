@@ -10,9 +10,9 @@ WCAG 2.x relative-luminance formula (`(L1 + 0.05) / (L2 + 0.05)`); ratios shown 
 | Large text (≥ 24 px regular / ≥ 18.66 px bold) | ≥ 3 : 1 — we still hold all text to 4.5 : 1 | 1.4.3 |
 | UI components and graphical objects (input borders, icons, focus ring) | ≥ 3 : 1 | 1.4.11 Non-text Contrast; 2.4.13 is AAA and not targeted |
 
-**Result for «jadarat»: 160 of 160 pairs pass (0 failures).** Tightest pair relative to its threshold: `text-subtle` on `surface-selected` (light) = **4.61 : 1** (needs 4.5).
+**Result for «jadarat»: 168 of 168 pairs pass (0 failures).** Tightest pair relative to its threshold: `text-subtle` on `surface-selected` (light) = **4.61 : 1** (needs 4.5).
 
-The same 80 pairs per mode are also checked automatically for:
+The same 84 pairs per mode are also checked automatically for:
 
 - every theme in `packages/ui/src/theme/themes/` (including the pending «Jadarat LMS» slot);
 - organization brand colours (FR-ADM-07): `deriveOrganizationBrand` derives the brand roles so that they always pass, re-checks all pairs and refuses to return a failing brand; its tests run it on hundreds of colours (white, black, pure yellow, mid greys, a colour grid and random colours).
@@ -22,8 +22,9 @@ Notes
 - `text-disabled` is intentionally excluded (disabled controls are exempt under SC 1.4.3); disabled states must also be conveyed by the `disabled` attribute / `aria-disabled`.
 - `border` (decorative divider) is intentionally below 3 : 1; it must never be the only boundary of an interactive control — inputs use `border-strong`.
 - The focus ring is drawn as a 2 px ring separated from the component by a 2 px `--color-bg` gap (`--focus-ring`), so the ring is measured against `bg`/`surface` and the header, not against the button fill. Inside the side navigation the ring is `nav-focus-ring` (an outline 2 px away from the entry), measured against both ends of the navigation panel.
-- The side navigation panel runs from `nav` (top) to `nav-end` (bottom; one colour in the Kawadir layout): its text and focus ring are checked against **both** ends. The current entry is filled with the brand gradient (135°) from `nav-item-current` to `nav-item-current-end`: its text is checked on **both** gradient ends, and both ends must stand out from the panel (3 : 1).
-- `accent*` roles are aliases of the primary roles in «jadarat»; the header roles are aliases of the page background and text roles (the top bar sits on the page background, Kawadir).
+- The brand gradient (`brand` → `brand-end`, 135°) fills primary buttons, the current view card, the avatar and the sign-in panel: `on-brand` is checked on **both** ends, and both ends must stand out from the page and from cards (3 : 1).
+- The side navigation panel runs from `nav` (top) to `nav-end` (bottom) — the brand gradient in light mode (direction C), the dark surfaces in dark mode: its text and focus ring are checked against **both** ends. The current entry (`nav-item-current` → `nav-item-current-end`: a white pill in light mode, the brand gradient in dark mode): its text is checked on **both** ends, and both ends must stand out from the panel (3 : 1). The hover fill `nav-item-hover` is white 10 % over the gradient's lighter end, as a solid colour.
+- `accent*` roles are aliases of the primary roles in «jadarat»; the header roles are aliases of the surface and text roles (a white top bar, direction C).
 
 ## Light theme
 
@@ -90,25 +91,29 @@ Notes
 | `on-accent` | `accent-hover` | `#FFFFFF` | `#2A5574` | 7.92 | 4.5 | Text on filled control | ✅ |
 | `accent` | `bg` | `#33658A` | `#F5F7F9` | 5.80 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
 | `accent` | `surface` | `#33658A` | `#FFFFFF` | 6.23 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `on-header` | `header` | `#1F3340` | `#F5F7F9` | 12.18 | 4.5 | Normal text | ✅ |
-| `on-header-muted` | `header` | `#46596A` | `#F5F7F9` | 6.75 | 4.5 | Normal text | ✅ |
-| `focus-ring` | `header` | `#33658A` | `#F5F7F9` | 5.80 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `on-nav` | `nav` | `#46596A` | `#FFFFFF` | 7.25 | 4.5 | Normal text | ✅ |
-| `on-nav-muted` | `nav` | `#5F6F7C` | `#FFFFFF` | 5.18 | 4.5 | Normal text | ✅ |
-| `nav-item-current` | `nav` | `#2F4858` | `#FFFFFF` | 9.59 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `nav-item-current-end` | `nav` | `#33658A` | `#FFFFFF` | 6.23 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `nav-focus-ring` | `nav` | `#33658A` | `#FFFFFF` | 6.23 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `on-nav` | `nav-end` | `#46596A` | `#FFFFFF` | 7.25 | 4.5 | Normal text | ✅ |
-| `on-nav-muted` | `nav-end` | `#5F6F7C` | `#FFFFFF` | 5.18 | 4.5 | Normal text | ✅ |
-| `nav-item-current` | `nav-end` | `#2F4858` | `#FFFFFF` | 9.59 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `nav-item-current-end` | `nav-end` | `#33658A` | `#FFFFFF` | 6.23 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `nav-focus-ring` | `nav-end` | `#33658A` | `#FFFFFF` | 6.23 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `on-nav` | `nav-item-hover` | `#46596A` | `#EEF3F7` | 6.49 | 4.5 | Normal text | ✅ |
-| `on-nav-muted` | `nav-item-hover` | `#5F6F7C` | `#EEF3F7` | 4.64 | 4.5 | Normal text | ✅ |
-| `on-nav-item-current` | `nav-item-current` | `#FFFFFF` | `#2F4858` | 9.59 | 4.5 | Normal text | ✅ |
-| `on-nav-item-current` | `nav-item-current-end` | `#FFFFFF` | `#33658A` | 6.23 | 4.5 | Normal text | ✅ |
-| `nav-item-current` | `bg` | `#2F4858` | `#F5F7F9` | 8.93 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `nav-item-current-end` | `bg` | `#33658A` | `#F5F7F9` | 5.80 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `on-header` | `header` | `#1F3340` | `#FFFFFF` | 13.08 | 4.5 | Normal text | ✅ |
+| `on-header-muted` | `header` | `#46596A` | `#FFFFFF` | 7.25 | 4.5 | Normal text | ✅ |
+| `focus-ring` | `header` | `#33658A` | `#FFFFFF` | 6.23 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `on-nav` | `nav` | `#FFFFFF` | `#2F4858` | 9.59 | 4.5 | Normal text | ✅ |
+| `on-nav-muted` | `nav` | `#FFFFFF` | `#2F4858` | 9.59 | 4.5 | Normal text | ✅ |
+| `nav-item-current` | `nav` | `#FFFFFF` | `#2F4858` | 9.59 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `nav-item-current-end` | `nav` | `#FFFFFF` | `#2F4858` | 9.59 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `nav-focus-ring` | `nav` | `#FFFFFF` | `#2F4858` | 9.59 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `on-nav` | `nav-end` | `#FFFFFF` | `#33658A` | 6.23 | 4.5 | Normal text | ✅ |
+| `on-nav-muted` | `nav-end` | `#FFFFFF` | `#33658A` | 6.23 | 4.5 | Normal text | ✅ |
+| `nav-item-current` | `nav-end` | `#FFFFFF` | `#33658A` | 6.23 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `nav-item-current-end` | `nav-end` | `#FFFFFF` | `#33658A` | 6.23 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `nav-focus-ring` | `nav-end` | `#FFFFFF` | `#33658A` | 6.23 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `on-nav` | `nav-item-hover` | `#FFFFFF` | `#477496` | 4.99 | 4.5 | Normal text | ✅ |
+| `on-nav-muted` | `nav-item-hover` | `#FFFFFF` | `#477496` | 4.99 | 4.5 | Normal text | ✅ |
+| `on-nav-item-current` | `nav-item-current` | `#2F4858` | `#FFFFFF` | 9.59 | 4.5 | Normal text | ✅ |
+| `on-nav-item-current` | `nav-item-current-end` | `#2F4858` | `#FFFFFF` | 9.59 | 4.5 | Normal text | ✅ |
+| `on-brand` | `brand` | `#FFFFFF` | `#2F4858` | 9.59 | 4.5 | Text on filled control | ✅ |
+| `on-brand` | `brand-end` | `#FFFFFF` | `#33658A` | 6.23 | 4.5 | Text on filled control | ✅ |
+| `brand` | `bg` | `#2F4858` | `#F5F7F9` | 8.93 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `brand-end` | `bg` | `#33658A` | `#F5F7F9` | 5.80 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `brand` | `surface` | `#2F4858` | `#FFFFFF` | 9.59 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `brand-end` | `surface` | `#33658A` | `#FFFFFF` | 6.23 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
 
 ## Dark theme
 
@@ -175,22 +180,26 @@ Notes
 | `on-accent` | `accent-hover` | `#0B1A26` | `#A5CAE4` | 10.23 | 4.5 | Text on filled control | ✅ |
 | `accent` | `bg` | `#7FB2D6` | `#0F1A22` | 7.76 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
 | `accent` | `surface` | `#7FB2D6` | `#15232E` | 7.05 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `on-header` | `header` | `#E6EDF2` | `#0F1A22` | 14.91 | 4.5 | Normal text | ✅ |
-| `on-header-muted` | `header` | `#B0BFCB` | `#0F1A22` | 9.37 | 4.5 | Normal text | ✅ |
-| `focus-ring` | `header` | `#9DCBEB` | `#0F1A22` | 10.22 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `on-nav` | `nav` | `#B0BFCB` | `#15232E` | 8.51 | 4.5 | Normal text | ✅ |
-| `on-nav-muted` | `nav` | `#94A6B4` | `#15232E` | 6.38 | 4.5 | Normal text | ✅ |
+| `on-header` | `header` | `#E6EDF2` | `#15232E` | 13.54 | 4.5 | Normal text | ✅ |
+| `on-header-muted` | `header` | `#B0BFCB` | `#15232E` | 8.51 | 4.5 | Normal text | ✅ |
+| `focus-ring` | `header` | `#9DCBEB` | `#15232E` | 9.28 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `on-nav` | `nav` | `#E6EDF2` | `#15232E` | 13.54 | 4.5 | Normal text | ✅ |
+| `on-nav-muted` | `nav` | `#B0BFCB` | `#15232E` | 8.51 | 4.5 | Normal text | ✅ |
 | `nav-item-current` | `nav` | `#86BBD8` | `#15232E` | 7.71 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
 | `nav-item-current-end` | `nav` | `#5E95BD` | `#15232E` | 4.96 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
 | `nav-focus-ring` | `nav` | `#9DCBEB` | `#15232E` | 9.28 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `on-nav` | `nav-end` | `#B0BFCB` | `#15232E` | 8.51 | 4.5 | Normal text | ✅ |
-| `on-nav-muted` | `nav-end` | `#94A6B4` | `#15232E` | 6.38 | 4.5 | Normal text | ✅ |
-| `nav-item-current` | `nav-end` | `#86BBD8` | `#15232E` | 7.71 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `nav-item-current-end` | `nav-end` | `#5E95BD` | `#15232E` | 4.96 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `nav-focus-ring` | `nav-end` | `#9DCBEB` | `#15232E` | 9.28 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `on-nav` | `nav-item-hover` | `#B0BFCB` | `#1F3240` | 7.03 | 4.5 | Normal text | ✅ |
-| `on-nav-muted` | `nav-item-hover` | `#94A6B4` | `#1F3240` | 5.27 | 4.5 | Normal text | ✅ |
+| `on-nav` | `nav-end` | `#E6EDF2` | `#1B2B37` | 12.27 | 4.5 | Normal text | ✅ |
+| `on-nav-muted` | `nav-end` | `#B0BFCB` | `#1B2B37` | 7.71 | 4.5 | Normal text | ✅ |
+| `nav-item-current` | `nav-end` | `#86BBD8` | `#1B2B37` | 6.99 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `nav-item-current-end` | `nav-end` | `#5E95BD` | `#1B2B37` | 4.50 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `nav-focus-ring` | `nav-end` | `#9DCBEB` | `#1B2B37` | 8.41 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `on-nav` | `nav-item-hover` | `#E6EDF2` | `#1F3240` | 11.18 | 4.5 | Normal text | ✅ |
+| `on-nav-muted` | `nav-item-hover` | `#B0BFCB` | `#1F3240` | 7.03 | 4.5 | Normal text | ✅ |
 | `on-nav-item-current` | `nav-item-current` | `#0B1A26` | `#86BBD8` | 8.50 | 4.5 | Normal text | ✅ |
 | `on-nav-item-current` | `nav-item-current-end` | `#0B1A26` | `#5E95BD` | 5.47 | 4.5 | Normal text | ✅ |
-| `nav-item-current` | `bg` | `#86BBD8` | `#0F1A22` | 8.49 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `nav-item-current-end` | `bg` | `#5E95BD` | `#0F1A22` | 5.47 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `on-brand` | `brand` | `#0B1A26` | `#86BBD8` | 8.50 | 4.5 | Text on filled control | ✅ |
+| `on-brand` | `brand-end` | `#0B1A26` | `#5E95BD` | 5.47 | 4.5 | Text on filled control | ✅ |
+| `brand` | `bg` | `#86BBD8` | `#0F1A22` | 8.49 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `brand-end` | `bg` | `#5E95BD` | `#0F1A22` | 5.47 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `brand` | `surface` | `#86BBD8` | `#15232E` | 7.71 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `brand-end` | `surface` | `#5E95BD` | `#15232E` | 4.96 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |

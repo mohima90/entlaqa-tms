@@ -1,21 +1,38 @@
 import { type PasswordRuleState, withMin } from '../../lib/password-rules';
 
-/** One live password rule: an icon plus its state for screen readers. */
+/**
+ * One live password rule as a chip (direction C): a ring that turns into a green tick when the rule is
+ * met, plus its state for screen readers. The text says it; the colour only supports it.
+ */
 function RuleItem({ met, label, state }: { met: boolean; label: string; state: string }) {
   return (
-    <li className={`flex items-center gap-2 text-sm ${met ? 'text-success' : 'text-text-muted'}`}>
-      <svg
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
+    <li
+      className={`inline-flex items-center gap-1.5 rounded-full border py-1 pe-3 ps-2 text-[13px] font-medium ${
+        met
+          ? 'border-success/50 bg-success-subtle text-success'
+          : 'border-border bg-surface-sunken text-text-muted'
+      }`}
+    >
+      <span
         aria-hidden="true"
-        className="shrink-0"
+        className={`grid size-4.5 shrink-0 place-items-center rounded-full border-[1.5px] ${
+          met ? 'border-success bg-success text-surface' : 'border-border-strong'
+        }`}
       >
-        {met ? <path d="M5 12l5 5 9-10" /> : <circle cx="12" cy="12" r="8" />}
-      </svg>
+        {met ? (
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+            focusable="false"
+          >
+            <path d="M5 12l5 5 9-10" />
+          </svg>
+        ) : null}
+      </span>
       <span>
         {label} <span className="sr-only">{state}</span>
       </span>
@@ -51,7 +68,7 @@ export function PasswordRulesList({
       id={id}
       aria-label={labels.rulesLabel}
       aria-live="polite"
-      className="m-0 flex list-none flex-col gap-1 p-0"
+      className="m-0 flex list-none flex-wrap gap-2 p-0"
     >
       {(
         [

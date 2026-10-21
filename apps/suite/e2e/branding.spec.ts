@@ -74,14 +74,35 @@ const SVG = Buffer.from(
 );
 
 async function expectNoSeriousViolations(page: Page) {
+  // From the top of the page: after an image is removed the form gets shorter, and the scroll position
+  // can leave a control half behind the sticky top bar, which axe then measures as obscured (2.5.8:
+  // in CI the browser-icon Upload button under the language switch). Axe still checks every element.
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+  });
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
     .analyze();
-  expect(
-    results.violations
-      .filter((v) => v.impact === 'serious' || v.impact === 'critical')
-      .map((v) => `${v.id}: ${v.help} (${v.nodes.length})`),
-  ).toEqual([]);
+  const serious = results.violations.filter(
+    (v) => v.impact === 'serious' || v.impact === 'critical',
+  );
+  // Where each failing element is and what sits on top of it, so a failure in CI names its cause.
+  const details = await Promise.all(
+    serious.flatMap((v) =>
+      v.nodes.map(async (n) => {
+        const selector = n.target.join(' ');
+        const where = await page.evaluate((sel) => {
+          const element = document.querySelector(sel);
+          if (!element) return 'not found';
+          const r = element.getBoundingClientRect();
+          const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+          return `rect ${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}×${Math.round(r.height)} · scrollY ${Math.round(window.scrollY)} · on top: ${top?.tagName ?? '-'}[${top?.getAttribute('data-testid') ?? ''}]`;
+        }, selector);
+        return `${v.id}: ${v.help} — ${selector} — ${n.failureSummary ?? ''} — ${where}`;
+      }),
+    ),
+  );
+  expect(details).toEqual([]);
 }
 
 /** A colour role as the live preview has it (its own custom properties, set from the unsaved values). */
@@ -108,18 +129,18 @@ for (const locale of ['en', 'ar'] as const) {
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(t.title);
     await expect(page.getByTestId('branding-not-configured')).toContainText(t.preview);
     await expect(page.getByTestId('brand-contrast-ok')).toContainText(t.contrastOk);
-    await expect.poll(() => previewRole(page, 'nav-item-current')).toBe('#2F4858');
+    await expect.poll(() => previewRole(page, 'brand')).toBe('#2F4858');
     await expectNoSeriousViolations(page);
 
     // A colour typed in the hex field: the preview follows at once (unsaved).
     await page.getByTestId('brand-primaryColor').fill('#1E3A5F');
-    await expect.poll(() => previewRole(page, 'nav-item-current')).toBe('#1E3A5F');
+    await expect.poll(() => previewRole(page, 'brand')).toBe('#1E3A5F');
     // An unreadable colour: the WCAG warning with the real ratio; the preview stays readable.
     await page.getByTestId('brand-primaryColor').fill('#FFD500');
     const warning = page.getByTestId('brand-contrast-warning');
     await expect(warning).toContainText(t.contrastTitle);
     await expect(page.getByTestId('brand-contrast-textOnPrimary')).toHaveText(t.contrastLine);
-    await expect.poll(() => previewRole(page, 'nav-item-current')).not.toBe('#FFD500');
+    await expect.poll(() => previewRole(page, 'brand')).not.toBe('#FFD500');
     await expectNoSeriousViolations(page);
     // A preset: both colours, readable.
     await page.getByRole('button', { name: t.navy }).click();
@@ -134,22 +155,18 @@ for (const locale of ['en', 'ar'] as const) {
     // Gradient off: one colour.
     const gradient = page.getByRole('switch', { name: t.gradient });
     await expect(gradient).toHaveAttribute('aria-checked', 'true');
-    expect(await previewRole(page, 'nav-item-current-end')).not.toBe(
-      await previewRole(page, 'nav-item-current'),
-    );
+    expect(await previewRole(page, 'brand-end')).not.toBe(await previewRole(page, 'brand'));
     await gradient.click();
     await expect(gradient).toHaveAttribute('aria-checked', 'false');
     await expect(page.getByTestId('brand-secondaryColor')).toHaveCount(0);
-    await expect
-      .poll(() => previewRole(page, 'nav-item-current-end'))
-      .toBe(await previewRole(page, 'nav-item-current'));
+    await expect.poll(() => previewRole(page, 'brand-end')).toBe(await previewRole(page, 'brand'));
 
     // Reset to the Jadarat look.
     await page.getByTestId('brand-reset').click();
     await expect(page.getByTestId('brand-primaryColor')).toHaveValue('#2F4858');
     await expect(page.getByTestId('brand-secondaryColor')).toHaveValue('#33658A');
     await expect(gradient).toHaveAttribute('aria-checked', 'true');
-    await expect.poll(() => previewRole(page, 'nav-item-current')).toBe('#2F4858');
+    await expect.poll(() => previewRole(page, 'brand')).toBe('#2F4858');
 
     // Images: a PNG shows in the previews at once; an SVG is refused by its type.
     await page.getByTestId('brand-image-logo-input').setInputFiles({
@@ -226,7 +243,7 @@ test.describe('branding saved', () => {
     await page.reload();
     const current = await page
       .locator('html')
-      .evaluate((el) => getComputedStyle(el).getPropertyValue('--color-nav-item-current').trim());
+      .evaluate((el) => getComputedStyle(el).getPropertyValue('--color-brand').trim());
     expect(current).toBe('#7A1F2B');
     // Back to the Jadarat look for the next run.
     await page.getByTestId('brand-reset').click();

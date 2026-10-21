@@ -151,11 +151,18 @@ describe('organization brand colours: derivation', () => {
       expect(after.bg).toBe(before.bg);
       expect(after.text).toBe(before.text);
       expect(after.header).toBe(before.header);
-      // Accent aliases follow the organization colour; the current navigation entry carries the
-      // organization's gradient, while the navigation panel stays the theme's (white / dark surface).
+      // Accent aliases follow the organization colour; the brand gradient is the organization's. In
+      // light mode the navigation panel is that gradient (direction C); in dark mode it stays the
+      // theme's dark surfaces and the current entry carries the gradient.
       expect(after.accent).toBe(after.primary);
-      expect(after['nav-item-current']).not.toBe(before['nav-item-current']);
-      expect(after.nav).toBe(after.surface);
+      expect(after.brand).not.toBe(before.brand);
+      if (mode === 'light') {
+        expect(after.nav).toBe(after.brand);
+        expect(after['nav-item-current']).toBe(before['nav-item-current']);
+      } else {
+        expect(after.nav).toBe(before.nav);
+        expect(after['nav-item-current']).toBe(after.brand);
+      }
     }
   });
 
@@ -170,27 +177,31 @@ describe('organization brand colours: derivation', () => {
   });
 });
 
-describe('organization brand colours: the current navigation entry (T-M2-43)', () => {
+describe('organization brand colours: the brand gradient and the navigation (direction C)', () => {
   it('replaces the Jadarat gradient with the primary → its hover shade, with white text (light)', () => {
     // A colour that already passes is used as it is (#0F6E5A, the approved organization example).
     const { layer } = deriveOrganizationBrand({ primary: '#0F6E5A' });
-    expect(layer.light['nav-item-current']).toBe('#0F6E5A');
-    expect(layer.light['nav-item-current-end']).toBe(layer.light['primary-hover']);
-    expect(layer.light['on-nav-item-current']).toBe('#FFFFFF');
-    // The panel itself is not part of the organization layer: it stays white (Kawadir layout).
+    expect(layer.light.brand).toBe('#0F6E5A');
+    expect(layer.light['brand-end']).toBe(layer.light['primary-hover']);
+    expect(layer.light['on-brand']).toBe('#FFFFFF');
+    // The panel is the gradient (aliases of the theme); the current entry stays a white pill with the
+    // organization's colour as its text.
     expect(layer.light.nav).toBeUndefined();
-    expect(resolveThemeColors(jadaratTheme, 'light', layer).nav).toBe('#FFFFFF');
+    const colors = resolveThemeColors(jadaratTheme, 'light', layer);
+    expect([colors.nav, colors['nav-end']]).toEqual(['#0F6E5A', layer.light['primary-hover']]);
+    expect(colors['nav-item-current']).toBe('#FFFFFF');
+    expect(colors['on-nav-item-current']).toBe('#0F6E5A');
   });
 
   it('runs from the primary to the accent when the organization has two colours', () => {
     const { layer } = deriveOrganizationBrand({ primary: '#0F6E5A', accent: '#7B2CBF' });
     for (const mode of ['light', 'dark'] as const) {
-      expect(layer[mode]['nav-item-current']).toBe(layer[mode].primary);
-      expect(layer[mode]['nav-item-current-end']).toBe(layer[mode].accent);
+      expect(layer[mode].brand).toBe(layer[mode].primary);
+      expect(layer[mode]['brand-end']).toBe(layer[mode].accent);
     }
   });
 
-  it('keeps the brand gradient (navigation, buttons, KPI cards) readable and visible at BOTH ends, light and dark', () => {
+  it('keeps the brand gradient (navigation, buttons, view cards) readable and visible at BOTH ends, light and dark', () => {
     const accents = [...seededColours(40, 3)];
     const cases = [
       ...[...EDGE_CASES, ...grid].map((primary) => ({ primary })),
@@ -200,34 +211,41 @@ describe('organization brand colours: the current navigation entry (T-M2-43)', (
       const { layer } = deriveOrganizationBrand(input);
       for (const mode of ['light', 'dark'] as const) {
         const colors = resolveThemeColors(jadaratTheme, mode, layer);
-        for (const end of [colors['nav-item-current'], colors['nav-item-current-end']]) {
-          expect(contrastRatio(colors['on-nav-item-current'], end)).toBeGreaterThanOrEqual(4.5);
-          expect(contrastRatio(end, colors.nav)).toBeGreaterThanOrEqual(3);
-          // Primary buttons and the summary (KPI) cards sit on the page background.
+        for (const end of [colors.brand, colors['brand-end']]) {
+          expect(contrastRatio(colors['on-brand'], end)).toBeGreaterThanOrEqual(4.5);
+          // Primary buttons and the current view card sit on the page background and on cards.
           expect(contrastRatio(end, colors.bg)).toBeGreaterThanOrEqual(3);
+          expect(contrastRatio(end, colors.surface)).toBeGreaterThanOrEqual(3);
         }
+        for (const panel of [colors.nav, colors['nav-end']]) {
+          expect(contrastRatio(colors['on-nav'], panel)).toBeGreaterThanOrEqual(4.5);
+          expect(contrastRatio(colors['nav-item-current'], panel)).toBeGreaterThanOrEqual(3);
+          expect(contrastRatio(colors['nav-focus-ring'], panel)).toBeGreaterThanOrEqual(3);
+        }
+        expect(
+          contrastRatio(colors['on-nav-item-current'], colors['nav-item-current']),
+        ).toBeGreaterThanOrEqual(4.5);
         expect(contrastRatio(colors['on-nav'], colors['nav-item-hover'])).toBeGreaterThanOrEqual(
           4.5,
         );
-        expect(contrastRatio(colors['nav-focus-ring'], colors.nav)).toBeGreaterThanOrEqual(3);
       }
     }
   });
 
   it('darkens a light colour for the gradient in light mode, with dark text on it in dark mode', () => {
     const { layer } = deriveOrganizationBrand({ primary: '#FFD500' });
-    expect(layer.light['nav-item-current']).not.toBe('#FFD500');
-    expect(contrastRatio('#FFFFFF', layer.light['nav-item-current'] ?? '')).toBeGreaterThanOrEqual(
-      4.5,
-    );
-    expect(relativeLuminance(layer.dark['on-nav-item-current'] ?? '#FFFFFF')).toBeLessThan(0.05);
+    expect(layer.light.brand).not.toBe('#FFD500');
+    expect(contrastRatio('#FFFFFF', layer.light.brand ?? '')).toBeGreaterThanOrEqual(4.5);
+    expect(relativeLuminance(layer.dark['on-brand'] ?? '#FFFFFF')).toBeLessThan(0.05);
   });
 
-  it('the navigation focus ring follows the organization focus ring', () => {
+  it('the navigation focus ring is the entry text on the gradient (light) and the organization ring (dark)', () => {
     const { layer } = deriveOrganizationBrand({ primary: '#3A7CA5' });
-    const colors = resolveThemeColors(jadaratTheme, 'light', layer);
-    expect(colors['nav-focus-ring']).toBe(colors['focus-ring']);
-    expect(colors['focus-ring']).toBe(layer.light['focus-ring']);
+    const light = resolveThemeColors(jadaratTheme, 'light', layer);
+    expect(light['nav-focus-ring']).toBe(light['on-brand']);
+    const dark = resolveThemeColors(jadaratTheme, 'dark', layer);
+    expect(dark['nav-focus-ring']).toBe(dark['focus-ring']);
+    expect(dark['focus-ring']).toBe(layer.dark['focus-ring']);
   });
 });
 

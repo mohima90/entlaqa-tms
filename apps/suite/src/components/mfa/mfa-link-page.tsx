@@ -1,17 +1,18 @@
 import 'server-only';
 import { otherLocale } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
-import { Card } from '@jadarat/ui';
+import { Alert } from '@jadarat/ui';
 import type { Metadata } from 'next';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
+import { authLanguageSwitch, authShellTexts } from '../../lib/auth-shell-texts';
 import { mfaErrorTexts } from '../../lib/auth-texts';
 import { getConfigStatus } from '../../lib/config-status';
 import { mfaLinkPath } from '../../lib/mfa-link';
-import { AuthHeaderBrand } from '../auth/auth-brand-layout';
-import { LanguageToggle } from '../language-toggle';
+import { authBrandOf, signInBrand } from '../../lib/sign-in-brand';
+import { AuthCard, AuthLanguageSwitch, AuthShell } from '../auth/auth-shell';
 import { MfaLinkView } from './mfa-link-view';
 
 /**
@@ -39,24 +40,28 @@ export async function MfaLinkPage({ params }: { readonly params: Promise<{ local
   const t = await getTranslations({ locale, namespace: 'mfaLink.remove' });
   const shared = await getTranslations({ locale, namespace: 'mfaLink' });
   const common = await getTranslations({ locale, namespace: 'common' });
+  const shell = await authShellTexts(locale);
+  const brand = authBrandOf(await signInBrand(locale));
 
   if (!(status.auth && status.database)) {
     const errorsT = await getTranslations({ locale, namespace: 'errors' });
     return (
-      <div className="flex min-h-dvh flex-col">
-        <header className="flex items-center justify-between gap-4 border-b border-border bg-surface px-4 py-3">
-          <AuthHeaderBrand locale={locale} productName={common('productName')} />
-          <LanguageToggle locale={locale} path="/mfa/remove" />
-        </header>
-        <main id="main" className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-6 px-4 py-10">
-          <h1 className="m-0 text-2xl font-bold">{t('pageTitle')}</h1>
-          <Card>
-            <p className="m-0 text-text-muted" data-testid="mfa-link-not-configured">
-              {errorsT('notConfigured')}
-            </p>
-          </Card>
-        </main>
-      </div>
+      <AuthShell
+        variant="focus"
+        brand={brand}
+        texts={shell}
+        languageSwitch={<AuthLanguageSwitch {...await authLanguageSwitch(locale, '/mfa/remove')} />}
+        icon="shield"
+        iconTone="warning"
+        size="md"
+        title={t('pageTitle')}
+      >
+        <AuthCard>
+          <Alert tone="info" data-testid="mfa-link-not-configured">
+            {errorsT('notConfigured')}
+          </Alert>
+        </AuthCard>
+      </AuthShell>
     );
   }
 
@@ -64,11 +69,13 @@ export async function MfaLinkPage({ params }: { readonly params: Promise<{ local
   return (
     <MfaLinkView
       locale={locale}
-      productName={<AuthHeaderBrand locale={locale} productName={common('productName')} />}
+      brand={brand}
+      shell={shell}
       toggle={{
         href: mfaLinkPath(target),
         lang: target,
         label: common('switchLanguage'),
+        ariaLabel: common('switchLanguageAria'),
       }}
       texts={{
         pageTitle: t('pageTitle'),

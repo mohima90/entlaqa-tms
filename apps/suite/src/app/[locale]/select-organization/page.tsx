@@ -3,17 +3,19 @@ import {
   getSessionOrganizationsForRequest,
   isPlatformAdminForRequest,
 } from '@jadarat/platform-identity/auth';
-import { Card, Icon, buttonClasses } from '@jadarat/ui';
+import { Alert, Icon, buttonClasses } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import { connection } from 'next/server';
+import { AuthCard, AuthLanguageSwitch, AuthShell } from '../../../components/auth/auth-shell';
 import { OrganizationChooser } from '../../../components/auth/organization-chooser';
 import { SignOutButton } from '../../../components/auth/sign-out-button';
-import { LanguageToggle } from '../../../components/language-toggle';
+import { authLanguageSwitch, authShellTexts } from '../../../lib/auth-shell-texts';
 import { authErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
 import { getSessionState, redirectFor } from '../../../lib/session-state';
+import { authBrandOf } from '../../../lib/sign-in-brand';
 
 /**
  * Organization chooser after sign-in when the account belongs to several organizations. A Platform Super
@@ -39,51 +41,64 @@ export default async function SelectOrganizationPage({
   if (platformAdmin && organizations.value.length === 0) redirect(`/${locale}/platform`);
 
   const t = await getTranslations({ locale, namespace: 'auth' });
-  const common = await getTranslations({ locale, namespace: 'common' });
   const platform = await getTranslations({ locale, namespace: 'platform' });
+  const hasOrganizations = organizations.value.length > 0;
+  // Direction C (redesign package 1): the focused frame; the organizations as large rows (initials, name,
+  // a chevron), the platform console as a clearly separate card, Sign out in the header.
   return (
-    <div className="flex min-h-dvh flex-col">
-      <header className="flex items-center justify-between gap-4 border-b border-border bg-surface px-4 py-3">
-        <span className="text-lg font-semibold">{common('productName')}</span>
-        <div className="flex items-center gap-2">
-          <LanguageToggle locale={locale} path="/select-organization" />
-          <SignOutButton locale={locale} label={t('signOut')} pendingLabel={t('signingOut')} />
-        </div>
-      </header>
-      <main id="main" className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-4 py-10">
-        <h1 className="m-0 text-2xl font-bold">{t('chooseTitle')}</h1>
-        <Card>
-          {organizations.value.length > 0 ? (
-            <>
-              <p className="mb-4 mt-0 text-text-muted">{t('chooseIntro')}</p>
-              <OrganizationChooser
-                locale={locale}
-                organizations={organizations.value.map((org) => ({
-                  tenantId: org.tenantId,
-                  name: locale === 'en' ? (org.nameEn ?? org.nameAr) : org.nameAr,
-                }))}
-                pendingLabel={t('choosing')}
-                errors={await authErrorTexts(locale)}
-              />
-            </>
-          ) : (
-            <p className="m-0 text-text-muted">{t('errors.noOrganization')}</p>
-          )}
-        </Card>
-        {platformAdmin ? (
-          <Card title={platform('chooser.title')} data-testid="platform-console-choice">
-            <p className="mb-4 mt-0 text-text-muted">{platform('chooser.text')}</p>
-            <a
-              href={`/${locale}/platform`}
-              className={buttonClasses({ variant: 'secondary' })}
-              data-testid="open-platform-console"
-            >
-              <Icon name="building" />
-              {platform('consoleName')}
-            </a>
-          </Card>
-        ) : null}
-      </main>
-    </div>
+    <AuthShell
+      variant="focus"
+      // The Jadarat brand: this page is about choosing between organizations, so none of their logos.
+      brand={authBrandOf(null)}
+      texts={await authShellTexts(locale)}
+      languageSwitch={
+        <AuthLanguageSwitch {...await authLanguageSwitch(locale, '/select-organization')} />
+      }
+      headerEnd={
+        <SignOutButton locale={locale} label={t('signOut')} pendingLabel={t('signingOut')} />
+      }
+      icon="building"
+      size="md"
+      title={t('chooseTitle')}
+      subtitle={hasOrganizations ? <p>{t('chooseIntro')}</p> : undefined}
+    >
+      <AuthCard>
+        {hasOrganizations ? (
+          <OrganizationChooser
+            locale={locale}
+            organizations={organizations.value.map((org) => ({
+              tenantId: org.tenantId,
+              name: locale === 'en' ? (org.nameEn ?? org.nameAr) : org.nameAr,
+            }))}
+            pendingLabel={t('choosing')}
+            errors={await authErrorTexts(locale)}
+          />
+        ) : (
+          <Alert tone="warning">{t('errors.noOrganization')}</Alert>
+        )}
+      </AuthCard>
+      {platformAdmin ? (
+        <AuthCard data-testid="platform-console-choice" className="md:flex-row md:items-center">
+          <span
+            aria-hidden="true"
+            className="grid size-12 shrink-0 place-items-center rounded-[14px] bg-inverse-surface text-inverse-text"
+          >
+            <Icon name="building" className="size-5" />
+          </span>
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <h2 className="m-0 text-lg font-bold">{platform('chooser.title')}</h2>
+            <p className="m-0 text-text-muted">{platform('chooser.text')}</p>
+          </div>
+          <a
+            href={`/${locale}/platform`}
+            className={buttonClasses({ variant: 'secondary', className: 'shrink-0' })}
+            data-testid="open-platform-console"
+          >
+            {platform('consoleName')}
+            <Icon name="arrow-end" />
+          </a>
+        </AuthCard>
+      ) : null}
+    </AuthShell>
   );
 }

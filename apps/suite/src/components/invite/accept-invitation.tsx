@@ -20,10 +20,12 @@ import { inviteCodeFromHash, signUpFragment } from '../../lib/invite-link';
 import { minFromParams, passwordRuleState, withMin } from '../../lib/password-rules';
 import {
   AuthField,
+  AuthSpinner,
   RevealButton,
   authPrimaryButton,
   authSecondaryButton,
 } from '../auth/auth-field';
+import { AuthIcon } from '../auth/auth-icons';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { PasswordRulesList } from '../auth/password-rules-list';
 import { fieldErrorCodes } from '../profile/field-errors';
@@ -239,7 +241,7 @@ function CreateAccountForm({
 
   return (
     <form className="flex flex-col gap-5" onSubmit={onSubmit} noValidate>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-3.5 sm:grid-cols-2">
         {/* The page's language first (English by default, PO 14 Oct 2026); both optional: an empty field
             keeps the name the organization entered (either may be missing, PO 17 Oct 2026). */}
         {(locale === 'ar' ? (['ar', 'en'] as const) : (['en', 'ar'] as const)).map((language, i) =>
@@ -276,7 +278,7 @@ function CreateAccountForm({
           ),
         )}
       </div>
-      <p className="-mt-2 mb-0 text-sm text-text-muted">{labels.displayNameHint}</p>
+      <p className="-mt-3 mb-0 text-[13.5px] text-text-muted">{labels.displayNameHint}</p>
       <AuthField
         id="invite-email"
         icon="mail"
@@ -289,7 +291,7 @@ function CreateAccountForm({
         autoComplete="username"
         data-testid="invite-email"
       />
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2.5">
         <AuthField
           id="invite-password"
           name="password"
@@ -311,7 +313,7 @@ function CreateAccountForm({
           inputEnd={revealButton('invite-password')}
         />
         <PasswordRulesList id="invite-password-rules" rules={rules} labels={labels} />
-        <p className="m-0 text-sm text-text-muted">{labels.passwordTip}</p>
+        <p className="m-0 text-[13.5px] text-text-muted">{labels.passwordTip}</p>
       </div>
       <AuthField
         id="invite-password-confirm"
@@ -331,8 +333,8 @@ function CreateAccountForm({
         disabled={pending}
         inputEnd={revealButton('invite-password-confirm')}
       />
-      <div className="flex flex-col gap-1">
-        <label className="flex items-start gap-3">
+      <div className="flex flex-col gap-1.5">
+        <label className="flex items-start gap-3 font-medium [&_a]:text-primary-text">
           <input
             type="checkbox"
             name="privacyAcknowledged"
@@ -340,14 +342,20 @@ function CreateAccountForm({
             aria-invalid={fieldErrors.privacyAcknowledged ? true : undefined}
             aria-describedby={fieldErrors.privacyAcknowledged ? 'invite-privacy-error' : undefined}
             disabled={pending}
-            className="mt-1 size-5 shrink-0"
+            className={`mt-0.5 size-5.5 shrink-0 accent-[var(--color-primary)] ${
+              fieldErrors.privacyAcknowledged ? 'outline-2 outline-offset-1 outline-danger' : ''
+            }`}
             data-testid="invite-privacy"
           />
           <span>{privacyLabel}</span>
         </label>
         {fieldErrors.privacyAcknowledged ? (
-          <p id="invite-privacy-error" className="m-0 text-sm font-medium text-danger">
-            {fieldErrors.privacyAcknowledged}
+          <p
+            id="invite-privacy-error"
+            className="m-0 flex items-start gap-2 ps-8.5 text-[13.5px] font-semibold text-danger"
+          >
+            <AuthIcon name="alert" className="mt-px size-4 shrink-0" />
+            <span>{fieldErrors.privacyAcknowledged}</span>
           </p>
         ) : null}
       </div>
@@ -356,8 +364,15 @@ function CreateAccountForm({
           {message}
         </Alert>
       ) : null}
-      <button type="submit" disabled={pending} className={authPrimaryButton}>
+      <button
+        type="submit"
+        disabled={pending}
+        aria-busy={pending || undefined}
+        className={authPrimaryButton}
+      >
+        {pending ? <AuthSpinner /> : null}
         {pending ? labels.submitting : labels.submit}
+        {pending ? null : <AuthIcon name="arrow" />}
       </button>
     </form>
   );
@@ -406,7 +421,7 @@ function SignInToAcceptForm({
       noValidate
       data-testid="invite-sign-in"
     >
-      <h2 className="m-0 text-lg font-semibold">{labels.signInTitle}</h2>
+      <h2 className="m-0 text-xl font-bold">{labels.signInTitle}</h2>
       <Alert tone="info">{labels.signInIntro}</Alert>
       <AuthField
         id="invite-sign-in-email"
@@ -436,7 +451,13 @@ function SignInToAcceptForm({
           {message}
         </Alert>
       ) : null}
-      <button type="submit" disabled={pending} className={authPrimaryButton}>
+      <button
+        type="submit"
+        disabled={pending}
+        aria-busy={pending || undefined}
+        className={authPrimaryButton}
+      >
+        {pending ? <AuthSpinner /> : null}
         {pending ? labels.signInSubmitting : labels.signInSubmit}
       </button>
     </form>
@@ -539,7 +560,12 @@ export function InviteLinkForwarder({
     window.location.replace(`/${locale}/sign-up${signUpFragment(code)}`);
   }, [locale]);
   return (
-    <p className="m-0 text-text-muted" role="status" data-testid="invite-forwarding">
+    <p
+      className="m-0 flex items-center gap-3 text-text-muted"
+      role="status"
+      data-testid="invite-forwarding"
+    >
+      <AuthSpinner />
       {checking}
     </p>
   );

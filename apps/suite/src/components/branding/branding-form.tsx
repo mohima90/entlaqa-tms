@@ -980,7 +980,7 @@ export function BrandingForm(props: BrandingFormProps) {
               )}
             </div>
             <span
-              className="rounded-xl bg-brand-gradient px-3 py-2 text-sm font-medium text-on-nav-item-current shadow-brand-glow"
+              className="rounded-xl bg-brand-gradient px-3 py-2 text-sm font-medium text-on-brand shadow-brand-glow"
               data-testid="brand-preview-current"
             >
               {t('preview.menuHome')}
@@ -991,7 +991,7 @@ export function BrandingForm(props: BrandingFormProps) {
           <div className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center gap-3">
               <span
-                className="inline-flex min-h-9 items-center rounded-md bg-brand-gradient px-4 text-sm font-medium text-on-nav-item-current shadow-brand-glow"
+                className="inline-flex min-h-9 items-center rounded-md bg-brand-gradient px-4 text-sm font-medium text-on-brand shadow-brand-glow"
                 data-testid="brand-preview-button"
               >
                 {t('preview.button')}
@@ -1023,7 +1023,7 @@ export function BrandingForm(props: BrandingFormProps) {
                   aria-hidden="true"
                   className="h-6 rounded-md border border-border bg-surface"
                 />
-                <span className="inline-flex h-7 items-center justify-center rounded-md bg-brand-gradient text-xs font-medium text-on-nav-item-current">
+                <span className="inline-flex h-7 items-center justify-center rounded-md bg-brand-gradient text-xs font-medium text-on-brand">
                   {t('preview.signInButton')}
                 </span>
               </div>

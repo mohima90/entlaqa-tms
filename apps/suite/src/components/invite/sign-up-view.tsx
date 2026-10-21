@@ -10,11 +10,13 @@ import {
   splitLinkMessage,
   withOrganization,
 } from '../../lib/invite-link';
-import { AuthField, authPrimaryButton, authSecondaryButton } from '../auth/auth-field';
+import { AuthField, AuthSpinner, authPrimaryButton, authSecondaryButton } from '../auth/auth-field';
 import { AuthIcon } from '../auth/auth-icons';
 import {
+  AuthAlt,
   type AuthBrand,
   AuthLanguageSwitch,
+  type AuthPanelTexts,
   AuthShell,
   type AuthShellTexts,
 } from '../auth/auth-shell';
@@ -80,6 +82,8 @@ export interface SignUpViewProps {
   /** The organization's look (logo, picture; WP-ADM-02), or null for Jadarat's. */
   readonly brand?: AuthBrand | null;
   readonly shell: AuthShellTexts;
+  /** The brand panel (direction C: the product's promise, as on the sign-in page). */
+  readonly panel: AuthPanelTexts;
   /** The language switch: its target (locale-prefixed path without the fragment) and texts. */
   readonly toggle: {
     readonly href: string;
@@ -116,6 +120,7 @@ export function SignUpView({
   locale,
   brand,
   shell,
+  panel,
   toggle,
   texts,
   formLabels,
@@ -196,10 +201,13 @@ export function SignUpView({
 
   const codeStatus =
     lookup.kind === 'checking' ? (
-      <span className="flex items-center gap-2 text-sm text-text-muted">{texts.codeChecking}</span>
+      <span className="flex items-center gap-2 text-[13.5px] text-text-muted">
+        <AuthSpinner />
+        {texts.codeChecking}
+      </span>
     ) : organization ? (
       <span
-        className="flex items-center gap-2 text-sm font-medium text-success"
+        className="flex items-center gap-2 text-[13.5px] font-semibold text-success"
         data-testid="sign-up-code-valid"
       >
         <AuthIcon name="check" className="size-4 shrink-0" />
@@ -291,9 +299,10 @@ export function SignUpView({
 
   return (
     <AuthShell
-      variant="centered"
+      variant="split"
       brand={brand}
       texts={shell}
+      panel={panel}
       icon="userPlus"
       // The language switch keeps the code: it goes along in the fragment only.
       languageSwitch={
@@ -305,22 +314,18 @@ export function SignUpView({
         />
       }
       title={organization ? withOrganization(texts.titleWithOrg, organization) : texts.pageTitle}
+      size="md"
       subtitle={
-        <p className="m-0">
-          {organization ? withOrganization(texts.introValid, organization) : texts.intro}
-        </p>
+        <p>{organization ? withOrganization(texts.introValid, organization) : texts.intro}</p>
       }
       after={
-        <p className="m-0 text-center text-sm text-text-muted">
-          {texts.haveAccount}{' '}
-          <a href={`/${locale}/sign-in`} className="font-semibold text-primary-text">
-            {texts.signIn}
-          </a>
-        </p>
+        <AuthAlt>
+          {texts.haveAccount} <a href={`/${locale}/sign-in`}>{texts.signIn}</a>
+        </AuthAlt>
       }
     >
       <div className="flex flex-col gap-5">
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-1.5">
           <AuthField
             id="sign-up-code"
             name="code"
@@ -339,7 +344,7 @@ export function SignUpView({
             dir="ltr"
             // Room for the grouping and pasted spaces; the field keeps the 12 symbols.
             maxLength={fromLink ? 43 : 32}
-            inputClassName="font-mono uppercase tracking-[0.2em]"
+            inputClassName="font-mono uppercase tracking-[0.22em]"
             hint={fromLink ? texts.codeFromLink : undefined}
             error={stateText ?? undefined}
             aria-describedby="sign-up-code-status"
@@ -351,6 +356,7 @@ export function SignUpView({
           </div>
         </div>
         {body}
+        {/* Until a code is valid there is nothing to submit (unchanged, design package 1). */}
         {!valid && link?.state !== 'used' && lookup.kind !== 'error' ? (
           <button type="button" className={authPrimaryButton} disabled>
             {texts.submitDefault}

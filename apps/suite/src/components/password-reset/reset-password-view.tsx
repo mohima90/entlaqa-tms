@@ -15,6 +15,7 @@ import { PASSWORD_MIN_LENGTH, passwordRuleState, withMin } from '../../lib/passw
 import { looksLikeTotpCode } from '../../lib/totp-code-shape';
 import {
   AuthField,
+  AuthSpinner,
   RevealButton,
   authPrimaryButton,
   authSecondaryButton,
@@ -204,8 +205,8 @@ function ResetForm({
 
   return (
     <>
-      <form className="flex flex-col gap-6" onSubmit={onSubmit} noValidate>
-        <div className="flex flex-col gap-2">
+      <form className="flex flex-col gap-5" onSubmit={onSubmit} noValidate>
+        <div className="flex flex-col gap-2.5">
           <AuthField
             id="reset-password"
             name="password"
@@ -248,7 +249,7 @@ function ResetForm({
           inputEnd={reveal_('reset-password-confirm')}
         />
         {needsCode || codeOptional ? (
-          <div className="flex flex-col gap-2" data-testid="reset-code-step">
+          <div className="flex flex-col gap-2.5" data-testid="reset-code-step">
             <p className="m-0 text-sm text-text-muted">
               {needsCode ? texts.codeIntro : texts.codeOptionalIntro}
             </p>
@@ -274,25 +275,28 @@ function ResetForm({
             />
           </div>
         ) : null}
-        <div className="flex flex-col gap-1">
-          <label className="flex min-h-11 items-center gap-3">
-            <input
-              type="checkbox"
-              name="remember"
-              checked={remember}
-              onChange={(event) => {
-                setRemember(event.target.checked);
-              }}
-              aria-describedby="reset-remember-browser-hint"
-              disabled={pending}
-              className="size-5 shrink-0"
-              data-testid="reset-remember-browser"
-            />
-            {texts.rememberBrowser}
-          </label>
-          <p id="reset-remember-browser-hint" className="m-0 ms-8 text-sm text-text-muted">
-            {texts.rememberBrowserHint}
-          </p>
+        <div className="flex items-start gap-3">
+          <input
+            id="reset-remember-browser"
+            type="checkbox"
+            name="remember"
+            checked={remember}
+            onChange={(event) => {
+              setRemember(event.target.checked);
+            }}
+            aria-describedby="reset-remember-browser-hint"
+            disabled={pending}
+            className="mt-0.5 size-5.5 shrink-0 accent-[var(--color-primary)]"
+            data-testid="reset-remember-browser"
+          />
+          <div className="flex flex-col gap-0.5">
+            <label htmlFor="reset-remember-browser" className="font-medium">
+              {texts.rememberBrowser}
+            </label>
+            <p id="reset-remember-browser-hint" className="m-0 text-[13.5px] text-text-muted">
+              {texts.rememberBrowserHint}
+            </p>
+          </div>
         </div>
         <Alert tone="info">{texts.sessionsNotice}</Alert>
         {message ? (
@@ -300,14 +304,19 @@ function ResetForm({
             {message}
           </Alert>
         ) : null}
-        <button type="submit" disabled={pending} className={authPrimaryButton}>
-          <AuthIcon name="lock" className="size-5" />
+        <button
+          type="submit"
+          disabled={pending}
+          aria-busy={pending || undefined}
+          className={authPrimaryButton}
+        >
+          {pending ? <AuthSpinner /> : <AuthIcon name="lock" className="size-5" />}
           {pending ? texts.submitting : texts.submit}
         </button>
       </form>
-      <p className="mb-0 mt-6 text-center text-sm text-text-muted">
+      <p className="m-0 text-center text-[13.5px] text-text-muted">
         {validity.before}
-        <a href={`/${locale}/forgot-password`} className="underline">
+        <a href={`/${locale}/forgot-password`} className="text-primary-text underline">
           {validity.inner}
         </a>
         {validity.after}
@@ -351,10 +360,16 @@ export function ResetPasswordView({
 
   let title = texts.pageTitle;
   let subtitle: string | null = null;
+  let spent = false;
   let body;
   if (view.kind === 'opening') {
     body = (
-      <p className="m-0 text-text-muted" role="status" data-testid="reset-opening">
+      <p
+        className="m-0 flex items-center gap-3 text-text-muted"
+        role="status"
+        data-testid="reset-opening"
+      >
+        <AuthSpinner />
         {texts.opening}
       </p>
     );
@@ -375,17 +390,12 @@ export function ResetPasswordView({
     );
   } else {
     title = texts.invalidTitle;
+    spent = true;
     body = (
       <section
         className="flex flex-col items-center gap-4 text-center"
         data-testid="reset-link-invalid"
       >
-        <span
-          className="inline-flex size-16 items-center justify-center rounded-2xl bg-danger-subtle text-danger"
-          aria-hidden="true"
-        >
-          <AuthIcon name="lock" className="size-8" />
-        </span>
         {view.reason ? (
           <Alert tone="danger" data-testid="reset-error" className="w-full text-start">
             {view.reason}
@@ -408,7 +418,12 @@ export function ResetPasswordView({
 
   return (
     <AuthShell
-      variant="simple"
+      variant="split"
+      // The link used up or expired leads with «Request a new link» under a red tile (direction C).
+      icon="lock"
+      iconTone={spent ? 'danger' : 'brand'}
+      centered={spent}
+      size={spent ? 'md' : 'lg'}
       brand={brand}
       texts={shell}
       panel={panel}
@@ -422,7 +437,7 @@ export function ResetPasswordView({
         />
       }
       title={title}
-      subtitle={subtitle ? <p className="m-0">{subtitle}</p> : undefined}
+      subtitle={subtitle ? <p>{subtitle}</p> : undefined}
     >
       {body}
     </AuthShell>

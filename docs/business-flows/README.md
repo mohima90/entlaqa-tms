@@ -12,6 +12,9 @@
 | Planning cycle (needs → consolidation → approval → hand-over) | EP-PLN | [EP-PLN-planning-cycle.md](EP-PLN-planning-cycle.md) | **Agreed (PO, 17 Oct 2026)** |
 | Branding (the organization's look) | WP-ADM-02 | [EP-BRAND-branding.md](EP-BRAND-branding.md) | **Agreed (PO, 20 Oct 2026)** |
 | E-mail sending (platform sender + Email integration) | EP-EMAIL | [EP-EMAIL-email-sending.md](EP-EMAIL-email-sending.md) | **Agreed (PO, 17 Oct 2026)** |
+| Audit log screen (search, filter, export, before/after) | WP-ADM-03 (EP-AUD) | [EP-AUD-audit-log.md](EP-AUD-audit-log.md) | On hold (PO, 21 Oct 2026) |
+| Profile photo and HR-only person fields | WP-ADM-04 (EP-PEOPLE) | [EP-PEOPLE-photo-hr-fields.md](EP-PEOPLE-photo-hr-fields.md) | **Agreed (PO, 21 Oct 2026)** |
+| Sign-in extras (codes by e-mail, remember this device) | WP-ADM-05 (EP-AUTH, addendum to EP-KAW-AUTH) | [EP-AUTH-signin-extras.md](EP-AUTH-signin-extras.md) | **Agreed (PO, 21 Oct 2026)** |
 
 Status values: Draft · In discussion with the PO · **Agreed (PO, date)** · Changed after agreement (date, reason).
 

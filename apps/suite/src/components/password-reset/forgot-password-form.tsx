@@ -4,8 +4,15 @@ import { type SyntheticEvent, useEffect, useRef, useState, useTransition } from 
 import { requestPasswordResetAction } from '../../auth/password-reset';
 import { splitTaggedMessage } from '../../lib/invite-link';
 import { RESEND_WAIT_SECONDS, formatCountdown } from '../../lib/password-reset-link';
-import { AuthField, authPrimaryButton, authSecondaryButton } from '../auth/auth-field';
+import {
+  AuthField,
+  AuthSpinner,
+  authBackLink,
+  authPrimaryButton,
+  authSecondaryButton,
+} from '../auth/auth-field';
 import { AuthIcon } from '../auth/auth-icons';
+import { AuthHead } from '../auth/auth-shell';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 
 /**
@@ -78,33 +85,41 @@ function SentCard({
   const validity = splitTaggedMessage(texts.sentValidity, 'b');
   const waiting = remaining > 0;
 
+  // Direction C: the confirmation replaces the page's title (which stays for screen readers), centred,
+  // with the address in bold; resend shows its countdown on the button.
   return (
-    <section className="flex flex-col items-center gap-3 text-center" data-testid="forgot-sent">
-      <span
-        className="inline-flex size-16 items-center justify-center rounded-full bg-primary-subtle text-primary-text"
-        aria-hidden="true"
-      >
-        <AuthIcon name="check" className="size-8" />
-      </span>
-      <h2 ref={headingRef} tabIndex={-1} className="m-0 text-3xl font-bold">
-        {texts.sentTitle}
-      </h2>
-      <p className="m-0 text-text-muted">
-        {before}
-        <span dir="ltr" className="font-semibold text-text [unicode-bidi:isolate]">
-          {email}
-        </span>
-        {after} {validity.before}
-        <b>{validity.inner}</b>
-        {validity.after}
-      </p>
+    <section
+      className="flex flex-col items-center gap-3 text-center"
+      data-testid="forgot-sent"
+      data-replaces-head=""
+    >
+      <AuthHead
+        level={2}
+        headingRef={headingRef}
+        icon="mailCheck"
+        iconTone="success"
+        size="md"
+        centered
+        title={texts.sentTitle}
+        subtitle={
+          <p>
+            {before}
+            <span dir="ltr" className="font-semibold text-text [unicode-bidi:isolate]">
+              {email}
+            </span>
+            {after} {validity.before}
+            <b className="font-semibold text-text">{validity.inner}</b>
+            {validity.after}
+          </p>
+        }
+      />
       <p className="m-0 text-sm text-text-muted">{texts.sentSpam}</p>
       {notice ? (
         <Alert tone={notice.tone} data-testid="forgot-resend-notice" className="w-full text-start">
           {notice.text}
         </Alert>
       ) : null}
-      <div className="mt-4 flex w-full flex-col gap-4">
+      <div className="mt-3 flex w-full flex-col gap-4">
         <button
           type="button"
           className={authSecondaryButton}
@@ -123,6 +138,7 @@ function SentCard({
             });
           }}
         >
+          {pending ? <AuthSpinner /> : <AuthIcon name="refresh" />}
           {pending
             ? texts.resending
             : waiting
@@ -138,10 +154,7 @@ function SentCard({
 /** «العودة إلى تسجيل الدخول» with the back arrow (Kawadir). */
 function BackToSignIn({ locale, text }: { readonly locale: 'ar' | 'en'; readonly text: string }) {
   return (
-    <a
-      href={`/${locale}/sign-in`}
-      className="inline-flex min-h-11 items-center justify-center gap-2 self-center text-sm font-medium text-primary-text no-underline hover:underline"
-    >
+    <a href={`/${locale}/sign-in`} className={authBackLink}>
       <AuthIcon name="back" />
       {text}
     </a>
@@ -183,7 +196,7 @@ export function ForgotPasswordForm({ locale, disabled, texts, errors }: ForgotPa
   }
 
   return (
-    <form className="flex flex-col gap-6" onSubmit={onSubmit} noValidate>
+    <form className="flex flex-col gap-5" onSubmit={onSubmit} noValidate>
       <AuthField
         id="forgot-email"
         name="email"
@@ -203,8 +216,13 @@ export function ForgotPasswordForm({ locale, disabled, texts, errors }: ForgotPa
           {message}
         </Alert>
       ) : null}
-      <button type="submit" disabled={disabled || pending} className={authPrimaryButton}>
-        <AuthIcon name="mail" className="size-5" />
+      <button
+        type="submit"
+        disabled={disabled || pending}
+        aria-busy={pending || undefined}
+        className={authPrimaryButton}
+      >
+        {pending ? <AuthSpinner /> : <AuthIcon name="mail" className="size-5" />}
         {pending ? texts.submitting : texts.submit}
       </button>
       <BackToSignIn locale={locale} text={texts.backToSignIn} />

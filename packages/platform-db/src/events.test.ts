@@ -1,7 +1,7 @@
 import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
-import { emitEvent, emittedEventsIn } from './events';
+import { emitEvent, noteWorkQueued, queuedWorkIn } from './events';
 
 const dialect = new PgDialect();
 
@@ -23,13 +23,16 @@ describe('emitEvent', () => {
   it('marks its transaction as having queued worker work (defineAction asks for a pass after commit)', async () => {
     const withEvent = fakeTx([]);
     const without = fakeTx([]);
-    expect(emittedEventsIn(withEvent.tx)).toBe(false);
+    expect(queuedWorkIn(withEvent.tx)).toBe(false);
     await emitEvent(withEvent.tx, { type: 'com.entlaqa.platform.invitation.created' });
-    expect(emittedEventsIn(withEvent.tx)).toBe(true);
-    expect(emittedEventsIn(without.tx)).toBe(false);
+    expect(queuedWorkIn(withEvent.tx)).toBe(true);
+    expect(queuedWorkIn(without.tx)).toBe(false);
     // A refused type marks nothing.
     await expect(emitEvent(without.tx, { type: 'bad' })).rejects.toThrow('invalid event type');
-    expect(emittedEventsIn(without.tx)).toBe(false);
+    expect(queuedWorkIn(without.tx)).toBe(false);
+    // Work queued without an event (e.g. a branding image left for the worker's fallback).
+    noteWorkQueued(without.tx);
+    expect(queuedWorkIn(without.tx)).toBe(true);
   });
 
   it('inserts a thin event into the outbox with a fresh id and returns it', async () => {

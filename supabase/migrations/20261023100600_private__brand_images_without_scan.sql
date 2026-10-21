@@ -29,11 +29,23 @@
 --                                         only an image the Branding uses for that kind (`uploaded` → it
 --                                         becomes `accepted`, with the detected type, the size and the SHA-256
 --                                         of the bytes read; `accepted` → the same bytes again); the size read
---                                         must be the stored object's (confirmation and Storage now); the
+--                                         must be the stored object's (confirmation and Storage now — a
+--                                         missing Storage row is a refusal, JB002); the
 --                                         copy: the detected type's signature, no larger than the file.
 --                                         Idempotent; clears earlier failures. Clean images keep the worker's
 --                                         publish_brand_asset (20261023100300).
--- Domain SQLSTATE: JB002 the bytes are not the stored file's, JB003 not an allowed image type.
+--   file_housekeeping_action(f)           security review M1 (21 Oct 2026): the raw upload of a purpose
+--   finish_file_housekeeping(file, action) without a scan never outlives its use — on hosted Supabase a
+--                                         signed link made while Storage let the uploader read it lasts as
+--                                         long as the OBJECT, whatever expiry was asked for. So housekeeping
+--                                         removes the object (`remove_object`, the record kept) once the image
+--                                         is accepted and its copy published (the copy in PostgreSQL is what is
+--                                         served), once the file is deleted (replaced, removed, abandoned), and
+--                                         24 hours after the upload when it is still `uploaded` (never
+--                                         published); an unused one is purged then (object and record).
+--                                         Everything else as in 20261015090000.
+-- Domain SQLSTATE: JB002 the bytes are not the stored file's (or the stored object is missing), JB003 not an
+-- allowed image type.
 
 -- ---------------------------------------------------------------------------------------------------
 -- What file_guard reads to check the caller's permission (pattern of email_guard, 20261022100100): the
@@ -79,13 +91,14 @@ begin
       and f.deleted_at is null and g.user_id = private.request_user_id() and g.expires_at > now())
   -- The uploader reads back their own upload of a purpose without a malware scan (the branding images, PO
   -- 20 Oct 2026) while it waits to be accepted: the web app checks and copies it with the uploader's
-  -- session before the save's transaction. Their own bytes only, for a day after the upload.
+  -- session before the save's transaction. Their own bytes only, for a day after the upload — never once
+  -- accepted or deleted; housekeeping then removes the object (file_housekeeping_action below).
   or exists (
     select 1 from platform.files f
     join platform.file_purposes p on p.purpose = f.purpose and not p.scan_required and p.upload_by = 'user'
     where f.bucket = p_bucket and f.object_key = p_name and f.tenant_id = v_tenant and f.status = 'uploaded'
-      and f.deleted_at is null and f.purged_at is null and f.created_by_user = private.request_user_id()
-      and f.uploaded_at > now() - interval '24 hours');
+      and f.deleted_at is null and f.purged_at is null and f.object_removed_at is null
+      and f.created_by_user = private.request_user_id() and f.uploaded_at > now() - interval '24 hours');
 end
 $$;
 comment on function private.can_read_object(text, text) is
@@ -162,10 +175,10 @@ as $$
     where f.id = p_file_id and f.tenant_id = p_tenant_id and f.purpose = p_purpose
       and f.owner_module = 'platform' and f.owner_entity_type = 'tenant_branding' and f.owner_entity_id = p_tenant_id
       and f.status in ('uploaded', 'scanning', 'clean', 'accepted') and f.deleted_at is null and f.purged_at is null
-      and f.created_by_user = private.request_user_id());
+      and f.object_removed_at is null and f.created_by_user = private.request_user_id());
 $$;
 comment on function private.branding_file_usable(uuid, uuid, text) is
-  'SECURITY-RELEVANT (WP-ADM-02). A branding image may reference only the saver''s own confirmed upload (uploaded, scanning, clean or accepted) of that purpose for this organization''s branding.';
+  'SECURITY-RELEVANT (WP-ADM-02). A branding image may reference only the saver''s own confirmed upload (uploaded, scanning, clean or accepted, its object not removed) of that purpose for this organization''s branding.';
 
 create or replace function private.release_branding_file(p_tenant_id uuid, p_file_id uuid)
 returns void
@@ -210,7 +223,7 @@ begin
                              ('sign_in_image', b.sign_in_image_file_id)) s (kind, file_id)
   join platform.files f on f.id = s.file_id and f.tenant_id = b.tenant_id
   join platform.file_purposes p on p.purpose = f.purpose
-  where s.file_id is not null and f.deleted_at is null and f.purged_at is null
+  where s.file_id is not null and f.deleted_at is null and f.purged_at is null and f.object_removed_at is null
     -- Scanned purposes: clean only. Purposes without a scan (20261023100400): waiting or accepted.
     and (f.status = 'clean' or (not p.scan_required and f.status in ('uploaded', 'accepted')))
     and not exists (select 1 from platform.brand_assets a where a.tenant_id = b.tenant_id and a.file_id = s.file_id)
@@ -264,6 +277,104 @@ comment on function private.note_brand_asset_failure(uuid, text) is
   'SECURITY-RELEVANT (WP-ADM-02). Worker, in the image''s tenant: one more failed publishing attempt (back-off; given up after 5); an older worker''s FILE_NOT_CLEAN for an image without a scan is not counted. app_worker system claims only.';
 
 -- ---------------------------------------------------------------------------------------------------
+-- Housekeeping of uploads without a scan (security review M1, 21 Oct 2026)
+-- ---------------------------------------------------------------------------------------------------
+-- What is due for a file (as 20261015090000), plus, for a purpose without a malware scan
+-- (scan_required = false, uploaded by users: the branding images), its raw object removed as soon as
+-- nothing needs it — a signed link made while the uploader could read it (hosted Supabase checks the read
+-- policy only when signing) then stops working:
+--   remove_object  `accepted` with its published copy (platform.brand_assets serves the image);
+--                  `deleted` (replaced, removed or abandoned — the record stays for its retention);
+--                  still `uploaded` 24 hours after the upload while the Branding uses it (its publication
+--                  failed or never happened; the page asks for another image)
+--   purge          still `uploaded` 24 hours after the upload and used by no Branding: object and record
+-- Never on legal hold (checked first, as for every removal), never while a worker scans the file.
+create or replace function private.file_housekeeping_action(f platform.files)
+returns text
+language sql stable
+set search_path = ''
+as $$
+  select case
+    when f.purged_at is not null or (f.status = 'scanning' and f.scan_leased_until > now()) then null
+    when f.status = 'infected' and f.bucket <> 'quarantine' and f.object_removed_at is null then 'quarantine'
+    when f.legal_hold then null
+    when (f.status = 'infected' and f.scanned_at < now() - interval '30 days')
+         or (f.status in ('rejected', 'error') and f.created_at < now() - interval '30 days')
+         or (f.status = 'pending_upload' and f.created_at < now() - interval '24 hours')
+         or (f.status not in ('infected', 'rejected', 'error', 'pending_upload') and (
+               (f.retention_class = 'import' and (f.status = 'deleted'
+                  or (f.used_at is not null and f.used_at < now() - interval '7 days')
+                  or (f.used_at is null and f.created_at < now() - interval '24 hours')))
+               or (f.retention_class = 'export' and (f.status = 'deleted' or f.created_at < now() - interval '24 hours'))
+               or (f.retention_class = 'owner_lifetime' and f.status = 'deleted'
+                   and f.deleted_at < now() - interval '30 days'))) then 'purge'
+    when f.status in ('uploaded', 'accepted', 'deleted') and f.object_removed_at is null
+         and exists (select 1 from platform.file_purposes p
+                     where p.purpose = f.purpose and not p.scan_required and p.upload_by = 'user') then
+      case
+        when f.status = 'uploaded' and f.uploaded_at < now() - interval '24 hours'
+             and not exists (select 1 from platform.tenant_branding b
+                             where b.tenant_id = f.tenant_id
+                               and f.id in (b.logo_file_id, b.favicon_file_id, b.sign_in_image_file_id))
+          then 'purge'
+        when f.status = 'uploaded' and f.uploaded_at < now() - interval '24 hours' then 'remove_object'
+        when f.status = 'accepted'
+             and exists (select 1 from platform.brand_assets a where a.tenant_id = f.tenant_id and a.file_id = f.id)
+          then 'remove_object'
+        when f.status = 'deleted' then 'remove_object'
+      end
+    when f.status = 'rejected' and f.object_removed_at is null then 'remove_object'
+  end
+$$;
+revoke all on function private.file_housekeeping_action(platform.files) from public;
+
+-- After the Storage work: as 20261015090000, plus the object removal of a file of a purpose without a scan
+-- (uploaded, accepted or deleted: the record stays) and `accepted` among the statuses a referenced purge
+-- leaves as a deleted tombstone.
+create or replace function private.finish_file_housekeeping(p_file_id uuid, p_action text)
+returns boolean
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+begin
+  perform private.file_worker_check();
+  if p_action = 'quarantine' then
+    update platform.files f set bucket = 'quarantine', quarantined_at = now(), housekeeping_leased_until = null
+    where f.id = p_file_id and f.status = 'infected' and f.bucket <> 'quarantine';
+    return found;
+  elsif p_action = 'remove_object' then
+    update platform.files f set object_removed_at = now(), housekeeping_leased_until = null
+    where f.id = p_file_id and f.object_removed_at is null and not f.legal_hold
+      and (f.status = 'rejected'
+           or (f.status in ('uploaded', 'accepted', 'deleted')
+               and exists (select 1 from platform.file_purposes p
+                           where p.purpose = f.purpose and not p.scan_required and p.upload_by = 'user')));
+    return found;
+  elsif p_action = 'purge' then
+    if exists (select 1 from platform.files f where f.id = p_file_id and f.legal_hold) then
+      return false;
+    end if;
+    begin
+      delete from platform.files f where f.id = p_file_id;
+      return found;
+    exception when foreign_key_violation then
+      update platform.files f
+      set purged_at = now(), object_removed_at = coalesce(f.object_removed_at, now()), original_name = 'deleted',
+          housekeeping_leased_until = null, scan_leased_until = null,
+          status = case when f.status in ('pending_upload', 'uploaded', 'scanning', 'clean', 'accepted', 'rejected', 'error')
+                        then 'deleted' else f.status end,
+          deleted_at = coalesce(f.deleted_at, now())
+      where f.id = p_file_id;
+      return found;
+    end;
+  end if;
+  raise exception 'unknown housekeeping action' using errcode = 'check_violation';
+end
+$$;
+comment on function private.finish_file_housekeeping(uuid, text) is
+  'SECURITY-RELEVANT (T-M2-18, WP-ADM-02 review M1). Worker: records a quarantine move, an object removal (rejected; or a purpose without a scan: uploaded, accepted or deleted) or a purge (record deleted, or kept as a tombstone while referenced). app_worker system claims only.';
+
+-- ---------------------------------------------------------------------------------------------------
 -- Publishing an image of a purpose without a scan: the web app at save time, or the worker
 -- ---------------------------------------------------------------------------------------------------
 create or replace function private.publish_brand_image(p_file_id uuid, p_kind text, p_source_sha256 text,
@@ -301,8 +412,8 @@ begin
   if p_kind is null or p_kind not in ('logo', 'favicon', 'sign_in_image') then
     return null;
   end if;
-  select f.id, f.status, f.bucket, f.object_key, f.size_bytes, f.sha256, f.detected_mime, p.max_bytes,
-         p.allowed_types
+  select f.id, f.status, f.bucket, f.object_key, f.size_bytes, f.sha256, f.detected_mime, f.object_removed_at,
+         p.max_bytes, p.allowed_types
     into v_file
   from platform.files f
   join platform.file_purposes p on p.purpose = f.purpose and not p.scan_required and p.upload_by = 'user'
@@ -333,13 +444,16 @@ begin
                                        and substring(p_content from 9 for 4) = '\x57454250'::bytea
                 else false
               end;
+  -- Storage's own row for the object: it must exist and report the size read (security review L3 — a
+  -- missing row or an unreadable size is a refusal, never a skipped comparison).
   select o.size_text into v_stored from private.storage_object_facts o
   where o.bucket_id = v_file.bucket and o.name = v_file.object_key;
   v_stored_size := case when v_stored ~ '^[0-9]{1,15}$' then v_stored::bigint end;
-  if p_source_size is null or p_source_size < 1 or p_source_size > v_file.max_bytes
+  if v_stored_size is null or v_file.object_removed_at is not null
+     or p_source_size is null or p_source_size < 1 or p_source_size > v_file.max_bytes
      or p_source_sha256 is null or p_source_sha256 !~ '^[0-9a-f]{64}$'
      or (v_file.size_bytes is not null and v_file.size_bytes <> p_source_size)
-     or (v_stored_size is not null and v_stored_size <> p_source_size)
+     or v_stored_size <> p_source_size
      or (v_file.status = 'accepted' and (v_file.sha256 is distinct from p_source_sha256
                                          or v_file.detected_mime is distinct from p_content_type))
      -- The copy (metadata removed) is never larger than the file and starts as its type must.

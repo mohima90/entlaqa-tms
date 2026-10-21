@@ -3,8 +3,8 @@
 -- private.can_read_object, 20261023100600): the uploader reads back their OWN upload of a purpose without a
 -- scan while it waits to be accepted, for a day after the upload — the web app checks and copies it with
 -- the uploader's session at save time. Nobody else, nothing older, never a scanned purpose's upload before
--- its scan, never a clean file without a grant. Connected as Supabase Storage's login role (fixtures: 00,
--- 65, 99_branding_0).
+-- its scan, never a clean file without a grant, never once accepted or deleted. Connected as Supabase
+-- Storage's login role (fixtures: 00, 65, 99_branding_0, the end of 99_branding_4).
 \set ON_ERROR_STOP on
 
 do $$ begin perform tests.assert(session_user = 'supabase_storage_admin', 'must run connected as supabase_storage_admin'); end $$;
@@ -28,6 +28,11 @@ begin
     'not a rejected upload');
   perform tests.assert(not private.can_read_object('images', v_key || 'f0a20000-0000-4000-8000-000000000002'),
     'not a clean branding image without a download grant');
+  -- Review M3: never once the upload is accepted, nor once it is deleted (both today's, by uA).
+  perform tests.assert(not private.can_read_object('images', v_key || 'f0a20000-0000-4000-8000-00000000000d'),
+    'not an accepted upload (its copy is what is served)');
+  perform tests.assert(not private.can_read_object('images', v_key || 'f0a20000-0000-4000-8000-00000000000c'),
+    'not a deleted upload');
   perform tests.assert(not private.can_read_object('images',
       'a0000000-0000-4000-8000-000000000001/platform/person/a1000000-0000-4000-8000-0000000000a1/f0a20000-0000-4000-8000-000000000008'),
     'never a scanned purpose''s upload before its scan (a profile photo)');

@@ -483,7 +483,12 @@ export function BrandingForm(props: BrandingFormProps) {
         }));
         setMessage({
           tone: 'success',
-          text: result.value.changed.length === 0 ? t('noChanges') : t('saved'),
+          text:
+            result.value.changed.length === 0
+              ? t('noChanges')
+              : result.value.pendingImages.length > 0
+                ? t('savedPendingImages')
+                : t('saved'),
         });
         router.refresh();
         return;

@@ -7,7 +7,7 @@ const identity = vi.hoisted(() => ({
 }));
 const db = vi.hoisted(() => ({
   withUserTx: vi.fn((_claims: unknown, fn: (tx: unknown) => Promise<unknown>) => fn('tx')),
-  emittedEventsIn: vi.fn((tx: unknown) => tx === 'tx-with-event'),
+  queuedWorkIn: vi.fn((tx: unknown) => tx === 'tx-with-event'),
   isPassiveRead: vi.fn((name: string) => name === 'platform.user_import.status'),
   insertAuditEvent: vi.fn(() => Promise.resolve()),
   loadSessionFacts: vi.fn(() => Promise.resolve({ active: true, aal2: false })),

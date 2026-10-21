@@ -61,12 +61,14 @@ export const brandingFiles: BrandingFileService<UploadReservation, BrandUploadTa
  * Save, before its transaction (PO, 20 Oct 2026: branding images are not virus-scanned, so they show at
  * once): the admin's own upload read back with their Storage session — never a Storage key — checked by
  * content, size and pixels and stripped of its metadata (platform-files readBrandUpload). The copy is
- * published in the save's transaction.
+ * published in the save's transaction. Storage unavailable → `unavailable` (saved; the worker publishes it).
  */
 export const readBrandingImage: BrandingImageReader = async ({ tenantId, kind, fileId }) => {
   const read = await fileResult(
     readBrandUpload(await requestFileStorage(), { tenantId, slot: kind, fileId }),
   );
+  // Storage unavailable (temporary): the save still goes through; the worker publishes the image (M2).
+  if (!read.ok && read.error.code === 'FILE_STORAGE_UNAVAILABLE') return ok({ unavailable: true });
   if (!read.ok) return read;
   const value = read.value;
   if ('missing' in value) return ok(value);

@@ -3118,6 +3118,7 @@
     "save": "Save changes",
     "saving": "Saving…",
     "saved": "Branding saved. The new look is applied for everyone.",
+    "savedPendingImages": "Branding saved. The new image is shown shortly, usually within a few minutes.",
     "noChanges": "Nothing has changed.",
     "cancel": "Discard changes",
     "lastChanged": "Last changed by {name} · {date}",

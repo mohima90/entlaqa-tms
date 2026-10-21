@@ -177,8 +177,15 @@ export type ActionDefinition<S extends z.ZodType, O, Tx, R = O, B = void> = Acti
   /**
    * true when the action queues work for the background worker WITHOUT emitting a domain event (e.g. a
    * test e-mail request in a settings table): after the commit, the runtime asks for a worker pass
-   * (`requestWorkerPass`). Actions that emit an event through platform-db `emitEvent` are detected on their
-   * own and need not declare it. Never for a passive read.
+   * (`requestWorkerPass`). Actions that emit an event through platform-db `emitEvent`, or mark their
+   * transaction with `noteWorkQueued` (work queued only in some cases), are detected on their own and need
+   * not declare it. Never for a passive read.
+   *
+   * Detection limits (security review L2): only the action's OWN transaction object is looked at, and only
+   * for `emitEvent` / `noteWorkQueued` calls. Work a SQL function or trigger queues by itself, work queued in
+   * `beforeTransaction` or `afterCommit` (other transactions) and work queued by a job are not seen — declare
+   * `queuesWork` for those. A missed kick only delays the work until the next scheduled pass (the per-minute
+   * cron, GitHub's 5-minute schedule); a kick for nothing is a harmless empty pass.
    */
   readonly queuesWork?: boolean;
   /**
@@ -213,6 +220,13 @@ export type ActionDefinition<S extends z.ZodType, O, Tx, R = O, B = void> = Acti
   readonly beforeTransaction?: (args: {
     readonly actor: ActorContext;
     readonly input: z.output<S>;
+    /**
+     * Runs `fn` in a short transaction of its own with the action's verified claims (RLS as the user), ended
+     * before the next step — never nested in another (one pooled connection at a time). For a read the
+     * per-actor work depends on (e.g. which images are new); the action's transaction must check again
+     * whatever it relies on, as the state may change in between.
+     */
+    readonly read: <T>(fn: (tx: Tx) => Promise<T>) => Promise<T>;
   }) => Promise<Result<B, AppError>>;
   readonly handler: (args: {
     readonly ctx: ActionContext<Tx>;
@@ -351,6 +365,7 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
           const before = await definition.beforeTransaction({
             actor: actorFromClaims(tenantClaims),
             input: input.value,
+            read: (fn) => runtime.withUserTx(tenantClaims, fn),
           });
           if (!before.ok) return err(toClientError(before.error));
           prepared = before.value;

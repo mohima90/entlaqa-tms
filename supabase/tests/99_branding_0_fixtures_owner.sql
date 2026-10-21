@@ -64,9 +64,12 @@ where tenant_id = 'a0000000-0000-4000-8000-000000000001';
 alter table platform.tenant_branding enable trigger tenant_branding_stamp;
 alter table platform.tenant_branding enable trigger tenant_branding_files;
 
--- Storage's object of the uploaded sign-in image (its reported size: the publishing check, 99_branding_5).
+-- Storage's objects of the uploaded sign-in image and of the old uploaded favicon (their reported size: the
+-- publishing check, 99_branding_5 and 6 — a missing object is refused, review L3).
 insert into storage.objects (bucket_id, name, owner, metadata) values
   ('images', 'a0000000-0000-4000-8000-000000000001/platform/tenant_branding/a0000000-0000-4000-8000-000000000001/f0a20000-0000-4000-8000-000000000005',
+   '00000000-0000-4000-8000-0000000000a1', jsonb_build_object('size', octet_length(tests.brand_png()), 'mimetype', 'image/png')),
+  ('images', 'a0000000-0000-4000-8000-000000000001/platform/tenant_branding/a0000000-0000-4000-8000-000000000001/f0a20000-0000-4000-8000-000000000007',
    '00000000-0000-4000-8000-0000000000a1', jsonb_build_object('size', octet_length(tests.brand_png()), 'mimetype', 'image/png'));
 
 insert into platform.brand_assets (id, tenant_id, file_id, kind, content_type, content, byte_size, sha256) values

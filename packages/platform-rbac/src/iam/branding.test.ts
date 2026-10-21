@@ -29,6 +29,7 @@ const db = vi.hoisted(() => ({
   getBranding: vi.fn(),
   saveBranding: vi.fn(),
   publishBrandImage: vi.fn(),
+  noteWorkQueued: vi.fn(),
   getOrganizationProfile: vi.fn(),
   updateOrganizationProfile: vi.fn(),
 }));
@@ -264,7 +265,14 @@ describe('saving the branding (WP-ADM-02, BR-BRD-a)', () => {
     const result = await createDefineAction(rt)(saveDefinition())(input);
     expect(result).toEqual({
       ok: true,
-      value: { tenantId: TENANT, version: 3, changed: [], before: {}, after: {} },
+      value: {
+        tenantId: TENANT,
+        version: 3,
+        changed: [],
+        pendingImages: [],
+        before: {},
+        after: {},
+      },
     });
     expect(writeAudit).not.toHaveBeenCalled();
   });
@@ -375,15 +383,89 @@ describe('images published at save time, without a malware scan (PO, 20 Oct 2026
     },
   );
 
-  it('Storage unavailable: the answer is to try again; nothing is saved', async () => {
+  it('Storage unavailable for a NEW image (M2): saved, the image pending for the worker, a worker pass asked for', async () => {
+    readImage.mockResolvedValueOnce(ok({ unavailable: true as const }));
+    const result = await createDefineAction(runtime(forRoles('tenant_admin')).rt)(saveDefinition())(
+      input,
+    );
+    expect(result.ok && result.value.pendingImages).toEqual(['logo']);
+    expect(db.saveBranding).toHaveBeenCalled();
+    expect(db.publishBrandImage).not.toHaveBeenCalled();
+    expect(db.noteWorkQueued).toHaveBeenCalledWith(TX);
+  });
+
+  it('another error from the reader is the answer; nothing is saved', async () => {
     readImage.mockResolvedValueOnce(
-      err({ code: 'FILE_STORAGE_UNAVAILABLE', status: 503, messageKey: 'x', expose: true }),
+      err({ code: 'INTERNAL_ERROR', status: 500, messageKey: 'x', expose: false }),
     );
     const result = await createDefineAction(runtime(forRoles('tenant_admin')).rt)(saveDefinition())(
       input,
     );
-    expect(!result.ok && result.error.code).toBe('FILE_STORAGE_UNAVAILABLE');
+    expect(!result.ok && result.error.code).toBe('INTERNAL_ERROR');
     expect(db.saveBranding).not.toHaveBeenCalled();
+  });
+
+  it('images the saved Branding already uses are never read again (M2): a colour-only save needs no Storage', async () => {
+    db.getBranding.mockResolvedValue({
+      ...record,
+      logoFileId: LOGO,
+      faviconFileId: FAVICON,
+      version: 4,
+    });
+    readImage.mockImplementation(() => Promise.reject(new Error('Storage must not be asked')));
+    db.saveBranding.mockImplementationOnce((_tx: unknown, after: Record<string, unknown>) => {
+      const { emailActionColor: _a, emailLinkColor: _l, ...rest } = after;
+      return Promise.resolve({
+        outcome: 'updated',
+        before: { ...settings, logoFileId: LOGO, faviconFileId: FAVICON },
+        after: rest,
+        version: 5,
+        imageNames: {},
+      });
+    });
+    const result = await createDefineAction(runtime(forRoles('tenant_admin')).rt)(saveDefinition())(
+      { ...input, version: 4, faviconFileId: FAVICON },
+    );
+    expect(result.ok && result.value).toMatchObject({ version: 5, pendingImages: [] });
+    expect(readImage).not.toHaveBeenCalled();
+    expect(db.publishBrandImage).not.toHaveBeenCalled();
+    expect(db.noteWorkQueued).not.toHaveBeenCalled();
+  });
+
+  it('only the new image is read when one of two changes', async () => {
+    db.getBranding.mockResolvedValue({ ...record, logoFileId: LOGO, version: 4 });
+    readImage.mockResolvedValue(ok({ publication: publication(FAVICON, 'favicon') }));
+    db.saveBranding.mockImplementationOnce((_tx: unknown, after: Record<string, unknown>) => {
+      const { emailActionColor: _a, emailLinkColor: _l, ...rest } = after;
+      return Promise.resolve({
+        outcome: 'updated',
+        before: { ...settings, logoFileId: LOGO },
+        after: rest,
+        version: 5,
+        imageNames: {},
+      });
+    });
+    const result = await createDefineAction(runtime(forRoles('tenant_admin')).rt)(saveDefinition())(
+      { ...input, version: 4, faviconFileId: FAVICON },
+    );
+    expect(readImage).toHaveBeenCalledTimes(1);
+    expect(readImage).toHaveBeenCalledWith({ tenantId: TENANT, kind: 'favicon', fileId: FAVICON });
+    expect(db.publishBrandImage).toHaveBeenCalledWith(TX, publication(FAVICON, 'favicon'));
+    expect(result.ok && result.value.pendingImages).toEqual([]);
+  });
+
+  it('a new image the database does not publish now (e.g. not readable by the saver) is pending', async () => {
+    const result = await createDefineAction(runtime(forRoles('tenant_admin')).rt)(saveDefinition())(
+      input,
+    );
+    expect(result.ok && result.value.pendingImages).toEqual(['logo']);
+    expect(db.noteWorkQueued).toHaveBeenCalledWith(TX);
+    db.publishBrandImage.mockResolvedValueOnce(null);
+    readImage.mockResolvedValueOnce(ok({ publication: publication(LOGO, 'logo') }));
+    const unpublished = await createDefineAction(runtime(forRoles('tenant_admin')).rt)(
+      saveDefinition(),
+    )(input);
+    expect(unpublished.ok && unpublished.value.pendingImages).toEqual(['logo']);
   });
 
   it('bytes that are not the stored file: the save is refused (rolled back)', async () => {

@@ -3,8 +3,9 @@
 -- the scan never leases an upload of a purpose without a scan (a scanned purpose's upload still is); the
 -- publishing task's fallback finds images in use that are uploaded or accepted but not published and stores
 -- their copy in the image's tenant (private.publish_brand_image) — never another tenant's, never without a
--- tenant. Runs CONNECTED AS app_worker (fixtures: 00, 99_branding_0, the end of 99_branding_4: A's favicon is
--- the uploaded f0a2…07).
+-- tenant. Housekeeping removes the raw objects of such uploads once nothing needs them (security review M1).
+-- Runs CONNECTED AS app_worker (fixtures: 00, 99_branding_0, the end of 99_branding_4: A's favicon is the
+-- uploaded f0a2…07; f0a2…0b/0c/0d).
 \set ON_ERROR_STOP on
 
 do $$ begin perform tests.assert(session_user = 'app_worker', 'must run connected as app_worker'); end $$;
@@ -68,6 +69,58 @@ begin
     'publish_brand_asset (clean files) does not publish an accepted file');
   perform tests.set_claims(jsonb_build_object('role', 'system', 'job_id', 'tests.brand_assets'));
   perform tests.assert_eq((select count(*) from private.claim_brand_asset_work(10)), 0::bigint, 'nothing left to publish');
+  -- Accepted with its copy published: the raw upload's object is removed (security review M1).
+  perform tests.assert(private.lock_file_housekeeping(v_img, 'remove_object'),
+    'published: the original object is due for removal (the copy is served)');
+  perform tests.assert(private.finish_file_housekeeping(v_img, 'remove_object'), 'removal recorded');
+  perform tests.assert(not private.lock_file_housekeeping(v_img, 'remove_object'), 'once');
+  perform tests.set_claims(tests.system_claims(v_a));
+  perform tests.assert((select status = 'accepted' and object_removed_at is not null from platform.files where id = v_img),
+    'the record stays (the Branding uses it), its object gone');
+end $$;
+rollback;
+
+-- Housekeeping of uploads without a scan (security review M1): their raw objects never outlive their use.
+begin;
+set local role authenticated;
+do $$
+begin
+  perform tests.set_claims(jsonb_build_object('role', 'system', 'job_id', 'tests.housekeeping'));
+  perform tests.assert_eq(
+    (select string_agg(h.id::text || ':' || h.action, ',' order by h.id) from private.claim_file_housekeeping(500) h
+     where h.id::text like 'f0a20000-%'),
+    'f0a20000-0000-4000-8000-000000000006:remove_object,'   -- rejected (as before, 20261015090000)
+    'f0a20000-0000-4000-8000-000000000007:remove_object,'   -- uploaded 2 days ago, used, never published
+    'f0a20000-0000-4000-8000-00000000000b:purge,'           -- uploaded 2 days ago, used by no Branding
+    'f0a20000-0000-4000-8000-00000000000c:remove_object',   -- deleted (replaced): the object goes, the record stays
+    'due: unpublished uploads after 24 hours, deleted ones at once; never a fresh upload (…05) or an accepted file without its copy (…0d)');
+  -- Under the row lock, the same rule.
+  perform tests.assert(not private.lock_file_housekeeping('f0a20000-0000-4000-8000-000000000005', 'purge')
+                       and not private.lock_file_housekeeping('f0a20000-0000-4000-8000-000000000005', 'remove_object'),
+    'a fresh upload waiting for the save is left alone');
+  perform tests.assert(not private.lock_file_housekeeping('f0a20000-0000-4000-8000-000000000007', 'purge'),
+    'an upload the Branding uses is never purged (only its object removed)');
+  perform tests.assert(not private.lock_file_housekeeping('f0a20000-0000-4000-8000-00000000000d', 'remove_object'),
+    'an accepted file without its published copy keeps its object (the worker may still publish it)');
+  perform tests.assert(private.finish_file_housekeeping('f0a20000-0000-4000-8000-00000000000c', 'remove_object'),
+    'a deleted upload: object removal recorded');
+  perform tests.assert(private.finish_file_housekeeping('f0a20000-0000-4000-8000-000000000007', 'remove_object'),
+    'an unpublished upload in use: object removal recorded');
+  perform tests.assert_eq((select count(*) from private.claim_brand_asset_work(10) w
+                           where w.file_id = 'f0a20000-0000-4000-8000-000000000007'), 0::bigint,
+    'an image whose object is gone is no longer due for publishing');
+  perform tests.assert(private.finish_file_housekeeping('f0a20000-0000-4000-8000-00000000000b', 'purge'), 'purged');
+  -- A scanned purpose's upload is never touched by the rule for purposes without a scan.
+  perform tests.assert(not private.finish_file_housekeeping('f0a20000-0000-4000-8000-000000000008', 'remove_object'),
+    'a scanned purpose''s waiting upload is never touched by the unscanned rule');
+  -- What was recorded, read as a job of A (RLS: the file's tenant).
+  perform tests.set_claims(tests.system_claims('a0000000-0000-4000-8000-000000000001'));
+  perform tests.assert((select status = 'deleted' and object_removed_at is not null
+                        from platform.files where id = 'f0a20000-0000-4000-8000-00000000000c'), 'the deleted record stays for its retention');
+  perform tests.assert((select status = 'uploaded' and object_removed_at is not null
+                        from platform.files where id = 'f0a20000-0000-4000-8000-000000000007'), 'the unpublished record stays, its object gone');
+  perform tests.assert_eq((select count(*) from platform.files where id = 'f0a20000-0000-4000-8000-00000000000b'), 0::bigint,
+    'the abandoned upload''s record is gone');
 end $$;
 rollback;
 

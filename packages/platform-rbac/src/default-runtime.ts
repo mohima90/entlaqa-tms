@@ -80,13 +80,14 @@ export const defaultActionRuntime: ActionRuntime<UserTx> = {
       errorCode: sqlState,
     });
   },
-  // Every emitted domain event needs a worker pass to be delivered (platform-db emitEvent marks the tx).
+  // Every emitted domain event needs a worker pass to be delivered (platform-db emitEvent marks the tx), as
+  // does work noted with noteWorkQueued; limits: platform-db events.ts (review L2).
   async queuedWork(tx) {
-    const { emittedEventsIn } = await import('@jadarat/platform-db');
-    return emittedEventsIn(tx);
+    const { queuedWorkIn } = await import('@jadarat/platform-db');
+    return queuedWorkIn(tx);
   },
   // ADR 0005 §1 amendment (PO, 20 Oct 2026): start the GitHub Jobs workflow after the response — a no-op
-  // without JOBS_DISPATCH_TOKEN (self-hosted runs a continuous worker), throttled per server instance.
+  // without the dispatch App settings (self-hosted runs a continuous worker), throttled per server instance.
   async requestWorkerPass({ permission }) {
     const { kickWorkerAfterResponse } = await import('@jadarat/platform-jobs/kick/next');
     kickWorkerAfterResponse(`action:${permission}`);

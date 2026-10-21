@@ -12,6 +12,7 @@ import {
   changedBrandingFields,
   getBranding,
   isDomainError,
+  noteWorkQueued,
   publishBrandImage,
   saveBranding,
 } from '@jadarat/platform-db';
@@ -35,10 +36,14 @@ import { OrganizationNameInput } from './organization-profile';
  *     content; BR-BRD-a).
  *   - Images go through platform-files (purposes platform.brand_*: PNG/JPEG/WebP, 2 MB / 500 KB / 5 MB);
  *     the app binds the file service (BrandingFileService) — this package does not depend on it. NOT
- *     virus-scanned (PO, 20 Oct 2026 — like Kawadir): Save reads each newly chosen image with the admin's own
- *     Storage session BEFORE its transaction (BrandingImageReader: type by content, size, pixels, metadata
- *     removed — a refusal is the answer, with the reason, and nothing is saved) and publishes the copy IN
- *     the save's transaction (private.publish_brand_image), so the image shows as soon as the save commits.
+ *     virus-scanned (PO, 20 Oct 2026 — like Kawadir): Save reads each NEWLY chosen image (one the saved
+ *     Branding does not use yet — security review M2) with the admin's own Storage session BEFORE its
+ *     transaction (BrandingImageReader: type by content, size, pixels, metadata removed — a refusal is the
+ *     answer, with the reason, and nothing is saved) and publishes the copy IN the save's transaction
+ *     (private.publish_brand_image), so the image shows as soon as the save commits. A save that changes
+ *     no image reads nothing from Storage. Storage unavailable for a new image: the save still goes
+ *     through, the answer names the image as pending (`pendingImages`: the page says it is shown shortly)
+ *     and the worker's publishing fallback checks and publishes it (a worker pass is asked for).
  *   - Colours: the app derives what is stored and the e-mail colours with the theme code
  *     (BrandingColorDeriver: packages/ui emailBrandColors) — platform packages never import the UI.
  */
@@ -141,6 +146,11 @@ export interface BrandingSaved {
   readonly tenantId: string;
   readonly version: number;
   readonly changed: readonly BrandingField[];
+  /**
+   * Newly chosen images not published by this save (Storage was unavailable, or the image is left to the
+   * worker): saved, shown once the worker's publishing fallback has run — usually within minutes.
+   */
+  readonly pendingImages: readonly BrandImageKind[];
   readonly before: Readonly<Partial<Record<BrandingField, AuditedBrandingValue>>>;
   readonly after: Readonly<Partial<Record<BrandingField, AuditedBrandingValue>>>;
 }
@@ -174,18 +184,23 @@ const invalid = (path: string, code = 'INVALID'): AppError =>
 export type BrandImageReadRefusal =
   'TYPE_NOT_ALLOWED' | 'TOO_LARGE' | 'EMPTY' | 'DIMENSIONS_TOO_LARGE' | 'MALFORMED';
 
-/** An image read for publishing: the copy, a refusal with its reason, or nothing to read. */
+/**
+ * An image read for publishing: the copy, a refusal with its reason, nothing to read, or Storage unavailable
+ * right now (the save goes through; the worker publishes it).
+ */
 export type BrandImageReading =
   | { readonly publication: BrandImagePublication }
   | { readonly refused: BrandImageReadRefusal }
-  | { readonly missing: true };
+  | { readonly missing: true }
+  | { readonly unavailable: true };
 
 /**
  * What the app binds (platform-files readBrandUpload with the request's own Storage session): reads the
  * caller's own upload for the organization's Branding and prepares the copy. `missing`: Storage does not let
  * the caller read it — the image already shown (accepted or scanned), someone else's or another
- * organization's: nothing to publish now. An error result (Storage unavailable) is the action's answer.
- * Runs BEFORE the save's transaction (never with a pooled connection held).
+ * organization's: nothing to publish now. `unavailable`: Storage could not answer (temporary) — the save
+ * goes through and the worker publishes the image. An error result is the action's answer. Runs BEFORE the
+ * save's transaction (never with a pooled connection held).
  */
 export type BrandingImageReader = (request: {
   readonly tenantId: string;
@@ -215,18 +230,24 @@ export function saveBrandingActionDefinition(
   return {
     permission: PERMISSION_MANAGE,
     input: BrandingInput,
-    // Before the transaction (with the caller's own Storage session; nothing is held): each chosen image the
-    // caller may read back — their new upload — is checked and its copy prepared. A refusal is the answer
-    // (nothing is saved); the image the Branding already shows is not readable and stays as it is.
-    beforeTransaction: async ({ actor, input }) => {
+    // Before the transaction (with the caller's own Storage session; nothing is held): each NEWLY chosen
+    // image — one the saved Branding does not use yet (security review M2; a short read of its own) — is
+    // read back, checked and its copy prepared. A refusal is the answer (nothing is saved); Storage
+    // unavailable leaves it to the worker. Images the Branding already uses are never read again, so a save
+    // of colours or names never depends on Storage. The transaction re-checks everything it relies on.
+    beforeTransaction: async ({ actor, input, read }) => {
       const prepared = new Map<string, BrandImagePublication>();
-      for (const [kind, fileId] of chosenImages(input)) {
-        const read = await readImage({ tenantId: actor.tenantId, kind, fileId });
-        if (!read.ok) return read;
-        if ('refused' in read.value) {
-          return err(invalid(IMAGE_FIELD[kind], `IMAGE_${read.value.refused}`));
+      const chosen = chosenImages(input);
+      if (chosen.length === 0) return ok(prepared);
+      const saved = await read((tx) => getBranding(tx));
+      for (const [kind, fileId] of chosen) {
+        if (saved?.[IMAGE_FIELD[kind]] === fileId) continue;
+        const reading = await readImage({ tenantId: actor.tenantId, kind, fileId });
+        if (!reading.ok) return reading;
+        if ('refused' in reading.value) {
+          return err(invalid(IMAGE_FIELD[kind], `IMAGE_${reading.value.refused}`));
         }
-        if ('publication' in read.value) prepared.set(fileId, read.value.publication);
+        if ('publication' in reading.value) prepared.set(fileId, reading.value.publication);
       }
       return ok(prepared);
     },
@@ -257,21 +278,34 @@ export function saveBrandingActionDefinition(
         },
         input.version,
       );
+      // Newly chosen images this save does not publish: shown once the worker's fallback has run.
+      const pendingImages: BrandImageKind[] = [];
       if (saved.outcome === 'updated' || saved.outcome === 'unchanged') {
         // Published in this transaction: the image shows as soon as the save commits. The database checks
         // again that it is the saver's own upload, used for that kind, with the stored bytes.
         for (const [kind, fileId] of chosenImages(input)) {
           const publication = prepared?.get(fileId);
-          if (publication?.kind !== kind) continue;
-          try {
-            await publishBrandImage(ctx.tx, publication);
-          } catch (error) {
-            if (isDomainError(error) && error.code === 'BRAND_IMAGE_MISMATCH') {
-              return err(invalid(IMAGE_FIELD[kind], 'IMAGE_NOT_USABLE'));
+          let published = false;
+          if (publication?.kind === kind) {
+            try {
+              published = (await publishBrandImage(ctx.tx, publication)) !== null;
+            } catch (error) {
+              if (isDomainError(error) && error.code === 'BRAND_IMAGE_MISMATCH') {
+                return err(invalid(IMAGE_FIELD[kind], 'IMAGE_NOT_USABLE'));
+              }
+              throw error;
             }
-            throw error;
+          }
+          if (
+            !published &&
+            saved.outcome === 'updated' &&
+            saved.before[IMAGE_FIELD[kind]] !== fileId
+          ) {
+            pendingImages.push(kind);
           }
         }
+        // The worker's publishing fallback has work: a worker pass after the commit (defineAction).
+        if (pendingImages.length > 0) noteWorkQueued(ctx.tx);
       }
       switch (saved.outcome) {
         case 'unchanged':
@@ -279,6 +313,7 @@ export function saveBrandingActionDefinition(
             tenantId: ctx.claims.tenant_id,
             version: saved.version,
             changed: [],
+            pendingImages: [],
             before: {},
             after: {},
           });
@@ -298,6 +333,7 @@ export function saveBrandingActionDefinition(
             tenantId: ctx.claims.tenant_id,
             version: saved.version,
             changed,
+            pendingImages,
             before: pick(saved.before, changed, saved.imageNames),
             after: pick(saved.after, changed, saved.imageNames),
           });

@@ -218,6 +218,15 @@ describe('clean files and generated files', () => {
     expect(await loadCleanFile(fakeTx([]).tx, FILE)).toBeNull();
   });
 
+  it('asks for status clean only: an accepted (unscanned branding) file is never a job input (review M3)', async () => {
+    const fake = fakeTx([]);
+    await loadCleanFile(fake.tx, FILE);
+    const query = fake.executed[0]?.sql ?? '';
+    expect(query).toMatch(/status = 'clean'/);
+    expect(query).not.toMatch(/accepted|status in/);
+    expect(query).toMatch(/deleted_at is null and purged_at is null/);
+  });
+
   it('reserves and finishes a generated file; maps refusals', async () => {
     const input = {
       purpose: 'platform.user_import_report',

@@ -159,7 +159,7 @@ const sleep = (ms: number) =>
 
 // What these flows queue for the worker (account e-mails, the platform sender's test e-mail) asks for a
 // worker pass after the response (ADR 0005 §1 amendment, PO 20 Oct 2026; platform-jobs ./kick/next) — a
-// no-op without JOBS_DISPATCH_TOKEN, throttled per server instance.
+// no-op without the dispatch App settings, throttled per server instance.
 const requestAccountLockedMail = kicksWorker('account_mail', requestAccountLockedMailInDatabase);
 const requestMfaCodeLockedMail = kicksWorker('account_mail', requestMfaCodeLockedMailInDatabase);
 const requestMfaFactorMail = kicksWorker('account_mail', requestMfaFactorMailInDatabase);

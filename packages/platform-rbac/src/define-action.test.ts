@@ -669,6 +669,59 @@ describe('defineAction (ADR 0003 §4)', () => {
       ]);
     });
 
+    it('offers a short read transaction of its own, with the same claims, ended before the action’s (M2)', async () => {
+      const steps: string[] = [];
+      let open = 0;
+      const claimsSeen: unknown[] = [];
+      const sequential = runtime({
+        withUserTx: async (claims, fn) => {
+          claimsSeen.push(claims);
+          open += 1;
+          steps.push(`begin (${String(open)} open)`);
+          try {
+            return await fn({ log: steps });
+          } finally {
+            open -= 1;
+            steps.push('end');
+          }
+        },
+        loadSessionFacts: () => Promise.resolve({ active: true, aal2: false }),
+      });
+      const answer = await createDefineAction(sequential.rt)({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        beforeTransaction: async ({ read }) => {
+          const value = await read((tx) => {
+            steps.push(`read (${String(open)} open)`);
+            expect(tx.log).toBe(steps);
+            return Promise.resolve(41);
+          });
+          steps.push(`after read (${String(open)} open)`);
+          return ok(value + 1);
+        },
+        handler: ({ before }) => {
+          steps.push(`handler ${String(before)}`);
+          return Promise.resolve(ok('done'));
+        },
+      })({ enrollmentId: ENROLLMENT });
+      expect(answer).toEqual(ok('done'));
+      expect(steps).toEqual([
+        'begin (1 open)',
+        'end',
+        'begin (1 open)',
+        'read (1 open)',
+        'end',
+        'after read (0 open)',
+        'begin (1 open)',
+        'handler 42',
+        'end',
+      ]);
+      // The session check, the read and the action: the same verified claims.
+      expect(claimsSeen).toHaveLength(3);
+      expect(new Set(claimsSeen).size).toBe(1);
+    });
+
     it('runs beforeTransaction once, also when the action’s transaction is retried; externalEffects still turns the retry off', async () => {
       const calls: { retryOnConflict: boolean | undefined }[] = [];
       const retrying = runtime({

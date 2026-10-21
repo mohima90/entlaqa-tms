@@ -82,7 +82,88 @@ begin
 end $$;
 rollback;
 
--- Fixture for 99_branding_6/7 (committed, a platform operation): A's favicon is the uploaded f0a2…07.
+-- Permission and ownership apart (security review M3): an upload that is the caller's OWN, of the right
+-- purpose and used by the Branding (a state only an owner fixture reaches — e.g. an admin demoted after
+-- saving it) is still refused to a member without platform.tenant.manage. The web app's login role is
+-- taken for the transaction (SET LOCAL SESSION AUTHORIZATION: publish_brand_image tells app_server from
+-- app_worker by the login role).
+begin;
+alter table platform.files disable trigger files_transition;
+insert into platform.files (id, tenant_id, bucket, object_key, purpose, owner_module, owner_entity_type, owner_entity_id,
+    original_name, declared_mime, declared_size, size_bytes, status, retention_class, created_by_user, upload_expires_at,
+    uploaded_at) values
+  ('f0a20000-0000-4000-8000-000000000009', 'a0000000-0000-4000-8000-000000000001', 'images',
+   'a0000000-0000-4000-8000-000000000001/platform/tenant_branding/a0000000-0000-4000-8000-000000000001/f0a20000-0000-4000-8000-000000000009',
+   'platform.brand_sign_in_image', 'platform', 'tenant_branding', 'a0000000-0000-4000-8000-000000000001', 'hr.png',
+   'image/png', octet_length(tests.brand_png()), octet_length(tests.brand_png()), 'uploaded', 'owner_lifetime',
+   '00000000-0000-4000-8000-0000000000ab', now() + interval '15 minutes', now());
+alter table platform.files enable trigger files_transition;
+insert into storage.objects (bucket_id, name, owner, metadata) values
+  ('images', 'a0000000-0000-4000-8000-000000000001/platform/tenant_branding/a0000000-0000-4000-8000-000000000001/f0a20000-0000-4000-8000-000000000009',
+   '00000000-0000-4000-8000-0000000000ab', jsonb_build_object('size', octet_length(tests.brand_png()), 'mimetype', 'image/png'));
+alter table platform.tenant_branding disable trigger tenant_branding_stamp;
+alter table platform.tenant_branding disable trigger tenant_branding_files;
+update platform.tenant_branding set sign_in_image_file_id = 'f0a20000-0000-4000-8000-000000000009'
+where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+alter table platform.tenant_branding enable trigger tenant_branding_stamp;
+alter table platform.tenant_branding enable trigger tenant_branding_files;
+set local session authorization app_server;
+set local role authenticated;
+do $$
+declare
+  v_img constant uuid := 'f0a20000-0000-4000-8000-000000000009';
+  v_sha constant text := encode(sha256(tests.brand_png()), 'hex');
+begin
+  perform tests.assert(session_user = 'app_server', 'the web app''s login role');
+  -- uAB, the HR Manager of A, with a fresh code: the upload is theirs, in use — no permission.
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+                                             'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab')
+                           || tests.fresh_code());
+  perform tests.assert_fails(format('select private.publish_brand_image(%L, %L, %L, %L::bigint, %L, %L::bytea)', v_img::text,
+                                    'sign_in_image', v_sha, 16, 'image/png', tests.brand_png()),
+    array['42501'], 'a non-admin never publishes, not even their own upload in use');
+  -- uA, the Organization Admin: the permission, but not their upload — nothing published.
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                                             'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+  perform tests.assert(private.publish_brand_image(v_img, 'sign_in_image', v_sha, 16, 'image/png', tests.brand_png()) is null,
+    'an Organization Admin never publishes someone else''s upload');
+  perform tests.assert_eq((select count(*) from platform.brand_assets where file_id = v_img), 0::bigint, 'no copy');
+end $$;
+rollback;
+
+-- The stored object must exist (security review L3): Storage's row missing → refused, never a skipped size
+-- comparison.
+begin;
+delete from storage.objects
+where bucket_id = 'images'
+  and name = 'a0000000-0000-4000-8000-000000000001/platform/tenant_branding/a0000000-0000-4000-8000-000000000001/f0a20000-0000-4000-8000-000000000005';
+alter table platform.tenant_branding disable trigger tenant_branding_stamp;
+alter table platform.tenant_branding disable trigger tenant_branding_files;
+update platform.tenant_branding set sign_in_image_file_id = 'f0a20000-0000-4000-8000-000000000005'
+where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+alter table platform.tenant_branding enable trigger tenant_branding_stamp;
+alter table platform.tenant_branding enable trigger tenant_branding_files;
+set local session authorization app_server;
+set local role authenticated;
+do $$
+declare
+  v_img constant uuid := 'f0a20000-0000-4000-8000-000000000005';
+  v_sha constant text := encode(sha256(tests.brand_png()), 'hex');
+begin
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                                             'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+  perform tests.assert_fails_state_like(format('select private.publish_brand_image(%L, %L, %L, %L::bigint, %L, %L::bytea)', v_img::text,
+                                               'sign_in_image', v_sha, 16, 'image/png', tests.brand_png()),
+    'JB002', '%differs from the stored file%', 'no Storage object: refused');
+  perform tests.assert_eq((select status from platform.files where id = v_img), 'uploaded', 'the file is not accepted');
+end $$;
+rollback;
+
+-- Fixtures for 99_branding_6/7 (committed, platform operations):
+--   A's favicon is the uploaded f0a2…07 (two days old, used, never published);
+--   f0a2…0b  logo, uploaded two days ago by uA, used by no Branding  → housekeeping purges it (review M1)
+--   f0a2…0c  favicon, deleted (released) today, by uA                → its object is removed (review M1)
+--   f0a2…0d  sign-in image, accepted today, by uA, not published     → nothing due; Storage never reads it
 begin;
 alter table platform.tenant_branding disable trigger tenant_branding_stamp;
 alter table platform.tenant_branding disable trigger tenant_branding_files;
@@ -90,6 +171,24 @@ update platform.tenant_branding set favicon_file_id = 'f0a20000-0000-4000-8000-0
 where tenant_id = 'a0000000-0000-4000-8000-000000000001';
 alter table platform.tenant_branding enable trigger tenant_branding_stamp;
 alter table platform.tenant_branding enable trigger tenant_branding_files;
+alter table platform.files disable trigger files_transition;
+insert into platform.files (id, tenant_id, bucket, object_key, purpose, owner_module, owner_entity_type, owner_entity_id,
+    original_name, declared_mime, declared_size, detected_mime, size_bytes, sha256, status, status_reason, retention_class,
+    created_by_user, upload_expires_at, uploaded_at, deleted_at)
+select f.id, 'a0000000-0000-4000-8000-000000000001', 'images',
+       'a0000000-0000-4000-8000-000000000001/platform/tenant_branding/a0000000-0000-4000-8000-000000000001/' || f.id::text,
+       f.purpose, 'platform', 'tenant_branding', 'a0000000-0000-4000-8000-000000000001', f.name, 'image/png',
+       octet_length(tests.brand_png()), case when f.status = 'accepted' then 'image/png' end, octet_length(tests.brand_png()),
+       case when f.status = 'accepted' then encode(sha256(tests.brand_png()), 'hex') end, f.status,
+       case when f.status = 'accepted' then 'scan_not_required' end, 'owner_lifetime',
+       '00000000-0000-4000-8000-0000000000a1', now() + interval '15 minutes', now() - f.age,
+       case when f.status = 'deleted' then now() end
+from (values
+  ('f0a20000-0000-4000-8000-00000000000b'::uuid, 'platform.brand_logo', 'abandoned.png', 'uploaded', interval '2 days'),
+  ('f0a20000-0000-4000-8000-00000000000c', 'platform.brand_favicon', 'replaced.png', 'deleted', interval '0'),
+  ('f0a20000-0000-4000-8000-00000000000d', 'platform.brand_sign_in_image', 'accepted.png', 'accepted', interval '0')
+) as f (id, purpose, name, status, age);
+alter table platform.files enable trigger files_transition;
 commit;
 
 \echo '99_branding_4_without_scan_owner: ok'

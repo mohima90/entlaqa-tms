@@ -1,5 +1,6 @@
 -- Rollback of 20261023100600_private__brand_images_without_scan.sql: the functions as in 20261015090000,
--- 20261023100200 and 20261023100300; publish_brand_image and file_guard's permission reads removed.
+-- 20261023100200 and 20261023100300 (housekeeping included); publish_brand_image and file_guard's permission
+-- reads removed.
 drop function if exists private.publish_brand_image(uuid, text, text, bigint, text, bytea);
 
 create or replace function private.can_read_object(p_bucket text, p_name text)
@@ -184,3 +185,67 @@ revoke select (tenant_id, membership_id, role_code, valid_from, valid_until) on 
   from file_guard;
 drop policy if exists role_assignments_file_guard_read on platform.role_assignments;
 revoke select (id) on platform.tenant_memberships from file_guard;
+
+-- Housekeeping as in 20261015090000.
+create or replace function private.file_housekeeping_action(f platform.files)
+returns text
+language sql stable
+set search_path = ''
+as $$
+  select case
+    when f.purged_at is not null or (f.status = 'scanning' and f.scan_leased_until > now()) then null
+    when f.status = 'infected' and f.bucket <> 'quarantine' and f.object_removed_at is null then 'quarantine'
+    when f.legal_hold then null
+    when (f.status = 'infected' and f.scanned_at < now() - interval '30 days')
+         or (f.status in ('rejected', 'error') and f.created_at < now() - interval '30 days')
+         or (f.status = 'pending_upload' and f.created_at < now() - interval '24 hours')
+         or (f.status not in ('infected', 'rejected', 'error', 'pending_upload') and (
+               (f.retention_class = 'import' and (f.status = 'deleted'
+                  or (f.used_at is not null and f.used_at < now() - interval '7 days')
+                  or (f.used_at is null and f.created_at < now() - interval '24 hours')))
+               or (f.retention_class = 'export' and (f.status = 'deleted' or f.created_at < now() - interval '24 hours'))
+               or (f.retention_class = 'owner_lifetime' and f.status = 'deleted'
+                   and f.deleted_at < now() - interval '30 days'))) then 'purge'
+    when f.status = 'rejected' and f.object_removed_at is null then 'remove_object'
+  end
+$$;
+revoke all on function private.file_housekeeping_action(platform.files) from public;
+
+create or replace function private.finish_file_housekeeping(p_file_id uuid, p_action text)
+returns boolean
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+begin
+  perform private.file_worker_check();
+  if p_action = 'quarantine' then
+    update platform.files f set bucket = 'quarantine', quarantined_at = now(), housekeeping_leased_until = null
+    where f.id = p_file_id and f.status = 'infected' and f.bucket <> 'quarantine';
+    return found;
+  elsif p_action = 'remove_object' then
+    update platform.files f set object_removed_at = now(), housekeeping_leased_until = null
+    where f.id = p_file_id and f.status = 'rejected' and f.object_removed_at is null and not f.legal_hold;
+    return found;
+  elsif p_action = 'purge' then
+    if exists (select 1 from platform.files f where f.id = p_file_id and f.legal_hold) then
+      return false;
+    end if;
+    begin
+      delete from platform.files f where f.id = p_file_id;
+      return found;
+    exception when foreign_key_violation then
+      update platform.files f
+      set purged_at = now(), object_removed_at = coalesce(f.object_removed_at, now()), original_name = 'deleted',
+          housekeeping_leased_until = null, scan_leased_until = null,
+          status = case when f.status in ('pending_upload', 'uploaded', 'scanning', 'clean', 'rejected', 'error')
+                        then 'deleted' else f.status end,
+          deleted_at = coalesce(f.deleted_at, now())
+      where f.id = p_file_id;
+      return found;
+    end;
+  end if;
+  raise exception 'unknown housekeeping action' using errcode = 'check_violation';
+end
+$$;
+comment on function private.finish_file_housekeeping(uuid, text) is
+  'SECURITY-RELEVANT (T-M2-18). Worker: records a quarantine move, an object removal or a purge (record deleted, or kept as a tombstone while referenced). app_worker system claims only.';

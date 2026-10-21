@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Superseded for design (PO, 21 Oct 2026)** | **Mobbin is the design reference** (look and user journey) — the PO chose the Mobbin-inspired versions «100%» after the Sign-in / Branding / Structure comparison. This page stays valid for **behaviour** (what features and settings exist), pending the PO's confirmation of that split; the design tokens below (fonts, palette, organization colours) stay. |
 | **Decision** | PO, 15 Oct 2026 — **option B**: Jadarat TMS stays a separate codebase but copies **Kawadir ATS's UI/UX and Organization Admin settings one-to-one** |
 | **Kawadir ATS** | ENTLAQA's sister product (applicant tracking), private repository `ENTLAQA-UAE/kawadir-ats`; same stack: Next.js 16, Supabase, shadcn/ui (style *new-york*), Tailwind CSS v4, Poppins + IBM Plex Sans Arabic |
 | **Source** | A study of Kawadir's code by the Tech Lead (15 Oct 2026). This page **describes** the conventions; no code, assets or secrets are copied into this repository |

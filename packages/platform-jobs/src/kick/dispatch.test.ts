@@ -339,20 +339,35 @@ describe('createWorkerKick', () => {
   );
 
   it.each([
-    ['no token', JSON.stringify({ expires_at: '2030-01-01T00:00:00Z' })],
+    ['no token', JSON.stringify({ expires_at: '2030-01-01T00:00:00Z' }), 'missing'],
     [
       'a token with a line break',
       JSON.stringify({ token: 'ghs_x\nX-Evil: 1', expires_at: '2030-01-01T00:00:00Z' }),
+      'charset',
     ],
-    ['no expiry', JSON.stringify({ token: INSTALLATION_TOKEN })],
-    ['not JSON', 'oops'],
-  ])('a malformed token answer (%s): no dispatch', async (_label, body) => {
+    [
+      'a token with a space',
+      JSON.stringify({ token: 'ghs_test token_xxxxxxxxxxxx', expires_at: '2030-01-01T00:00:00Z' }),
+      'charset',
+    ],
+    ['no expiry', JSON.stringify({ token: INSTALLATION_TOKEN }), 'expiry'],
+    ['not JSON', 'oops', 'body'],
+  ])('a malformed token answer (%s): no dispatch', async (_label, body, problem) => {
     const { kick, dispatchCalls, lines } = setup({
       token: () => Promise.resolve(new Response(body, { status: 201 })),
     });
     expect(await kick.request('cron')).toBe('failed');
     expect(dispatchCalls()).toHaveLength(0);
-    expect(lines[0]).toMatchObject({ fields: { errorCode: 'github_token_malformed' } });
+    expect(lines[0]).toMatchObject({ fields: { errorCode: `github_token_malformed_${problem}` } });
+  });
+
+  it('accepts an installation token in any visible-ASCII format GitHub uses', async () => {
+    const token = 'ghs_test.installation-token_xxxxxxxx/xxxx+xxxx=';
+    const { kick, dispatchCalls } = setup({
+      token: (clock) => Promise.resolve(tokenAnswer(clock + 60 * 60_000, token)),
+    });
+    expect(await kick.request('cron')).toBe('dispatched');
+    expect(dispatchCalls()).toHaveLength(1);
   });
 
   it('throttles actions: one dispatch per minute per instance, then again', async () => {

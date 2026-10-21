@@ -72,8 +72,11 @@ const WORKFLOW_PATTERN = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}\.ya?ml$/;
 const REF_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._/-]{0,199}$/;
 /** App and installation ids: positive integers. */
 const ID_PATTERN = /^[1-9][0-9]{0,15}$/;
-/** An installation token (ghs_…): letters, digits and underscores only — never spaces or line breaks. */
-const TOKEN_PATTERN = /^[A-Za-z0-9_]{20,1024}$/;
+/**
+ * An installation token: visible ASCII only (GitHub's format is not fixed — not only `ghs_` + letters and
+ * digits), never spaces, control characters or line breaks (it goes into an Authorization header).
+ */
+const TOKEN_PATTERN = /^[\x21-\x7E]{20,4096}$/;
 /** What a caller may say about why it asks (logged): a short code, e.g. `cron`, `action:platform.iam.invite`. */
 const REASON_PATTERN = /^[a-z0-9][a-z0-9_.:-]{0,79}$/;
 
@@ -313,8 +316,19 @@ export function createWorkerKick(deps: WorkerKickDeps = {}): WorkerKick {
     } | null;
     const token = typeof body?.token === 'string' ? body.token : null;
     const expiresAt = typeof body?.expires_at === 'string' ? Date.parse(body.expires_at) : NaN;
-    if (token === null || !TOKEN_PATTERN.test(token) || !Number.isFinite(expiresAt)) {
-      throw new KickFailure('github_token_malformed', response.status);
+    // Which check failed is logged (never the value), so a change in GitHub's answer is clear at once.
+    const problem =
+      body === null
+        ? 'github_token_malformed_body'
+        : token === null
+          ? 'github_token_malformed_missing'
+          : !TOKEN_PATTERN.test(token)
+            ? 'github_token_malformed_charset'
+            : !Number.isFinite(expiresAt)
+              ? 'github_token_malformed_expiry'
+              : null;
+    if (problem !== null || token === null) {
+      throw new KickFailure(problem ?? 'github_token_malformed_missing', response.status);
     }
     const reuseUntil = expiresAt - TOKEN_REFRESH_MARGIN_MS;
     if (reuseUntil > now()) cached = { key, token, reuseUntil };

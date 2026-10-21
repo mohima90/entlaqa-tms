@@ -109,7 +109,7 @@ function Row({
         {hint ? <span className="text-sm text-text-muted">{hint}</span> : null}
       </div>
       {children ? (
-        <div className="flex flex-wrap items-center gap-2 sm:justify-end">{children}</div>
+        <div className="flex flex-wrap items-center gap-2 md:justify-end">{children}</div>
       ) : null}
     </div>
   );
@@ -218,7 +218,7 @@ export function SecuritySettingsForm(props: SecurityFormProps) {
       );
     }
     return (
-      <div className="flex flex-col items-start gap-1.5 sm:items-end">
+      <div className="flex flex-col items-start gap-1.5 md:items-end">
         <div className="flex items-center gap-2.5">
           <input
             id={id}
@@ -421,7 +421,7 @@ export function SecuritySettingsForm(props: SecurityFormProps) {
               >
                 <span
                   aria-hidden="true"
-                  className="hidden size-9 shrink-0 place-items-center rounded-md bg-primary-subtle text-primary-text sm:grid"
+                  className="hidden size-9 shrink-0 place-items-center rounded-md bg-primary-subtle text-primary-text md:grid"
                 >
                   <Icon name={tile.icon} />
                 </span>
@@ -476,7 +476,7 @@ export function SecuritySettingsForm(props: SecurityFormProps) {
         <Section id="security-mfa" title={t('mfa.title')} intro={t('mfa.intro')}>
           <fieldset className="m-0 border-0 p-0 pt-3">
             <legend className="mb-3 p-0 font-semibold">{t('mfa.modeLegend')}</legend>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               {MODES.map((mode) => {
                 const checked = values.mfaMode === mode;
                 return (

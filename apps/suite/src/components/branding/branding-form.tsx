@@ -1182,7 +1182,7 @@ export function BrandingForm(props: BrandingFormProps) {
         title={t('preview.title')}
         description={t('preview.intro')}
         closeLabel={common.close}
-        className="mb-0 rounded-b-none sm:mb-auto sm:rounded-b-xl"
+        className="mb-0 rounded-b-none md:mb-auto md:rounded-b-xl"
         data-testid="brand-preview-sheet"
       >
         <div ref={sheetPreviewRef} aria-hidden="true">

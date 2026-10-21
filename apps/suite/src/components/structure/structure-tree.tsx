@@ -259,7 +259,7 @@ export function StructureTree(props: StructureTreeProps) {
         className={
           depth === 0
             ? 'm-0 flex list-none flex-col gap-0.5 p-0'
-            : 'm-0 ms-5 flex list-none flex-col gap-0.5 border-s border-border p-0 ps-3 sm:ms-6.5 sm:ps-4'
+            : 'm-0 ms-5 flex list-none flex-col gap-0.5 border-s border-border p-0 ps-3 md:ms-6.5 md:ps-4'
         }
       >
         {list.map((unit) => {
@@ -271,7 +271,7 @@ export function StructureTree(props: StructureTreeProps) {
             <li key={unit.id} data-testid={`unit-${unit.code}`}>
               <div
                 className={cn(
-                  'group flex items-center gap-2 rounded-lg border-s-[3px] px-2 py-2.5 sm:gap-3 sm:px-3',
+                  'group flex items-center gap-2 rounded-lg border-s-[3px] px-2 py-2.5 md:gap-3 md:px-3',
                   current
                     ? 'border-primary bg-primary-subtle'
                     : 'border-transparent hover:bg-surface-hover focus-within:bg-surface-hover',
@@ -297,7 +297,7 @@ export function StructureTree(props: StructureTreeProps) {
                 )}
                 <span
                   aria-hidden="true"
-                  className="hidden size-9 shrink-0 place-items-center rounded-md bg-primary-subtle text-primary-text sm:grid"
+                  className="hidden size-9 shrink-0 place-items-center rounded-md bg-primary-subtle text-primary-text md:grid"
                 >
                   <Icon name={depth === 0 ? 'plan' : 'building'} />
                 </span>
@@ -335,7 +335,7 @@ export function StructureTree(props: StructureTreeProps) {
                     onClick={() => {
                       addUnder(unit);
                     }}
-                    className="hidden min-h-10 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-semibold text-primary-text opacity-0 transition-opacity hover:bg-primary-subtle focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 motion-reduce:transition-none sm:inline-flex"
+                    className="hidden min-h-10 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-semibold text-primary-text opacity-0 transition-opacity hover:bg-primary-subtle focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 motion-reduce:transition-none md:inline-flex"
                     data-testid="unit-add-under"
                   >
                     <Icon name="plus" />
@@ -366,7 +366,7 @@ export function StructureTree(props: StructureTreeProps) {
         breadcrumbsLabel={props.header.breadcrumbsLabel}
         actions={
           canManage && props.firstLevelName ? (
-            <Button onClick={addTop} className="w-full sm:w-auto" data-testid="unit-add-top">
+            <Button onClick={addTop} className="w-full md:w-auto" data-testid="unit-add-top">
               <Icon name="plus" />
               {fill('add', { level: props.firstLevelName })}
             </Button>

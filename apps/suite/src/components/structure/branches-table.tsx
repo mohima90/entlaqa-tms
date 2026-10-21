@@ -230,7 +230,7 @@ export function BranchesTable(props: BranchesTableProps) {
               onClick={() => {
                 setDialog({ kind: 'form', branch: null });
               }}
-              className="w-full sm:w-auto"
+              className="w-full md:w-auto"
               data-testid="branch-add"
             >
               <Icon name="plus" />

@@ -158,7 +158,7 @@ export function BranchPanel(props: BranchPanelProps) {
       }
     >
       <form id={FORM_ID} className="flex flex-col gap-4" onSubmit={onSubmit} noValidate>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <TextField
             id="branch-nameEn"
             name="nameEn"
@@ -226,7 +226,7 @@ export function BranchPanel(props: BranchPanelProps) {
             </option>
           ))}
         </SelectField>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <SelectField
             id="branch-country"
             label={text('form.country')}

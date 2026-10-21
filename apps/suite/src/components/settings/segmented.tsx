@@ -43,7 +43,7 @@ export function Segmented<V extends string>({
         {legend}
         {legendExtra}
       </legend>
-      <div className="flex w-full flex-wrap gap-1 rounded-[22px] border-[1.5px] border-border-strong bg-surface p-1 sm:w-fit">
+      <div className="flex w-full flex-wrap gap-1 rounded-[22px] border-[1.5px] border-border-strong bg-surface p-1 md:w-fit">
         {options.map((option) => {
           const checked = option.value === value;
           return (
@@ -51,7 +51,7 @@ export function Segmented<V extends string>({
               key={option.value}
               lang={option.lang}
               className={cn(
-                'relative flex min-h-10 flex-1 items-center justify-center rounded-full border-[1.5px] px-4 text-[15px] whitespace-nowrap transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus-ring sm:flex-none',
+                'relative flex min-h-10 flex-1 items-center justify-center rounded-full border-[1.5px] px-4 text-[15px] whitespace-nowrap transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus-ring md:flex-none',
                 checked
                   ? 'border-primary bg-primary-subtle font-semibold text-primary-text'
                   : 'border-transparent text-text-muted hover:text-text',

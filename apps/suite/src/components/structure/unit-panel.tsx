@@ -204,7 +204,7 @@ export function UnitPanel({
       }
     >
       <form id={FORM_ID} className="flex flex-col gap-4" onSubmit={onSubmit} noValidate>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <TextField
             id="unit-nameEn"
             name="nameEn"
@@ -248,7 +248,7 @@ export function UnitPanel({
           error={failure.fields.code}
           disabled={pending}
         />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <SelectField
             id="unit-branch"
             label={text('form.branch')}

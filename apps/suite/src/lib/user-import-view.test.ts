@@ -29,7 +29,8 @@ describe('user import view', () => {
     expect(draftStep('validating', 'confirm')).toBe('review');
     expect(draftStep('review', undefined)).toBe('review');
     expect(draftStep('review', 'mapping')).toBe('mapping');
-    expect(draftStep('review', 'options')).toBe('options');
+    // Redesign package 3: the options are part of the confirmation (older links still work).
+    expect(draftStep('review', 'options')).toBe('confirm');
     expect(draftStep('review', 'confirm')).toBe('confirm');
     expect(draftStep('review', 'other')).toBe('review');
     expect(isDraft('review')).toBe(true);

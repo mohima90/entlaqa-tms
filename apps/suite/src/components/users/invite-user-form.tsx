@@ -1,10 +1,30 @@
 'use client';
-import { Alert, Button, TextField, buttonClasses } from '@jadarat/ui';
+import {
+  Alert,
+  Badge,
+  Button,
+  Icon,
+  SidePanel,
+  TextField,
+  buttonClasses,
+  toast,
+} from '@jadarat/ui';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { type SyntheticEvent, useEffect, useRef, useState, useTransition } from 'react';
+import {
+  type ReactNode,
+  type SyntheticEvent,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+} from 'react';
 import { invitePrivilegedUserAction, inviteUserAction } from '../../actions/invitations';
 import { type ManagerChoice, managersFor } from '../../lib/edit-user-form';
+import { returnFocusTo } from '../../lib/focus-return';
+import { displayInviteCode } from '../../lib/invite-code';
 import { createdName, inviteFieldError } from '../../lib/invite-form';
+import { inviteLink } from '../../lib/invite-link';
 import {
   type RoleOption,
   needsScopeUnit,
@@ -17,8 +37,9 @@ import { useSessionRefusal } from '../auth/session-refusal';
 import { fieldErrorCodes } from '../profile/field-errors';
 import { SelectField } from '../select-field';
 import type { UnitChoice } from './edit-user-form';
-import { InviteCodeCopy, type InviteCodeValue, type InviteCopyTexts } from './invite-code-copy';
+import type { InviteCodeValue, InviteCopyTexts } from './invite-code-copy';
 import { OtherNameToggle } from './other-name-toggle';
+import { DiscardDialog, type DiscardTexts } from './person-panels';
 import { RoleSelect, type RoleSelectTexts } from './role-select';
 import { ScopeUnitSelect, type ScopeUnitTexts } from './scope-unit-select';
 
@@ -41,13 +62,15 @@ export interface InviteUserFormProps {
   readonly labels: Readonly<Record<string, string>>;
   readonly fieldTexts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
-  /** The users list (back link) and where to go after inviting (invited tab + confirmation). */
+  /** The list behind the panel (closing returns to it) and its «Pending invites» view. */
   readonly usersHref: string;
-  readonly successHref: string;
+  readonly invitedHref: string;
   readonly rolesHref: string;
-  /** The code chip and copy buttons of the success panel (Kawadir). */
+  /** The code and link of the success view (Kawadir). */
   readonly copyTexts: InviteCopyTexts;
-  /** The page's language: the success panel names the invitee in it (English name when given). */
+  /** «Discard your changes?» (namespace `users`) before the panel closes with something typed. */
+  readonly discardTexts: DiscardTexts;
+  /** The page's language: the success view names the invitee in it (English name when given). */
   readonly uiLocale: 'ar' | 'en';
 }
 
@@ -57,74 +80,82 @@ interface Created {
   readonly name: string;
 }
 
-/**
- * Right after inviting (Kawadir ATS, PO 16 Oct 2026): the invitation exists — its code and link can be
- * copied now and at any time from the users list; e-mail is optional. Focus moves to the heading so that
- * screen readers announce the outcome.
- */
-function InvitationCreatedPanel({
-  created,
-  text,
-  copyTexts,
-  successHref,
-  onAnother,
+/** A code or link to copy, in a dashed box with its button (the browser's refusal selects it instead). */
+function CopyBox({
+  label,
+  value,
+  button,
+  copied,
+  failed,
+  large,
+  testId,
 }: {
-  readonly created: Created;
-  readonly text: (key: string) => string;
-  readonly copyTexts: InviteCopyTexts;
-  readonly successHref: string;
-  readonly onAnother: () => void;
+  readonly label: string;
+  readonly value: string;
+  readonly button: string;
+  readonly copied: string;
+  readonly failed: string;
+  readonly large?: boolean;
+  readonly testId: string;
 }) {
-  const heading = useRef<HTMLHeadingElement>(null);
-  useEffect(() => {
-    heading.current?.focus();
-  }, []);
+  const ref = useRef<HTMLElement>(null);
   return (
-    <section className="flex flex-col gap-4" data-testid="invitation-created-panel">
-      <div className="flex items-center gap-3">
-        <span className="inline-flex size-10 items-center justify-center rounded-full bg-success-subtle text-success">
-          <svg
-            viewBox="0 0 24 24"
-            className="size-5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            aria-hidden="true"
-          >
-            <path d="M5 12l5 5 9-10" />
-          </svg>
-        </span>
-        <h2 ref={heading} tabIndex={-1} className="m-0 text-xl font-semibold">
-          {text('created.title')}
-        </h2>
-      </div>
-      <p className="m-0">{text('created.text').split('{name}').join(created.name)}</p>
-      <InviteCodeCopy value={created.value} texts={copyTexts} layout="panel" />
-      <div className="flex flex-wrap items-center gap-3">
-        <a href={successHref} className={buttonClasses({ variant: 'primary', size: 'md' })}>
-          {text('created.toList')}
-        </a>
-        <Button variant="secondary" onClick={onAnother}>
-          {text('created.inviteAnother')}
+    <div className="flex flex-col gap-1.5">
+      <span className="text-sm font-semibold">{label}</span>
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border-[1.5px] border-dashed border-border-strong bg-surface-sunken px-4 py-3">
+        <code
+          ref={ref}
+          dir="ltr"
+          className={`min-w-0 flex-1 font-mono [overflow-wrap:anywhere] ${large ? 'text-2xl font-semibold tracking-[0.15em]' : 'text-sm'}`}
+          data-testid={testId}
+        >
+          {value}
+        </code>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            void navigator.clipboard.writeText(value).then(
+              () => toast.success(copied),
+              () => {
+                toast.error(failed, { duration: 6000 });
+                const node = ref.current;
+                const selection = window.getSelection();
+                if (node && selection) {
+                  const range = document.createRange();
+                  range.selectNodeContents(node);
+                  selection.removeAllRanges();
+                  selection.addRange(range);
+                }
+              },
+            );
+          }}
+          data-testid={`${testId}-copy`}
+        >
+          <Icon name="copy" className="size-4" />
+          {button}
         </Button>
       </div>
-    </section>
+    </div>
   );
 }
 
 /**
- * Invite a user (T-M2-07, FR-IAM-03, BR-IAM-1; approved screen 2): work e-mail, the name in the
- * organization's default language (required, shown first) and in the other language (optional, «Add the name
- * in Arabic»; guided-test feedback #2, PO 17 Oct 2026), placement, one role (EP-ROLES, PO 17 Oct 2026: standard or custom, one per person),
- * invitation language. Roles the member may not give (privileged ones unless Organization Admin) are
- * listed but disabled, with the reason; the HR Manager gives every ordinary role (PO, 17 Oct 2026).
+ * Invite a user in a side panel over Team members (T-M2-07, FR-IAM-03, BR-IAM-1; redesign package 3 —
+ * Greptile and Melio's invite drawers): work e-mail, the name in the organization's default language
+ * (required, first) and in the other one behind «Add the name in …», placement, one role (EP-ROLES:
+ * privileged roles listed but unavailable unless Organization Admin), the invitation language. Sent → the
+ * same panel shows the code and the link to copy (Kawadir; no e-mail needed), the list behind updates its
+ * counts, and «Invite another user» keeps the unit, branch, manager, role and language. Same validation,
+ * permissions and actions as the page it replaces; its own address (`/users/invite`) still opens it.
  */
-export function InviteUserForm(props: InviteUserFormProps) {
+export function InviteUserPanel(props: InviteUserFormProps) {
   const { labels, fieldTexts, roles } = props;
   const text = (key: string) => labels[key] ?? key;
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
+  const [open, setOpen] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
   const nameLanguage = props.defaultLocale;
@@ -139,9 +170,31 @@ export function InviteUserForm(props: InviteUserFormProps) {
   const withUnit = needsScopeUnit(roles, role);
   const [invitationLocale, setInvitationLocale] = useState<'ar' | 'en'>(props.defaultLocale);
   const [created, setCreated] = useState<Created | null>(null);
+  const [kept, setKept] = useState(false);
   const [formKey, setFormKey] = useState(0);
+  // Something typed or chosen in the form since it opened (or since «Invite another»).
+  const [dirty, setDirty] = useState(false);
+  const [asking, setAsking] = useState(false);
   const lockedSome = roles.some((r) => !r.assignable);
   const managers = managersFor(props.managers, departmentId, allManagers, managerId);
+  const successHeading = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    if (created) successHeading.current?.focus();
+  }, [created]);
+
+  /** Escape, ✕, the backdrop and Cancel: never while sending; with unsaved changes, ask first. */
+  const canClose = () => {
+    if (pending) return false;
+    if (created || !dirty) return true;
+    setAsking(true);
+    return false;
+  };
+
+  const close = (href = props.usersHref) => {
+    returnFocusTo('invite-user-link');
+    router.push(href, { scroll: false });
+  };
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -177,6 +230,7 @@ export function InviteUserForm(props: InviteUserFormProps) {
       const result = await action(input);
       if (result.ok) {
         // Kawadir: the code and the link right away (no e-mail needed); the list keeps them too.
+        setDirty(false);
         setCreated({
           value: {
             inviteCode: result.value.inviteCode,
@@ -230,239 +284,376 @@ export function InviteUserForm(props: InviteUserFormProps) {
     ));
   };
 
-  if (created) {
-    return (
-      <InvitationCreatedPanel
-        created={created}
-        text={text}
-        copyTexts={props.copyTexts}
-        successHref={props.successHref}
-        onAnother={() => {
-          setCreated(null);
-          setRole('');
-          setScopeUnitId('');
-          setDepartmentId('');
-          setBranchId('');
-          setManagerId('');
-          setShowOther(false);
-          setFormKey((k) => k + 1);
-        }}
-      />
-    );
-  }
+  const section = (title: string, children: ReactNode, grid = true) => (
+    <fieldset
+      className={`m-0 border-0 border-b border-border p-0 pb-5 last:border-b-0 ${grid ? 'grid grid-cols-1 gap-4 sm:grid-cols-2' : 'flex flex-col gap-3'}`}
+    >
+      <legend className="mb-3 text-base font-bold">{title}</legend>
+      {children}
+    </fieldset>
+  );
+
+  const value = created?.value;
+  const link = value
+    ? (value.inviteLink ?? inviteLink(window.location.origin, value.locale, value.inviteCode))
+    : '';
 
   return (
-    <form
-      key={formKey}
-      className="flex flex-col gap-8"
-      onSubmit={onSubmit}
-      noValidate
-      data-testid="invite-user"
-    >
-      <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0 sm:grid-cols-2">
-        <legend className="mb-2 text-lg font-semibold">{text('person')}</legend>
-        <TextField
-          id="invite-email"
-          name="email"
-          type="email"
-          label={text('email')}
-          marker={text('required')}
-          hint={text('emailHint')}
-          required
-          dir="ltr"
-          autoComplete="off"
-          maxLength={254}
-          error={fieldErrors.email}
-          disabled={pending}
-          className="sm:col-span-2"
-        />
-        {nameFields(nameLanguage, true)}
-        {showOther ? (
-          nameFields(otherLanguage, false)
-        ) : (
-          <OtherNameToggle
-            label={text(otherLanguage === 'ar' ? 'addArabicName' : 'addEnglishName')}
-            focusId={`invite-firstName${otherLanguage === 'ar' ? 'Ar' : 'En'}`}
-            disabled={pending}
-            onOpen={() => {
-              setShowOther(true);
-            }}
-          />
-        )}
-        <SelectField
-          id="invite-department"
-          label={text('department')}
-          marker={text('optional')}
-          value={departmentId}
-          onChange={(event) => {
-            setDepartmentId(event.target.value);
-          }}
-          error={fieldErrors.departmentId}
-          disabled={pending}
-        >
-          <option value="">{text('noDepartment')}</option>
-          {props.departments.map((unit) => (
-            <option key={unit.id} value={unit.id}>
-              {unit.name}
-            </option>
-          ))}
-        </SelectField>
-        <SelectField
-          id="invite-branch"
-          label={text('branch')}
-          marker={text('optional')}
-          value={branchId}
-          onChange={(event) => {
-            setBranchId(event.target.value);
-          }}
-          error={fieldErrors.branchId}
-          disabled={pending}
-        >
-          <option value="">{text('noBranch')}</option>
-          {props.branches.map((unit) => (
-            <option key={unit.id} value={unit.id}>
-              {unit.name}
-            </option>
-          ))}
-        </SelectField>
-        <div className="flex flex-col gap-2 sm:col-span-2">
-          <SelectField
-            id="invite-manager"
-            label={text('manager')}
-            marker={text('optional')}
-            hint={allManagers || departmentId === '' ? text('managerHintAll') : text('managerHint')}
-            value={managerId}
-            onChange={(event) => {
-              setManagerId(event.target.value);
-            }}
-            error={fieldErrors.managerPersonId}
-            disabled={pending}
-          >
-            <option value="">{text('noManager')}</option>
-            {managers.map((manager) => (
-              <option key={manager.personId} value={manager.personId}>
-                {manager.name}
-              </option>
-            ))}
-          </SelectField>
-          {departmentId !== '' ? (
-            <div>
+    <>
+      <SidePanel
+        open={open}
+        onClose={() => {
+          setOpen(false);
+          close();
+        }}
+        canClose={canClose}
+        title={text('title')}
+        description={created ? undefined : text('intro')}
+        closeLabel={text('close')}
+        size="lg"
+        data-testid="invite-panel"
+        footer={
+          created ? (
+            <>
+              <Link
+                href={props.invitedHref}
+                onClick={(event) => {
+                  event.preventDefault();
+                  close(props.invitedHref);
+                }}
+                className={buttonClasses({ variant: 'ghost', size: 'md' })}
+                data-testid="invite-to-list"
+              >
+                {text('created.toList')}
+              </Link>
+              <div className="ms-auto flex flex-wrap gap-2.5">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setCreated(null);
+                    setDirty(false);
+                    setShowOther(false);
+                    setFieldErrors({});
+                    setMessage(null);
+                    // Kept from the last invitation: placement, role and language (redesign package 3).
+                    setKept(
+                      departmentId !== '' ||
+                        branchId !== '' ||
+                        managerId !== '' ||
+                        role !== '' ||
+                        invitationLocale !== props.defaultLocale,
+                    );
+                    setFormKey((k) => k + 1);
+                  }}
+                  data-testid="invite-another"
+                >
+                  <Icon name="user-plus" className="size-4" />
+                  {text('created.inviteAnother')}
+                </Button>
+                <Button
+                  onClick={() => {
+                    setOpen(false);
+                  }}
+                  data-testid="invite-done"
+                >
+                  {text('done')}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="ms-auto flex flex-wrap gap-2.5">
               <Button
                 variant="secondary"
-                aria-controls="invite-manager"
-                aria-pressed={allManagers}
-                onClick={() => {
-                  setAllManagers((all) => !all);
-                }}
                 disabled={pending}
+                onClick={() => {
+                  if (canClose()) setOpen(false);
+                }}
               >
-                {allManagers ? text('departmentManagersOnly') : text('allDepartmentsManagers')}
+                {text('cancel')}
+              </Button>
+              <Button
+                type="submit"
+                form="invite-user-form"
+                busy={pending}
+                data-testid="invite-submit"
+              >
+                {pending ? text('submitting') : text('submit')}
               </Button>
             </div>
-          ) : null}
-        </div>
-        <TextField
-          id="invite-employeeNumber"
-          name="employeeNumber"
-          label={text('employeeNumber')}
-          marker={text('optional')}
-          hint={text('employeeNumberHint')}
-          dir="ltr"
-          autoComplete="off"
-          maxLength={40}
-          error={fieldErrors.employeeNumber}
-          disabled={pending}
-        />
-      </fieldset>
-
-      <section className="flex flex-col gap-3" aria-labelledby="invite-role-heading">
-        <h2 id="invite-role-heading" className="m-0 text-lg font-semibold">
-          {text('role')}
-        </h2>
-        <RoleSelect
-          id="invite-role"
-          value={role}
-          onChange={(code) => {
-            setRole(code);
-            if (!needsScopeUnit(roles, code)) setScopeUnitId('');
-            setFieldErrors(({ role: _cleared, scopeUnitId: _unit, ...rest }) => rest);
-          }}
-          options={roles}
-          texts={props.roleTexts}
-          marker={text('required')}
-          hint={text('roleHint')}
-          error={fieldErrors.role}
-          disabled={pending}
-        />
-        {withUnit ? (
-          <ScopeUnitSelect
-            id="invite-unit"
-            value={scopeUnitId}
-            onChange={(id) => {
-              setScopeUnitId(id);
-              setFieldErrors(({ scopeUnitId: _cleared, ...rest }) => rest);
+          )
+        }
+      >
+        {created && value ? (
+          <section className="flex flex-col gap-4" data-testid="invitation-created-panel">
+            <div className="flex flex-col items-center gap-3 text-center">
+              <span className="grid size-16 place-items-center rounded-[20px] bg-success-subtle text-success">
+                <Icon name="mail" className="size-7" />
+              </span>
+              <h3 ref={successHeading} tabIndex={-1} className="m-0 text-lg font-bold">
+                {text('created.title')}
+              </h3>
+              <p className="m-0 text-text-muted">
+                {text('created.text').split('{name}').join(created.name)}
+              </p>
+            </div>
+            <CopyBox
+              label={props.copyTexts.codeLabel}
+              value={displayInviteCode(value.inviteCode)}
+              button={props.copyTexts.copyCode}
+              copied={props.copyTexts.codeCopied}
+              failed={props.copyTexts.copyFailed}
+              large
+              testId="invite-code"
+            />
+            <CopyBox
+              label={text('linkLabel')}
+              value={link}
+              button={props.copyTexts.copyLink}
+              copied={props.copyTexts.linkCopied}
+              failed={props.copyTexts.copyFailed}
+              testId="invite-link"
+            />
+            <p className="m-0 text-sm text-text-muted">{text('expiryNotice')}</p>
+          </section>
+        ) : (
+          <form
+            id="invite-user-form"
+            key={formKey}
+            className="flex flex-col gap-5"
+            onSubmit={onSubmit}
+            onChange={() => {
+              setDirty(true);
             }}
-            choices={props.scopeUnits}
-            texts={props.unitTexts}
-            marker={text('required')}
-            error={fieldErrors.scopeUnitId}
-            disabled={pending}
-          />
-        ) : null}
-        {readsHeadedDepartments(roles, role) ? (
-          <Alert tone="info" data-testid="role-departments-hint">
-            {text('departmentsHint')}
-          </Alert>
-        ) : null}
-        {lockedSome && props.labels.privilegedLocked ? (
-          <p className="m-0 text-sm text-text-muted" data-testid="privileged-locked">
-            {text('privilegedLocked')}
-          </p>
-        ) : null}
-        <a href={props.rolesHref} className="text-sm">
-          {text('rolesHelp')}
-        </a>
-      </section>
-
-      <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
-        <legend className="mb-1 text-lg font-semibold">{text('language')}</legend>
-        <div className="flex flex-wrap gap-6">
-          {(['ar', 'en'] as const).map((value) => (
-            <label key={value} className="inline-flex min-h-11 items-center gap-2">
-              <input
-                type="radio"
-                name="invitationLocale"
-                value={value}
-                checked={invitationLocale === value}
-                disabled={pending}
-                onChange={() => {
-                  setInvitationLocale(value);
-                }}
-                className="size-5"
-              />
-              <span lang={value}>{text(`language.${value}`)}</span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
-
-      <Alert tone="info" data-testid="invite-notice">
-        {text('expiryNotice')}
-      </Alert>
-
-      {message ? (
-        <Alert tone="danger" data-testid="invite-message">
-          {message}
-        </Alert>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" disabled={pending}>
-          {pending ? text('submitting') : text('submit')}
-        </Button>
-        <a href={props.usersHref} className={buttonClasses({ variant: 'secondary', size: 'md' })}>
-          {text('back')}
-        </a>
-      </div>
-    </form>
+            noValidate
+            data-testid="invite-user"
+          >
+            {kept ? (
+              <p className="m-0" data-testid="invite-kept">
+                <Badge tone="brand">{text('keptFromLast')}</Badge>
+              </p>
+            ) : null}
+            {section(
+              text('person'),
+              <>
+                <TextField
+                  id="invite-email"
+                  name="email"
+                  type="email"
+                  label={text('email')}
+                  marker={text('required')}
+                  hint={text('emailHint')}
+                  required
+                  dir="ltr"
+                  autoComplete="off"
+                  maxLength={254}
+                  error={fieldErrors.email}
+                  disabled={pending}
+                  className="sm:col-span-2"
+                />
+                {nameFields(nameLanguage, true)}
+                {showOther ? (
+                  nameFields(otherLanguage, false)
+                ) : (
+                  <OtherNameToggle
+                    label={text(otherLanguage === 'ar' ? 'addArabicName' : 'addEnglishName')}
+                    focusId={`invite-firstName${otherLanguage === 'ar' ? 'Ar' : 'En'}`}
+                    disabled={pending}
+                    onOpen={() => {
+                      setShowOther(true);
+                    }}
+                  />
+                )}
+              </>,
+            )}
+            {section(
+              text('work'),
+              <>
+                <SelectField
+                  id="invite-department"
+                  label={text('department')}
+                  marker={text('optional')}
+                  value={departmentId}
+                  onChange={(event) => {
+                    setDepartmentId(event.target.value);
+                  }}
+                  error={fieldErrors.departmentId}
+                  disabled={pending}
+                >
+                  <option value="">{text('noDepartment')}</option>
+                  {props.departments.map((unit) => (
+                    <option key={unit.id} value={unit.id}>
+                      {unit.name}
+                    </option>
+                  ))}
+                </SelectField>
+                <SelectField
+                  id="invite-branch"
+                  label={text('branch')}
+                  marker={text('optional')}
+                  value={branchId}
+                  onChange={(event) => {
+                    setBranchId(event.target.value);
+                  }}
+                  error={fieldErrors.branchId}
+                  disabled={pending}
+                >
+                  <option value="">{text('noBranch')}</option>
+                  {props.branches.map((unit) => (
+                    <option key={unit.id} value={unit.id}>
+                      {unit.name}
+                    </option>
+                  ))}
+                </SelectField>
+                <div className="flex flex-col gap-2 sm:col-span-2">
+                  <SelectField
+                    id="invite-manager"
+                    label={text('manager')}
+                    marker={text('optional')}
+                    hint={
+                      allManagers || departmentId === ''
+                        ? text('managerHintAll')
+                        : text('managerHint')
+                    }
+                    value={managerId}
+                    onChange={(event) => {
+                      setManagerId(event.target.value);
+                    }}
+                    error={fieldErrors.managerPersonId}
+                    disabled={pending}
+                  >
+                    <option value="">{text('noManager')}</option>
+                    {managers.map((manager) => (
+                      <option key={manager.personId} value={manager.personId}>
+                        {manager.name}
+                      </option>
+                    ))}
+                  </SelectField>
+                  {departmentId !== '' ? (
+                    <div>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        aria-controls="invite-manager"
+                        aria-pressed={allManagers}
+                        onClick={() => {
+                          setAllManagers((all) => !all);
+                        }}
+                        disabled={pending}
+                      >
+                        {allManagers
+                          ? text('departmentManagersOnly')
+                          : text('allDepartmentsManagers')}
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+                <TextField
+                  id="invite-employeeNumber"
+                  name="employeeNumber"
+                  label={text('employeeNumber')}
+                  marker={text('optional')}
+                  hint={text('employeeNumberHint')}
+                  dir="ltr"
+                  autoComplete="off"
+                  maxLength={40}
+                  error={fieldErrors.employeeNumber}
+                  disabled={pending}
+                />
+              </>,
+            )}
+            {section(
+              text('role'),
+              <>
+                <RoleSelect
+                  id="invite-role"
+                  value={role}
+                  onChange={(code) => {
+                    setRole(code);
+                    if (!needsScopeUnit(roles, code)) setScopeUnitId('');
+                    setFieldErrors(({ role: _cleared, scopeUnitId: _unit, ...rest }) => rest);
+                  }}
+                  options={roles}
+                  texts={props.roleTexts}
+                  marker={text('required')}
+                  hint={text('roleHint')}
+                  error={fieldErrors.role}
+                  disabled={pending}
+                />
+                {withUnit ? (
+                  <ScopeUnitSelect
+                    id="invite-unit"
+                    value={scopeUnitId}
+                    onChange={(id) => {
+                      setScopeUnitId(id);
+                      setFieldErrors(({ scopeUnitId: _cleared, ...rest }) => rest);
+                    }}
+                    choices={props.scopeUnits}
+                    texts={props.unitTexts}
+                    marker={text('required')}
+                    error={fieldErrors.scopeUnitId}
+                    disabled={pending}
+                  />
+                ) : null}
+                {readsHeadedDepartments(roles, role) ? (
+                  <Alert tone="info" data-testid="role-departments-hint">
+                    {text('departmentsHint')}
+                  </Alert>
+                ) : null}
+                {lockedSome && props.labels.privilegedLocked ? (
+                  <p className="m-0 text-sm text-text-muted" data-testid="privileged-locked">
+                    {text('privilegedLocked')}
+                  </p>
+                ) : null}
+                <a href={props.rolesHref} className="text-sm">
+                  {text('rolesHelp')}
+                </a>
+              </>,
+              false,
+            )}
+            <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
+              <legend className="mb-1 text-base font-bold">{text('language')}</legend>
+              <div className="flex flex-wrap gap-6">
+                {(['ar', 'en'] as const).map((language) => (
+                  <label key={language} className="inline-flex min-h-11 items-center gap-2">
+                    <input
+                      type="radio"
+                      name="invitationLocale"
+                      value={language}
+                      checked={invitationLocale === language}
+                      disabled={pending}
+                      onChange={() => {
+                        setInvitationLocale(language);
+                      }}
+                      className="size-5 accent-primary"
+                    />
+                    <span lang={language}>{text(`language.${language}`)}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <Alert tone="info" data-testid="invite-notice">
+              {text('expiryNotice')}
+            </Alert>
+            {message ? (
+              <Alert tone="danger" data-testid="invite-message">
+                {message}
+              </Alert>
+            ) : null}
+          </form>
+        )}
+      </SidePanel>
+      <DiscardDialog
+        open={asking}
+        texts={props.discardTexts}
+        onKeep={() => {
+          setAsking(false);
+        }}
+        onDiscard={() => {
+          setAsking(false);
+          setDirty(false);
+          setOpen(false);
+        }}
+      />
+    </>
   );
 }

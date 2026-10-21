@@ -29,6 +29,10 @@ async function expectNoSeriousA11yViolations(page: Page) {
   // After an in-app navigation (router.replace + refresh) the framework swaps the page's <title> while the
   // new tree streams in: check the page once it has its title again (and fail if it never gets one).
   await expect(page).toHaveTitle(/\S/);
+  // From the top of the page: the sticky bars may overlap content at other scroll positions.
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+  });
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
     .analyze();
@@ -84,6 +88,12 @@ async function reportSheet(download: Download): Promise<string> {
   throw new Error('no worksheet in the report');
 }
 
+/** The Pending invites rows: table rows on wider screens, one card each on phones (redesign package 3). */
+const invitationRows = (page: Page) =>
+  page
+    .locator('[data-testid="invitation-row"], [data-testid="invitations-cards"] > li')
+    .filter({ visible: true });
+
 /** Upload on step 1, then wait (the page refreshes itself) for the mapping of step 2. */
 async function upload(page: Page, name: string, content: Buffer) {
   // The page's Content-Security-Policy, as the app serves it to this browser.
@@ -114,7 +124,7 @@ test.describe('bulk user import', () => {
   // One import at a time per organization: the journeys run one after the other.
   test.describe.configure({ mode: 'serial' });
 
-  test('English: template, upload, mapping, review with problems, options, run, report, undo', async ({
+  test('English: template, upload, mapping, review with problems, confirmation with options, run, report, undo', async ({
     page,
   }) => {
     test.setTimeout(600_000);
@@ -167,7 +177,9 @@ test.describe('bulk user import', () => {
       [twice, 'ريما', 'السبيعي', '', '', '', '', ''],
     ]);
     await upload(page, `staff-en-${run}.csv`, file);
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Import users from a file');
+    // Redesign package 3: a focused frame — the step bar on top, the step's own heading.
+    await expect(page.getByTestId('import-stepper')).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Column mapping');
     await expect(page.getByTestId('mapping-table')).toContainText('Work email');
     await expectNoSeriousA11yViolations(page);
     await page.getByTestId('mapping-next').click();
@@ -193,14 +205,21 @@ test.describe('bulk user import', () => {
     expect(problems).not.toMatch(/<f[ >]/);
     expect(problems).toContain('The email address is incomplete.');
 
-    // Step 4: options (existing people skipped, invitations sent), step 5: confirmation.
+    // The count tiles filter the rows (they replace the tabs).
+    await page
+      .getByTestId('review-counts')
+      .getByRole('link', { name: /Errors/ })
+      .click();
+    await expect(page).toHaveURL(/view=errors/);
+    await expect(
+      page.getByTestId('review-counts').getByRole('link', { name: /Errors/ }),
+    ).toHaveAttribute('aria-current', 'page');
+
+    // Step 4: the confirmation with the options inside it (existing people skipped, invitations sent).
     await page.getByTestId('review-next').click();
-    await expect(page.getByTestId('options-form')).toBeVisible();
-    await expect(page.getByTestId('existing-skip')).toBeChecked();
-    await expect(page.getByTestId('invitations-send')).toBeChecked();
-    await expectNoSeriousA11yViolations(page);
-    await page.getByTestId('options-next').click();
     await expect(page.getByTestId('confirm')).toBeVisible();
+    await expect(page.locator('#existing-skip')).toBeChecked();
+    await expect(page.locator('#invitations-send')).toBeChecked();
     await expect(page.getByTestId('confirm-statements')).toContainText('1 new person');
     await expectNoSeriousA11yViolations(page);
     await page.getByTestId('start-import').click();
@@ -224,10 +243,7 @@ test.describe('bulk user import', () => {
 
     // The new person is on the invited tab, invited by this import.
     await page.goto('/en/suite/admin/users?tab=invited');
-    const row = page
-      .getByTestId('invitations-list')
-      .getByTestId('invitation-row')
-      .filter({ hasText: added });
+    const row = invitationRows(page).filter({ hasText: added });
     await expect(row).toContainText('From an import on');
 
     // Undo: the dialog says what happens; the person and the invitation are removed.
@@ -252,13 +268,11 @@ test.describe('bulk user import', () => {
     await form.locator('#invite-firstNameEn').fill('Salman');
     await form.locator('#invite-familyNameEn').fill('Alotaibi');
     await form.getByRole('combobox', { name: /^Role/ }).selectOption({ label: 'Employee' });
-    await form.getByRole('button', { name: 'Send invitation' }).click();
+    await page.getByTestId('invite-submit').click();
     // Kawadir: the code right away; then the invited tab.
     await expect(page.getByTestId('invitation-created-panel')).toBeVisible();
     await page.goto('/en/suite/admin/users?tab=invited');
-    await expect(
-      page.getByTestId('invitations-list').getByTestId('invitation-row').filter({ hasText: added }),
-    ).toHaveCount(1);
+    await expect(invitationRows(page).filter({ hasText: added })).toHaveCount(1);
   });
 
   test('Arabic: right to left, add people without invitations, then send them', async ({
@@ -322,9 +336,9 @@ test.describe('bulk user import', () => {
     await expectNoSeriousA11yViolations(page);
     await page.getByTestId('review-next').click();
 
-    // Add the people without sending invitations now.
-    await page.getByTestId('invitations-hold').check();
-    await page.getByTestId('options-next').click();
+    // Add the people without sending invitations now: the choice applies at once, the counts follow.
+    await page.locator('#invitations-hold').check();
+    await expect(page).toHaveURL(/invitations=hold/);
     await expect(page.getByTestId('confirm-statements')).toContainText('دون إرسال');
     await expectNoSeriousA11yViolations(page);
     await page.getByTestId('start-import').click();
@@ -336,27 +350,23 @@ test.describe('bulk user import', () => {
 
     // The users list: a banner, and «لم تُرسل الدعوة» on the invited tab.
     await page.goto('/ar/suite/admin/users?tab=invited');
+    // One «Needs your attention» line (it replaces the banners and the summary sentence).
     await expect(page.getByTestId('import-held-banner')).toContainText('دون إرسال');
-    await expect(page.getByTestId('users-summary')).toContainText('لم تُرسل');
-    const firstRow = page
-      .getByTestId('invitations-list')
-      .getByTestId('invitation-row')
-      .filter({ hasText: first });
+    const firstRow = invitationRows(page).filter({ hasText: first });
     await expect(firstRow).toContainText('لم تُرسل الدعوة');
     await expect(firstRow).toContainText('من استيراد في');
     await expectNoSeriousA11yViolations(page);
 
     // One invitation from its row, then the rest from the banner.
     await firstRow.getByRole('button', { name: /^إرسال الدعوة \(/ }).click();
-    await expect(page.getByTestId('invitations-message')).toContainText('نرسل الدعوة الآن');
+    await expect(page.getByRole('region', { name: 'رسائل الحالة' })).toContainText(
+      'نرسل الدعوة الآن',
+    );
     await expect(firstRow).toContainText(/تُرسل قريبًا|مدعو/);
     await expect(page.getByTestId('import-send-held')).toContainText('(1)');
     await page.getByTestId('import-send-held').click();
     await expect(page.getByTestId('import-held-banner')).toHaveCount(0, { timeout: 30_000 });
-    const secondRow = page
-      .getByTestId('invitations-list')
-      .getByTestId('invitation-row')
-      .filter({ hasText: second });
+    const secondRow = invitationRows(page).filter({ hasText: second });
     await expect(secondRow).toContainText(/تُرسل قريبًا|مدعو/);
   });
 });

@@ -22,6 +22,7 @@ import {
   Building2,
   CalendarDays,
   Check,
+  Download,
   ChevronDown,
   ChevronUp,
   Copy,
@@ -48,6 +49,7 @@ import {
   ListFilter,
   LayoutDashboard,
   Lock,
+  LogIn,
   LogOut,
   type LucideIcon,
   Mail,
@@ -167,11 +169,13 @@ const ICONS = {
   keyboard: Keyboard,
   filter: ListFilter,
   sort: ArrowDownUp,
-  // Organization settings (redesign package 2): the save bar at rest, sending a test e-mail, uploads,
-  // Undo, expand / collapse all, the sender card, image rows and deactivate.
+  // Organization settings (redesign package 2) and People & roles (redesign package 3): the save bar at
+  // rest and invitations waiting (clock), sending a test e-mail, uploads and downloads, Undo, expand /
+  // collapse all, the sender card, image rows, deactivate and sign-in effects.
   clock: Clock,
   send: Send,
   upload: Upload,
+  download: Download,
   undo: Undo2,
   'expand-all': ChevronsUpDown,
   'collapse-all': ChevronsDownUp,
@@ -179,6 +183,7 @@ const ICONS = {
   server: Server,
   image: Image,
   ban: Ban,
+  'log-in': LogIn,
 } as const satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;
@@ -190,9 +195,10 @@ const MIRRORED: ReadonlySet<IconName> = new Set([
   'chevron-end',
   'sidebar',
   'arrow-end',
-  'undo',
   'trend-up',
   'trend-down',
+  'undo',
+  'log-in',
 ]);
 
 export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'children' | 'ref'> {

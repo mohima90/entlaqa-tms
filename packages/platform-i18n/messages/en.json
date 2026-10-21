@@ -85,6 +85,7 @@
     "notificationsEmptyTitle": "No notifications yet",
     "notificationsEmptyBody": "Notifications about your training and approvals will appear here.",
     "statusMessages": "Status messages",
+    "toastActionHint": "You can use “{action}” from this message until you close it.",
     "accountSubtitle": "{organization} · {role}",
     "myAccount": "My account",
     "groupOrganization": "Organization",
@@ -400,7 +401,21 @@
     "rolesNotVisible": "Not visible to you",
     "roleUnit": "Covers {unit}",
     "unitInactive": "Unit inactive · no access",
-    "unitMissing": "No unit picked · no access"
+    "unitMissing": "No unit picked · no access",
+    "attentionTitle": "Needs your attention",
+    "removeFilter": "Remove the filter {filter}",
+    "findInList": "Search in the list",
+    "noMatches": "Nothing matches the search.",
+    "firstUseTitle": "Bring your team in",
+    "firstUseBody": "You are the only member so far. Invite the people who run training, or add many at once from a file.",
+    "openProfile": "Open full profile",
+    "moreActions": "More actions for {name}",
+    "copyField": "Copy {field}",
+    "copied": "{field} copied.",
+    "discardTitle": "Discard your changes?",
+    "discardBody": "What you changed here isn’t saved yet. If you leave, it’s lost.",
+    "keepEditing": "Keep editing",
+    "discard": "Discard changes"
   },
   "userProfile": {
     "breadcrumb": "Team members",
@@ -488,7 +503,15 @@
       "notLocked": "Sign-in was no longer paused.",
       "limited": "Sign-in to this account was unlocked 3 times in the last 24 hours, so the pause stays until it ends by itself. The person can set a new password with “Forgot password?”.",
       "audited": "Unlocking is recorded in the audit log, and the person is told by email."
-    }
+    },
+    "tabsLabel": "Profile sections",
+    "tabs": {
+      "overview": "Overview"
+    },
+    "openSecurity": "Open sign-in and security",
+    "invitedBanner": "This person hasn’t accepted the invitation yet. You can copy its code or link and share it with them.",
+    "deactivatedTitle": "This account is deactivated",
+    "actionsMenu": "Actions"
   },
   "profile": {
     "title": "My profile",
@@ -678,7 +701,9 @@
       "unitRequired": "Choose the unit this role covers.",
       "unitNotAllowed": "This unit can't be picked: it's inactive or no longer exists. Choose another unit.",
       "structureHidden": "You can't see the organization structure, so you can't pick a unit. Ask HR to give this role."
-    }
+    },
+    "current": "Current role",
+    "undone": "Role change undone: {name} is {role} again."
   },
   "rolesPage": {
     "title": "Roles & permissions",
@@ -750,7 +775,13 @@
     },
     "sensitive": "Sensitive",
     "matrixNote": "Each module's permissions apply as it is released; users & roles and the audit log apply now.",
-    "notConfigured": "Custom roles and the number of people per role appear once this environment is connected to the database."
+    "notConfigured": "Custom roles and the number of people per role appear once this environment is connected to the database.",
+    "noCustomTitle": "No custom roles yet",
+    "noCustomBody": "Create a role when a standard role gives too much or too little, for example a finance approver for one unit.",
+    "moreFor": "More actions for {name}",
+    "searchPermissions": "Search permissions",
+    "allowed": "Allowed",
+    "notAllowed": "Not allowed"
   },
   "planning": {
     "list": {
@@ -1134,7 +1165,9 @@
       "linkCopied": "Invitation link copied.",
       "copyFailed": "Couldn't copy automatically. Select the text and copy it.",
       "loading": "Getting the code…"
-    }
+    },
+    "keptFromLast": "Unit, branch, role and language kept from your last invitation",
+    "done": "Done"
   },
   "deactivation": {
     "breadcrumbLabel": "Breadcrumb",
@@ -1204,7 +1237,8 @@
       "done": "The account was reactivated. Signing in to the organization works again, with the same roles.",
       "notDeactivated": "This account isn't deactivated. Refresh the page.",
       "placementDeleted": "This person's unit or branch was deleted. Edit their details first, then reactivate the account."
-    }
+    },
+    "doneToast": "{name}’s account was deactivated and their sign-in sessions ended."
   },
   "mfa": {
     "title": "Multi-factor authentication",
@@ -2335,7 +2369,9 @@
       "scopeUnitsInUse": "This role is still given for a unit to {members} people and {invitations} pending invitations. Give them the role without a unit or another role, or revoke the invitations, before changing the data it sees."
     },
     "notFound": "This role doesn't exist (any more).",
-    "conflict": "Someone changed this role meanwhile. Reload the page to see the latest version."
+    "conflict": "Someone changed this role meanwhile. Reload the page to see the latest version.",
+    "summarySees": "Sees",
+    "summaryHighRisk": "{count, plural, =0 {No high-risk permission} one {# high-risk permission} other {# high-risk permissions}}"
   },
   "needsForms": {
     "title": "Needs forms",

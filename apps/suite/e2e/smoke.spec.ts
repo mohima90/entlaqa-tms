@@ -33,16 +33,18 @@ const pages = [
     heading: 'أعضاء الفريق',
   },
   {
+    // Since redesign package 3 the edit, role and deactivation addresses open their panel over the
+    // profile; without data the profile frame says the page needs a configured environment.
     path: '/en/suite/admin/users/a1000000-0000-4000-8000-0000000000a1/edit',
     lang: 'en',
     dir: 'ltr',
-    heading: 'Edit user details',
+    heading: 'Team members',
   },
   {
     path: '/ar/suite/admin/users/a1000000-0000-4000-8000-0000000000a1/roles',
     lang: 'ar',
     dir: 'rtl',
-    heading: 'تغيير الدور',
+    heading: 'أعضاء الفريق',
   },
   { path: '/ar/suite/admin/roles', lang: 'ar', dir: 'rtl', heading: 'الأدوار والصلاحيات' },
   // Settings → General (organization profile, T-M2-22; Kawadir layout, T-M2-43): the frame and the
@@ -398,12 +400,13 @@ for (const { locale, menu, close, home } of [
   });
 }
 
-// Tables on phones and desktops (T-M2-21): the roles matrix renders without data in the preview.
+// Tables on phones and desktops (T-M2-21): the roles matrix (its own tab since redesign package 3) renders
+// without data in the preview.
 for (const locale of ['en', 'ar'] as const) {
   test(`${locale}: table cells never break inside a word, and wide tables scroll in their box`, async ({
     page,
   }) => {
-    await page.goto(`/${locale}/suite/admin/roles/hr_manager`);
+    await page.goto(`/${locale}/suite/admin/roles/hr_manager?tab=across`);
     await expectReadableTables(page);
   });
 }

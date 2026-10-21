@@ -133,10 +133,18 @@ test.describe('organization profile', () => {
     // A formatted date elsewhere: the users list shows Gregorian and Hijri (Umm al-Qura).
     await page.goto('/en/suite/admin/users');
     await expect(
-      page.getByTestId('user-last-sign-in').filter({ hasText: ' AH' }).first(),
+      page
+        .getByTestId('user-last-sign-in')
+        .filter({ visible: true })
+        .filter({ hasText: ' AH' })
+        .first(),
     ).toBeVisible();
     await expect(
-      page.getByTestId('user-last-sign-in').filter({ hasText: ' · ' }).first(),
+      page
+        .getByTestId('user-last-sign-in')
+        .filter({ visible: true })
+        .filter({ hasText: ' · ' })
+        .first(),
     ).toBeVisible();
   });
 
@@ -158,7 +166,11 @@ test.describe('organization profile', () => {
     await expect(page.getByText('حُفظت الإعدادات العامة.')).toBeVisible();
 
     await page.goto('/ar/suite/admin/users');
-    const lastSignIn = page.getByTestId('user-last-sign-in').filter({ hasText: 'هـ' }).first();
+    const lastSignIn = page
+      .getByTestId('user-last-sign-in')
+      .filter({ visible: true })
+      .filter({ hasText: 'هـ' })
+      .first();
     await expect(lastSignIn).toBeVisible();
     // Hijri only: no Gregorian month in the text.
     await expect(lastSignIn).not.toContainText(' · ');

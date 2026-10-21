@@ -112,6 +112,8 @@ describe('users list query', () => {
         // The edit-role dialog's unit picker (EP-ORG, T-M3-09): the organization has no units here.
         scopeUnits: { units: [], levels: [], structureVisible: true },
         canAssignPrivileged: true,
+        // «Edit details» in the row menu (redesign package 3).
+        canEditDetails: true,
         selfPersonId: '33333333-3333-4333-8333-333333333333',
       }),
     );

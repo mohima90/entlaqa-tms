@@ -22,6 +22,8 @@ export interface PageHeaderProps extends Omit<HTMLAttributes<HTMLDivElement>, 't
   readonly actions?: ReactNode;
   /** The dashboard title in the brand gradient (Home and overview pages only). */
   readonly gradient?: boolean | undefined;
+  /** Before the title and description, e.g. the person's large avatar on a profile (redesign package 3). */
+  readonly leading?: ReactNode;
 }
 
 /**
@@ -38,6 +40,7 @@ export function PageHeader({
   breadcrumbsLabel,
   actions,
   gradient = false,
+  leading,
   className,
   ...props
 }: PageHeaderProps) {
@@ -83,17 +86,22 @@ export function PageHeader({
         ) : eyebrow ? (
           <div className="mb-1.5 text-sm text-text-muted">{eyebrow}</div>
         ) : null}
-        <h1
-          className={cn(
-            'm-0 text-[28px] font-bold leading-[1.15] tracking-[-0.02em] md:text-5xl',
-            gradient && 'text-brand-gradient w-fit',
-          )}
-        >
-          {title}
-        </h1>
-        {description ? (
-          <div className="m-0 mt-2 max-w-[680px] text-base text-text-muted">{description}</div>
-        ) : null}
+        <div className={cn(leading ? 'flex min-w-0 items-center gap-4.5' : 'contents')}>
+          {leading}
+          <div className={cn(leading ? 'flex min-w-0 flex-col' : 'contents')}>
+            <h1
+              className={cn(
+                'm-0 text-[28px] font-bold leading-[1.15] tracking-[-0.02em] md:text-5xl',
+                gradient && 'text-brand-gradient w-fit',
+              )}
+            >
+              {title}
+            </h1>
+            {description ? (
+              <div className="m-0 mt-2 max-w-[680px] text-base text-text-muted">{description}</div>
+            ) : null}
+          </div>
+        </div>
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-2.5">{actions}</div> : null}
     </div>

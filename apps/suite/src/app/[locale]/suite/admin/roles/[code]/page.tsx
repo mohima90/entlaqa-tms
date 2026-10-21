@@ -14,15 +14,18 @@ import {
   Badge,
   type BadgeTone,
   Card,
-  ChecklistAccordion,
   Icon,
+  PageHeader,
+  TabNav,
   buttonClasses,
 } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
+import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { DeleteRoleButton } from '../../../../../../components/roles/delete-role-button';
+import { PermissionsView } from '../../../../../../components/roles/permissions-view';
 import { RoleBuilderForm } from '../../../../../../components/roles/role-builder-form';
 import { SuiteShell } from '../../../../../../components/suite-shell';
 import { profileErrorTexts } from '../../../../../../lib/profile-texts';
@@ -49,26 +52,34 @@ const LEVEL_TONE: Record<AccessLevel, BadgeTone> = {
 };
 const LEGEND: readonly AccessLevel[] = ['F', 'E', 'A', 'V', 'O', 'U', 'N'];
 const ROLE_CODE = /^[a-z][a-z_]{1,39}$|^custom_[0-9a-f]{12}$/;
+type RoleTab = 'permissions' | 'scope' | 'across';
 
 /**
- * One role (FR-IAM-07; EP-ROLES, PO 17 Oct 2026). A standard role is view only: its permissions (the
- * accordion, read-only), the data it sees and what it does across the product (BRD Appendix B), with
- * «create a role from it». A custom role: the same view, or — for the Organization Admin — its edit form
- * and «delete» (only when nobody holds it).
+ * One role (FR-IAM-07; EP-ROLES; redesign package 3 — Shopify, Langdock, Gusto). A standard role is view
+ * only: the header (what it does, Standard / Privileged, its holders, «Create a role from it»), then the
+ * tabs Permissions (each Allowed / Not allowed in words, with a search) · Data this role sees · What this
+ * role does across the product (BRD Appendix B, access levels in words). A custom role: the same view, or —
+ * for the Organization Admin — its edit form and «Delete role» (only when nobody holds it).
  */
 export default async function RolePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string; code: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { locale, code } = await params;
   if (!hasLocale(routing.locales, locale) || !ROLE_CODE.test(code)) notFound();
+  const rawTab = (await searchParams).tab;
+  const requested = Array.isArray(rawTab) ? rawTab[0] : rawTab;
+  const tab: RoleTab = requested === 'scope' || requested === 'across' ? requested : 'permissions';
   const context = await getSuiteContext(locale);
   const t = await getTranslations({ locale, namespace: 'rolesPage' });
   const users = await getTranslations({ locale, namespace: 'users' });
   const rolesHref = `/${locale}/suite/admin/roles`;
 
   let title: string | null = null;
+  let header: ReactNode = null;
   let content: ReactNode;
   if (!context.live) {
     // Without the database: the standard roles still read (custom roles need it).
@@ -76,12 +87,14 @@ export default async function RolePage({
     const role = SYSTEM_ROLES.find((r) => r.code === code);
     if (!role) notFound();
     title = role.name[locale];
+    const view = standardOnly(code);
+    header = await roleHeader(locale, view);
     content = (
       <>
         <Alert tone="info" data-testid="roles-not-configured">
           {t('notConfigured')}
         </Alert>
-        <RoleView locale={locale} view={standardOnly(code)} />
+        <RoleView locale={locale} view={view} tab={tab} />
       </>
     );
   } else {
@@ -103,12 +116,21 @@ export default async function RolePage({
     } else {
       const view = result.value;
       title = view.role.name[locale];
-      content =
-        view.custom && view.canManage ? (
-          <RoleEdit locale={locale} view={view} rolesHref={rolesHref} />
-        ) : (
-          <RoleView locale={locale} view={view} />
+      if (view.custom && view.canManage) {
+        const builder = await getTranslations({ locale, namespace: 'roleBuilder' });
+        header = (
+          <PageHeader
+            breadcrumbs={[{ label: t('backToRoles'), href: rolesHref }, { label: title }]}
+            breadcrumbsLabel={t('breadcrumbLabel')}
+            title={<span data-testid="role-title">{title}</span>}
+            description={builder('intro')}
+          />
         );
+        content = <RoleEdit locale={locale} view={view} rolesHref={rolesHref} />;
+      } else {
+        header = await roleHeader(locale, view);
+        content = <RoleView locale={locale} view={view} tab={tab} />;
+      }
     }
   }
 
@@ -117,15 +139,19 @@ export default async function RolePage({
       locale={locale}
       context={context}
       current="roles"
-      path={`/suite/admin/roles/${code}`}
+      path={`/suite/admin/roles/${code}${tab === 'permissions' ? '' : `?tab=${tab}`}`}
     >
-      <nav aria-label={t('breadcrumbLabel')} className="mb-2 text-sm">
-        <a href={rolesHref}>{t('backToRoles')}</a>
-      </nav>
-      <h1 className="mb-6 mt-0 text-2xl font-bold" data-testid="role-title">
-        {title ?? t('title')}
-      </h1>
-      <div className="flex flex-col gap-6">{content}</div>
+      {header ?? (
+        <PageHeader
+          breadcrumbs={[
+            { label: t('backToRoles'), href: rolesHref },
+            { label: title ?? t('title') },
+          ]}
+          breadcrumbsLabel={t('breadcrumbLabel')}
+          title={<span data-testid="role-title">{title ?? t('title')}</span>}
+        />
+      )}
+      <div className="flex flex-col gap-5">{content}</div>
     </SuiteShell>
   );
 }
@@ -162,93 +188,156 @@ function scopeOf(view: RoleDetailView): BuilderScope | 'headed' {
   return scope === 'departments' ? 'headed' : scope;
 }
 
-async function RoleView({ locale, view }: { locale: AppLocale; view: RoleDetailView }) {
+/** The role's header: tile, name, what it does, its tags and holders, «Create a role from it». */
+async function roleHeader(locale: AppLocale, view: RoleDetailView): Promise<ReactNode> {
+  const t = await getTranslations({ locale, namespace: 'rolesPage' });
+  const { role } = view;
+  const name = role.name[locale];
+  const standard = role.kind === 'standard';
+  return (
+    <PageHeader
+      breadcrumbs={[
+        { label: t('backToRoles'), href: `/${locale}/suite/admin/roles` },
+        { label: name },
+      ]}
+      breadcrumbsLabel={t('breadcrumbLabel')}
+      leading={
+        <span
+          aria-hidden="true"
+          className={
+            standard
+              ? 'grid size-16 shrink-0 place-items-center rounded-[20px] bg-brand-gradient text-on-brand shadow-brand-glow'
+              : 'grid size-16 shrink-0 place-items-center rounded-[20px] bg-primary-subtle text-2xl font-bold text-primary-text'
+          }
+        >
+          {standard ? <Icon name="lock" className="size-6" /> : Array.from(name)[0]}
+        </span>
+      }
+      title={<span data-testid="role-title">{name}</span>}
+      description={
+        <span className="flex flex-col gap-2.5" data-testid="role-detail">
+          <span>{role.description ? role.description[locale] : t('noDescription')}</span>
+          <span className="flex flex-wrap items-center gap-2">
+            <Badge tone="info">{t(`types.${role.kind}`)}</Badge>
+            {role.privileged ? <Badge tone="info">{t('privileged')}</Badge> : null}
+            {view.memberCount !== null ? (
+              <span className="inline-flex min-h-7 items-center gap-1.5 rounded-full border border-border px-2.5 text-[13px]">
+                <Icon name="people" className="size-3.5" />
+                <span data-testid="role-members">{t('members', { count: view.memberCount })}</span>
+                {view.memberCount > 0 ? (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <Link href={`/${locale}/suite/admin/users?role=${role.code}`}>
+                      {t('viewUsers')}
+                    </Link>
+                  </>
+                ) : null}
+              </span>
+            ) : null}
+          </span>
+        </span>
+      }
+      actions={
+        standard && view.canManage && role.code !== 'tenant_admin' ? (
+          <Link
+            href={`/${locale}/suite/admin/roles/new?from=standard:${role.code}`}
+            className={buttonClasses({ variant: 'primary', size: 'md' })}
+            data-testid="role-copy"
+          >
+            <Icon name="plus" />
+            {t('customFrom')}
+          </Link>
+        ) : null
+      }
+    />
+  );
+}
+
+async function RoleView({
+  locale,
+  view,
+  tab,
+}: {
+  locale: AppLocale;
+  view: RoleDetailView;
+  tab: RoleTab;
+}) {
   const t = await getTranslations({ locale, namespace: 'rolesPage' });
   const builder = await getTranslations({ locale, namespace: 'roleBuilder' });
+  const users = await getTranslations({ locale, namespace: 'users' });
   const { role } = view;
-  const chosen = new Set(role.permissions);
-  // Every catalogue permission is shown (read-only), the structure too; the Organization Admin's own
-  // permissions as a note below.
-  const groups = roleViewGroups(locale).map((group) => ({
-    key: group.key,
-    title: group.title,
-    items: group.permissions.map((permission) => ({
-      value: permission.code,
-      label: permission.label,
-      description: permission.description,
-      badge: permission.highRisk ? <Badge tone="warning">{builder('highRisk')}</Badge> : undefined,
-      checked: chosen.has(permission.code),
-    })),
-  }));
+  const standard = role.kind === 'standard';
+  const base = `/${locale}/suite/admin/roles/${role.code}`;
+  const current: RoleTab = tab === 'across' && !standard ? 'permissions' : tab;
   const adminOnly = role.permissions.filter((code) =>
     ['platform.role.assign_privileged', 'platform.role.manage'].includes(code),
   );
   const scope = scopeOf(view);
-  const standard = role.kind === 'standard';
+  const tabs = [
+    {
+      key: 'permissions',
+      href: base,
+      label: t('permissionsTitle'),
+      icon: 'key' as const,
+      count: role.permissions.length,
+    },
+    { key: 'scope', href: `${base}?tab=scope`, label: t('dataScopeTitle'), icon: 'eye' as const },
+    ...(standard
+      ? [
+          {
+            key: 'across',
+            href: `${base}?tab=across`,
+            label: t('acrossProduct'),
+            icon: 'plan' as const,
+          },
+        ]
+      : []),
+  ];
+
+  let body: ReactNode;
+  if (current === 'scope') {
+    body = (
+      <Card title={t('dataScopeTitle')}>
+        <p className="m-0 font-semibold" data-testid="role-scope">
+          {builder(`scopes.${scope}.label`)}
+        </p>
+        <p className="m-0 mt-1 text-sm text-text-muted">{builder(`scopes.${scope}.hint`)}</p>
+      </Card>
+    );
+  } else if (current === 'across') {
+    body = <RoleMatrix locale={locale} code={role.code} name={role.name[locale]} />;
+  } else {
+    body = (
+      <div className="flex flex-col gap-3">
+        <PermissionsView
+          groups={roleViewGroups(locale)}
+          chosen={role.permissions}
+          texts={{
+            searchPermissions: t('searchPermissions'),
+            allowed: t('allowed'),
+            notAllowed: t('notAllowed'),
+            highRisk: builder('highRisk'),
+            countLabel: String(builder.raw('countLabel')),
+            noMatches: users('noMatches'),
+          }}
+          locale={locale}
+        />
+        {adminOnly.length > 0 ? (
+          <p className="m-0 text-sm text-text-muted">{t('adminOnlyGroup')}</p>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <>
-      <Card data-testid="role-detail">
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge tone={standard ? 'info' : 'neutral'}>{t(`types.${role.kind}`)}</Badge>
-            {role.privileged ? <Badge tone="warning">{t('privileged')}</Badge> : null}
-          </div>
-          <p className="m-0">{role.description ? role.description[locale] : t('noDescription')}</p>
-          {view.memberCount !== null ? (
-            <p className="m-0 flex flex-wrap items-center gap-2">
-              <span data-testid="role-members">{t('members', { count: view.memberCount })}</span>
-              {view.memberCount > 0 ? (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <a href={`/${locale}/suite/admin/users?role=${role.code}`}>{t('viewUsers')}</a>
-                </>
-              ) : null}
-            </p>
-          ) : null}
-          {standard ? (
-            <Alert tone="info" data-testid="role-standard-note">
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="min-w-0 flex-1 basis-64">{t('standardNote')}</span>
-                {view.canManage && role.code !== 'tenant_admin' ? (
-                  <a
-                    href={`/${locale}/suite/admin/roles/new?from=standard:${role.code}`}
-                    className={buttonClasses({ variant: 'secondary', size: 'md' })}
-                    data-testid="role-copy"
-                  >
-                    <Icon name="plus" />
-                    {t('customFrom')}
-                  </a>
-                ) : null}
-              </div>
-            </Alert>
-          ) : null}
-        </div>
-      </Card>
-
-      <Card title={t('dataScopeTitle')}>
-        <p className="m-0 font-medium" data-testid="role-scope">
-          {builder(`scopes.${scope}.label`)}
-        </p>
-        <p className="m-0 text-sm text-text-muted">{builder(`scopes.${scope}.hint`)}</p>
-      </Card>
-
-      <Card title={t('permissionsTitle')}>
-        <div className="flex flex-col gap-3">
-          <ChecklistAccordion
-            groups={groups}
-            readOnly
-            countLabel={String(builder.raw('countLabel'))}
-            idPrefix="role-view-permission"
-            data-testid="role-permissions"
-          />
-          {adminOnly.length > 0 ? (
-            <p className="m-0 text-sm text-text-muted">{t('adminOnlyGroup')}</p>
-          ) : null}
-        </div>
-      </Card>
-
-      {standard ? <RoleMatrix locale={locale} code={role.code} name={role.name[locale]} /> : null}
+      {standard ? (
+        <Alert tone="info" data-testid="role-standard-note">
+          {t('standardNote')}
+        </Alert>
+      ) : null}
+      <TabNav variant="underline" label={role.name[locale]} items={tabs} current={current} />
+      {body}
     </>
   );
 }
@@ -264,24 +353,29 @@ async function RoleMatrix({
 }) {
   const t = await getTranslations({ locale, namespace: 'rolesPage' });
   if (!isSystemRoleCode(code)) return null;
+  const level = (value: AccessLevel) =>
+    value === 'N' ? (
+      <span className="text-text-muted">{t('levels.N')}</span>
+    ) : (
+      <Badge tone={LEVEL_TONE[value]}>{t(`levels.${value}`)}</Badge>
+    );
   return (
     <Card title={t('acrossProduct')}>
       <div className="flex flex-col gap-4">
-        <div>
-          <h3 className="mb-2 mt-0 text-base font-semibold">{t('legendTitle')}</h3>
-          <ul className="m-0 flex list-none flex-wrap gap-x-4 gap-y-2 p-0 text-sm">
-            {LEGEND.map((level) => (
-              <li key={level} className="flex items-center gap-2">
-                {level === 'N' ? (
-                  <span className="text-text-muted">{t('levels.N')}</span>
-                ) : (
-                  <Badge tone={LEVEL_TONE[level]}>{t(`levels.${level}`)}</Badge>
-                )}
-                <span className="text-text-muted">{t(`levelHints.${level}`)}</span>
+        {/* The levels are written in words in the table; their meanings stay one click away. */}
+        <details className="rounded-md" data-testid="role-legend">
+          <summary className="min-h-11 cursor-pointer content-center font-semibold">
+            {t('legendTitle')}
+          </summary>
+          <ul className="m-0 mt-2 flex list-none flex-wrap gap-x-4 gap-y-2 p-0 text-sm">
+            {LEGEND.map((entry) => (
+              <li key={entry} className="flex items-center gap-2">
+                {level(entry)}
+                <span className="text-text-muted">{t(`levelHints.${entry}`)}</span>
               </li>
             ))}
           </ul>
-        </div>
+        </details>
         {/* Scrolls on phones: focusable so the keyboard can scroll it too (WCAG 2.1.1; axe
             scrollable-region-focusable — the table itself has nothing focusable). */}
         <div
@@ -294,14 +388,14 @@ async function RoleMatrix({
           <table className="w-full border-collapse text-start" data-testid="role-matrix">
             <caption className="sr-only">{t('matrixCaption', { role: name })}</caption>
             <thead>
-              <tr className="border-b border-border">
-                <th scope="col" className="px-2 py-2 text-start font-semibold">
+              <tr className="border-b border-border text-xs uppercase tracking-[0.06em] text-text-muted">
+                <th scope="col" className="px-3 py-2.5 text-start font-bold">
                   {t('matrixColumns.area')}
                 </th>
-                <th scope="col" className="px-2 py-2 text-start font-semibold">
+                <th scope="col" className="px-3 py-2.5 text-start font-bold">
                   {t('matrixColumns.access')}
                 </th>
-                <th scope="col" className="px-2 py-2 text-start font-semibold">
+                <th scope="col" className="px-3 py-2.5 text-start font-bold">
                   {t('matrixColumns.scope')}
                 </th>
               </tr>
@@ -311,20 +405,14 @@ async function RoleMatrix({
                 const cell = area.access[code];
                 return (
                   <tr key={area.key} className="border-b border-border">
-                    <th scope="row" className="px-2 py-2 text-start font-normal">
+                    <th scope="row" className="px-3 py-2.5 text-start font-normal">
                       <span className="flex flex-wrap items-center gap-2">
                         {area.name[locale]}
                         {area.sensitive ? <Badge tone="warning">{t('sensitive')}</Badge> : null}
                       </span>
                     </th>
-                    <td className="px-2 py-2">
-                      {cell.level === 'N' ? (
-                        <span className="text-text-muted">{t('levels.N')}</span>
-                      ) : (
-                        <Badge tone={LEVEL_TONE[cell.level]}>{t(`levels.${cell.level}`)}</Badge>
-                      )}
-                    </td>
-                    <td className="px-2 py-2 text-text-muted">
+                    <td className="px-3 py-2.5">{level(cell.level)}</td>
+                    <td className="px-3 py-2.5 text-text-muted">
                       {cell.qualifier ? cell.qualifier[locale] : null}
                     </td>
                   </tr>
@@ -357,7 +445,6 @@ async function RoleEdit({
   const held = custom.memberCount > 0 || custom.pendingInvitationCount > 0;
   return (
     <>
-      <p className="m-0 text-text-muted">{builder('intro')}</p>
       <RoleBuilderForm
         editing={{ id: custom.id, version: custom.version }}
         initial={{
@@ -372,7 +459,6 @@ async function RoleEdit({
         texts={texts}
         errors={errors}
         rolesHref={rolesHref}
-        savedHref={`${rolesHref}?saved=1`}
         locale={locale}
         holdersText={builder('holders', { count: custom.memberCount })}
       />
@@ -399,7 +485,7 @@ async function RoleEdit({
                     }),
                   }}
                   errors={errors}
-                  deletedHref={`${rolesHref}?deleted=1`}
+                  rolesHref={rolesHref}
                 />
               </div>
             </>

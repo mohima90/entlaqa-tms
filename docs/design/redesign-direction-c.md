@@ -59,3 +59,36 @@ Every pair is checked in light and dark for the shipped theme and for hundreds o
   in lists). No single-key shortcut was added (WCAG 2.1.4 would need an off switch; new feature).
 - **Not built (new features, later)**: the organization switcher popover, the Home set-up checklist,
   bulk select, Undo in toasts.
+
+## Package 3 additions (People & roles, PO 21 Oct 2026)
+
+| Block | Use |
+|---|---|
+| Toast `action` | One button in a toast: «Undo» after a role change, «Reactivate» after a deactivation, «Open full profile». A toast with an action stays until closed (never under 20 s when timed) and tells screen readers the action is there (WCAG 2.2.1 / 2.1.1; review, 21 Oct 2026 — the PO's «about 10 s» for Undo became «until closed»). |
+| `ChoiceCard` | A radio question as cards with what each choice means (roles in the change-role panel, the builder's data scope, the import's options); unavailable choices stay listed with the reason. |
+| `FilterMenu` | A filter pill that applies at once (no Apply), with a search for long lists; the list's address keeps the filter. |
+| `AttentionStrip` / `AttentionItem` | One «Needs your attention» card above a list instead of a stack of banners, each line with its action. |
+| `CopyButton` | Copy a value (e-mail, employee number) with a toast. |
+| `SidePanel` `size="lg"`, `canClose` (also on `Dialog`) | Wide form panels; «Discard your changes?» before a panel with unsaved changes closes; no closing while saving. Panels close through the dialog so focus returns to the opener. |
+| `FocusedShell` (apps/suite) | A full-screen frame for a task with steps (the user import): ✕, title, step bar, language; actions in a bottom bar. |
+
+Panels and dialogs of one person keep their own addresses (`/users/[id]/edit`, `/roles`, `/deactivate`,
+`/users/invite`): the address opens the page with the panel open, closing returns to the page and focus to
+the opener. Toasts replace the `?invited=1`-style messages.
+
+## Package 2 additions (Organization settings, PO 21 Oct 2026)
+
+| Block | Use |
+|---|---|
+| `SaveBar` states | At rest «Last changed by …» and a quiet Save (no Cancel); `invalid` after a refused Save: «Some fields need correcting…» with «Go to {field}» (`fix`); `extra` holds e.g. the phone «Preview» of Branding. |
+| Leave guard (apps/suite `LeaveGuard`) | «Leave without saving?» on a link inside the site while a settings page has unsaved edits; the browser's own question on reload or close (Q2-2). |
+| Step-up banner (apps/suite `StepUpBanner`, `lib/step-up-view`) | «Verify with the app» BEFORE editing, form read-only, only when saving needs a fresh authenticator code under the existing rules (Q2-1; none today) or the server asked for one. |
+| `Segmented` (apps/suite) | A radio question as one pill (default language, date display). |
+| `SelectField` (apps/suite) | Same look and contract as `TextField` (label above, 48 px, hint and error under the field). |
+| Toast `action` | «Undo» after deactivating a branch, or a unit no role is limited to (Q2-9), and after «Reset to the Jadarat look» — the package 3 rule (stays until closed). |
+
+Settings pages: breadcrumbs, two-column sections, a toast on save (nothing kept in the URL), conflict banner
+with Reload, «Try again» on a failed load. Lists of branches: status pills with counts as links
+(`?status=`), cards on phones. Breakpoints are the project's (`sm` 360 px, `md` 600 px, `lg` 900 px): the
+phone / wider switch is `md`.
+

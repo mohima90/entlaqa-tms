@@ -4,7 +4,7 @@
 |---|---|
 | **Work package** | WP-ADM-03 (ROADMAP-by-role) · BACKLOG T-M2-50 (this flow), T-M2-30 (screen) |
 | **Requirements** | FR-AUD-01 (R1 part: viewer, search, export, before/after, IP, device) · BR-IAM-3 (role changes audited with before/after) · Appendix B (Audit log: Organization Admin **V**) · NFR-OBS-01 (no personal data in logs) · boundaries: FR-AUD-02 data export (R2), FR-AUD-03 retention engine (R3), FR-AUD-04 data requests (R2) |
-| **Status** | **Draft — for PO review** (21 Oct 2026) |
+| **Status** | ****On hold (PO, 21 Oct 2026)** — draft kept** (21 Oct 2026) |
 | **Copied from Kawadir** | Kawadir ATS has **one audit log screen, in the Super Admin console** (`/audit-logs`): the latest 500 events of **all** organizations; three cards (total, today, this week); a search box and two filters (action, item type); a detail window with time, action, item, IP address, previous and new values (raw data) and extra details; **Export CSV** of the filtered list (time, action, item type, item id, IP). It records only five event families (offers, candidates rejected/hired, roles given/removed, jobs published/closed, organization settings — *which* settings changed, never their values) and a failed record never stops the change. Organization Admins and HR Managers may read their own organization's records in the database but have **no screen**. **We copy:** the list with cards, search, filters, the detail window and the CSV export. **We do not copy:** the Super Admin reading every organization's log (tenant isolation), the 500-row cap, raw data in the detail window, a change going through without its record, and the narrow event list (FR-AUD-01 asks for every change) |
 
 ## 1. Goal

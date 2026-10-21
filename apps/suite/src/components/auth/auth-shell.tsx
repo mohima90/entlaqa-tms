@@ -175,7 +175,7 @@ function BrandLogo({
       <img
         src={brand.logoSrc}
         alt={brand.name}
-        className="h-10 w-auto max-w-[200px] object-contain sm:h-11"
+        className="h-10 w-auto max-w-[200px] object-contain md:h-11"
         data-testid="auth-brand-logo"
       />
     );
@@ -189,10 +189,10 @@ function BrandLogo({
         <JadaratMark className="size-6" />
       </span>
       <span className="min-w-0">
-        <span className="block text-[15px] font-semibold leading-tight sm:text-base">
+        <span className="block text-[15px] font-semibold leading-tight md:text-base">
           {texts.productName}
         </span>
-        <span className="hidden text-[12.5px] text-text-muted sm:block">{texts.portal}</span>
+        <span className="hidden text-[12.5px] text-text-muted md:block">{texts.portal}</span>
       </span>
     </span>
   );
@@ -358,14 +358,14 @@ export function AuthShell(props: AuthShellProps) {
 
   return (
     <div className="grid min-h-dvh bg-surface lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-      <div className="flex min-w-0 flex-col px-4 pb-5 pt-4 sm:px-10 sm:py-6 xl:px-16 xl:py-7">
+      <div className="flex min-w-0 flex-col px-4 pb-5 pt-4 md:px-10 md:py-6 xl:px-16 xl:py-7">
         <header className="flex items-center justify-between gap-4">
           <BrandLogo texts={texts} brand={brand} />
           {languageSwitch}
         </header>
         <main
           id="main"
-          className="group/auth flex flex-1 justify-center pb-6 pt-9 sm:items-center sm:py-7"
+          className="group/auth flex flex-1 justify-center pb-6 pt-9 md:items-center md:py-7"
         >
           <div
             className={cn(
@@ -410,7 +410,7 @@ export function AuthCard({
   return (
     <section
       className={cn(
-        'flex flex-col gap-5 rounded-xl border border-border bg-surface p-5.5 shadow-3 sm:p-8',
+        'flex flex-col gap-5 rounded-xl border border-border bg-surface p-5.5 shadow-3 md:p-8',
         className,
       )}
       data-testid={testId}

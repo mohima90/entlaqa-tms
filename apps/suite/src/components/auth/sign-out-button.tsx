@@ -27,7 +27,7 @@ export function SignOutButton({
       disabled={pending}
       busy={pending}
       data-testid="sign-out"
-      className="max-sm:size-11 max-sm:px-0"
+      className="max-md:size-11 max-md:px-0"
       onClick={() => {
         startTransition(async () => {
           // The session is revoked server-side; go to sign-in whatever the outcome.
@@ -38,7 +38,7 @@ export function SignOutButton({
       }}
     >
       {pending ? null : <Icon name="sign-out" className="rtl:-scale-x-100" />}
-      <span className="max-sm:sr-only">{pending ? pendingLabel : label}</span>
+      <span className="max-md:sr-only">{pending ? pendingLabel : label}</span>
     </Button>
   );
 }

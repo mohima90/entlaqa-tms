@@ -77,7 +77,7 @@ export default async function SelectOrganizationPage({
         )}
       </AuthCard>
       {platformAdmin ? (
-        <AuthCard data-testid="platform-console-choice" className="sm:flex-row sm:items-center">
+        <AuthCard data-testid="platform-console-choice" className="md:flex-row md:items-center">
           <span
             aria-hidden="true"
             className="grid size-12 shrink-0 place-items-center rounded-[14px] bg-inverse-surface text-inverse-text"

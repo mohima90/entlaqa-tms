@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useRef, useState, useTransition } from 'react';
-import { Avatar } from './avatar';
+import { Avatar, initialsOf } from './avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -196,7 +196,16 @@ export function UserMenu({
           className="flex shrink-0 items-center rounded-full text-start text-on-header"
           data-testid="account-menu"
         >
-          <Avatar name={name} src={photo} className="size-10 text-sm ring-0 md:size-11" />
+          {photo ? (
+            <Avatar name={name} src={photo} className="size-10 md:size-11" />
+          ) : (
+            <span
+              aria-hidden="true"
+              className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-gradient text-sm font-semibold text-on-brand md:size-11"
+            >
+              {initialsOf(name)}
+            </span>
+          )}
           {/* The name says whose account it is (the avatar is decorative). */}
           <span className="sr-only">
             {name}, {subtitle}

@@ -321,7 +321,7 @@ export function MfaSetup({
       ) : (
         <>
           {/* Numbered steps (direction C): the QR code next to the key, then the first code. */}
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
+          <div className="flex flex-col gap-5 md:flex-row md:items-start">
             {/* Auth's QR code (an SVG data URL; CSP img-src allows data:). */}
             {/* eslint-disable-next-line @next/next/no-img-element -- a data URL, not an optimisable image */}
             <img
@@ -329,7 +329,7 @@ export function MfaSetup({
               alt={texts.qrAlt}
               width={184}
               height={184}
-              className="shrink-0 self-center rounded-lg border border-border bg-white p-2 sm:self-start"
+              className="shrink-0 self-center rounded-lg border border-border bg-white p-2 md:self-start"
               data-testid="mfa-qr"
             />
             <div className="flex min-w-0 flex-col gap-3">

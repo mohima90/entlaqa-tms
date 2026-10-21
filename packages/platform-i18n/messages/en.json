@@ -8,7 +8,12 @@
     "switchLanguage": "العربية",
     "switchLanguageAria": "Switch to Arabic",
     "required": "(required)",
-    "optional": "(optional)"
+    "optional": "(optional)",
+    "undo": "Undo",
+    "unsavedChanges": "You have unsaved changes.",
+    "keepEditing": "Keep editing",
+    "discardChanges": "Discard changes",
+    "loading": "Loading…"
   },
   "landing": {
     "title": "Training Management System",
@@ -107,7 +112,7 @@
     "notConfigured": "This service isn't set up in this environment yet.",
     "planCycleNotDraft": "This planning cycle has been launched; its set-up can no longer change.",
     "planCycleOpenExists": "Another planning cycle is open. Only one cycle can be open at a time.",
-    "planCycleNotReady": "This planning cycle isn't ready to launch yet. Check the list under Launch.",
+    "planCycleNotReady": "This planning cycle isn't ready to launch yet. Check the list under Review & launch.",
     "planCycleDeadlineRefused": "The deadline can only move later while the cycle is open and before the current deadline passes."
   },
   "auth": {
@@ -809,7 +814,14 @@
       "emptyReadBody": "The L&D Manager starts planning cycles. They will appear here.",
       "emptyTabTitle": "No cycles with this status",
       "deleted": "The draft cycle was deleted.",
-      "loadFailed": "We couldn't load the planning cycles. Try again. Reference: {correlationId}"
+      "loadFailed": "We couldn't load the planning cycles. Try again. Reference: {correlationId}",
+      "daysLeft": "{count, plural, =0 {Deadline today} one {# day left} other {# days left}}",
+      "viewProgress": "View progress",
+      "continue": "Continue set-up",
+      "howTitle": "How a planning cycle works",
+      "how1": "Set up the period, the units, their budgets and the approvers.",
+      "how2": "Launch: every unit head gets a needs form with your deadline.",
+      "how3": "Follow the answers until the deadline, then consolidate them into one plan."
     },
     "status": {
       "draft": "Draft",
@@ -836,7 +848,8 @@
         "scope": "Scope",
         "budget": "Budget",
         "approvals": "Approval chain",
-        "reminders": "Reminders"
+        "reminders": "Reminders",
+        "review": "Review & launch"
       },
       "back": "Back",
       "saveAndContinue": "Save and continue",
@@ -923,7 +936,8 @@
         "add": "Add a reminder",
         "remove": "Remove the reminder {days} days before",
         "none": "No reminders.",
-        "notificationsNote": "Reminders are sent once in-app notifications are available (coming soon)."
+        "notificationsNote": "Reminders are sent once in-app notifications are available (coming soon).",
+        "chip": "{days, plural, one {# day before} other {# days before}}"
       },
       "launch": {
         "title": "Launch",
@@ -973,7 +987,15 @@
       "notFound": "This cycle no longer exists.",
       "notDraft": "This cycle has been launched; its set-up can no longer change.",
       "close": "Close",
-      "working": "Saving…"
+      "working": "Saving…",
+      "stepProblem": "(needs attention)",
+      "goToStep": "Go to {step}",
+      "editStep": "Edit {step}",
+      "reviewIntro": "Check the set-up. Each problem links to the step that fixes it.",
+      "launchBlocked": "Fix the items above, then launch the cycle.",
+      "leaveTitle": "Leave {step} without saving?",
+      "leaveBody": "Your changes in this step are lost if you leave now.",
+      "defaultsLink": "Defaults come from Planning settings."
     },
     "cycle": {
       "launchedOn": "Launched on {date}",
@@ -1020,7 +1042,8 @@
       "closedNote": "The deadline has passed: unit heads can no longer change their needs. Consolidation comes next.",
       "stepPerson": "{step}: {name}",
       "stepHeads": "{step}: every unit head for their own lines",
-      "stepUnnamed": "{step}: not named yet"
+      "stepUnnamed": "{step}: not named yet",
+      "filterLabel": "Show units by status"
     },
     "settings": {
       "title": "Planning settings",
@@ -2546,7 +2569,20 @@
       "TOO_FEW_ENTRIES": "Add more entries to this section.",
       "TOO_MANY_ENTRIES": "This section has too many entries.",
       "TOO_MANY_ERRORS": "Many answers need checking. Fix the ones shown, then save again."
-    }
+    },
+    "statsCount": "{sections, plural, one {# section} other {# sections}} · {fields, plural, one {# field} other {# fields}}",
+    "startFrom": "Start from",
+    "startBlank": "The two fixed fields only",
+    "startCopy": "A copy of «{name}»",
+    "allSaved": "All changes saved",
+    "outline": "Outline",
+    "previewLanguage": "Preview language",
+    "dragHint": "Drag to reorder, or use Move up / Move down in the row menu.",
+    "fieldSettings": "Field settings",
+    "sectionSettings": "Section settings",
+    "saveField": "Save field",
+    "saveSection": "Save section",
+    "rowActions": "More actions for «{name}»"
   },
   "courses": {
     "title": "Courses",
@@ -2656,7 +2692,10 @@
       "costHint": "Optional. Used to estimate the cost of the training plan, in your organization's currency.",
       "cancel": "Cancel",
       "save": "Save course",
-      "saving": "Saving…"
+      "saving": "Saving…",
+      "sectionAbout": "About the course",
+      "sectionDelivery": "Delivery and duration",
+      "sectionCapacity": "Participants and cost"
     },
     "fieldErrors": {
       "REQUIRED": "Enter a value.",
@@ -2672,7 +2711,8 @@
       "NAME_TAKEN": "A category with this name already exists.",
       "NOT_FOUND": "This category no longer exists. Choose another one.",
       "INVALID": "Check this value."
-    }
+    },
+    "edit": "Edit"
   },
   "structure": {
     "title": "Organization structure",

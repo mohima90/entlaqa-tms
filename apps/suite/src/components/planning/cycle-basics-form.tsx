@@ -1,14 +1,31 @@
 'use client';
 import { createPlanCycleAction, updatePlanCycleBasicsAction } from '@jadarat/tms/actions/planning';
 import { basicsIssues, toFieldErrors } from '@jadarat/tms/planning-rules';
-import { Alert, Button, Card, TextField, buttonClasses } from '@jadarat/ui';
+import type { DateDisplay } from '@jadarat/platform-i18n';
+import { Alert, Button, Card, Icon, TextField, buttonClasses } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { type SyntheticEvent, useState, useTransition } from 'react';
-import { cycleHref, fieldErrorKey } from '../../lib/planning-view';
+import { dayFormatter } from '../../lib/planning-format';
+import { PLANNING_PATHS, cycleHref, fieldErrorKey } from '../../lib/planning-view';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { SelectField } from '../select-field';
+import { StepFooter } from './cycle-chain-forms';
+import { useUnsavedStep } from './setup-step-nav';
 import { usePlanningTexts } from './use-planning-texts';
+
+/** «Shown as …»: a day as the organization shows dates (Gregorian · Hijri), under a date field. */
+function ShownAs({ text, testId }: { text: string; testId?: string }) {
+  return (
+    <p
+      className="m-0 inline-flex w-fit items-center gap-2 rounded-[10px] bg-primary-subtle px-3 py-1.5 text-[13.5px] font-semibold text-primary-text"
+      data-testid={testId}
+    >
+      <Icon name="calendar" className="size-3.5" />
+      {text}
+    </p>
+  );
+}
 
 export interface CycleBasicsValues {
   readonly nameAr: string;
@@ -36,6 +53,10 @@ export interface CycleBasicsFormProps {
   readonly texts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
   readonly cancelHref: string;
+  /** How the organization shows dates (the «Shown as» lines under the dates). */
+  readonly display: DateDisplay;
+  /** «Needs forms» (the menu entry): linked when there is no form to choose. */
+  readonly needsFormsLabel: string;
 }
 
 type Field = keyof CycleBasicsValues;
@@ -53,6 +74,12 @@ export function CycleBasicsForm(props: CycleBasicsFormProps) {
   const [values, setValues] = useState<CycleBasicsValues>(props.initial);
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
   const [notice, setNotice] = useState<string | null>(null);
+  const day = dayFormatter(props.locale, props.display);
+  const isDay = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+  useUnsavedStep(
+    props.editing !== null &&
+      (Object.keys(values) as Field[]).some((field) => values[field] !== props.initial[field]),
+  );
 
   function update(field: Field, value: string) {
     setValues((current) => ({ ...current, [field]: value }));
@@ -191,43 +218,75 @@ export function CycleBasicsForm(props: CycleBasicsFormProps) {
             error={errors.periodStart}
             disabled={pending}
           />
-          <TextField
-            id="cycle-period-end"
-            type="date"
-            label={t('setup.basics.periodEnd')}
-            marker={t('setup.required')}
-            value={values.periodEnd}
-            onChange={(event) => {
-              update('periodEnd', event.target.value);
-            }}
-            required
-            error={errors.periodEnd}
-            disabled={pending}
-          />
-          <TextField
-            id="cycle-deadline"
-            type="date"
-            label={t('setup.basics.deadline')}
-            marker={t('setup.required')}
-            hint={t('setup.basics.deadlineHint')}
-            value={values.deadline}
-            onChange={(event) => {
-              update('deadline', event.target.value);
-            }}
-            required
-            error={errors.deadline}
-            disabled={pending}
-          />
+          <div className="flex flex-col gap-2">
+            <TextField
+              id="cycle-period-end"
+              type="date"
+              label={t('setup.basics.periodEnd')}
+              marker={t('setup.required')}
+              value={values.periodEnd}
+              onChange={(event) => {
+                update('periodEnd', event.target.value);
+              }}
+              required
+              error={errors.periodEnd}
+              disabled={pending}
+            />
+            {isDay(values.periodStart) && isDay(values.periodEnd) && !errors.periodEnd ? (
+              <ShownAs
+                text={t('setup.basics.shownAs', {
+                  date: `${day(values.periodStart)} – ${day(values.periodEnd)}`,
+                })}
+                testId="cycle-period-shown"
+              />
+            ) : null}
+          </div>
+          <div className="flex flex-col gap-2">
+            <TextField
+              id="cycle-deadline"
+              type="date"
+              label={t('setup.basics.deadline')}
+              marker={t('setup.required')}
+              hint={t('setup.basics.deadlineHint')}
+              value={values.deadline}
+              onChange={(event) => {
+                update('deadline', event.target.value);
+              }}
+              required
+              error={errors.deadline}
+              disabled={pending}
+            />
+            {isDay(values.deadline) && !errors.deadline ? (
+              <ShownAs
+                text={t('setup.basics.shownAs', { date: day(values.deadline) })}
+                testId="cycle-deadline-shown"
+              />
+            ) : null}
+          </div>
           <SelectField
             id="cycle-needs-form"
             label={t('setup.basics.needsForm')}
             marker={t('setup.optional')}
-            hint={t('setup.basics.needsFormHint')}
+            hint={
+              props.needsForms.length === 0 ? (
+                <>
+                  {t('setup.basics.needsFormHint')}{' '}
+                  <a href={`/${props.locale}${PLANNING_PATHS.needsForms}`}>
+                    {props.needsFormsLabel}
+                  </a>
+                </>
+              ) : (
+                t('setup.basics.needsFormHint')
+              )
+            }
             value={values.needsFormId}
             onChange={(event) => {
               update('needsFormId', event.target.value);
             }}
-            error={errors.needsFormId}
+            error={
+              errors.needsFormId ??
+              (props.needsForms.length === 0 ? t('setup.launch.problems.no_needs_form') : undefined)
+            }
             disabled={pending}
             data-testid="cycle-needs-form"
           >
@@ -247,18 +306,29 @@ export function CycleBasicsForm(props: CycleBasicsFormProps) {
           {textarea('instructionsAr', 'rtl')}
         </div>
       </Card>
-      <div className="flex flex-wrap items-center justify-end gap-3">
-        <a href={props.cancelHref} className={buttonClasses({ variant: 'secondary', size: 'md' })}>
-          {t('setup.cancel')}
-        </a>
-        <Button type="submit" disabled={pending} data-testid="cycle-basics-save">
-          {pending
-            ? t('setup.working')
-            : props.editing
-              ? t('setup.saveAndContinue')
-              : t('setup.create')}
-        </Button>
-      </div>
+      {props.editing ? (
+        <StepFooter
+          backHref={props.cancelHref}
+          backLabel={t('setup.back')}
+          saveLabel={t('setup.saveAndContinue')}
+          workingLabel={t('setup.working')}
+          pending={pending}
+          testId="cycle-basics-save"
+        />
+      ) : (
+        <div className="flex flex-wrap items-center justify-end gap-2.5 max-md:[&>*]:flex-1">
+          <a
+            href={props.cancelHref}
+            className={buttonClasses({ variant: 'secondary', size: 'md' })}
+          >
+            {t('setup.cancel')}
+          </a>
+          <Button type="submit" disabled={pending} busy={pending} data-testid="cycle-basics-save">
+            {pending ? t('setup.working') : t('setup.create')}
+            {pending ? null : <Icon name="arrow-end" className="size-4" />}
+          </Button>
+        </div>
+      )}
     </form>
   );
 }

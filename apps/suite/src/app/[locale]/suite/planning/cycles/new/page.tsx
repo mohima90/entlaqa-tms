@@ -1,7 +1,7 @@
 import { toClientError } from '@jadarat/platform-core';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { dayInZone, defaultDeadline, defaultPeriod } from '@jadarat/tms/planning-model';
-import { Alert } from '@jadarat/ui';
+import { Alert, StepList } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
@@ -14,7 +14,12 @@ import {
   planningErrorTexts,
   planningTexts,
 } from '../../../../../../lib/planning-queries';
-import { PLANNING_PATHS, localName } from '../../../../../../lib/planning-view';
+import {
+  OPTIONAL_STEPS,
+  PLANNING_PATHS,
+  SETUP_STEPS,
+  localName,
+} from '../../../../../../lib/planning-view';
 import { getSuiteContext } from '../../../../../../lib/suite-context';
 
 /**
@@ -31,6 +36,7 @@ export default async function NewPlanCyclePage({
   if (!hasLocale(routing.locales, locale)) notFound();
   const context = await getSuiteContext(locale);
   const t = await getTranslations({ locale, namespace: 'planning' });
+  const shell = await getTranslations({ locale, namespace: 'shell' });
   const cyclesHref = `/${locale}${PLANNING_PATHS.cycles}`;
   const texts = planningTexts(locale);
   const errors = await planningErrorTexts(locale);
@@ -67,7 +73,37 @@ export default async function NewPlanCyclePage({
       texts={texts}
       errors={errors}
       cancelHref={cyclesHref}
+      display={context.regional.dateDisplay}
+      needsFormsLabel={shell('needsForms')}
     />
+  );
+  // The whole journey is visible from the start (redesign package 4): only Basics is reachable until the
+  // draft exists.
+  const stepper = (
+    <StepList
+      label={t('setup.stepsLabel')}
+      current="basics"
+      short={t('setup.stepShort', {
+        current: 1,
+        total: SETUP_STEPS.length,
+        name: t('setup.steps.basics'),
+      })}
+      items={SETUP_STEPS.map((key) => ({
+        key,
+        label: t(`setup.steps.${key}`),
+        href: key === 'basics' ? `/${locale}${PLANNING_PATHS.newCycle}` : undefined,
+        state: key === 'basics' ? 'todo' : 'locked',
+        note: OPTIONAL_STEPS.includes(key) ? t('setup.optional').replace(/[()]/g, '') : undefined,
+        icon: key === 'review' ? 'flag' : undefined,
+      }))}
+      data-testid="setup-stepper"
+    />
+  );
+  const surface = (body: ReactNode) => (
+    <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[252px_minmax(0,1fr)] lg:gap-7">
+      {stepper}
+      <div className="flex min-w-0 flex-col gap-4">{body}</div>
+    </div>
   );
   if (!context.live) {
     // Preview without data: the form with the platform defaults (saving needs the database).
@@ -78,14 +114,16 @@ export default async function NewPlanCyclePage({
         <Alert tone="info" data-testid="planning-not-configured">
           {t('list.notConfigured')}
         </Alert>
-        {form(
-          {
-            periodStart: period.start,
-            periodEnd: period.end,
-            deadline: defaultDeadline(today, period.end),
-          },
-          'SAR',
-          [],
+        {surface(
+          form(
+            {
+              periodStart: period.start,
+              periodEnd: period.end,
+              deadline: defaultDeadline(today, period.end),
+            },
+            'SAR',
+            [],
+          ),
         )}
       </>
     );
@@ -102,14 +140,16 @@ export default async function NewPlanCyclePage({
           </Alert>
         );
       } else {
-        content = (
+        content = surface(
           <Alert tone="danger">
             {t('list.loadFailed', { correlationId: error.correlationId ?? '' })}
-          </Alert>
+          </Alert>,
         );
       }
     } else {
-      content = form(result.value.defaults, result.value.currency, result.value.needsForms);
+      content = surface(
+        form(result.value.defaults, result.value.currency, result.value.needsForms),
+      );
     }
   }
 

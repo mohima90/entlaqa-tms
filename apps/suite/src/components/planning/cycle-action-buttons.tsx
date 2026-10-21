@@ -4,7 +4,9 @@ import {
   extendPlanCycleDeadlineAction,
   launchPlanCycleAction,
 } from '@jadarat/tms/actions/planning';
-import { Alert, Button, Dialog, Icon, TextField } from '@jadarat/ui';
+import type { DateDisplay } from '@jadarat/platform-i18n';
+import { Alert, Button, Dialog, Icon, TextField, toast } from '@jadarat/ui';
+import { dayFormatter } from '../../lib/planning-format';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import type { ErrorTexts } from '../auth/error-text';
@@ -25,6 +27,8 @@ export interface LaunchCycleButtonProps extends Common {
   readonly disabled: boolean;
   /** Where to go once launched (the cycle's progress with its confirmation). */
   readonly launchedHref: string;
+  /** The id of the text that says why the launch is not possible yet (Review & launch). */
+  readonly describedBy?: string | undefined;
 }
 
 /** «Launch cycle» (business flow B5): asks first; the server checks readiness again. */
@@ -58,6 +62,9 @@ export function LaunchCycleButton(props: LaunchCycleButtonProps) {
           setOpen(true);
         }}
         disabled={props.disabled}
+        aria-describedby={props.describedBy}
+        size="lg"
+        className="max-md:w-full"
         data-testid="cycle-launch"
       >
         <Icon name="flag" />
@@ -132,7 +139,8 @@ export function DeleteCycleButton(props: DeleteCycleButtonProps) {
   return (
     <>
       <Button
-        variant="danger-outline"
+        variant="ghost"
+        className="text-danger hover:bg-danger-subtle"
         onClick={() => {
           setOpen(true);
         }}
@@ -186,6 +194,8 @@ export interface ExtendDeadlineButtonProps extends Common {
   readonly periodEnd: string;
   /** Formatted on the server: the hint with the period's end. */
   readonly hint: string;
+  /** How the organization shows dates («Shown as» under the new deadline). */
+  readonly display: DateDisplay;
 }
 
 /**
@@ -222,6 +232,7 @@ export function ExtendDeadlineButton(props: ExtendDeadlineButtonProps) {
       const result = await extendPlanCycleDeadlineAction({ ...props.cycle, deadline });
       if (result.ok) {
         setOpen(false);
+        toast.success(t('cycle.extended'));
         router.refresh();
         return;
       }
@@ -286,6 +297,14 @@ export function ExtendDeadlineButton(props: ExtendDeadlineButtonProps) {
             error={error}
             disabled={pending}
           />
+          {/^\d{4}-\d{2}-\d{2}$/.test(deadline) && !error ? (
+            <p className="m-0 inline-flex w-fit items-center gap-2 rounded-[10px] bg-primary-subtle px-3 py-1.5 text-[13.5px] font-semibold text-primary-text">
+              <Icon name="calendar" className="size-3.5" />
+              {t('setup.basics.shownAs', {
+                date: dayFormatter(props.locale, props.display)(deadline),
+              })}
+            </p>
+          ) : null}
         </div>
       </Dialog>
     </>

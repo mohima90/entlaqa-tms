@@ -6,15 +6,18 @@ import { dayFormatter, formatAmount } from './planning-format';
 import {
   CYCLE_TONE,
   FORM_TONE,
+  PROBLEM_STEP,
   cycleHref,
-  cycleTab,
+  daysLeft,
   fieldErrorKey,
-  filterCycles,
+  groupCycles,
   localName,
   nextStep,
   previousStep,
   progressCounts,
   setupStep,
+  statusCounts,
+  stepMarks,
   sumAmounts,
 } from './planning-view';
 
@@ -24,7 +27,10 @@ describe('set-up steps (EP-PLN B4)', () => {
     expect(setupStep('nope')).toBe('basics');
     expect(setupStep(['scope'])).toBe('basics');
     expect(nextStep('basics')).toBe('scope');
-    expect(nextStep('reminders')).toBeNull();
+    // Reminders now continues to «Review & launch» (redesign package 4), the last step.
+    expect(nextStep('reminders')).toBe('review');
+    expect(nextStep('review')).toBeNull();
+    expect(setupStep('review')).toBe('review');
     expect(previousStep('scope')).toBe('basics');
     expect(previousStep('basics')).toBeNull();
   });
@@ -47,10 +53,48 @@ describe('list helpers', () => {
     submittedCount: 0,
   });
 
-  it('filters by tab; unknown tabs show everything', () => {
-    const cycles = [item('draft'), item('open'), item('closed')];
-    expect(filterCycles(cycles, cycleTab('open')).map((c) => c.id)).toEqual(['open']);
-    expect(filterCycles(cycles, cycleTab('x'))).toHaveLength(3);
+  it('groups the cycles by status: open, drafts, then everything closed', () => {
+    const cycles = [item('draft'), item('open'), item('closed'), item('consolidated')];
+    const groups = groupCycles(cycles);
+    expect(groups.open.map((c) => c.id)).toEqual(['open']);
+    expect(groups.drafts.map((c) => c.id)).toEqual(['draft']);
+    expect(groups.closed.map((c) => c.id)).toEqual(['closed', 'consolidated']);
+    expect(groupCycles([])).toEqual({ open: [], drafts: [], closed: [] });
+  });
+
+  it('counts the days left to a deadline from the organization’s today', () => {
+    expect(daysLeft('2026-10-21', '2026-11-20')).toBe(30);
+    expect(daysLeft('2026-10-21', '2026-10-21')).toBe(0);
+    expect(daysLeft('2026-10-21', '2026-10-20')).toBe(-1);
+  });
+
+  it('counts the units per status for the progress chips', () => {
+    expect(statusCounts(['not_started', 'late', 'submitted', 'late', 'returned'])).toEqual({
+      all: 5,
+      not_started: 1,
+      draft: 0,
+      submitted: 1,
+      returned: 1,
+      late: 2,
+    });
+  });
+
+  it('marks the set-up steps from the launch problems (Review & launch)', () => {
+    expect(stepMarks([])).toEqual({
+      basics: 'done',
+      scope: 'done',
+      budget: 'todo',
+      approvals: 'done',
+      reminders: 'todo',
+      review: 'todo',
+    });
+    const marks = stepMarks(['deadline_past', 'approver_missing', 'another_open']);
+    expect(marks.basics).toBe('problem');
+    expect(marks.approvals).toBe('problem');
+    expect(marks.scope).toBe('done');
+    expect(stepMarks(['no_departments']).scope).toBe('problem');
+    expect(PROBLEM_STEP.another_open).toBeNull();
+    expect(PROBLEM_STEP.no_needs_form).toBe('basics');
   });
 
   it('names in the page language, else the other one', () => {

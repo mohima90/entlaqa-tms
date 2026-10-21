@@ -31,7 +31,17 @@ export async function planningErrorTexts(locale: AppLocale): Promise<Record<stri
   return Object.fromEntries(PLANNING_ERROR_KEYS.map((key) => [key, String(t.raw(key))]));
 }
 
-/** Every raw text of the `planning` namespace by dotted key (client forms fill placeholders). */
+/**
+ * Every raw text of the `planning` namespace by dotted key (client forms fill placeholders), plus the few
+ * shared words the set-up uses (redesign package 4): «Edit», «Keep editing», «Discard changes».
+ */
 export function planningTexts(locale: AppLocale): Record<string, string> {
-  return flattenTexts(getMessages(locale).planning);
+  const messages = getMessages(locale);
+  return {
+    ...flattenTexts(messages.planning),
+    edit: messages.needsForms.edit,
+    keepEditing: messages.common.keepEditing,
+    discardChanges: messages.common.discardChanges,
+    unsavedChanges: messages.common.unsavedChanges,
+  };
 }

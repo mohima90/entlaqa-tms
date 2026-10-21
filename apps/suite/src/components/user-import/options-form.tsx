@@ -1,131 +1,163 @@
-import { buttonClasses } from '@jadarat/ui';
+'use client';
+import { ChoiceCard } from '@jadarat/ui';
+import { usePathname, useRouter } from 'next/navigation';
+import { type ReactNode, useTransition } from 'react';
 
-export interface OptionsFormProps {
-  readonly backHref: string;
-  readonly initial: {
-    readonly existing: 'skip' | 'upsert' | 'update_only';
-    readonly defaultRole: string;
-    readonly invitations: 'send' | 'hold';
-  };
-  /** May update existing people's data (platform.user.update). */
-  readonly canUpdate: boolean;
-  readonly roles: readonly { readonly code: string; readonly name: string }[];
-  /** Formatted on the server (counts and names filled in). */
-  readonly labels: Readonly<Record<string, string>>;
+export type ExistingChoice = 'skip' | 'upsert' | 'update_only';
+export type InvitationsChoice = 'send' | 'hold';
+
+export interface ImportOptions {
+  readonly existing: ExistingChoice;
+  readonly defaultRole: string;
+  readonly invitations: InvitationsChoice;
 }
 
-const EXISTING = ['skip', 'upsert', 'update_only'] as const;
-const INVITATIONS = ['send', 'hold'] as const;
+const EXISTING: readonly ExistingChoice[] = ['skip', 'upsert', 'update_only'];
+const INVITATIONS: readonly InvitationsChoice[] = ['send', 'hold'];
+
+/** The address of the confirmation with these options (the server reads them from there, as before). */
+function confirmHref(pathname: string, options: ImportOptions): string {
+  const query = new URLSearchParams({
+    step: 'confirm',
+    existing: options.existing,
+    defaultRole: options.defaultRole,
+    invitations: options.invitations,
+  });
+  return `${pathname}?${query.toString()}`;
+}
+
+/** A change of option: the confirmation reads its counts again for it (no other state). */
+function useChoose(options: ImportOptions) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [pending, startTransition] = useTransition();
+  const choose = (changes: Partial<ImportOptions>) => {
+    startTransition(() => {
+      router.replace(confirmHref(pathname, { ...options, ...changes }), { scroll: false });
+    });
+  };
+  return { choose, pending };
+}
 
 /**
- * Step 4 «الخيارات» (approved screen 7): existing people (skip — default —, add and update, update only),
- * the default primary role (non-privileged roles only), invitations now or later. A plain GET form (no
- * client script): the choice travels to step 5 in the URL; the server checks it again when the import is
- * confirmed.
+ * «Invitations» on the confirmation (approved screen 7; redesign package 3 — the options sit inside the
+ * confirmation, next to the counts they change): send them when the import ends (default) or add the
+ * people without sending them now. A choice applies at once; the statements above it follow.
  */
-export function OptionsForm(props: OptionsFormProps) {
-  const text = (key: string) => props.labels[key] ?? key;
-
+export function InvitationsChoiceCards({
+  options,
+  labels,
+}: {
+  readonly options: ImportOptions;
+  readonly labels: Readonly<Record<string, string>>;
+}) {
+  const text = (key: string) => labels[key] ?? key;
+  const { choose, pending } = useChoose(options);
   return (
-    <form method="get" className="flex flex-col gap-6" data-testid="options-form">
-      <input type="hidden" name="step" value="confirm" />
-      <fieldset className="m-0 flex flex-col gap-3 rounded-lg border border-border p-4">
-        <legend className="px-1 text-lg font-semibold">{text('existingHeading')}</legend>
-        <p className="m-0 text-sm text-text-muted">{text('existingHint')}</p>
-        {EXISTING.map((value) => {
-          const disabled = value !== 'skip' && !props.canUpdate;
-          return (
-            <div key={value} className="flex min-h-11 items-start gap-3">
-              <input
-                id={`existing-${value}`}
-                type="radio"
-                name="existing"
-                value={value}
-                defaultChecked={props.initial.existing === value}
-                disabled={disabled}
-                aria-describedby={`existing-${value}-hint`}
-                className="mt-1 size-5"
-                data-testid={`existing-${value}`}
-              />
-              <div>
-                <label htmlFor={`existing-${value}`} className="font-medium">
-                  {text(`existing.${value}`)}
-                </label>
-                <p id={`existing-${value}-hint`} className="m-0 text-sm text-text-muted">
-                  {disabled ? text('updateNotAllowed') : text(`existing.${value}Hint`)}
-                </p>
-              </div>
-            </div>
-          );
-        })}
-        <p className="m-0 text-sm text-text-muted">{text('existingNote')}</p>
-      </fieldset>
+    <fieldset className="m-0 flex flex-col gap-2.5 border-0 p-0" aria-busy={pending || undefined}>
+      <legend className="sr-only">{text('invitationsHeading')}</legend>
+      {INVITATIONS.map((value) => (
+        <ChoiceCard
+          key={value}
+          id={`invitations-${value}`}
+          name="invitations"
+          value={value}
+          checked={options.invitations === value}
+          onChange={() => {
+            choose({ invitations: value });
+          }}
+          title={text(`invitations.${value}`)}
+          description={text(`invitations.${value}Hint`)}
+          data-testid={`invitations-card-${value}`}
+        />
+      ))}
+    </fieldset>
+  );
+}
 
-      <div className="flex flex-col gap-1 rounded-lg border border-border p-4">
-        <label htmlFor="default-role" className="text-lg font-semibold">
-          {text('defaultRole')}
-        </label>
-        <p id="default-role-hint" className="m-0 text-sm text-text-muted">
-          {text('defaultRoleHint')}
-        </p>
-        <select
-          id="default-role"
-          name="defaultRole"
-          defaultValue={props.initial.defaultRole}
-          aria-describedby="default-role-hint default-role-privileged"
-          className="select-chevron mt-2 min-h-11 rounded-full border border-border-strong bg-surface ps-4 pe-10 text-sm text-text shadow-1 sm:w-80"
-          data-testid="default-role"
-        >
-          {props.roles.map((role) => (
-            <option key={role.code} value={role.code}>
-              {role.name}
-            </option>
-          ))}
-        </select>
-        <p id="default-role-privileged" className="mb-0 mt-2 text-sm text-text-muted">
-          {text('privilegedNote')}
-        </p>
-      </div>
+/** «People already in the organization»: skip (default), add and update, or update only. */
+export function ExistingChoiceCards({
+  options,
+  canUpdate,
+  labels,
+}: {
+  readonly options: ImportOptions;
+  /** May update existing people's data (platform.user.update). */
+  readonly canUpdate: boolean;
+  readonly labels: Readonly<Record<string, string>>;
+}) {
+  const text = (key: string) => labels[key] ?? key;
+  const { choose, pending } = useChoose(options);
+  return (
+    <fieldset className="m-0 flex flex-col gap-2.5 border-0 p-0" aria-busy={pending || undefined}>
+      <legend className="sr-only">{text('existingHeading')}</legend>
+      {EXISTING.map((value) => {
+        const disabled = value !== 'skip' && !canUpdate;
+        return (
+          <ChoiceCard
+            key={value}
+            id={`existing-${value}`}
+            name="existing"
+            value={value}
+            checked={options.existing === value}
+            disabled={disabled}
+            onChange={() => {
+              choose({ existing: value });
+            }}
+            title={text(`existing.${value}`)}
+            description={text(`existing.${value}Hint`)}
+            note={disabled ? text('updateNotAllowed') : undefined}
+            data-testid={`existing-card-${value}`}
+          />
+        );
+      })}
+    </fieldset>
+  );
+}
 
-      <fieldset className="m-0 flex flex-col gap-3 rounded-lg border border-border p-4">
-        <legend className="px-1 text-lg font-semibold">{text('invitationsHeading')}</legend>
-        {INVITATIONS.map((value) => (
-          <div key={value} className="flex min-h-11 items-start gap-3">
-            <input
-              id={`invitations-${value}`}
-              type="radio"
-              name="invitations"
-              value={value}
-              defaultChecked={props.initial.invitations === value}
-              aria-describedby={`invitations-${value}-hint`}
-              className="mt-1 size-5"
-              data-testid={`invitations-${value}`}
-            />
-            <div>
-              <label htmlFor={`invitations-${value}`} className="font-medium">
-                {text(`invitations.${value}`)}
-              </label>
-              <p id={`invitations-${value}-hint`} className="m-0 text-sm text-text-muted">
-                {text(`invitations.${value}Hint`)}
-              </p>
-            </div>
-          </div>
+/** «Default primary role» for rows without one (non-privileged roles only). */
+export function DefaultRoleSelect({
+  options,
+  roles,
+  labels,
+  extra,
+}: {
+  readonly options: ImportOptions;
+  readonly roles: readonly { readonly code: string; readonly name: string }[];
+  readonly labels: Readonly<Record<string, string>>;
+  readonly extra?: ReactNode;
+}) {
+  const text = (key: string) => labels[key] ?? key;
+  const { choose } = useChoose(options);
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor="default-role" className="font-semibold">
+        {text('defaultRole')}
+      </label>
+      <select
+        id="default-role"
+        name="defaultRole"
+        value={options.defaultRole}
+        onChange={(event) => {
+          choose({ defaultRole: event.target.value });
+        }}
+        aria-describedby="default-role-hint default-role-privileged"
+        className="select-chevron min-h-11 rounded-md border border-border-strong bg-surface ps-4 pe-10 text-[15px] text-text"
+        data-testid="default-role"
+      >
+        {roles.map((role) => (
+          <option key={role.code} value={role.code}>
+            {role.name}
+          </option>
         ))}
-        <p className="m-0 text-sm text-text-muted">{text('invitationsNote')}</p>
-      </fieldset>
-
-      <div className="flex flex-wrap gap-3">
-        <a href={props.backHref} className={buttonClasses({ variant: 'secondary', size: 'md' })}>
-          {text('back')}
-        </a>
-        <button
-          type="submit"
-          className={buttonClasses({ variant: 'primary', size: 'md' })}
-          data-testid="options-next"
-        >
-          {text('next')}
-        </button>
-      </div>
-    </form>
+      </select>
+      <p id="default-role-hint" className="m-0 text-sm text-text-muted">
+        {text('defaultRoleHint')}
+      </p>
+      <p id="default-role-privileged" className="m-0 text-sm text-text-muted">
+        {text('privilegedNote')}
+      </p>
+      {extra}
+    </div>
   );
 }

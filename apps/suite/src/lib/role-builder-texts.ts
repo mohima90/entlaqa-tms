@@ -72,6 +72,27 @@ export async function roleBuilderTexts(locale: 'ar' | 'en'): Promise<Record<stri
   texts.required = common('required');
   texts.optional = common('optional');
   texts.close = (await getTranslations({ locale, namespace: 'editRoles' }))('close');
+  // Redesign package 3: the row button, the toasts that replace `?saved=1` / `?deleted=1`, the summary.
+  const roles = await getTranslations({ locale, namespace: 'rolesPage' });
+  const users = await getTranslations({ locale, namespace: 'users' });
+  texts.titleEdit = t('titleEdit');
+  texts.saved = roles('saved');
+  texts.deleted = roles('deleted');
+  texts.summary = users('statsLabel');
+  texts.summarySees = t('summarySees');
+  texts.searchPermissions = roles('searchPermissions');
+  texts.undo = users('undo');
+  texts.unsaved = t('unsavedChanges');
+  texts.discardTitle = users('discardTitle');
+  texts.discardBody = users('discardBody');
+  texts.keepEditing = users('keepEditing');
+  texts.discard = users('discard');
+  texts.noMatches = users('noMatches');
+  // «لا صلاحية عالية الخطورة» … per count (plural forms are formatted here, never on the client).
+  const highRisk = CUSTOM_ROLE_PERMISSIONS.filter((e) => e.permission.risk === 'high').length;
+  for (let count = 0; count <= highRisk; count += 1) {
+    texts[`highRiskCount.${String(count)}`] = t('summaryHighRisk', { count });
+  }
   return texts;
 }
 

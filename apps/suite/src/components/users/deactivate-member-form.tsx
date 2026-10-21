@@ -1,7 +1,6 @@
 'use client';
-import { Alert, buttonClasses } from '@jadarat/ui';
-import { useRouter } from 'next/navigation';
-import { type SyntheticEvent, useState, useTransition } from 'react';
+import { Alert } from '@jadarat/ui';
+import { type SyntheticEvent, useEffect, useState, useTransition } from 'react';
 import { deactivateMemberAction, deactivatePrivilegedMemberAction } from '../../actions/users';
 import {
   type DeactivateFormState,
@@ -36,8 +35,11 @@ export interface DeactivateMemberFormProps {
   /** Texts of namespace `deactivation`. */
   readonly labels: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
-  readonly cancelHref: string;
-  readonly successHref: string;
+  /** In the dialog (redesign package 3): its id (the dialog's buttons submit it) and what it reports. */
+  readonly formId?: string | undefined;
+  readonly onPending?: ((pending: boolean) => void) | undefined;
+  /** Deactivated: the dialog closes with a toast. */
+  readonly onDone: () => void;
 }
 
 const fieldClass =
@@ -52,7 +54,6 @@ const fieldClass =
 export function DeactivateMemberForm(props: DeactivateMemberFormProps) {
   const { labels, kinds, candidates } = props;
   const text = (key: string) => labels[key] ?? key;
-  const router = useRouter();
   const views = kinds.map((k) => ({ code: k.code, blocked: k.blockedText !== null }));
   const [pending, startTransition] = useTransition();
   const [state, setState] = useState<DeactivateFormState>(() => initialDeactivateState(views));
@@ -61,6 +62,10 @@ export function DeactivateMemberForm(props: DeactivateMemberFormProps) {
   const blocked = views.some((k) => k.blocked);
   const noCandidates = kinds.length > 0 && candidates.length === 0;
   const idOf = (code: string) => code.replaceAll('.', '-');
+  const onPending = props.onPending;
+  useEffect(() => {
+    onPending?.(pending);
+  }, [pending, onPending]);
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -91,17 +96,26 @@ export function DeactivateMemberForm(props: DeactivateMemberFormProps) {
         if (first) document.getElementById(`owner-${idOf(first)}`)?.focus();
         return;
       }
-      router.push(props.successHref);
+      props.onDone();
     });
   }
 
   return (
-    <form className="flex flex-col gap-6" onSubmit={onSubmit} noValidate data-testid="deactivate">
+    <form
+      id={props.formId}
+      className="flex flex-col gap-5"
+      onSubmit={onSubmit}
+      noValidate
+      data-testid="deactivate"
+    >
       {kinds.length > 0 ? (
-        <section className="flex flex-col gap-3" aria-labelledby="items-heading">
-          <h2 id="items-heading" className="m-0 text-lg font-semibold">
+        <section
+          className="flex flex-col gap-3 rounded-lg border border-border p-4"
+          aria-labelledby="items-heading"
+        >
+          <h3 id="items-heading" className="m-0 text-base font-semibold">
             {text('itemsHeading')}
-          </h2>
+          </h3>
           {noCandidates ? (
             <Alert tone="warning" data-testid="no-candidates">
               {text('noCandidates')}
@@ -225,20 +239,6 @@ export function DeactivateMemberForm(props: DeactivateMemberFormProps) {
           {formError}
         </Alert>
       ) : null}
-
-      <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
-        <a href={props.cancelHref} className={buttonClasses({ variant: 'secondary' })}>
-          {text('cancel')}
-        </a>
-        <button
-          type="submit"
-          className={buttonClasses({ variant: 'danger' })}
-          disabled={pending || blocked || noCandidates}
-          data-testid="deactivate-submit"
-        >
-          {pending ? text('working') : kinds.length > 0 ? text('submitMove') : text('submit')}
-        </button>
-      </div>
     </form>
   );
 }

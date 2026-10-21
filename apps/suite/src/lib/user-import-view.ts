@@ -4,14 +4,12 @@
  */
 import { IMPORTABLE_ROLES } from '@jadarat/platform-import';
 
-export type ImportStep = 'file' | 'mapping' | 'review' | 'options' | 'confirm';
-export const IMPORT_STEPS: readonly ImportStep[] = [
-  'file',
-  'mapping',
-  'review',
-  'options',
-  'confirm',
-];
+/**
+ * The steps of an import. Redesign package 3: the options moved into the confirmation, next to the counts
+ * they change (5 → 4 steps; same choices, same checks).
+ */
+export type ImportStep = 'file' | 'mapping' | 'review' | 'confirm';
+export const IMPORT_STEPS: readonly ImportStep[] = ['file', 'mapping', 'review', 'confirm'];
 
 const RUNNING = ['queued', 'checking', 'importing', 'inviting'] as const;
 export type RunningStatus = (typeof RUNNING)[number];
@@ -25,13 +23,16 @@ export function isDraft(status: string): boolean {
   return ['uploaded', 'mapping', 'validating', 'review'].includes(status);
 }
 
-/** The step a draft import shows: by its status, and — in review — the step the URL asks for. */
+/**
+ * The step a draft import shows: by its status, and — in review — the step the URL asks for (an older
+ * `?step=options` link opens the confirmation, where the options are now).
+ */
 export function draftStep(status: string, requested: string | undefined): ImportStep {
   if (status === 'uploaded' || status === 'rejected') return 'file';
   if (status === 'mapping') return 'mapping';
   if (status === 'validating') return 'review';
-  if (requested === 'mapping' || requested === 'options' || requested === 'confirm')
-    return requested;
+  if (requested === 'mapping' || requested === 'confirm') return requested;
+  if (requested === 'options') return 'confirm';
   return 'review';
 }
 

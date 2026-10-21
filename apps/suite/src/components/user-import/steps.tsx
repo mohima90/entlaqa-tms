@@ -9,9 +9,9 @@ import {
   parseIssues,
   roleName,
 } from '@jadarat/platform-import';
-import { Alert, Badge, type BadgeTone, Card, buttonClasses } from '@jadarat/ui';
+import { Alert, Badge, type BadgeTone, Card, Icon, buttonClasses } from '@jadarat/ui';
+import { FocusedActions } from '../focused-actions';
 import { getFormatter, getTranslations } from 'next-intl/server';
-import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { fileActionErrorTexts, profileErrorTexts } from '../../lib/profile-texts';
 import { userImportRowsQuery } from '../../lib/user-import-queries';
@@ -23,7 +23,6 @@ import {
   mayUndo,
   megabytes,
   optionsFromParams,
-  optionsQuery,
   runningPhase,
   undoDeadline,
   undoSummary,
@@ -32,7 +31,7 @@ import { localizedName } from '../../lib/users-view';
 import { CancelDraftButton } from './cancel-draft-button';
 import { ConfirmActions } from './confirm-actions';
 import { type MappingColumn, MappingForm, type MappingSheet } from './mapping-form';
-import { OptionsForm } from './options-form';
+import { DefaultRoleSelect, ExistingChoiceCards, InvitationsChoiceCards } from './options-form';
 import { ReportDownloadButton } from './report-download-button';
 import { SendInvitationsButton } from './send-invitations-button';
 import { StopImportButton } from './stop-import-button';
@@ -204,9 +203,9 @@ export async function mappingStep(locale: AppLocale, view: UserImportView): Prom
   labels.suggestionsIntro = t('mapping.suggestionsIntro', { count: suggestions });
   return (
     <section aria-labelledby="mapping-heading" className="flex flex-col gap-4">
-      <h2 id="mapping-heading" className="m-0 text-xl font-semibold">
+      <h1 id="mapping-heading" className="m-0 text-[28px] font-bold md:text-5xl">
         {t('mapping.heading')}
-      </h2>
+      </h1>
       <p className="m-0 text-sm text-text-muted">
         {t('mapping.file', { name: isolate(record.fileName) })}
       </p>
@@ -481,60 +480,88 @@ export async function reviewStep(
     all: count(counts, 'total'),
   };
 
+  // Redesign package 3 (Customer.io's KPI strip): the four counts are the filters — each tile shows its rows
+  // (New → every row). Warnings stay reachable from their group's «Show rows» and the confirmation.
+  const tiles = [
+    {
+      key: 'new',
+      view: 'all',
+      hint: 'newHint',
+      value: count(counts, 'new'),
+      values: { warnings: count(counts, 'newWithWarnings') },
+      tone: 'text-success',
+    },
+    {
+      key: 'existing',
+      view: 'existing',
+      hint: 'existingHint',
+      value: count(counts, 'existing'),
+      values: {},
+      tone: 'text-text',
+    },
+    {
+      key: 'skipped',
+      view: 'skipped',
+      hint: 'skippedHint',
+      value: count(counts, 'skipped'),
+      values: {},
+      tone: 'text-text',
+    },
+    {
+      key: 'errors',
+      view: 'errors',
+      hint: 'errorsHint',
+      value: count(counts, 'errors'),
+      values: {},
+      tone: 'text-danger',
+    },
+  ] as const;
+
   return (
     <section aria-labelledby="review-heading" className="flex flex-col gap-5" data-testid="review">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 id="review-heading" className="m-0 text-xl font-semibold">
-            {t('review.heading')}
-          </h2>
-          <p className="mb-0 mt-1">
-            {t('review.intro', { total: count(counts, 'total'), name: isolate(record.fileName) })}
-          </p>
-        </div>
-        {record.reviewFileId ? (
-          <ReportDownloadButton
-            importId={record.id}
-            which="review"
-            label={t('review.downloadProblems')}
-            workingLabel={t('progress.working')}
-            codes={await refusalCodes(locale)}
-            errors={await fileActionErrorTexts(locale)}
-          />
-        ) : null}
+      <div>
+        <h1 id="review-heading" className="m-0 text-[28px] font-bold md:text-5xl">
+          {t('review.heading')}
+        </h1>
+        <p className="mb-0 mt-2 text-text-muted">
+          {t('review.intro', { total: count(counts, 'total'), name: isolate(record.fileName) })}
+        </p>
       </div>
 
-      <dl
-        className="m-0 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
-        data-testid="review-counts"
-      >
-        {(
-          [
-            [
-              'new',
-              'newHint',
-              count(counts, 'new'),
-              { warnings: count(counts, 'newWithWarnings') },
-            ],
-            ['existing', 'existingHint', count(counts, 'existing'), {}],
-            ['skipped', 'skippedHint', count(counts, 'skipped'), {}],
-            ['errors', 'errorsHint', count(counts, 'errors'), {}],
-          ] as const
-        ).map(([key, hint, value, values]) => (
-          <div key={key} className="rounded-lg border border-border bg-surface p-4">
-            <dt className="font-medium">{t(`review.cards.${key}`)}</dt>
-            <dd className="m-0 text-2xl font-bold" data-testid={`review-count-${key}`}>
-              {format.number(value, 'integer')}
-            </dd>
-            <dd className="m-0 text-sm text-text-muted">{t(`review.cards.${hint}`, values)}</dd>
-          </div>
-        ))}
-      </dl>
+      <nav aria-label={t('review.tabs.label')} data-testid="review-counts">
+        <ul className="m-0 grid list-none grid-cols-1 gap-3 p-0 sm:grid-cols-2 xl:grid-cols-4">
+          {tiles.map((tile) => {
+            const isCurrent = tile.view === current;
+            return (
+              <li key={tile.key} className="min-w-0">
+                <a
+                  href={href({ view: tile.view, code: undefined, page: undefined })}
+                  aria-current={isCurrent ? 'page' : undefined}
+                  className={`flex h-full flex-col gap-0.5 rounded-lg border-[1.5px] bg-surface px-4.5 py-4 text-text no-underline transition-colors hover:border-border-strong ${
+                    isCurrent ? 'border-primary shadow-2' : 'border-border'
+                  }`}
+                >
+                  <span
+                    className={`text-[28px] font-bold leading-tight tabular-nums ${tile.tone}`}
+                    data-testid={`review-count-${tile.key}`}
+                  >
+                    {format.number(tile.value, 'integer')}
+                  </span>
+                  <span className="font-semibold">{t(`review.cards.${tile.key}`)}</span>
+                  <span className="text-sm text-text-muted">
+                    {t(`review.cards.${tile.hint}`, tile.values)}
+                  </span>
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
 
       {count(counts, 'defaultRole') > 0 ? (
-        <p className="m-0">
+        <Alert tone="info">
           {t('review.defaultRoleNote', { count: count(counts, 'defaultRole') })}
-        </p>
+        </Alert>
       ) : null}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
@@ -542,34 +569,32 @@ export async function reviewStep(
         {group(t('review.warningsGroup'), 'warningCodes', 'warnings')}
       </div>
 
-      <nav aria-label={t('review.tabs.label')}>
-        <ul className="m-0 flex list-none flex-wrap gap-2 border-b border-border p-0">
-          {VIEWS.map((tab) => (
-            <li key={tab}>
-              <a
-                href={href({ view: tab, code: undefined, page: undefined })}
-                aria-current={tab === current ? 'page' : undefined}
-                className={`-mb-px inline-flex min-h-11 items-center gap-2 border-b-2 px-3 no-underline ${
-                  tab === current
-                    ? 'border-primary font-semibold text-primary-text'
-                    : 'border-transparent text-text-muted hover:text-text'
-                }`}
-              >
-                {t(`review.tabs.${tab}`)}
-                <Badge>{format.number(tabCounts[tab], 'integer')}</Badge>
-              </a>
-            </li>
-          ))}
-        </ul>
-      </nav>
-      {code ? (
-        <p className="m-0 text-sm">
-          {t('review.filteredBy', { reason: t(`codes.${code}` as 'codes.EMAIL_INVALID') })}{' '}
-          <a href={href({ code: undefined, page: undefined })} className="underline">
-            {t('review.clearFilter')}
-          </a>
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="m-0 font-medium" data-testid="review-view">
+          {t(`review.tabs.${current}`)}{' '}
+          <Badge>{format.number(tabCounts[current], 'integer')}</Badge>
         </p>
-      ) : null}
+        {code ? (
+          <p className="m-0 text-sm">
+            {t('review.filteredBy', { reason: t(`codes.${code}` as 'codes.EMAIL_INVALID') })}{' '}
+            <a href={href({ code: undefined, page: undefined })} className="underline">
+              {t('review.clearFilter')}
+            </a>
+          </p>
+        ) : null}
+        {record.reviewFileId ? (
+          <div className="ms-auto">
+            <ReportDownloadButton
+              importId={record.id}
+              which="review"
+              label={t('review.downloadProblems')}
+              workingLabel={t('progress.working')}
+              codes={await refusalCodes(locale)}
+              errors={await fileActionErrorTexts(locale)}
+            />
+          </div>
+        ) : null}
+      </div>
       {table}
 
       {ready === 0 ? (
@@ -577,73 +602,67 @@ export async function reviewStep(
           <p className="m-0">{t('review.nothingReady.body')}</p>
         </Card>
       ) : (
-        <p className="m-0">
+        <p className="m-0 text-sm text-text-muted">
           {t('review.continueNote', { date: dates.dateTime(record.reviewExpiresAt) })}
         </p>
       )}
-      <div className="flex flex-wrap gap-3">
+      <FocusedActions
+        start={
+          <a href={base(locale)} className={buttonClasses({ variant: 'ghost', size: 'md' })}>
+            <Icon name="upload" className="size-4" />
+            {t('review.uploadCorrected')}
+          </a>
+        }
+      >
         <a href="?step=mapping" className={buttonClasses({ variant: 'secondary', size: 'md' })}>
           {t('review.changeMapping')}
         </a>
-        <a href={base(locale)} className={buttonClasses({ variant: 'secondary', size: 'md' })}>
-          {t('review.uploadCorrected')}
-        </a>
         {ready > 0 ? (
           <a
-            href="?step=options"
+            href="?step=confirm"
             className={buttonClasses({ variant: 'primary', size: 'md' })}
             data-testid="review-next"
           >
-            {t('review.toOptions')}
+            {t('options.next')}
+            <Icon name="arrow-end" />
           </a>
         ) : null}
-      </div>
+      </FocusedActions>
     </section>
   );
 }
 
 // ---------------------------------------------------------------------------------------------------
-// Step 4: options
+// Step 4: confirmation, with the options next to the counts they change (redesign package 3)
 // ---------------------------------------------------------------------------------------------------
 
-export async function optionsStep(
-  locale: AppLocale,
-  view: UserImportView,
-  query: SearchParams,
-  organization: string,
-): Promise<ReactNode> {
-  const t = await getTranslations({ locale, namespace: 'userImport' });
-  const { record } = view;
-  const counts = record.reviewCounts;
-  const chosen = optionsFromParams(query);
-  const initial = chosen ?? {
-    existing: 'skip' as const,
-    defaultRole: 'learner',
-    invitations: 'send' as const,
-  };
-  const labels = flatten(t.raw('options'));
-  labels.existingHeading = t('options.existingHeading', { count: count(counts, 'existing') });
-  labels.defaultRoleHint = t('options.defaultRoleHint', { count: count(counts, 'defaultRole') });
-  labels.invitationsNote = t('options.invitationsNote', { organization });
+/** One count and what it means (the confirmation's tiles). */
+function CountLine({
+  value,
+  tone = 'brand',
+  children,
+}: {
+  readonly value: string;
+  readonly tone?: 'brand' | 'danger' | 'neutral';
+  readonly children: ReactNode;
+}) {
   return (
-    <section aria-labelledby="options-heading" className="flex flex-col gap-4">
-      <h2 id="options-heading" className="m-0 text-xl font-semibold">
-        {t('options.heading')}
-      </h2>
-      <OptionsForm
-        backHref="?step=review"
-        initial={initial}
-        canUpdate={view.canUpdate}
-        roles={IMPORTABLE_ROLES.map((role) => ({ code: role.code, name: role.name[locale] }))}
-        labels={labels}
-      />
-    </section>
+    <div className="flex items-start gap-4">
+      <span
+        className={`grid min-h-12 min-w-16 shrink-0 place-items-center rounded-md px-3 text-xl font-bold tabular-nums ${
+          tone === 'danger'
+            ? 'bg-danger-subtle text-danger'
+            : tone === 'neutral'
+              ? 'bg-surface-sunken text-text'
+              : 'bg-primary-subtle text-primary-text'
+        }`}
+      >
+        {value}
+      </span>
+      <div className="flex min-w-0 flex-col gap-0.5 pt-1.5">{children}</div>
+    </div>
   );
 }
-
-// ---------------------------------------------------------------------------------------------------
-// Step 5: confirmation
-// ---------------------------------------------------------------------------------------------------
 
 export async function confirmStep(
   locale: AppLocale,
@@ -653,17 +672,41 @@ export async function confirmStep(
 ): Promise<ReactNode> {
   const t = await getTranslations({ locale, namespace: 'userImport' });
   const format = await getFormatter({ locale });
-  const options = optionsFromParams(query);
+  // The options travel in the address, as before; without them the defaults (the old Options step's).
+  const options = optionsFromParams(query) ?? {
+    existing: 'skip' as const,
+    defaultRole: 'learner',
+    invitations: 'send' as const,
+  };
   const { record } = view;
-  if (options === null) redirect(`${base(locale)}/${record.id}?step=options`);
   const counts = record.reviewCounts;
-  const optionsHref = `?step=options&${optionsQuery(options)}`;
-  const statements: ReactNode[] = [];
   const newCount = count(counts, 'new');
-  if (options.existing === 'update_only') {
-    statements.push(t('confirm.newSkipped', { count: newCount }));
-  } else {
-    statements.push(
+  const existingCount = count(counts, 'existing');
+  const optionLabels = flatten(t.raw('options'));
+  optionLabels.existingHeading = t('options.existingHeading', { count: existingCount });
+  optionLabels.defaultRoleHint = t('options.defaultRoleHint', {
+    count: count(counts, 'defaultRole'),
+  });
+  const number = (value: number) => format.number(value, 'integer');
+
+  const roleCounts = new Map<string, number>(
+    Object.entries((counts?.roles as Record<string, unknown> | undefined) ?? {}).map(([k, v]) => [
+      k,
+      Number(v),
+    ]),
+  );
+  const defaults = count(counts, 'defaultRole');
+  if (defaults > 0)
+    roleCounts.set(options.defaultRole, (roleCounts.get(options.defaultRole) ?? 0) + defaults);
+  const additional = Object.keys(
+    (counts?.additionalRoles as Record<string, unknown> | undefined) ?? {},
+  );
+
+  const statements: ReactNode[] = [];
+  const newStatement =
+    options.existing === 'update_only' ? (
+      t('confirm.newSkipped', { count: newCount })
+    ) : (
       <>
         {t(options.invitations === 'send' ? 'confirm.newSend' : 'confirm.newHold', {
           count: newCount,
@@ -677,32 +720,28 @@ export async function confirmStep(
             {t('confirm.showWarnings')}
           </a>
         ) : null}
-      </>,
+      </>
     );
-  }
-  if (count(counts, 'existing') > 0) {
-    statements.push(
+  statements.push(newStatement);
+  const existingStatement =
+    existingCount > 0 ? (
       <>
         {options.existing === 'skip'
-          ? t('confirm.existingSkip', { count: count(counts, 'existing') })
+          ? t('confirm.existingSkip', { count: existingCount })
           : t('confirm.existingUpdate', {
-              count: count(counts, 'existing'),
+              count: existingCount,
               changed: count(counts, 'existingWithChanges'),
             })}
         {options.existing !== 'skip' &&
         view.privilegedAccess === 'denied' &&
         count(counts, 'existingPrivileged') > 0
           ? ` ${t('confirm.existingPrivileged', { count: count(counts, 'existingPrivileged') })}`
-          : ''}{' '}
-        <a href={optionsHref} className="underline">
-          {t('confirm.changeOption')}
-        </a>
-      </>,
-    );
-  }
-  if (count(counts, 'skipped') > 0) {
+          : ''}
+      </>
+    ) : null;
+  if (existingStatement) statements.push(existingStatement);
+  if (count(counts, 'skipped') > 0)
     statements.push(t('confirm.skipped', { count: count(counts, 'skipped') }));
-  }
   if (count(counts, 'errors') > 0) {
     statements.push(
       <>
@@ -713,19 +752,6 @@ export async function confirmStep(
       </>,
     );
   }
-  const roleCounts = new Map<string, number>(
-    Object.entries((counts?.roles as Record<string, unknown> | undefined) ?? {}).map(([k, v]) => [
-      k,
-      Number(v),
-    ]),
-  );
-  const defaults = count(counts, 'defaultRole');
-  if (defaults > 0)
-    roleCounts.set(options.defaultRole, (roleCounts.get(options.defaultRole) ?? 0) + defaults);
-  const additional = Object.keys(
-    (counts?.additionalRoles as Record<string, unknown> | undefined) ?? {},
-  );
-  const sheetName = record.sheets[record.sheetIndex ?? 0]?.name ?? '';
 
   return (
     <section
@@ -734,50 +760,93 @@ export async function confirmStep(
       data-testid="confirm"
     >
       <div>
-        <h2 id="confirm-heading" className="m-0 text-xl font-semibold">
+        <h1 id="confirm-heading" className="m-0 text-[28px] font-bold md:text-5xl">
           {t('confirm.heading')}
-        </h2>
-        <p className="mb-0 mt-1">{t('confirm.intro')}</p>
+        </h1>
+        <p className="mb-0 mt-2 text-text-muted">{t('confirm.intro')}</p>
       </div>
-      <ul className="m-0 flex flex-col gap-2 ps-5" data-testid="confirm-statements">
+      {/* Every consequence in one list for screen readers and the summary; the cards repeat them next to
+          the choices that change them. */}
+      <ul className="sr-only" data-testid="confirm-statements">
         {statements.map((statement, i) => (
           <li key={i}>{statement}</li>
         ))}
       </ul>
-      {options.existing !== 'update_only' && roleCounts.size > 0 ? (
-        <Card title={t('confirm.rolesHeading')} headingLevel={3}>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-start">
-              <caption className="sr-only">{t('confirm.rolesCaption')}</caption>
-              <thead className="bg-surface-sunken text-sm">
-                <tr>
-                  <th scope="col" className="px-3 py-2 text-start">
-                    {t('confirm.rolesColumns.role')}
-                  </th>
-                  <th scope="col" className="px-3 py-2 text-start">
-                    {t('confirm.rolesColumns.count')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...roleCounts.entries()]
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([code, n]) => (
-                    <tr key={code} className="border-t border-border">
-                      <th scope="row" className="px-3 py-2 text-start font-medium">
-                        {roleName(code, locale)}
-                      </th>
-                      <td className="px-3 py-2">
-                        {code === options.defaultRole && defaults > 0
-                          ? t('confirm.roleDefaultCount', { count: n, defaults })
-                          : format.number(n, 'integer')}
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+
+      {options.existing !== 'update_only' ? (
+        <Card title={t('options.invitationsHeading')} headingLevel={2}>
+          <div className="flex flex-col gap-4">
+            <CountLine value={number(newCount)}>
+              <span>{newStatement}</span>
+            </CountLine>
+            <InvitationsChoiceCards options={options} labels={optionLabels} />
+            <p className="m-0 text-sm text-text-muted">
+              {t('options.invitationsNote', { organization })}
+            </p>
           </div>
-          <p className="mb-0 mt-3 text-sm">
+        </Card>
+      ) : null}
+
+      {existingCount > 0 ? (
+        <Card title={optionLabels.existingHeading} headingLevel={2}>
+          <div className="flex flex-col gap-4">
+            <CountLine value={number(existingCount)} tone="neutral">
+              <span>{existingStatement}</span>
+              <span className="text-sm text-text-muted">{t('options.existingHint')}</span>
+            </CountLine>
+            <ExistingChoiceCards
+              options={options}
+              canUpdate={view.canUpdate}
+              labels={optionLabels}
+            />
+            <p className="m-0 text-sm text-text-muted">{t('options.existingNote')}</p>
+          </div>
+        </Card>
+      ) : null}
+
+      {options.existing !== 'update_only' ? (
+        <Card title={t('confirm.rolesHeading')} headingLevel={2}>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <DefaultRoleSelect
+              options={options}
+              roles={IMPORTABLE_ROLES.map((role) => ({ code: role.code, name: role.name[locale] }))}
+              labels={optionLabels}
+            />
+            {roleCounts.size > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-start">
+                  <caption className="sr-only">{t('confirm.rolesCaption')}</caption>
+                  <thead className="text-sm text-text-muted">
+                    <tr>
+                      <th scope="col" className="px-3 py-2 text-start font-semibold">
+                        {t('confirm.rolesColumns.role')}
+                      </th>
+                      <th scope="col" className="px-3 py-2 text-end font-semibold">
+                        {t('confirm.rolesColumns.count')}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...roleCounts.entries()]
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([code, n]) => (
+                        <tr key={code} className="border-t border-border">
+                          <th scope="row" className="px-3 py-2 text-start font-medium">
+                            {roleName(code, locale)}
+                          </th>
+                          <td className="px-3 py-2 text-end font-semibold">
+                            {code === options.defaultRole && defaults > 0
+                              ? t('confirm.roleDefaultCount', { count: n, defaults })
+                              : number(n)}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </div>
+          <p className="mb-0 mt-4 text-sm text-text-muted">
             {additional.length > 0
               ? t('confirm.additionalRoles', {
                   roles: additional
@@ -788,27 +857,29 @@ export async function confirmStep(
           </p>
         </Card>
       ) : null}
-      <dl className="m-0 grid grid-cols-1 gap-2 sm:grid-cols-[max-content_1fr]">
-        <dt className="font-medium">{t('confirm.summary.file')}</dt>
-        <dd className="m-0">
-          {sheetName
-            ? t('confirm.summary.fileValue', {
-                name: isolate(record.fileName),
-                sheet: isolate(sheetName),
-              })
-            : t('confirm.summary.fileValueCsv', { name: isolate(record.fileName) })}
-        </dd>
-        <dt className="font-medium">{t('confirm.summary.existing')}</dt>
-        <dd className="m-0">{t(`options.existing.${options.existing}`)}</dd>
-        <dt className="font-medium">{t('confirm.summary.defaultRole')}</dt>
-        <dd className="m-0">{roleName(options.defaultRole, locale)}</dd>
-        <dt className="font-medium">{t('confirm.summary.invitations')}</dt>
-        <dd className="m-0">
-          {options.invitations === 'send'
-            ? t('confirm.summary.invitationsSend')
-            : t('confirm.summary.invitationsHold')}
-        </dd>
-      </dl>
+
+      {count(counts, 'skipped') > 0 || count(counts, 'errors') > 0 ? (
+        <Card title={`${t('review.cards.skipped')} · ${t('review.cards.errors')}`} headingLevel={2}>
+          <div className="flex flex-col gap-4">
+            {count(counts, 'skipped') > 0 ? (
+              <CountLine value={number(count(counts, 'skipped'))} tone="neutral">
+                <span>{t('confirm.skipped', { count: count(counts, 'skipped') })}</span>
+              </CountLine>
+            ) : null}
+            {count(counts, 'errors') > 0 ? (
+              <CountLine value={number(count(counts, 'errors'))} tone="danger">
+                <span>
+                  {t('confirm.errorRows', { count: count(counts, 'errors') })}{' '}
+                  <a href="?step=review&view=errors" className="underline">
+                    {t('confirm.showErrors')}
+                  </a>
+                </span>
+              </CountLine>
+            ) : null}
+          </div>
+        </Card>
+      ) : null}
+
       <ul className="m-0 flex flex-col gap-1 ps-5 text-sm text-text-muted">
         <li>{t('confirm.notes.recheck')}</li>
         <li>{t('confirm.notes.audit')}</li>
@@ -817,7 +888,7 @@ export async function confirmStep(
       <ConfirmActions
         importId={record.id}
         options={options}
-        backHref={optionsHref}
+        backHref="?step=review"
         cancelledHref={`/${locale}/suite/admin/users`}
         labels={flatten(t.raw('confirm'))}
         codes={await refusalCodes(locale)}

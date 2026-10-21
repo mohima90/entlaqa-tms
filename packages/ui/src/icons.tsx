@@ -12,6 +12,8 @@ import {
   Building2,
   CalendarDays,
   Check,
+  Clock,
+  Download,
   ChevronDown,
   ChevronUp,
   Copy,
@@ -38,6 +40,7 @@ import {
   ListFilter,
   LayoutDashboard,
   Lock,
+  LogIn,
   LogOut,
   type LucideIcon,
   Mail,
@@ -64,6 +67,8 @@ import {
   Sun,
   Trash2,
   TriangleAlert,
+  Undo2,
+  Upload,
   User,
   UserPlus,
   Users,
@@ -157,6 +162,13 @@ const ICONS = {
   keyboard: Keyboard,
   filter: ListFilter,
   sort: ArrowDownUp,
+  // People & roles (redesign package 3): import upload and downloads, invitations waiting, sign-in
+  // effects, Undo.
+  upload: Upload,
+  download: Download,
+  clock: Clock,
+  'log-in': LogIn,
+  undo: Undo2,
 } as const satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;
@@ -170,6 +182,8 @@ const MIRRORED: ReadonlySet<IconName> = new Set([
   'arrow-end',
   'trend-up',
   'trend-down',
+  'undo',
+  'log-in',
 ]);
 
 export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'children' | 'ref'> {

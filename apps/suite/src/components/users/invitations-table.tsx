@@ -1,8 +1,24 @@
 'use client';
 import type { AppError, Result } from '@jadarat/platform-core';
-import { Alert, Badge, Button } from '@jadarat/ui';
+import {
+  Avatar,
+  Badge,
+  Button,
+  Dialog,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  Icon,
+  ListCard,
+  ListCards,
+  tableClasses,
+  toast,
+} from '@jadarat/ui';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { type ReactNode, useEffect, useRef, useState, useTransition } from 'react';
 import {
   resendInvitationAction,
   revokeInvitationAction,
@@ -10,10 +26,11 @@ import {
   viewPrivilegedInvitationCodeAction,
 } from '../../actions/invitations';
 import { sendHeldInvitationsAction } from '../../actions/user-import';
-import { AuthIcon } from '../auth/auth-icons';
+import { displayInviteCode } from '../../lib/invite-code';
+import { inviteLink } from '../../lib/invite-link';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { fieldErrorCodes } from '../profile/field-errors';
-import { InviteCodeCopy, type InviteCopyTexts } from './invite-code-copy';
+import type { InviteCodeValue, InviteCopyTexts } from './invite-code-copy';
 
 /** One invitation as shown (texts formatted on the server: no hydration differences). */
 export interface InvitationRowView {
@@ -39,13 +56,13 @@ export interface InvitationRowView {
    *   `none`            no code to copy yet (e.g. a link e-mailed before codes): use Resend
    */
   readonly codeAccess: 'copy' | 'copyPrivileged' | 'notAllowed' | 'none';
-  /** Codes issued so far: a new one (resend) resets the copied code shown. */
+  /** Codes issued so far: a new one (resend) resets the code read before. */
   readonly sendCount: number;
 }
 
 const STATE_TONE = {
-  pending: 'info',
-  expired: 'warning',
+  pending: 'warning',
+  expired: 'danger',
   held: 'neutral',
   scheduled: 'info',
 } as const;
@@ -56,11 +73,6 @@ export interface InvitationsTableProps {
   readonly copyTexts: InviteCopyTexts;
   readonly labels: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
-}
-
-interface Outcome {
-  readonly tone: 'success' | 'danger';
-  readonly text: string;
 }
 
 /** Text for a refused resend or revoke: the specific reason when the server gave one. */
@@ -90,11 +102,13 @@ const sendHeld: InvitationAction = ({ invitationId }) =>
   sendHeldInvitationsAction({ invitationIds: [invitationId] });
 
 /**
- * Pending and expired invitations on the users list (T-M2-07, FR-IAM-03; screen 1 `invited` tab), laid
- * out as Kawadir ATS's pending-invite rows (PO, 16 Oct 2026): who and what, then the invitation code with
- * «نسخ الرمز» / «نسخ الرابط» (read when copied, audited — security review M2), «إعادة إرسال الدعوة» (a new code; up to 3 times) and «إلغاء الدعوة» after a
- * confirmation. People a bulk import added without their e-mail show «لم تُرسل الدعوة» with «إرسال
- * الدعوة» (T-M2-12, FR-IAM-04); their code comes when it is sent.
+ * The «Pending invites» view of Team members (T-M2-07, FR-IAM-03; redesign package 3): one row per
+ * invitation not accepted yet — who, role, status, when it was sent — with its main action on the row
+ * («Copy invite link», «Resend invitation», or «Send the invitation» for one an import held, T-M2-12) and
+ * the rest in its ⋯ menu (Copy code, Resend, Revoke). The code is never in the page: it is read when copied
+ * through the authorized, audited action (security review M2). Revoking keeps its red confirmation (it
+ * cannot be undone). Outcomes are toasts; when the browser refuses the clipboard, the link or code is shown
+ * selected for a manual copy («Select the text and copy it»).
  */
 export function InvitationsTable({
   rows,
@@ -107,256 +121,394 @@ export function InvitationsTable({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState<string | null>(null);
-  const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [revoking, setRevoking] = useState<InvitationRowView | null>(null);
+  const [manual, setManual] = useState<{ title: string; value: string } | null>(null);
+  // Codes read on this page, per invitation and resend (read once, then copied again without a read).
+  const codes = useRef(new Map<string, InviteCodeValue>());
 
-  const run = (id: string, action: InvitationAction, success: string, after?: () => void) => {
-    setOutcome(null);
-    setBusyId(id);
+  const run = (row: InvitationRowView, action: InvitationAction, success: string) => {
+    setBusyId(row.id);
     startTransition(async () => {
-      const result = await action({ invitationId: id });
+      const result = await action({ invitationId: row.id });
       setBusyId(null);
-      after?.();
-      setOutcome(
-        result.ok
-          ? { tone: 'success', text: success }
-          : { tone: 'danger', text: invitationErrorText(result.error, labels, errors) },
-      );
+      setRevoking(null);
+      if (result.ok) toast.success(success);
+      else toast.error(invitationErrorText(result.error, labels, errors));
       router.refresh();
     });
   };
 
-  return (
-    <div className="flex flex-col gap-3">
-      {outcome?.tone === 'danger' ? (
-        <Alert tone="danger" data-testid="invitations-message">
-          {outcome.text}
-        </Alert>
-      ) : null}
-      {/* Kept rendered so a confirmation is announced when its text changes (Alert docs). */}
-      <div role="status" aria-live="polite">
-        {outcome?.tone === 'success' ? (
-          <Alert tone="success" role="none" data-testid="invitations-message">
-            {outcome.text}
-          </Alert>
+  const copy = async (row: InvitationRowView, what: 'code' | 'link') => {
+    const key = `${row.id}:${String(row.sendCount)}`;
+    let value = codes.current.get(key);
+    if (!value) {
+      setBusyId(row.id);
+      const answer = await (
+        row.codeAccess === 'copyPrivileged'
+          ? viewPrivilegedInvitationCodeAction
+          : viewInvitationCodeAction
+      )({ invitationId: row.id });
+      setBusyId(null);
+      if (!answer.ok) {
+        toast.error(invitationErrorText(answer.error, labels, errors));
+        return;
+      }
+      value = answer.value;
+      codes.current.set(key, value);
+    }
+    const copied =
+      what === 'code'
+        ? displayInviteCode(value.inviteCode)
+        : (value.inviteLink ?? inviteLink(window.location.origin, value.locale, value.inviteCode));
+    try {
+      await navigator.clipboard.writeText(copied);
+      toast.success(what === 'code' ? copyTexts.codeCopied : copyTexts.linkCopied);
+    } catch {
+      toast.error(copyTexts.copyFailed, { duration: 6000 });
+      setManual({
+        title: what === 'code' ? copyTexts.codeLabel : (labels.linkLabel ?? ''),
+        value: copied,
+      });
+    }
+  };
+
+  const mayCopy = (row: InvitationRowView) =>
+    row.state === 'pending' && (row.codeAccess === 'copy' || row.codeAccess === 'copyPrivileged');
+
+  const mainAction = (row: InvitationRowView): ReactNode => {
+    const busy = pending && busyId === row.id;
+    const suffix = <span className="sr-only">{` (${row.name})`}</span>;
+    if (row.state === 'held') {
+      return (
+        <Button
+          variant="secondary"
+          size="sm"
+          busy={busy}
+          disabled={pending}
+          onClick={() => {
+            run(row, sendHeld, text('sentHeld'));
+          }}
+          data-testid="send-held-invitation"
+        >
+          <Icon name="mail" className="size-4" />
+          {text('sendHeld')}
+          {suffix}
+        </Button>
+      );
+    }
+    if (row.state === 'scheduled') return null;
+    if (mayCopy(row)) {
+      return (
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={busyId === row.id}
+          onClick={() => {
+            void copy(row, 'link');
+          }}
+          data-testid="copy-invite-link"
+        >
+          <Icon name="copy" className="size-4" />
+          {copyTexts.copyLink}
+          {suffix}
+        </Button>
+      );
+    }
+    if (row.canResend) {
+      return (
+        <Button
+          variant="secondary"
+          size="sm"
+          busy={busy}
+          disabled={pending}
+          onClick={() => {
+            run(row, resendInvitationAction, text('resent'));
+          }}
+          data-testid="resend-invitation"
+        >
+          <Icon name="sync" className="size-4" />
+          {text('resend')}
+          {suffix}
+        </Button>
+      );
+    }
+    return (
+      <p className="m-0 max-w-56 text-sm text-text-muted" data-testid="invite-no-code">
+        {row.state === 'pending'
+          ? text(row.codeAccess === 'notAllowed' ? 'noCodePrivileged' : 'noCode')
+          : text('resendLimitShort')}
+      </p>
+    );
+  };
+
+  const menu = (row: InvitationRowView) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className="grid size-9 place-items-center rounded-full text-text-muted hover:bg-surface-hover hover:text-text pointer-coarse:size-11"
+        aria-label={text('moreActions', row.name)}
+        data-testid={`invitation-menu-${row.id}`}
+      >
+        <Icon name="more" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent>
+        <DropdownMenuItem asChild>
+          <Link href={row.profileHref}>
+            <Icon name="user" />
+            {text('openProfile')}
+          </Link>
+        </DropdownMenuItem>
+        {mayCopy(row) ? (
+          <DropdownMenuItem
+            onSelect={() => {
+              void copy(row, 'code');
+            }}
+            data-testid="copy-invite-code"
+          >
+            <Icon name="copy" />
+            {copyTexts.copyCode}
+          </DropdownMenuItem>
         ) : null}
-      </div>
-      <h2 className="sr-only">{text('tableCaption')}</h2>
-      <ul className="m-0 flex list-none flex-col gap-3 p-0" data-testid="invitations-list">
-        {rows.map((row) => {
-          const busy = pending && busyId === row.id;
-          return (
-            <li
-              key={row.id}
-              className="rounded-lg border border-border bg-surface p-4 shadow-1"
-              data-testid="invitation-row"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="flex min-w-0 flex-1 basis-72 items-start gap-4">
-                  <span
-                    className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-warning-subtle text-warning-strong"
-                    aria-hidden="true"
-                  >
-                    <AuthIcon name="clock" className="size-5" />
-                  </span>
-                  <div className="min-w-0">
-                    <a href={row.profileHref} className="font-medium">
-                      {row.name}
-                    </a>
-                    <div className="text-sm text-text-muted">
-                      <bdi dir="ltr">{row.email}</bdi>
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-text-muted">
-                      {showRole && row.roleName ? (
-                        <Badge tone="neutral">{row.roleName}</Badge>
-                      ) : null}
-                      <Badge tone={STATE_TONE[row.state]}>{text(`status.${row.state}`)}</Badge>
-                      <span aria-hidden="true">•</span>
-                      <span>{row.sentText}</span>
-                      {row.expiryText ? (
-                        <>
-                          <span aria-hidden="true">•</span>
-                          <span>{row.expiryText}</span>
-                        </>
-                      ) : null}
-                    </div>
-                    {row.fromImportText ? (
-                      <div className="text-sm text-text-muted">{row.fromImportText}</div>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="flex flex-col items-start gap-2">
-                  {row.state === 'pending' &&
-                  (row.codeAccess === 'copy' || row.codeAccess === 'copyPrivileged') ? (
-                    <InviteCodeCopy
-                      // A new code (resend) starts unread again.
-                      key={`${row.id}-${String(row.sendCount)}`}
-                      load={() =>
-                        (row.codeAccess === 'copyPrivileged'
-                          ? viewPrivilegedInvitationCodeAction
-                          : viewInvitationCodeAction)({ invitationId: row.id })
-                      }
-                      loadErrorText={(error) => invitationErrorText(error, labels, errors)}
-                      texts={copyTexts}
-                      name={row.name}
-                    />
-                  ) : row.state === 'pending' ? (
-                    <p
-                      className="m-0 max-w-64 text-sm text-text-muted"
-                      data-testid="invite-no-code"
-                    >
-                      {text(row.codeAccess === 'notAllowed' ? 'noCodePrivileged' : 'noCode')}
-                    </p>
-                  ) : null}
-                  {confirming === row.id ? (
-                    <div
-                      className="flex flex-col gap-2"
-                      role="group"
-                      aria-labelledby={`revoke-${row.id}-question`}
-                    >
-                      <p id={`revoke-${row.id}-question`} className="m-0 text-sm">
-                        {text('revokeConfirm', row.name)}
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          variant="danger"
-                          disabled={pending}
-                          onClick={() => {
-                            run(row.id, revokeInvitationAction, text('revoked'), () => {
-                              setConfirming(null);
-                            });
-                          }}
-                        >
-                          {busy ? text('working') : text('revokeConfirmButton')}
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          disabled={pending}
-                          onClick={() => {
-                            setConfirming(null);
-                          }}
-                        >
-                          {text('keep')}
-                        </Button>
+        {row.canResend && mayCopy(row) ? (
+          <DropdownMenuItem
+            disabled={pending}
+            onSelect={() => {
+              run(row, resendInvitationAction, text('resent'));
+            }}
+            data-testid="menu-resend-invitation"
+          >
+            <Icon name="sync" />
+            {text('resend')}
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          tone="danger"
+          disabled={pending}
+          onSelect={() => {
+            setRevoking(row);
+          }}
+          data-testid="revoke-invitation"
+        >
+          <Icon name="close" />
+          {text('revoke')}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const status = (row: InvitationRowView) => (
+    <span className="flex flex-col items-start gap-1">
+      <Badge tone={STATE_TONE[row.state]} dot>
+        {text(`status.${row.state}`)}
+      </Badge>
+      {row.fromImportText ? (
+        <span className="text-sm text-text-muted">{row.fromImportText}</span>
+      ) : null}
+    </span>
+  );
+
+  const sent = (row: InvitationRowView) => (
+    <span className="flex flex-col">
+      <span>{row.sentText}</span>
+      {row.expiryText ? <span className="text-sm text-text-muted">{row.expiryText}</span> : null}
+    </span>
+  );
+
+  return (
+    <>
+      <div className="hidden md:block" data-testid="invitations-list">
+        <div className={tableClasses.wrapper}>
+          <table className={tableClasses.table} data-testid="invitations-table">
+            <caption className="sr-only">{text('tableCaption')}</caption>
+            <thead className={tableClasses.header}>
+              <tr>
+                <th scope="col" className={tableClasses.head}>
+                  {text('columns.name')}
+                </th>
+                {showRole ? (
+                  <th scope="col" className={tableClasses.head}>
+                    {text('columns.primaryRole')}
+                  </th>
+                ) : null}
+                <th scope="col" className={tableClasses.head}>
+                  {text('columns.status')}
+                </th>
+                <th scope="col" className={tableClasses.head}>
+                  {text('columns.sent')}
+                </th>
+                <th scope="col" className={tableClasses.head}>
+                  <span className="sr-only">{text('columns.actions')}</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id} className={tableClasses.row} data-testid="invitation-row">
+                  <td className={tableClasses.cell}>
+                    <div className="flex items-center gap-3">
+                      <Avatar name={row.name} tone="soft" size="md" />
+                      <div className="min-w-0">
+                        <Link href={row.profileHref} className="font-semibold text-text">
+                          {row.name}
+                        </Link>
+                        <div className="text-sm text-text-muted">
+                          <bdi dir="ltr">{row.email}</bdi>
+                        </div>
                       </div>
                     </div>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {row.state === 'held' ? (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          disabled={pending}
-                          data-testid="send-held-invitation"
-                          onClick={() => {
-                            run(row.id, sendHeld, text('sentHeld'));
-                          }}
-                        >
-                          {busy ? text('working') : text('sendHeld')}
-                          <span className="sr-only">{` (${row.name})`}</span>
-                        </Button>
-                      ) : row.state === 'scheduled' ? null : row.canResend ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={pending}
-                          onClick={() => {
-                            run(row.id, resendInvitationAction, text('resent'));
-                          }}
-                        >
-                          <AuthIcon name="refresh" />
-                          {busy ? text('working') : text('resend')}
-                          {/* The visible text stays first in the name (WCAG 2.5.3). */}
-                          <span className="sr-only">{` (${row.name})`}</span>
-                        </Button>
-                      ) : (
-                        <p className="m-0 max-w-56 text-sm text-text-muted">
-                          {text('resendLimitShort')}
-                        </p>
-                      )}
-                      <Button
-                        variant="danger-outline"
-                        size="sm"
-                        disabled={pending}
-                        onClick={() => {
-                          setOutcome(null);
-                          setConfirming(row.id);
-                        }}
-                      >
-                        <AuthIcon name="x" />
-                        {text('revoke')}
-                        <span className="sr-only">{` (${row.name})`}</span>
-                      </Button>
+                  </td>
+                  {showRole ? <td className={tableClasses.cell}>{row.roleName}</td> : null}
+                  <td className={tableClasses.cell}>{status(row)}</td>
+                  <td className={tableClasses.cell}>{sent(row)}</td>
+                  <td className={`${tableClasses.cell} text-end`}>
+                    <div className="flex items-center justify-end gap-2">
+                      {mainAction(row)}
+                      {menu(row)}
                     </div>
-                  )}
-                </div>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <ListCards data-testid="invitations-cards">
+        {rows.map((row) => (
+          <ListCard
+            key={row.id}
+            leading={<Avatar name={row.name} tone="soft" size="md" />}
+            title={<Link href={row.profileHref}>{row.name}</Link>}
+            detail={[row.roleName, row.sentText].filter(Boolean).join(' · ')}
+            status={
+              <span className="flex flex-col items-start gap-2">
+                {status(row)}
+                {mainAction(row)}
+              </span>
+            }
+            action={menu(row)}
+          />
+        ))}
+      </ListCards>
+
+      <Dialog
+        open={revoking !== null}
+        onClose={() => {
+          if (!pending) setRevoking(null);
+        }}
+        tone="danger"
+        title={text('revoke')}
+        description={revoking ? text('revokeConfirm', revoking.name) : undefined}
+        closeLabel={text('keep')}
+        size="sm"
+        data-testid="revoke-dialog"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              disabled={pending}
+              onClick={() => {
+                setRevoking(null);
+              }}
+            >
+              {text('keep')}
+            </Button>
+            <Button
+              variant="danger"
+              busy={pending}
+              onClick={() => {
+                if (revoking) run(revoking, revokeInvitationAction, text('revoked'));
+              }}
+              data-testid="revoke-confirm"
+            >
+              {pending ? text('working') : text('revokeConfirmButton')}
+            </Button>
+          </>
+        }
+      />
+      <ManualCopyDialog
+        value={manual}
+        closeLabel={text('close')}
+        onClose={() => {
+          setManual(null);
+        }}
+      />
+    </>
   );
 }
 
-export interface ExpiredInvitationsBannerProps {
+/** The browser refused the clipboard: the text, selected, to copy by hand (today's fallback). */
+function ManualCopyDialog({
+  value,
+  closeLabel,
+  onClose,
+}: {
+  readonly value: { readonly title: string; readonly value: string } | null;
+  readonly closeLabel: string;
+  readonly onClose: () => void;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (value) input.current?.select();
+  }, [value]);
+  return (
+    <Dialog
+      open={value !== null}
+      onClose={onClose}
+      title={value?.title ?? ''}
+      closeLabel={closeLabel}
+      size="sm"
+      data-testid="manual-copy-dialog"
+    >
+      <input
+        ref={input}
+        readOnly
+        dir="ltr"
+        aria-label={value?.title ?? ''}
+        value={value?.value ?? ''}
+        className="min-h-11 w-full rounded-md border border-border-strong bg-surface-sunken px-3 font-mono text-sm"
+      />
+    </Dialog>
+  );
+}
+
+export interface ResendExpiredButtonProps {
   /** Expired invitations that can still be resent. */
   readonly ids: readonly string[];
-  readonly message: string;
   readonly labels: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
 }
 
-/** Screen 1 banner: invitations expired before acceptance, with "resend the expired invitations". */
-export function ExpiredInvitationsBanner({
-  ids,
-  message,
-  labels,
-  errors,
-}: ExpiredInvitationsBannerProps) {
+/** The attention strip's «إعادة إرسال الدعوات المنتهية (N)»: resends each expired invitation in turn. */
+export function ResendExpiredButton({ ids, labels, errors }: ResendExpiredButtonProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [failure, setFailure] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
 
   const resendAll = () => {
-    setFailure(null);
-    setDone(null);
     startTransition(async () => {
       let sent = 0;
       for (const id of ids) {
         const result = await resendInvitationAction({ invitationId: id });
         if (!result.ok) {
-          setFailure(invitationErrorText(result.error, labels, errors));
+          toast.error(invitationErrorText(result.error, labels, errors));
           break;
         }
         sent += 1;
       }
-      if (sent > 0) setDone((labels.resentExpired ?? '').replace('{count}', String(sent)));
+      if (sent > 0) toast.success((labels.resentExpired ?? '').replace('{count}', String(sent)));
       router.refresh();
     });
   };
 
   return (
-    <div className="flex flex-col gap-2" data-testid="expired-invitations">
-      <Alert tone="warning">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="min-w-0 flex-1 basis-80">{message}</span>
-          {ids.length > 0 ? (
-            <Button variant="secondary" disabled={pending} onClick={resendAll}>
-              {pending ? labels.working : labels.resendExpired}
-            </Button>
-          ) : null}
-        </div>
-      </Alert>
-      {failure ? <Alert tone="danger">{failure}</Alert> : null}
-      <div role="status" aria-live="polite">
-        {done ? (
-          <Alert tone="success" role="none">
-            {done}
-          </Alert>
-        ) : null}
-      </div>
-    </div>
+    <Button
+      variant="secondary"
+      size="sm"
+      busy={pending}
+      disabled={pending}
+      onClick={resendAll}
+      data-testid="resend-expired"
+    >
+      {pending ? labels.working : labels.resendExpired}
+    </Button>
   );
 }

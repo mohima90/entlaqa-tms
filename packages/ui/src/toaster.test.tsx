@@ -166,6 +166,25 @@ describe('Toaster', () => {
     expect(items(container)).toHaveLength(0);
   });
 
+  it('offers one action (Undo) that runs once and closes the toast (redesign package 3)', () => {
+    const container = mount(<Toaster label="Notifications" closeLabel="Close" store={store} />);
+    const undo = vi.fn();
+    act(() => {
+      store.add('success', 'Role saved.', {
+        duration: 10_000,
+        action: { label: 'Undo', onClick: undo },
+      });
+    });
+    const button = container.querySelector<HTMLButtonElement>('[data-testid="toast-action"]');
+    expect(button?.textContent).toBe('Undo');
+    expect(store.items()[0]?.action?.label).toBe('Undo');
+    act(() => {
+      button!.click();
+    });
+    expect(undo).toHaveBeenCalledTimes(1);
+    expect(items(container)).toHaveLength(0);
+  });
+
   it('uses the page queue by default', () => {
     const container = mount(<Toaster label="Notifications" closeLabel="Close" />);
     act(() => {

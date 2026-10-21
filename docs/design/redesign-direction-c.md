@@ -59,3 +59,19 @@ Every pair is checked in light and dark for the shipped theme and for hundreds o
   in lists). No single-key shortcut was added (WCAG 2.1.4 would need an off switch; new feature).
 - **Not built (new features, later)**: the organization switcher popover, the Home set-up checklist,
   bulk select, Undo in toasts.
+
+## Package 3 additions (People & roles, PO 21 Oct 2026)
+
+| Block | Use |
+|---|---|
+| Toast `action` | One button in a toast: «Undo» after a role change (~10 s), «Reactivate» after a deactivation, «Open full profile». |
+| `ChoiceCard` | A radio question as cards with what each choice means (roles in the change-role panel, the builder's data scope, the import's options); unavailable choices stay listed with the reason. |
+| `FilterMenu` | A filter pill that applies at once (no Apply), with a search for long lists; the list's address keeps the filter. |
+| `AttentionStrip` / `AttentionItem` | One «Needs your attention» card above a list instead of a stack of banners, each line with its action. |
+| `CopyButton` | Copy a value (e-mail, employee number) with a toast. |
+| `SidePanel` `size="lg"`, `canClose` | Wide form panels; «Discard your changes?» before a panel with unsaved changes closes. |
+| `FocusedShell` (apps/suite) | A full-screen frame for a task with steps (the user import): ✕, title, step bar, language; actions in a bottom bar. |
+
+Panels and dialogs of one person keep their own addresses (`/users/[id]/edit`, `/roles`, `/deactivate`,
+`/users/invite`): the address opens the page with the panel open, closing returns to the page and focus to
+the opener. Toasts replace the `?invited=1`-style messages.

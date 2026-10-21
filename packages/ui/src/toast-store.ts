@@ -6,10 +6,21 @@
  */
 export type ToastTone = 'default' | 'success' | 'error' | 'warning' | 'info';
 
+/**
+ * One button in a toast (direction C, redesign package 3): «Undo» after a role change, «Reactivate» after a
+ * deactivation, «Open full profile». Pressing it runs `onClick` and closes the toast.
+ */
+export interface ToastAction {
+  readonly label: string;
+  readonly onClick: () => void;
+}
+
 export interface ToastOptions {
   readonly description?: string | undefined;
   /** Milliseconds before it hides itself; `null` keeps it until closed (errors by default). */
   readonly duration?: number | null | undefined;
+  /** A button in the toast (e.g. Undo); the toast closes when it is pressed. */
+  readonly action?: ToastAction | undefined;
 }
 
 export interface ToastItem {
@@ -18,6 +29,7 @@ export interface ToastItem {
   readonly message: string;
   readonly description: string | undefined;
   readonly duration: number | null;
+  readonly action: ToastAction | undefined;
 }
 
 /** Long enough to read a sentence (WCAG 2.2.1: hover or focus also pauses it). */
@@ -51,9 +63,10 @@ export function createToastStore(): ToastStore {
             ? null
             : DEFAULT_TOAST_DURATION
           : options.duration;
-      items = [...items, { id, tone, message, description: options.description, duration }].slice(
-        -MAX_TOASTS,
-      );
+      items = [
+        ...items,
+        { id, tone, message, description: options.description, duration, action: options.action },
+      ].slice(-MAX_TOASTS);
       emit();
       return id;
     },

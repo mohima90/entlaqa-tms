@@ -3,7 +3,8 @@ import { type Page, expect, test } from '@playwright/test';
 import { signInToSuite } from './sign-in';
 
 /**
- * Deactivate / reactivate a member (T-M2-09, FR-IAM-05; screen 4) against a configured deployment: runs in
+ * Deactivate / reactivate a member (T-M2-09, FR-IAM-05; screen 4 — since redesign package 3 a dialog over
+ * the profile, Reactivate offered in the toast and on the Deactivated view) against a configured deployment: runs in
  * the self-hosted smoke (infra/docker/smoke.sh) after infra/docker/seed-users.sql and
  * seed-deactivation.sql, in three phases (DEACTIVATE_E2E_PHASE) around the database and Auth checks of the
  * smoke (memberships, audit, the worker's Auth ban and its lifting):
@@ -40,10 +41,23 @@ async function signIn(
   await signInToSuite(page, as.email, as.password);
 }
 
+/** The toasts of the page (a polite live region). */
+const toasts = (page: Page) => page.getByRole('region', { name: 'Status messages' });
+
+/** The profile's «Actions ▾» → «Deactivate user»: the dialog over the profile. */
+async function openDeactivate(page: Page) {
+  await page.getByTestId('profile-actions').click();
+  await page.getByTestId('profile-action-deactivate').click();
+}
+
 async function expectNoSeriousA11yViolations(page: Page) {
   // After an in-app navigation (router.replace + refresh) the framework swaps the page's <title> while the
   // new tree streams in: check the page once it has its title again (and fail if it never gets one).
   await expect(page).toHaveTitle(/\S/);
+  // From the top of the page: sticky bars may overlap content at other scroll positions.
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+  });
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
     .analyze();
@@ -74,11 +88,12 @@ test.describe('deactivate and reactivate members', () => {
     const page = await adminContext.newPage();
     await signIn(page, admin);
     await page.goto(`/en/suite/admin/users/${REEM}`);
-    await page.getByTestId('deactivate-user-link').click();
+    await openDeactivate(page);
     await expect(page).toHaveURL(new RegExp(`/en/suite/admin/users/${REEM}/deactivate$`));
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-      "Deactivate Reem Nasser Alotaibi's account?",
-    );
+    const dialog = page.getByTestId('deactivate-dialog');
+    await expect(
+      dialog.getByRole('heading', { name: "Deactivate Reem Nasser Alotaibi's account?" }),
+    ).toBeVisible();
     await expect(page.getByTestId('deactivation-effects')).toContainText(
       'All records stay as they are',
     );
@@ -107,21 +122,24 @@ test.describe('deactivate and reactivate members', () => {
       .selectOption({ label: 'Long leave' });
     await submit.click();
 
-    await expect(page).toHaveURL(/\/en\/suite\/admin\/users\?tab=deactivated&deactivated=1$/);
-    await expect(page.getByTestId('member-deactivated')).toContainText(
-      'The account was deactivated',
+    // The dialog closes on the profile, the toast says so (with «Reactivate»), focus is back on Actions.
+    await expect(dialog).toBeHidden();
+    await expect(page).toHaveURL(new RegExp(`/en/suite/admin/users/${REEM}$`));
+    await expect(toasts(page)).toContainText(
+      'Reem Nasser Alotaibi’s account was deactivated and their sign-in sessions ended.',
     );
-    const table = page.getByTestId('users-table');
-    await expect(table).toContainText('Reem Nasser Alotaibi');
-    await expect(table).toContainText('Deactivated');
-    await expectNoSeriousA11yViolations(page);
-
-    // Reem's profile: deactivated, offered for reactivation; the report moved to Mona.
-    await page.goto(`/en/suite/admin/users/${REEM}`);
-    await expect(page.getByTestId('user-profile')).toContainText('Deactivated');
-    await expect(page.getByTestId('deactivate-user-link')).toHaveCount(0);
+    await expect(toasts(page).getByRole('button', { name: 'Reactivate' })).toBeVisible();
+    await expect(page.getByTestId('profile-deactivated')).toContainText(
+      'This account is deactivated',
+    );
     await expect(page.getByTestId('reactivate-button')).toHaveText('Reactivate user');
+    await expect(page.getByTestId('profile-action-deactivate')).toHaveCount(0);
+    await expectNoSeriousA11yViolations(page);
+    await page.goto(`/en/suite/admin/users/${REEM}?tab=activity`);
     await expect(page.getByTestId('user-activity')).toContainText('Account deactivated');
+    await page.goto('/en/suite/admin/users?tab=deactivated');
+    await expect(page.getByTestId('users-table')).toContainText('Reem Nasser Alotaibi');
+    await expect(page.getByTestId('users-table')).toContainText('Deactivated');
 
     // Her open session: the next request is refused by the database (no wait for the Auth ban). She belongs
     // to no other organization, so her login's sessions ended too (T-M2-10 integration, residual N2): the
@@ -138,16 +156,19 @@ test.describe('deactivate and reactivate members', () => {
     await signIn(page, admin);
     await page.goto(`/ar/suite/admin/users/${HUDA}`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await page.getByRole('link', { name: 'تعطيل المستخدم' }).click();
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('تعطيل حساب هدى علي القرني؟');
+    await openDeactivate(page);
+    const dialog = page.getByTestId('deactivate-dialog');
+    await expect(dialog.getByRole('heading', { name: 'تعطيل حساب هدى علي القرني؟' })).toBeVisible();
     await expect(page.getByTestId('deactivation-effects')).toContainText(
       'يتوقف الدخول بهذا الحساب إلى المنشأة فورًا',
     );
     await expect(page.getByText('عناصر مسندة إلى هذا المستخدم')).toHaveCount(0);
     await expectNoSeriousA11yViolations(page);
-    await page.getByRole('button', { name: 'تعطيل الحساب' }).click();
-    await expect(page).toHaveURL(/\/ar\/suite\/admin\/users\?tab=deactivated&deactivated=1$/);
-    await expect(page.getByTestId('member-deactivated')).toContainText('عُطّل الحساب');
+    await dialog.getByRole('button', { name: 'تعطيل الحساب' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(toasts(page)).toContainText('عُطّل حساب هدى علي القرني');
+    await expect(page.getByTestId('profile-deactivated')).toBeVisible();
+    await page.goto('/ar/suite/admin/users?tab=deactivated');
     await expect(page.getByTestId('users-table')).toContainText('هدى علي القرني');
     await expectNoSeriousA11yViolations(page);
   });
@@ -158,10 +179,10 @@ test.describe('deactivate and reactivate members', () => {
     test.skip(phase !== 'deactivate', 'phase');
     await signIn(page, admin);
     await page.goto('/en/suite/admin/users/5eed1000-0000-4000-8000-0000000000d4');
-    await page.getByTestId('deactivate-user-link').click();
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-      "Deactivate Faisal Omar Alharbi's account?",
-    );
+    await openDeactivate(page);
+    await expect(
+      page.getByRole('heading', { name: "Deactivate Faisal Omar Alharbi's account?" }),
+    ).toBeVisible();
     await expect(page.getByTestId('deactivation-blocked')).toHaveCount(0);
     await expect(page.getByTestId('deactivate')).toBeVisible();
     await expectNoSeriousA11yViolations(page);
@@ -178,31 +199,35 @@ test.describe('deactivate and reactivate members', () => {
     // Yasser now reports to Mona (moved above): his profile is in her scope, without account actions.
     await page.goto('/en/suite/admin/users/5eed1000-0000-4000-8000-0000000000d3');
     await expect(page.getByTestId('user-profile')).toBeVisible();
-    await expect(page.getByTestId('deactivate-user-link')).toHaveCount(0);
+    await expect(page.getByTestId('profile-actions')).toHaveCount(0);
     await page.goto(`/en/suite/admin/users/5eed1000-0000-4000-8000-0000000000d3/deactivate`);
-    await expect(page.getByText("You don't have permission to do this.")).toBeVisible();
+    await expect(
+      page.getByTestId('deactivate-dialog').getByText("You don't have permission to do this."),
+    ).toBeVisible();
     await expect(page.getByTestId('deactivate')).toHaveCount(0);
-    // Deactivated members are out of her scope; the tab offers her nothing.
+    // Deactivated members are out of her scope; the view offers her nothing.
     await page.goto('/en/suite/admin/users?tab=deactivated');
-    await expect(page.getByTestId('reactivate-member')).toHaveCount(0);
+    await expect(page.getByTestId('reactivate-button')).toHaveCount(0);
   });
 
   test('Arabic: reactivate from the deactivated tab', async ({ page }) => {
     test.skip(phase !== 'reactivate', 'phase');
     await signIn(page, admin);
     await page.goto('/ar/suite/admin/users?tab=deactivated');
-    const table = page.getByTestId('users-table');
-    const row = table.getByRole('row').filter({ hasText: 'ريم ناصر العتيبي' });
+    const row = page
+      .locator('[data-testid="users-table"] tbody tr, [data-testid="users-cards"] > li')
+      .filter({ visible: true })
+      .filter({ hasText: 'ريم ناصر العتيبي' });
     await row.getByRole('button', { name: /^إعادة التفعيل/ }).click();
-    await expect(row).toContainText(
+    // The confirmation is kept (it gives sign-in back).
+    const dialog = page.getByTestId('reactivate-dialog');
+    await expect(dialog).toContainText(
       'إعادة تفعيل حساب ريم ناصر العتيبي؟ يعود الدخول إلى المنشأة بالأدوار نفسها.',
     );
-    await expect(row.getByTestId('reactivate-confirm')).toBeFocused();
     await expectNoSeriousA11yViolations(page);
-    await row.getByTestId('reactivate-confirm').click();
-    await expect(page).toHaveURL(/\/ar\/suite\/admin\/users\?tab=deactivated&reactivated=1$/);
-    await expect(page.getByTestId('member-reactivated')).toContainText('أُعيد تفعيل الحساب');
-    await expect(page.getByTestId('users-table')).not.toContainText('ريم ناصر العتيبي');
+    await dialog.getByTestId('reactivate-confirm').click();
+    await expect(toasts(page)).toContainText('أُعيد تفعيل الحساب');
+    await expect(row).toHaveCount(0);
     await expectNoSeriousA11yViolations(page);
   });
 
@@ -211,18 +236,19 @@ test.describe('deactivate and reactivate members', () => {
     await signIn(page, admin);
     await page.goto(`/en/suite/admin/users/${HUDA}`);
     await page.getByTestId('reactivate-button').click();
-    await expect(page.getByTestId('reactivate-member')).toContainText(
-      "Reactivate Huda Ali Alqarni's account?",
-    );
-    await page.getByRole('button', { name: 'Cancel' }).click();
+    const dialog = page.getByTestId('reactivate-dialog');
+    await expect(dialog).toContainText("Reactivate Huda Ali Alqarni's account?");
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(page.getByTestId('reactivate-button')).toBeFocused();
     await page.getByTestId('reactivate-button').click();
-    await page.getByTestId('reactivate-confirm').click();
-    await expect(page).toHaveURL(new RegExp(`/en/suite/admin/users/${HUDA}\\?reactivated=1$`));
-    await expect(page.getByTestId('reactivated')).toContainText('The account was reactivated');
-    await expect(page.getByTestId('user-profile')).toContainText('Active');
+    await dialog.getByTestId('reactivate-confirm').click();
+    await expect(toasts(page)).toContainText('The account was reactivated');
+    await expect(page.getByTestId('profile-status')).toHaveText('Active');
     await expect(page.getByTestId('user-roles')).toContainText('Employee');
-    await expect(page.getByTestId('deactivate-user-link')).toBeVisible();
+    await page.getByTestId('profile-actions').click();
+    await expect(page.getByTestId('profile-action-deactivate')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await page.goto(`/en/suite/admin/users/${HUDA}?tab=activity`);
     await expect(page.getByTestId('user-activity')).toContainText('Account reactivated');
     await expectNoSeriousA11yViolations(page);
   });

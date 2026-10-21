@@ -2,7 +2,7 @@
 import { formatHijriDate } from '@jadarat/platform-i18n/hijri';
 import { Alert, Button, TextField } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
-import { type SyntheticEvent, useState, useTransition } from 'react';
+import { type SyntheticEvent, useEffect, useState, useTransition } from 'react';
 import { updateUserDetailsAction } from '../../actions/users';
 import { type ManagerChoice, editFieldErrorKey, managersFor } from '../../lib/edit-user-form';
 import { NAME_PARTS, type NamePart, type PersonalDetailsFormState } from '../../lib/profile-form';
@@ -49,6 +49,16 @@ export interface EditUserFormProps {
   readonly profileHref: string;
   /** Hijri equivalent of the stored hire date, formatted on the server (no hydration mismatch). */
   readonly hireOnHijri: string | undefined;
+  /**
+   * In the side panel (redesign package 3): the form's id (the panel's footer submits it), and what the
+   * panel needs to know — unsaved changes, busy, saved (the panel then closes with a toast).
+   */
+  readonly panel?: {
+    readonly formId: string;
+    readonly onDirty: () => void;
+    readonly onPending: (pending: boolean) => void;
+    readonly onSaved: (changed: boolean) => void;
+  };
 }
 
 /** The person already has a name (or a stored one to split) in that language. */
@@ -83,6 +93,11 @@ export function EditUserForm(props: EditUserFormProps) {
   const [showOther, setShowOther] = useState(() => hasNames(names, otherScript));
   const managers = managersFor(props.managers, departmentId, showAll, managerId);
   const text = (key: string) => labels[key] ?? key;
+  const panel = props.panel;
+  const onPending = panel?.onPending;
+  useEffect(() => {
+    onPending?.(pending);
+  }, [pending, onPending]);
   const hijri = (date: string): string | undefined => {
     if (date === values.hireOn) return props.hireOnHijri;
     if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(date)) return undefined;
@@ -150,11 +165,15 @@ export function EditUserForm(props: EditUserFormProps) {
         setMessage({ tone: 'danger', text: errorText(result.error, props.errors) });
         return;
       }
+      router.refresh();
+      if (panel) {
+        panel.onSaved(result.value.changed.length > 0);
+        return;
+      }
       setMessage({
         tone: 'success',
         text: result.value.changed.length > 0 ? text('saved') : text('noChanges'),
       });
-      router.refresh();
     });
   }
 
@@ -207,7 +226,15 @@ export function EditUserForm(props: EditUserFormProps) {
   };
 
   return (
-    <form className="flex flex-col gap-6" onSubmit={onSubmit} noValidate data-testid="edit-user">
+    <form
+      id={panel?.formId}
+      className="flex flex-col gap-6"
+      onSubmit={onSubmit}
+      // Any typed or picked value is a change the panel warns about before closing.
+      onChange={panel?.onDirty}
+      noValidate
+      data-testid="edit-user"
+    >
       {nameSet(nameLanguage === 'ar' ? 'Ar' : 'En')}
       {showOther ? (
         nameSet(otherScript)
@@ -429,12 +456,14 @@ export function EditUserForm(props: EditUserFormProps) {
           </Alert>
         ) : null}
       </div>
-      <div className="flex flex-wrap items-center gap-4">
-        <Button type="submit" disabled={pending}>
-          {pending ? text('saving') : text('save')}
-        </Button>
-        <a href={props.profileHref}>{text('backToProfile')}</a>
-      </div>
+      {panel ? null : (
+        <div className="flex flex-wrap items-center gap-4">
+          <Button type="submit" disabled={pending}>
+            {pending ? text('saving') : text('save')}
+          </Button>
+          <a href={props.profileHref}>{text('backToProfile')}</a>
+        </div>
+      )}
     </form>
   );
 }

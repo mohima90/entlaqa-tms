@@ -133,15 +133,30 @@ describe('page patterns (Kawadir)', () => {
       <PageHeader title="أعضاء الفريق" description="d" actions={<a href="#i">دعوة</a>} />,
     );
     expect(html.match(/<h1/g)).toHaveLength(1);
-    expect(html).toContain('text-2xl font-bold tracking-tight');
+    // Direction C: a 38 px bold title (28 px on phones).
+    expect(html).toContain('md:text-5xl');
+    expect(html).toContain('font-bold');
     expect(html).toContain('دعوة');
+    expect(html).not.toContain('<nav');
   });
 
-  it('PageHeader sets a dashboard title in the brand gradient, one size up', () => {
+  it('PageHeader shows breadcrumbs with the current page last', () => {
+    const html = renderToStaticMarkup(
+      <PageHeader
+        title="الإعدادات العامة"
+        breadcrumbsLabel="مسار التنقل"
+        breadcrumbs={[{ label: 'الإعدادات', href: '#settings' }, { label: 'الإعدادات العامة' }]}
+      />,
+    );
+    expect(html).toContain('<nav aria-label="مسار التنقل"');
+    expect(html).toContain('<a href="#settings"');
+    expect(html).toMatch(/<span aria-current="page"[^>]*>الإعدادات العامة<\/span>/);
+  });
+
+  it('PageHeader sets a dashboard title in the brand gradient', () => {
     const html = renderToStaticMarkup(<PageHeader title="الرئيسية" description="d" gradient />);
     expect(html).toContain('text-brand-gradient');
-    expect(html).toContain('text-3xl');
-    expect(html).not.toContain('text-2xl');
+    expect(html).toContain('md:text-5xl');
   });
 
   it('Card shows a coloured icon before the title and ties the title to an id', () => {
@@ -185,7 +200,7 @@ describe('page patterns (Kawadir)', () => {
     );
     // Every KPI card is on the brand gradient (an organization's colours recolour it, FR-ADM-07), with
     // the brand gradient's own text colour — never a fixed hue (PO, 16 Oct 2026).
-    expect(html.match(/bg-stat-gradient text-on-nav-item-current/g)).toHaveLength(2);
+    expect(html.match(/bg-stat-gradient text-on-brand/g)).toHaveLength(2);
     expect(html).not.toMatch(/stat-(violet|green|orange|blue)|text-on-stat/);
     expect(html).toContain('12% vs previous');
     expect(html).toMatch(/<polyline[^>]*points="0.0,/);

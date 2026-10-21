@@ -152,7 +152,7 @@ export function StatCard({
       <div
         className={cn(
           'relative flex flex-col overflow-hidden rounded-xl p-6',
-          'bg-stat-gradient text-on-nav-item-current',
+          'bg-stat-gradient text-on-brand',
           className,
         )}
         data-variant="gradient"

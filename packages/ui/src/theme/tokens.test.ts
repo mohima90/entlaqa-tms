@@ -104,7 +104,7 @@ function canonicalCss(value: string): string {
 
 /** Active-script aliases and composites: defined in CSS only, documented in tokens.css itself. */
 const CSS_ONLY =
-  /^--(font-family-base|font-size-(xs|sm|md|lg|xl|2xl|3xl|4xl)|line-height-(body|heading)|letter-spacing-caps|focus-ring)$/;
+  /^--(font-family-base|font-size-(xs|sm|md|lg|xl|2xl|3xl|4xl|5xl|6xl)|line-height-(body|heading)|letter-spacing-caps|focus-ring)$/;
 
 describe('tokens.json (design documentation) agrees with the shipped CSS', () => {
   const json = tokensJson();

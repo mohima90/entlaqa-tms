@@ -119,7 +119,7 @@ function BrandLogo({
     <span className="inline-flex items-center gap-3">
       <span
         className={cn(
-          'inline-flex shrink-0 items-center justify-center rounded-2xl bg-brand-gradient text-on-nav-item-current shadow-brand-glow',
+          'inline-flex shrink-0 items-center justify-center rounded-2xl bg-brand-gradient text-on-brand shadow-brand-glow',
           size === 'lg' ? 'size-14' : 'size-11',
         )}
       >
@@ -190,7 +190,7 @@ function SplitPanel({
 }) {
   return (
     <aside
-      className="relative hidden overflow-hidden bg-brand-panel text-on-nav-item-current lg:flex lg:w-[55%]"
+      className="relative hidden overflow-hidden bg-brand-panel text-on-brand lg:flex lg:w-[55%]"
       aria-label={panel.title}
     >
       {imageSrc ? (
@@ -260,7 +260,7 @@ function SplitPanel({
 function SimplePanel({ panel }: { panel: AuthPanelTexts }) {
   return (
     <aside
-      className="relative hidden items-center justify-center overflow-hidden bg-brand-panel text-on-nav-item-current lg:flex lg:flex-1"
+      className="relative hidden items-center justify-center overflow-hidden bg-brand-panel text-on-brand lg:flex lg:flex-1"
       aria-label={panel.title}
     >
       <div className="relative z-10 px-12 text-center">
@@ -293,7 +293,7 @@ export function AuthShell(props: AuthShellProps) {
           {notices}
           <section className="rounded-2xl border border-border bg-surface p-6 shadow-2 sm:p-8">
             <div className="mb-6 flex flex-col items-center gap-1 text-center">
-              <span className="mb-3 inline-flex size-12 items-center justify-center rounded-xl bg-brand-gradient text-on-nav-item-current shadow-brand-glow">
+              <span className="mb-3 inline-flex size-12 items-center justify-center rounded-xl bg-brand-gradient text-on-brand shadow-brand-glow">
                 <AuthIcon name={props.icon ?? 'userPlus'} className="size-6" />
               </span>
               <h1 className="m-0 text-2xl font-bold">{title}</h1>

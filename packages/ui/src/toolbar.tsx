@@ -19,4 +19,4 @@ export function Toolbar({ className, ...props }: HTMLAttributes<HTMLDivElement>)
  * soft shadow; 44 px on touch screens). On a `<select>` add `select-chevron pe-10` for Kawadir's chevron.
  */
 export const toolbarFieldClasses =
-  'min-h-9 w-full rounded-xl border border-border-strong bg-surface px-3.5 text-sm text-text shadow-1 placeholder:text-text-subtle pointer-coarse:min-h-11';
+  'min-h-11 w-full rounded-full border-[1.5px] border-border-strong bg-surface px-4 text-[15px] text-text placeholder:text-text-subtle';

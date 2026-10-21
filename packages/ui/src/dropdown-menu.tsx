@@ -6,7 +6,8 @@ import { cn } from './cn';
 import { Icon } from './icons';
 
 /**
- * Menus of the top bar (Kawadir DropdownMenu, Radix): a menu button (`aria-haspopup`, `aria-expanded`),
+ * Menus of the top bar and row menus (direction C: 16–18 px corners, a raised surface, a deep shadow;
+ * Radix): a menu button (`aria-haspopup`, `aria-expanded`),
  * arrow keys between items, typeahead, Escape closes and focus returns to the button. Non-modal: the
  * page is not scroll-locked (no runtime <style>, which the CSP refuses).
  */
@@ -36,7 +37,7 @@ export function DropdownMenuContent({
         align={align}
         sideOffset={sideOffset}
         className={cn(
-          'z-[1000] min-w-[10rem] overflow-hidden rounded-xl border border-border bg-surface p-1 text-sm text-text shadow-2',
+          'z-[1000] min-w-[13.75rem] overflow-hidden rounded-lg border border-border bg-surface-raised p-1.5 text-sm text-text shadow-4',
           className,
         )}
         {...props}
@@ -48,7 +49,7 @@ export function DropdownMenuContent({
 }
 
 const itemClasses =
-  'relative flex min-h-9 cursor-pointer select-none items-center gap-3 rounded-lg px-2.5 py-2 text-text no-underline outline-none data-[highlighted]:bg-surface-hover data-[disabled]:pointer-events-none data-[disabled]:text-text-disabled pointer-coarse:min-h-11';
+  'relative flex min-h-10.5 cursor-pointer select-none items-center gap-2.5 rounded-sm px-3 py-2 text-[14.5px] text-text no-underline outline-none data-[highlighted]:bg-surface-hover data-[disabled]:pointer-events-none data-[disabled]:text-text-disabled pointer-coarse:min-h-11';
 
 export function DropdownMenuItem({
   className,
@@ -101,5 +102,5 @@ export function DropdownMenuSeparator({
 
 /** Non-interactive content at the top of a menu (e.g. the account's name), outside the item list. */
 export function DropdownMenuHeader({ children }: { readonly children: ReactNode }) {
-  return <div className="m-1 rounded-lg bg-surface-sunken p-3">{children}</div>;
+  return <div className="m-1 rounded-md bg-surface-sunken p-3">{children}</div>;
 }

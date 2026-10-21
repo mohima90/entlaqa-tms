@@ -243,7 +243,7 @@ describe('DropdownMenu primitives', () => {
     openMenu('more');
     const content = menu()!;
     expect(content.className).toContain('w-40');
-    expect(content.className).toContain('rounded-xl');
+    expect(content.className).toContain('rounded-lg');
     const label = [...content.children].find((el) => el.textContent === 'Actions')!;
     expect(label.className).toContain('extra');
     expect(label.className).toContain('text-text-muted');

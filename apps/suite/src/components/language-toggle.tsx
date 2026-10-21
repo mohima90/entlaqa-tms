@@ -3,9 +3,10 @@ import { Icon, cn } from '@jadarat/ui';
 import { getTranslations } from 'next-intl/server';
 
 /**
- * Switches the UI language, keeping the current path. `path` is locale-less, e.g. "/suite". In the suite
- * top bar (`topBar`) it is Kawadir's globe icon button (36 px; 44 px on touch screens): its accessible
- * name says what it does («Switch to Arabic»), the tooltip shows the target language's name.
+ * Switches the UI language, keeping the current path. `path` is locale-less, e.g. "/suite". Direction C
+ * (redesign package 1): a labelled pill — the globe and the other language's name in that language
+ * («العربية» / «English») — in the top bar (`topBar`: outlined, 44 px) and on the focused pages. Its
+ * visible text is its name (WCAG 2.5.3), marked with its language.
  */
 export async function LanguageToggle({
   locale,
@@ -23,19 +24,14 @@ export async function LanguageToggle({
       href={`/${target}${path === '/' ? '' : path}`}
       hrefLang={target}
       lang={target}
-      // Icon only: the name says what it does. With its visible text, that text is the name (WCAG 2.5.3).
-      aria-label={topBar ? t('switchLanguageAria') : undefined}
-      title={topBar ? t('switchLanguage') : undefined}
       className={cn(
-        'inline-flex items-center gap-2 text-sm font-medium text-text-muted no-underline hover:bg-surface-hover hover:text-text',
-        topBar
-          ? 'size-9 shrink-0 justify-center rounded-xl pointer-coarse:size-11'
-          : 'min-h-11 rounded-md px-3',
+        'inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-border bg-surface text-[14.5px] font-medium text-text no-underline hover:bg-surface-hover',
+        topBar ? 'min-h-10 px-2.5 md:min-h-11 md:px-4' : 'px-3 sm:px-4',
       )}
       data-testid="language-toggle"
     >
-      <Icon name="globe" className={topBar ? 'size-5' : undefined} />
-      {topBar ? null : t('switchLanguage')}
+      <Icon name="globe" className="size-[18px] text-text-muted" />
+      {t('switchLanguage')}
     </a>
   );
 }

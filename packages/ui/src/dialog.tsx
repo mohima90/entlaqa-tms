@@ -2,7 +2,7 @@
 
 import { type ReactNode, useEffect, useId, useRef } from 'react';
 import { cn } from './cn';
-import { Icon } from './icons';
+import { Icon, type IconName } from './icons';
 
 export interface DialogProps {
   readonly open: boolean;
@@ -15,15 +15,28 @@ export interface DialogProps {
   /** Buttons at the bottom (Kawadir DialogFooter: end-aligned, stacked on phones). */
   readonly footer?: ReactNode;
   readonly size?: 'sm' | 'md' | 'lg' | undefined;
+  /**
+   * A confirmation's consequence (direction C): `danger` — destructive, cannot be undone (red tile);
+   * `warning` — reversible but with an effect people should know (amber tile). The text still says it.
+   */
+  readonly tone?: 'danger' | 'warning' | undefined;
   readonly className?: string | undefined;
   readonly children?: ReactNode;
   readonly 'data-testid'?: string | undefined;
 }
 
-const widths = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl' } as const;
+const widths = { sm: 'max-w-sm', md: 'max-w-[460px]', lg: 'max-w-2xl' } as const;
+const toneTiles: Record<
+  'danger' | 'warning',
+  { readonly icon: IconName; readonly classes: string }
+> = {
+  danger: { icon: 'warning', classes: 'bg-danger-subtle text-danger' },
+  warning: { icon: 'warning', classes: 'bg-warning-subtle text-warning' },
+};
 
 /**
- * A modal dialog for short forms and confirmations (Kawadir Dialog), on the native `<dialog>`: the
+ * A modal dialog for confirmations and short questions (direction C: when to use a dialog rather than a
+ * side panel — docs/design/redesign-direction-c.md), on the native `<dialog>`: the
  * browser makes the page behind it inert and keeps Tab inside, Escape closes it, and focus returns to
  * the element that opened it. Titled by its heading, described by its description. No inline styles
  * (the CSP allows none): the look is Tailwind classes only.
@@ -36,6 +49,7 @@ export function Dialog({
   closeLabel,
   footer,
   size = 'md',
+  tone,
   className,
   children,
   'data-testid': testId,
@@ -85,18 +99,29 @@ export function Dialog({
       aria-describedby={description ? descriptionId : undefined}
       data-testid={testId}
       className={cn(
-        'm-auto w-[calc(100%-2rem)] rounded-xl border border-border bg-surface p-0 text-text shadow-3 backdrop:bg-overlay',
+        'm-auto w-[calc(100%-1.5rem)] rounded-xl border border-border bg-surface-raised p-0 text-text shadow-4 backdrop:bg-overlay',
         widths[size],
         className,
       )}
     >
-      <div className="relative flex flex-col gap-4 p-6">
+      <div className="relative flex flex-col gap-3.5 p-6 sm:p-6.5">
+        {tone ? (
+          <span
+            aria-hidden="true"
+            className={cn(
+              'grid size-12 place-items-center rounded-[16px]',
+              toneTiles[tone].classes,
+            )}
+          >
+            <Icon name={toneTiles[tone].icon} className="size-6" />
+          </span>
+        ) : null}
         <div className="flex flex-col gap-1.5 pe-8">
-          <h2 id={titleId} className="m-0 text-lg font-semibold leading-tight tracking-tight">
+          <h2 id={titleId} className="m-0 text-[21px] font-bold leading-tight tracking-tight">
             {title}
           </h2>
           {description ? (
-            <p id={descriptionId} className="m-0 text-sm text-text-muted">
+            <p id={descriptionId} className="m-0 text-text-muted">
               {description}
             </p>
           ) : null}
@@ -105,13 +130,15 @@ export function Dialog({
           type="button"
           aria-label={closeLabel}
           onClick={() => ref.current?.close()}
-          className="absolute end-3 top-3 grid size-9 place-items-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text pointer-coarse:size-11"
+          className="absolute end-3 top-3 grid size-10 place-items-center rounded-full text-text-muted hover:bg-surface-hover hover:text-text pointer-coarse:size-11"
         >
           <Icon name="close" />
         </button>
         {children}
         {footer ? (
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">{footer}</div>
+          <div className="mt-1.5 flex flex-col-reverse gap-2.5 sm:flex-row sm:flex-wrap sm:justify-end">
+            {footer}
+          </div>
         ) : null}
       </div>
     </dialog>

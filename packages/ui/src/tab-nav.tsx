@@ -17,12 +17,16 @@ export interface TabNavProps extends HTMLAttributes<HTMLElement> {
   readonly items: readonly TabNavItem[];
   /** The `key` of the current view (`aria-current="page"`). */
   readonly current: string;
-  /** `pills`: Kawadir TabsList (muted track, white current tab); `segmented`: a smaller filter row. */
-  readonly variant?: 'pills' | 'segmented' | undefined;
+  /**
+   * `underline` (direction C): views of one object — 48 px tabs over a hairline, the current one with a
+   * 3 px bar in the brand colour. `pills`: a muted track with a white current tab; `segmented`: a
+   * smaller filter row.
+   */
+  readonly variant?: 'underline' | 'pills' | 'segmented' | undefined;
 }
 
 /**
- * Views of a page as links (Kawadir TabsList look): each view is its own address (server-rendered,
+ * Views of a page as links: each view is its own address (server-rendered,
  * bookmarkable, works without JavaScript), so they are a `<nav>` of links with `aria-current`, not
  * ARIA tabs. Targets are 36 px on a desktop and 44 px on touch screens.
  */
@@ -35,11 +39,42 @@ export function TabNav({
   ...props
 }: TabNavProps) {
   const small = variant === 'segmented';
+  if (variant === 'underline') {
+    return (
+      <nav aria-label={label} className={cn('max-w-full overflow-x-auto', className)} {...props}>
+        <ul className="m-0 flex list-none items-stretch gap-1.5 border-b border-border p-0">
+          {items.map((item) => {
+            const isCurrent = item.key === current;
+            return (
+              <li key={item.key}>
+                <a
+                  href={item.href}
+                  aria-current={isCurrent ? 'page' : undefined}
+                  className={cn(
+                    '-mb-px inline-flex min-h-12 items-center gap-2 whitespace-nowrap border-b-[3px] px-3.5 font-semibold no-underline transition-colors',
+                    isCurrent
+                      ? 'border-brand-end text-text'
+                      : 'border-transparent text-text-muted hover:text-text',
+                  )}
+                >
+                  {item.icon ? <Icon name={item.icon} /> : null}
+                  {item.label}
+                  {item.count !== undefined && item.count !== null ? (
+                    <span className="tabular-nums">({item.count})</span>
+                  ) : null}
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+    );
+  }
   return (
     <nav aria-label={label} className={cn('max-w-full overflow-x-auto', className)} {...props}>
       <ul
         className={cn(
-          'm-0 inline-flex list-none items-center gap-1 rounded-lg p-1',
+          'm-0 inline-flex list-none items-center gap-1 rounded-full p-1',
           small ? 'border border-border bg-surface' : 'bg-surface-hover',
         )}
       >
@@ -51,7 +86,7 @@ export function TabNav({
                 href={item.href}
                 aria-current={isCurrent ? 'page' : undefined}
                 className={cn(
-                  'inline-flex items-center gap-2 whitespace-nowrap rounded-md px-3 font-medium no-underline transition-colors pointer-coarse:min-h-11',
+                  'inline-flex items-center gap-2 whitespace-nowrap rounded-full px-3.5 font-medium no-underline transition-colors pointer-coarse:min-h-11',
                   small ? 'min-h-8 text-xs' : 'min-h-9 text-sm',
                   isCurrent
                     ? 'bg-surface text-text shadow-1'

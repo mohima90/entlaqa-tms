@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { cn } from './cn';
 import { Icon, type IconName } from './icons';
 import { type ToastItem, type ToastStore, type ToastTone, toastStore } from './toast-store';
 
@@ -11,13 +10,6 @@ const toneIcon: Record<ToastTone, IconName | null> = {
   error: 'error',
   warning: 'warning',
   info: 'info',
-};
-const toneIconClass: Record<ToastTone, string> = {
-  default: '',
-  success: 'text-success',
-  error: 'text-danger',
-  warning: 'text-warning',
-  info: 'text-info',
 };
 
 export interface ToasterProps {
@@ -30,8 +22,9 @@ export interface ToasterProps {
 }
 
 /**
- * The toasts of the page (Kawadir: sonner at the bottom end): a polite live region, newest last, each
- * with an icon, its text and a close button. A toast hides itself after its duration unless the pointer
+ * The toasts of the page (direction C: dark rounded toasts at the bottom end): a polite live region,
+ * newest last, each with an icon, its text and a close button. The icon is in the toast's text colour
+ * (the words say what happened). A toast hides itself after its duration unless the pointer
  * or focus is on it (WCAG 2.2.1); errors stay until closed. Bottom end = bottom right in English,
  * bottom left in Arabic.
  */
@@ -102,14 +95,14 @@ function Toast({
   const icon = toneIcon[item.tone];
   return (
     <li
-      className="pointer-events-auto flex items-start gap-3 rounded-lg border border-border bg-surface p-4 text-sm text-text shadow-3"
+      className="pointer-events-auto flex items-start gap-3 rounded-lg bg-inverse-surface py-3 pe-2.5 ps-4.5 text-[14.5px] text-inverse-text shadow-4"
       ref={element}
       data-tone={item.tone}
     >
-      {icon ? <Icon name={icon} className={cn('mt-0.5 size-5', toneIconClass[item.tone])} /> : null}
+      {icon ? <Icon name={icon} className="mt-0.5 size-5" data-tone-icon={item.tone} /> : null}
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <p className="m-0 font-medium">{item.message}</p>
-        {item.description ? <p className="m-0 text-text-muted">{item.description}</p> : null}
+        {item.description ? <p className="m-0">{item.description}</p> : null}
       </div>
       <button
         type="button"
@@ -117,7 +110,7 @@ function Toast({
         onClick={() => {
           store.dismiss(item.id);
         }}
-        className="-m-1 grid size-7 shrink-0 place-items-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text pointer-coarse:size-11"
+        className="-my-1 grid size-8.5 shrink-0 place-items-center rounded-full text-inverse-text hover:bg-inverse-text/20 pointer-coarse:size-11"
       >
         <Icon name="close" />
       </button>

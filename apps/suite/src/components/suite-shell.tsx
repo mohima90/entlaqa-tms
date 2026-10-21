@@ -12,6 +12,7 @@ import {
   THEME_COOKIE,
   ThemeMenu,
   Toaster,
+  initialsOf,
   parseNavCollapsed,
   parseThemeMode,
 } from '@jadarat/ui';
@@ -22,7 +23,6 @@ import { getConfigStatus } from '../lib/config-status';
 import { HOST_KIND_HEADER, HOST_REF_HEADER } from '../lib/host-tenant';
 import type { SuiteContext } from '../lib/suite-context';
 import {
-  PAGE_TITLE_KEYS,
   SUITE_PATHS,
   type SuitePage,
   commandPaletteItems,
@@ -39,13 +39,15 @@ import { LanguageToggle } from './language-toggle';
 export type { SuitePage } from '../lib/suite-navigation';
 
 /**
- * The suite frame in the Kawadir layout (T-M2-43; docs/design/kawadir-alignment.md §3): the white,
- * collapsible navigation with the organization on top, the member's menu (lib/suite-navigation.ts) and
- * «Powered by Jadarat»; the sticky top bar with the page title, the ⌘K / Ctrl K page search, theme
- * (light / dark / system), the language switch (globe), the notification bell (placeholder until
- * FR-NTF-01) and the account menu (name, "Organization · Role", My profile, sign-out). The theme and the
- * collapsed menu are this device's choices (cookies, display only). `path` is the locale-less path of
- * the page (for the language switch).
+ * The suite frame in direction C «Bold product» (redesign package 1, PO 21 Oct 2026;
+ * docs/design/redesign-direction-c.md): the collapsible navigation in the brand gradient (the
+ * organization's colours replace it, FR-ADM-07) with the organization's chip on top (its name and the
+ * member's role — display only: switching organization stays sign out / sign in), the member's menu
+ * (lib/suite-navigation.ts) and «Powered by Jadarat»; the white top bar with the menu toggle, the ⌘K /
+ * Ctrl K page search, theme (light / dark / system), the labelled language switch, the notification bell
+ * (placeholder until FR-NTF-01) and the account menu (name, "Organization · Role", My profile, the
+ * keyboard shortcuts list, sign-out). The theme and the collapsed menu are this device's choices
+ * (cookies, display only). `path` is the locale-less path of the page (for the language switch).
  */
 export async function SuiteShell({
   locale,
@@ -138,7 +140,8 @@ export async function SuiteShell({
           {tenantLabel}
         </span>
       }
-      title={t(PAGE_TITLE_KEYS[current])}
+      organizationInitials={organizationName ? initialsOf(organizationName) : undefined}
+      organizationDetail={role ?? undefined}
       navigation={navigation}
       navigationFooter={<PoweredBy title={t('poweredBy')} subtitle={common('tmsFullName')} />}
       navigationLabel={t('mainNavigation')}
@@ -156,6 +159,11 @@ export async function SuiteShell({
             placeholder: t('searchPlaceholder'),
             empty: t('searchEmpty'),
             close: t('close'),
+            hints: {
+              navigate: t('searchHintNavigate'),
+              open: t('searchHintOpen'),
+              close: t('searchHintClose'),
+            },
           }}
         />
       }
@@ -178,7 +186,6 @@ export async function SuiteShell({
               emptyBody: t('notificationsEmptyBody'),
             }}
           />
-          <span aria-hidden="true" className="mx-1 hidden h-6 w-px bg-border md:block lg:mx-2" />
           <AccountMenu
             locale={locale}
             name={name}
@@ -190,6 +197,17 @@ export async function SuiteShell({
               profile: t('myProfile'),
               signOut: canSignOut ? auth('signOut') : undefined,
               signingOut: auth('signingOut'),
+            }}
+            shortcuts={{
+              title: t('shortcutsTitle'),
+              closeLabel: t('close'),
+              // Only the shortcuts the product has (design only: nothing new is added).
+              items: [
+                { label: t('searchTitle'), keys: ['Ctrl', 'K'] },
+                { label: t('shortcuts.close'), keys: ['Esc'] },
+                { label: t('shortcuts.rows'), keys: ['↑', '↓'] },
+                { label: t('shortcuts.open'), keys: ['↵'] },
+              ],
             }}
           />
         </>

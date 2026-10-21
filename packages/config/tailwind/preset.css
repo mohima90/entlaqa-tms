@@ -23,10 +23,11 @@
   --color-current: currentColor;
 
   /* Radius: same names as the tokens, so token values win automatically. */
-  --radius-sm: 8px;
-  --radius-md: 10px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --radius-2xl: 32px;
   --radius-full: 9999px;
 
   /* 4px spacing grid (matches --space-* tokens). */
@@ -79,6 +80,9 @@
   --color-inverse-surface: var(--color-inverse-surface);
   --color-inverse-text: var(--color-inverse-text);
   --color-overlay: var(--color-overlay);
+  --color-brand: var(--color-brand);
+  --color-brand-end: var(--color-brand-end);
+  --color-on-brand: var(--color-on-brand);
   --color-header: var(--color-header);
   --color-on-header: var(--color-on-header);
   --color-on-header-muted: var(--color-on-header-muted);
@@ -108,6 +112,8 @@
   --text-2xl: var(--font-size-2xl);
   --text-3xl: var(--font-size-3xl);
   --text-4xl: var(--font-size-4xl);
+  --text-5xl: var(--font-size-5xl);
+  --text-6xl: var(--font-size-6xl);
   --shadow-1: var(--elevation-1);
   --shadow-2: var(--elevation-2);
   --shadow-3: var(--elevation-3);

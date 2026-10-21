@@ -119,18 +119,16 @@ describe('the product stays readable whatever was chosen', () => {
     expect(brand?.adjustments.length).toBeGreaterThan(0);
   });
 
-  it('without the gradient, the current entry is one colour', () => {
+  it('without the gradient, the brand gradient (menu, buttons) is one colour', () => {
     const brand = brandFromSettings({ primary: '#1E3A5F', secondary: '#2C5282', gradient: false });
-    expect(brand?.layer.light['nav-item-current']).toBe(brand?.layer.light['nav-item-current-end']);
-    expect(brand?.layer.dark['nav-item-current']).toBe(brand?.layer.dark['nav-item-current-end']);
+    expect(brand?.layer.light.brand).toBe(brand?.layer.light['brand-end']);
+    expect(brand?.layer.dark.brand).toBe(brand?.layer.dark['brand-end']);
     const withGradient = brandFromSettings({
       primary: '#1E3A5F',
       secondary: '#2C5282',
       gradient: true,
     });
-    expect(withGradient?.layer.light['nav-item-current']).not.toBe(
-      withGradient?.layer.light['nav-item-current-end'],
-    );
+    expect(withGradient?.layer.light.brand).not.toBe(withGradient?.layer.light['brand-end']);
   });
 
   it('a gradient-off brand is checked like any other (no failure thrown)', () => {

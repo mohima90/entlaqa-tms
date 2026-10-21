@@ -96,7 +96,8 @@ describe('Toaster', () => {
     expect(plain?.dataset.tone).toBe('default');
     expect(plain?.querySelectorAll('svg')).toHaveLength(1); // only the close icon
     expect(saved?.dataset.tone).toBe('success');
-    expect(saved?.querySelector('svg')?.getAttribute('class')).toContain('text-success');
+    // Direction C: dark toasts; the icon is drawn in the toast's text colour and marks its tone.
+    expect(saved?.querySelector('svg')?.getAttribute('data-tone-icon')).toBe('success');
     expect(saved?.textContent).toContain('All changes saved.');
     act(() => {
       saved!.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.click();
@@ -171,8 +172,8 @@ describe('Toaster', () => {
       toast.warning('Check the dates');
     });
     expect(items(container)[0]?.dataset.tone).toBe('warning');
-    expect(items(container)[0]?.querySelector('svg')?.getAttribute('class')).toContain(
-      'text-warning',
+    expect(items(container)[0]?.querySelector('svg')?.getAttribute('data-tone-icon')).toBe(
+      'warning',
     );
   });
 });

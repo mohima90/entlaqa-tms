@@ -139,7 +139,7 @@ export function RevealButton({
 
 /** The primary button of the sign-in pages (Kawadir: 48 px, full width, the brand gradient with a glow). */
 export const authPrimaryButton =
-  'inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand-gradient px-4 text-[15px] font-semibold text-on-nav-item-current no-underline shadow-brand-glow transition-[box-shadow,transform] duration-300 hover:-translate-y-px hover:shadow-brand-glow-lg motion-reduce:transition-none motion-reduce:hover:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0';
+  'inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand-gradient px-4 text-[15px] font-semibold text-on-brand no-underline shadow-brand-glow transition-[box-shadow,transform] duration-300 hover:-translate-y-px hover:shadow-brand-glow-lg motion-reduce:transition-none motion-reduce:hover:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0';
 
 /** A secondary (outline) button of the sign-in pages. */
 export const authSecondaryButton =

@@ -63,20 +63,31 @@ describe('Jadarat colours by default (PO, 16 Oct 2026): one brand gradient, no m
   it('the brand gradient is slate → steel (light) and sky → light steel (dark)', () => {
     const light = resolveThemeColors(SHIPPED_THEME, 'light');
     const dark = resolveThemeColors(SHIPPED_THEME, 'dark');
+    expect([light.brand, light['brand-end']]).toEqual(['#2F4858', '#33658A']);
+    expect([dark.brand, dark['brand-end']]).toEqual(['#86BBD8', '#5E95BD']);
+  });
+
+  it('direction C: the light navigation is the brand gradient with a white current pill; dark keeps dark surfaces', () => {
+    const light = resolveThemeColors(SHIPPED_THEME, 'light');
+    expect([light.nav, light['nav-end']]).toEqual([light.brand, light['brand-end']]);
+    expect(light['on-nav']).toBe('#FFFFFF');
     expect([light['nav-item-current'], light['nav-item-current-end']]).toEqual([
-      '#2F4858',
-      '#33658A',
+      '#FFFFFF',
+      '#FFFFFF',
     ]);
+    expect(light['on-nav-item-current']).toBe(light.brand);
+    const dark = resolveThemeColors(SHIPPED_THEME, 'dark');
+    expect([dark.nav, dark['nav-end']]).toEqual(['#15232E', '#1B2B37']);
     expect([dark['nav-item-current'], dark['nav-item-current-end']]).toEqual([
-      '#86BBD8',
-      '#5E95BD',
+      dark.brand,
+      dark['brand-end'],
     ]);
   });
 
   it('both ends of the gradient stay in the Jadarat blue hue family, light and dark', () => {
     for (const mode of ['light', 'dark'] as const) {
       const colors = resolveThemeColors(SHIPPED_THEME, mode);
-      for (const end of [colors['nav-item-current'], colors['nav-item-current-end']]) {
+      for (const end of [colors.brand, colors['brand-end']]) {
         expect(hue(end)).toBeGreaterThanOrEqual(195);
         expect(hue(end)).toBeLessThanOrEqual(215);
       }
@@ -157,8 +168,9 @@ Notes
 - \`text-disabled\` is intentionally excluded (disabled controls are exempt under SC 1.4.3); disabled states must also be conveyed by the \`disabled\` attribute / \`aria-disabled\`.
 - \`border\` (decorative divider) is intentionally below 3 : 1; it must never be the only boundary of an interactive control — inputs use \`border-strong\`.
 - The focus ring is drawn as a 2 px ring separated from the component by a 2 px \`--color-bg\` gap (\`--focus-ring\`), so the ring is measured against \`bg\`/\`surface\` and the header, not against the button fill. Inside the side navigation the ring is \`nav-focus-ring\` (an outline 2 px away from the entry), measured against both ends of the navigation panel.
-- The side navigation panel runs from \`nav\` (top) to \`nav-end\` (bottom; one colour in the Kawadir layout): its text and focus ring are checked against **both** ends. The current entry is filled with the brand gradient (135°) from \`nav-item-current\` to \`nav-item-current-end\`: its text is checked on **both** gradient ends, and both ends must stand out from the panel (3 : 1).
-- \`accent*\` roles are aliases of the primary roles in «jadarat»; the header roles are aliases of the page background and text roles (the top bar sits on the page background, Kawadir).
+- The brand gradient (\`brand\` → \`brand-end\`, 135°) fills primary buttons, the current view card, the avatar and the sign-in panel: \`on-brand\` is checked on **both** ends, and both ends must stand out from the page and from cards (3 : 1).
+- The side navigation panel runs from \`nav\` (top) to \`nav-end\` (bottom) — the brand gradient in light mode (direction C), the dark surfaces in dark mode: its text and focus ring are checked against **both** ends. The current entry (\`nav-item-current\` → \`nav-item-current-end\`: a white pill in light mode, the brand gradient in dark mode): its text is checked on **both** ends, and both ends must stand out from the panel (3 : 1). The hover fill \`nav-item-hover\` is white 10 % over the gradient's lighter end, as a solid colour.
+- \`accent*\` roles are aliases of the primary roles in «jadarat»; the header roles are aliases of the surface and text roles (a white top bar, direction C).
 
 ## Light theme
 

@@ -8,21 +8,22 @@ import { rememberNavCollapsed } from './shell-preferences';
 import { Tooltip, TooltipProvider } from './tooltip';
 
 export interface AppShellProps {
-  /** Product name under the organization's name, e.g. "Jadarat TMS". */
+  /** Product name, under the organization's name when no detail is given, e.g. "Jadarat TMS". */
   readonly brand: ReactNode;
   /** The organization's name on top of the navigation (display only, never used for authorization). */
   readonly organization?: ReactNode;
+  /** The organization's initials for its tile (e.g. "DO"); the Jadarat mark without them. */
+  readonly organizationInitials?: string | undefined;
+  /** The line under the organization's name (the member's role, e.g. "Organization Admin"). */
+  readonly organizationDetail?: ReactNode;
   /**
-   * The organization's logo (an `<img>` with its alt text) for the logo area (Kawadir: ~200 × 60) and the
-   * collapsed tile (FR-ADM-07). Without it the organization's name is shown as a wordmark in the brand
-   * gradient, and the Jadarat mark on the collapsed tile.
+   * The organization's logo (an `<img>` with its alt text, FR-ADM-07): it replaces the tile and the name
+   * at the top of the navigation (the name stays for screen readers), and fills the collapsed tile.
    */
   readonly logo?: ReactNode;
-  /** The page's title in the top bar (Kawadir header title). Plain text: the page keeps its `<h1>`. */
-  readonly title?: ReactNode;
-  /** Top-bar items after the title (the command palette's search button). */
+  /** Top-bar items after the menu toggles (the page search). */
   readonly headerStart?: ReactNode;
-  /** Top-bar items at the inline-end edge (full screen, theme, language, bell, account menu). */
+  /** Top-bar items at the inline-end edge (theme, language, bell, account menu). */
   readonly headerEnd?: ReactNode;
   /** Navigation content (`NavGroup`s). Sits at the inline-start edge: right in Arabic, left in English. */
   readonly navigation: ReactNode;
@@ -35,8 +36,8 @@ export interface AppShellProps {
   /** Label of the button that closes it («إغلاق القائمة» / "Close menu"). */
   readonly closeMenuLabel: string;
   /**
-   * Labels of the desktop collapse button («طيّ القائمة» / "Collapse menu", «توسيع القائمة» / "Expand
-   * menu"). Without them the navigation cannot be collapsed.
+   * Labels of the desktop collapse toggle in the top bar («طيّ القائمة» / "Collapse menu», «توسيع
+   * القائمة» / "Expand menu"). Without them the navigation cannot be collapsed.
    */
   readonly collapseLabels?: { readonly collapse: string; readonly expand: string } | undefined;
   /** The navigation starts collapsed (the device's remembered choice, read on the server). */
@@ -50,11 +51,13 @@ const NAV_ID = 'app-navigation';
 const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
- * Suite shell in the Kawadir layout (T-M2-43; docs/design/kawadir-alignment.md §3): a white,
- * full-height side navigation at the inline-start edge — the organization's logo and name on top,
- * grouped entries, «Powered by Jadarat» at the bottom — that collapses on a desktop from 260 px to
- * 72 px (icons with tooltips; remembered on this device), and a main column with a sticky top bar
- * (page title, search, controls) over the muted page. Logical properties only (RTL/LTR).
+ * The suite shell in direction C «Bold product» (redesign package 1, PO 21 Oct 2026;
+ * docs/design/redesign-direction-c.md): a full-height side navigation in the brand gradient at the
+ * inline-start edge — the organization's chip on top (tile, name, the member's role), grouped entries
+ * with the current page as a white pill, «Powered by Jadarat» at the bottom — that collapses on a desktop
+ * from 264 px to an 84 px rail (icons with tooltips; remembered on this device) with the toggle at the
+ * start of the white top bar (page search, theme, language, notifications, account). The organization's
+ * colours replace the gradient (FR-ADM-07). Logical properties only (RTL/LTR).
  *
  * Below 900 px the navigation is a drawer behind a menu button (disclosure: `aria-expanded`,
  * `aria-controls`): open, it is a modal dialog — focus moves into it and Tab loops inside, the rest of
@@ -64,8 +67,9 @@ const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1
 export function AppShell({
   brand,
   organization,
+  organizationInitials,
+  organizationDetail,
   logo,
-  title,
   headerStart,
   headerEnd,
   navigation,
@@ -82,8 +86,6 @@ export function AppShell({
   const [collapsed, setCollapsed] = useState(Boolean(collapseLabels) && initialCollapsed);
   const menuButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
-  const collapseButton = useRef<HTMLButtonElement>(null);
-  const expandButton = useRef<HTMLButtonElement>(null);
   const drawer = useRef<HTMLDivElement>(null);
 
   // Focus goes back to the menu button once the drawer is closed and the page is no longer inert.
@@ -99,21 +101,13 @@ export function AppShell({
     menuButton.current?.focus();
   }, [open]);
 
-  // The collapse and expand buttons sit in different places (Kawadir): after a toggle, focus moves to
-  // the one now shown, so keyboard users keep their place.
-  const focusToggle = useRef(false);
+  // One toggle in the top bar: it keeps focus, its name and `aria-expanded` follow the state.
   const toggleCollapsed = useCallback(() => {
-    focusToggle.current = true;
     setCollapsed((was) => {
       rememberNavCollapsed(!was);
       return !was;
     });
   }, []);
-  useEffect(() => {
-    if (!focusToggle.current) return;
-    focusToggle.current = false;
-    (collapsed ? expandButton : collapseButton).current?.focus();
-  }, [collapsed]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -174,6 +168,11 @@ export function AppShell({
 
   // In the phone drawer the labels are always shown: no tooltips there.
   const navState = useMemo(() => ({ collapsed: collapsed && !open }), [collapsed, open]);
+  const toggleLabel = collapseLabels
+    ? collapsed
+      ? collapseLabels.expand
+      : collapseLabels.collapse
+    : '';
 
   return (
     <TooltipProvider>
@@ -181,7 +180,7 @@ export function AppShell({
         <a
           href="#main"
           inert={open || undefined}
-          className="absolute start-2 top-2 z-[60] -translate-y-24 rounded-md bg-surface px-4 py-2 text-primary-text focus:translate-y-0"
+          className="absolute start-2 top-2 z-[60] -translate-y-24 rounded-full bg-surface px-4 py-2 font-semibold text-primary-text shadow-2 focus:translate-y-0"
         >
           {skipToContentLabel}
         </a>
@@ -203,115 +202,85 @@ export function AppShell({
           aria-modal={open || undefined}
           aria-label={open ? menuLabel : undefined}
           className={cn(
-            'w-70 shrink-0 flex-col border-e border-nav-border bg-nav-gradient text-on-nav',
+            'w-78 shrink-0 flex-col gap-3.5 bg-nav-gradient px-3.5 py-4.5 text-on-nav',
             open
-              ? 'fixed inset-y-0 start-0 z-50 flex max-w-[85vw] overflow-y-auto shadow-4'
+              ? 'fixed inset-y-0 start-0 z-50 flex max-w-[86vw] overflow-y-auto rounded-e-xl shadow-4'
               : 'hidden',
-            'lg:sticky lg:top-0 lg:z-auto lg:flex lg:h-dvh lg:max-w-none lg:shadow-none',
-            'transition-[width] duration-300 ease-out motion-reduce:transition-none',
-            navState.collapsed ? 'lg:w-18' : 'lg:w-65',
+            'lg:sticky lg:top-0 lg:z-auto lg:flex lg:h-dvh lg:max-w-none lg:rounded-none lg:shadow-none',
+            'transition-[width] duration-[var(--duration-slow)] ease-[var(--easing-standard)] motion-reduce:transition-none',
+            navState.collapsed ? 'lg:w-21 lg:items-center lg:px-3' : 'lg:w-66',
           )}
         >
-          {/* The logo area (Kawadir: the organization's full logo, ~200 × 60, in a 96 px band). Until an
-              organization uploads its logo (FR-ADM-07), its name is set as a wordmark in the brand
-              gradient in the same footprint, with the product line under it; collapsed, the Jadarat mark. */}
-          <div
-            className={cn(
-              'flex items-center gap-2 border-b border-nav-border',
-              navState.collapsed ? 'min-h-16 justify-center px-3' : 'min-h-24 ps-5 pe-3',
-            )}
-          >
-            <span
-              aria-hidden="true"
+          {/* The organization's chip (direction C): its tile (logo or initials), name and the member's
+              role. Display only: switching organization is not in the suite yet. */}
+          <div className="flex items-center gap-2">
+            <div
               className={cn(
-                'size-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-brand-gradient text-on-nav-item-current shadow-brand-glow',
-                navState.collapsed ? 'grid' : 'hidden',
+                'flex min-w-0 flex-1 items-center gap-3 rounded-lg border border-nav-border bg-on-nav/10 p-2',
+                navState.collapsed && 'flex-none justify-center p-1.5',
               )}
             >
-              {logo ?? <JadaratMark className="size-6" />}
-            </span>
-            <span
-              className={cn(
-                'flex min-w-0 flex-1 flex-col justify-center gap-1',
-                navState.collapsed && 'sr-only',
-              )}
-            >
-              {logo ? (
-                <span className="flex h-16 max-w-[200px] items-center [&>img]:max-h-full [&>img]:w-auto [&>img]:object-contain">
+              {logo && !navState.collapsed ? (
+                <span className="flex h-12 min-w-0 flex-1 items-center rounded-md bg-surface px-2 [&>img]:max-h-10 [&>img]:w-auto [&>img]:max-w-full [&>img]:object-contain">
                   {logo}
                 </span>
-              ) : null}
-              {organization ? (
+              ) : (
                 <span
-                  className={cn(
-                    'line-clamp-2 pb-0.5 font-extrabold leading-[1.1] tracking-tight',
-                    logo ? 'sr-only' : 'text-brand-gradient text-[26px]',
-                  )}
-                  data-testid="nav-wordmark"
+                  aria-hidden="true"
+                  className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-[12px] bg-nav-current text-sm font-bold text-on-nav-item-current [&>img]:max-h-full [&>img]:object-contain"
                 >
-                  {organization}
+                  {logo ?? organizationInitials ?? <JadaratMark className="size-6" />}
                 </span>
-              ) : null}
-              <span className="truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-on-nav">
-                {brand}
+              )}
+              <span
+                className={cn(
+                  'flex min-w-0 flex-1 flex-col',
+                  (navState.collapsed || Boolean(logo)) && 'sr-only',
+                )}
+              >
+                {organization ? (
+                  <span
+                    className="truncate text-[15px] font-semibold leading-tight"
+                    data-testid="nav-wordmark"
+                  >
+                    {organization}
+                  </span>
+                ) : null}
+                <span className="truncate text-[12.5px] leading-snug">
+                  {organizationDetail ?? brand}
+                </span>
               </span>
-            </span>
-            {collapseLabels && !navState.collapsed ? (
-              <Tooltip content={collapseLabels.collapse} side="end">
-                <button
-                  ref={collapseButton}
-                  type="button"
-                  aria-label={collapseLabels.collapse}
-                  aria-controls={NAV_ID}
-                  aria-expanded="true"
-                  onClick={toggleCollapsed}
-                  data-testid="nav-collapse"
-                  className="hidden size-8 shrink-0 place-items-center rounded-lg text-on-nav transition-colors hover:bg-nav-item-hover lg:grid"
-                >
-                  <Icon name="chevron-start" />
-                </button>
-              </Tooltip>
-            ) : null}
+            </div>
             <button
               ref={closeButton}
               type="button"
               aria-label={closeMenuLabel}
               onClick={close}
-              className="grid size-11 shrink-0 place-items-center rounded-md text-on-nav hover:bg-nav-item-hover lg:hidden"
+              className="grid size-11 shrink-0 place-items-center rounded-full text-on-nav hover:bg-nav-item-hover lg:hidden"
             >
               <Icon name="close" className="size-5" />
             </button>
           </div>
           <nav
             aria-label={navigationLabel}
-            className="flex flex-1 flex-col px-3 py-4 lg:overflow-y-auto"
+            className="-mx-1 flex flex-1 flex-col px-1 lg:min-h-0 lg:overflow-y-auto"
           >
             <NavStateContext.Provider value={navState}>{navigation}</NavStateContext.Provider>
           </nav>
-          {collapseLabels && navState.collapsed ? (
-            <div className="hidden border-t border-nav-border p-3 lg:block">
-              <Tooltip content={collapseLabels.expand} side="end">
-                <button
-                  ref={expandButton}
-                  type="button"
-                  aria-label={collapseLabels.expand}
-                  aria-controls={NAV_ID}
-                  aria-expanded="false"
-                  onClick={toggleCollapsed}
-                  data-testid="nav-expand"
-                  className="grid h-10 w-full place-items-center rounded-xl text-on-nav transition-colors hover:bg-nav-item-hover"
-                >
-                  <Icon name="chevron-end" />
-                </button>
-              </Tooltip>
-            </div>
-          ) : null}
-          {navigationFooter && !navState.collapsed ? (
-            <div className="border-t border-nav-border p-4">{navigationFooter}</div>
+          {navigationFooter && !navState.collapsed ? <div>{navigationFooter}</div> : null}
+          {navigationFooter && navState.collapsed ? (
+            <span
+              aria-hidden="true"
+              className="hidden size-10 shrink-0 place-items-center rounded-[12px] bg-on-nav/10 lg:grid"
+            >
+              <span className="grid size-7 place-items-center rounded-md bg-nav-current text-on-nav-item-current">
+                <JadaratMark className="size-4" />
+              </span>
+            </span>
           ) : null}
         </div>
         <div className="flex min-w-0 flex-1 flex-col" inert={open || undefined}>
-          <header className="sticky top-0 z-30 flex min-h-16 items-center gap-3 border-b border-header-border bg-header px-4 text-on-header lg:gap-4 lg:px-6">
+          <header className="sticky top-0 z-30 flex min-h-16 items-center gap-1 border-b border-header-border bg-header px-2.5 text-on-header md:gap-3 lg:min-h-18 lg:ps-7 lg:pe-5">
             <button
               ref={menuButton}
               type="button"
@@ -321,27 +290,34 @@ export function AppShell({
               onClick={() => {
                 setOpen(true);
               }}
-              className="-ms-2 grid size-11 shrink-0 place-items-center rounded-xl text-on-header hover:bg-surface-hover lg:hidden"
+              className="grid size-11 shrink-0 place-items-center rounded-full text-on-header hover:bg-surface-hover lg:hidden"
             >
               <Icon name="menu" className="size-5" />
             </button>
-            {title ? (
-              <p
-                className="m-0 hidden min-w-0 max-w-xs shrink-0 truncate text-xl font-semibold tracking-tight md:block"
-                data-testid="top-bar-title"
-              >
-                {title}
-              </p>
+            {collapseLabels ? (
+              <Tooltip content={toggleLabel} side="bottom">
+                <button
+                  type="button"
+                  aria-label={toggleLabel}
+                  aria-controls={NAV_ID}
+                  aria-expanded={!collapsed}
+                  onClick={toggleCollapsed}
+                  data-testid="nav-collapse"
+                  className="-ms-2.5 hidden size-10 shrink-0 place-items-center rounded-full text-text-muted transition-colors hover:bg-surface-hover hover:text-text lg:grid"
+                >
+                  <Icon name="sidebar" className="size-5" />
+                </button>
+              </Tooltip>
             ) : null}
             {headerStart}
             {headerEnd ? (
-              <div className="ms-auto flex shrink-0 items-center gap-1">{headerEnd}</div>
+              <div className="ms-auto flex shrink-0 items-center gap-1 md:gap-2">{headerEnd}</div>
             ) : null}
           </header>
           <main
             id="main"
             tabIndex={-1}
-            className="w-full min-w-0 flex-1 px-4 py-6 text-sm lg:p-6 lg:pb-12"
+            className="w-full min-w-0 flex-1 px-4 pb-7 pt-4.5 text-sm md:px-6 lg:px-8 lg:pb-10 lg:pt-7"
           >
             {children}
           </main>
@@ -358,19 +334,19 @@ export interface PoweredByProps {
   readonly subtitle?: string | undefined;
 }
 
-/** The navigation's footer (Kawadir «Powered by …»): the Jadarat mark and the product line. */
+/** The navigation's footer («Powered by …»): the Jadarat mark and the product line, on the gradient. */
 export function PoweredBy({ title, subtitle }: PoweredByProps) {
   return (
-    <div className="flex items-center gap-3 rounded-xl bg-surface-sunken px-2 py-2.5">
+    <div className="flex items-center gap-2.5 rounded-lg bg-on-nav/10 p-3 text-on-nav">
       <span
         aria-hidden="true"
-        className="grid size-8 shrink-0 place-items-center rounded-lg bg-brand-gradient text-on-nav-item-current"
+        className="grid size-8 shrink-0 place-items-center rounded-md bg-nav-current text-on-nav-item-current"
       >
         <JadaratMark className="size-4" />
       </span>
       <span className="flex min-w-0 flex-col">
-        <span className="text-xs font-semibold text-text">{title}</span>
-        {subtitle ? <span className="text-[11px] text-text-muted">{subtitle}</span> : null}
+        <span className="text-[13.5px] font-semibold">{title}</span>
+        {subtitle ? <span className="text-[12.5px] leading-snug">{subtitle}</span> : null}
       </span>
     </div>
   );

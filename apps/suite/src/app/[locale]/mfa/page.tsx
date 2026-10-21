@@ -3,15 +3,19 @@ import { DEFAULT_TENANT_REGIONAL } from '@jadarat/platform-db';
 import { displayDateFormatter } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { getMfaPageStateForRequest } from '@jadarat/platform-identity/auth';
-import { Alert, Card } from '@jadarat/ui';
+import { Alert } from '@jadarat/ui';
 import type { Metadata } from 'next';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import { connection } from 'next/server';
-import { AuthHeaderBrand } from '../../../components/auth/auth-brand-layout';
+import {
+  AuthCard,
+  AuthFootnote,
+  AuthLanguageSwitch,
+  AuthShell,
+} from '../../../components/auth/auth-shell';
 import { SignOutButton } from '../../../components/auth/sign-out-button';
-import { LanguageToggle } from '../../../components/language-toggle';
 import {
   type MfaTexts,
   MfaChallenge,
@@ -19,10 +23,12 @@ import {
   MfaPending,
   MfaSetup,
 } from '../../../components/mfa/mfa-flow';
+import { authLanguageSwitch, authShellTexts } from '../../../lib/auth-shell-texts';
 import { mfaErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
 import { mayContinueWithoutApp, mfaPageMode, safeNextPath } from '../../../lib/mfa-view';
 import { getSessionState, redirectFor } from '../../../lib/session-state';
+import { authBrandOf, signInBrand } from '../../../lib/sign-in-brand';
 import { describeUserAgent } from '../../../lib/user-agent';
 
 /**
@@ -88,7 +94,6 @@ export default async function MfaPage({
   if (mode === 'done') redirect(next);
 
   const t = await getTranslations({ locale, namespace: 'mfa' });
-  const common = await getTranslations({ locale, namespace: 'common' });
   const auth = await getTranslations({ locale, namespace: 'auth' });
   // Dates as the organization shows them (T-M2-22) once the session acts in one (a step-up); before an
   // organization is reached (the sign-in code, set-up) the platform defaults.
@@ -150,28 +155,33 @@ export default async function MfaPage({
     } else intro = stepUpPath ? t('enrolStepUp') : t('enrolRequired');
   }
 
+  // Direction C (redesign package 1): the focused frame — the brand, the language pill and Sign out on
+  // top; the eyebrow, a big title under its tile, the intro as a banner, the step in a card, and the
+  // lost-device help always at the bottom.
   return (
-    <div className="flex min-h-dvh flex-col">
-      <header className="flex items-center justify-between gap-4 border-b border-border bg-surface px-4 py-3">
-        <AuthHeaderBrand locale={locale} productName={common('productName')} />
-        <div className="flex items-center gap-2">
-          <LanguageToggle locale={locale} path="/mfa" />
-          <SignOutButton
-            locale={locale}
-            label={auth('signOut')}
-            pendingLabel={auth('signingOut')}
-          />
-        </div>
-      </header>
-      <main
-        id="main"
-        className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-6 px-4 py-10"
-        data-testid={`mfa-${mode}`}
-      >
-        <div className="flex flex-col gap-1">
-          <p className="m-0 text-sm text-text-muted">{t('title')}</p>
-          <h1 className="m-0 text-2xl font-bold">{title}</h1>
-        </div>
+    <AuthShell
+      variant="focus"
+      brand={authBrandOf(await signInBrand(locale))}
+      texts={await authShellTexts(locale)}
+      languageSwitch={<AuthLanguageSwitch {...await authLanguageSwitch(locale, '/mfa')} />}
+      headerEnd={
+        <SignOutButton locale={locale} label={auth('signOut')} pendingLabel={auth('signingOut')} />
+      }
+      icon={
+        mode === 'challenge'
+          ? 'shield'
+          : mode === 'pending'
+            ? 'mail'
+            : mode === 'pending-elsewhere'
+              ? 'alert'
+              : 'phone'
+      }
+      iconTone={mode === 'pending-elsewhere' ? 'danger' : 'brand'}
+      eyebrow={t('title')}
+      title={title}
+      size="md"
+      data-testid={`mfa-${mode}`}
+      notices={
         <Alert
           tone={
             mode === 'challenge' || mode === 'enrol'
@@ -184,68 +194,75 @@ export default async function MfaPage({
         >
           {intro}
         </Alert>
-        <Card>
-          {mode === 'challenge' ? (
-            <MfaChallenge next={next} texts={texts} errors={errors} />
-          ) : mode === 'pending' && pendingHere ? (
-            <MfaPending
-              factorId={pendingHere.factorId}
-              next={next}
-              mayContinue={mayContinue}
-              texts={{
-                delay: t('pending.delay'),
-                codeLabel: t('pending.codeLabel'),
-                codeHint: t('pending.codeHint'),
-                codeFormat: t('pending.codeFormat'),
-                confirm: t('pending.confirm'),
-                confirming: t('pending.confirming'),
-                notMe: t('pending.notMe'),
-                resend: t('pending.resend'),
-                resending: t('pending.resending'),
-                resent: t('pending.resent'),
-                resentWaiting: t('pending.resentWaiting'),
-                cancel: t('pending.cancel'),
-                cancelling: t('pending.cancelling'),
-                continueWithout: t('continueWithout'),
-              }}
-              errors={errors}
-            />
-          ) : mode === 'pending-elsewhere' && pendingElsewhere ? (
-            <MfaElsewhere
-              locale={locale}
-              factorId={pendingElsewhere.factorId}
-              next={next}
-              mayContinue={mayContinue}
-              texts={{
-                notMeHint: t('elsewhere.notMeHint'),
-                remove: t('elsewhere.remove'),
-                removing: t('elsewhere.removing'),
-                removed: t('elsewhere.removed'),
-                newPassword: t('elsewhere.newPassword'),
-                continue: t('elsewhere.continue'),
-                itWasMe: t('elsewhere.itWasMe'),
-                itWasMeText: t('elsewhere.itWasMeText'),
-                itWasMeClosed: t('elsewhere.itWasMeClosed'),
-                continueWithout: t('continueWithout'),
-              }}
-              errors={errors}
-            />
-          ) : (
-            <MfaSetup
-              next={next}
-              skip={mode === 'prompt-admin' ? 'admin' : mode === 'prompt-grace' ? 'grace' : null}
-              texts={texts}
-              errors={errors}
-            />
-          )}
-        </Card>
-        {stepUpPath ? (
-          <p className="m-0">
-            <a href={stepUpPath}>{t('back')}</a>
-          </p>
-        ) : null}
-        <p className="m-0 text-sm text-text-muted">{t('lostDevice')}</p>
-      </main>
-    </div>
+      }
+      after={
+        <>
+          {stepUpPath ? (
+            <p className="m-0">
+              <a href={stepUpPath} className="font-semibold text-primary-text">
+                {t('back')}
+              </a>
+            </p>
+          ) : null}
+          <AuthFootnote>{t('lostDevice')}</AuthFootnote>
+        </>
+      }
+    >
+      <AuthCard>
+        {mode === 'challenge' ? (
+          <MfaChallenge next={next} texts={texts} errors={errors} />
+        ) : mode === 'pending' && pendingHere ? (
+          <MfaPending
+            factorId={pendingHere.factorId}
+            next={next}
+            mayContinue={mayContinue}
+            texts={{
+              delay: t('pending.delay'),
+              codeLabel: t('pending.codeLabel'),
+              codeHint: t('pending.codeHint'),
+              codeFormat: t('pending.codeFormat'),
+              confirm: t('pending.confirm'),
+              confirming: t('pending.confirming'),
+              notMe: t('pending.notMe'),
+              resend: t('pending.resend'),
+              resending: t('pending.resending'),
+              resent: t('pending.resent'),
+              resentWaiting: t('pending.resentWaiting'),
+              cancel: t('pending.cancel'),
+              cancelling: t('pending.cancelling'),
+              continueWithout: t('continueWithout'),
+            }}
+            errors={errors}
+          />
+        ) : mode === 'pending-elsewhere' && pendingElsewhere ? (
+          <MfaElsewhere
+            locale={locale}
+            factorId={pendingElsewhere.factorId}
+            next={next}
+            mayContinue={mayContinue}
+            texts={{
+              notMeHint: t('elsewhere.notMeHint'),
+              remove: t('elsewhere.remove'),
+              removing: t('elsewhere.removing'),
+              removed: t('elsewhere.removed'),
+              newPassword: t('elsewhere.newPassword'),
+              continue: t('elsewhere.continue'),
+              itWasMe: t('elsewhere.itWasMe'),
+              itWasMeText: t('elsewhere.itWasMeText'),
+              itWasMeClosed: t('elsewhere.itWasMeClosed'),
+              continueWithout: t('continueWithout'),
+            }}
+            errors={errors}
+          />
+        ) : (
+          <MfaSetup
+            next={next}
+            skip={mode === 'prompt-admin' ? 'admin' : mode === 'prompt-grace' ? 'grace' : null}
+            texts={texts}
+            errors={errors}
+          />
+        )}
+      </AuthCard>
+    </AuthShell>
   );
 }

@@ -32,7 +32,7 @@ describe('brand CSS for the shell and the sign-in page (WP-ADM-02)', () => {
     const css = brandCss({ primaryColor: '#7A1F2B', secondaryColor: '#9B2C3A', useGradient: true });
     expect(css).toContain(':root {');
     expect(css).toContain(':root[data-theme="dark"]');
-    expect(css).toContain('--color-nav-item-current:');
+    expect(css).toContain('--color-brand:');
     expect(css).not.toContain('<');
     expect(css?.match(/--[a-z-]+: [^;]+;/g)?.every((line) => /: #[0-9A-F]{6};$/.test(line))).toBe(
       true,
@@ -61,13 +61,13 @@ describe('the live preview', () => {
       'light',
     );
     expect(Object.keys(jadarat)).toEqual(Object.keys(burgundy));
-    expect(jadarat['--color-nav-item-current']).toBe('#2F4858');
-    expect(burgundy['--color-nav-item-current']).not.toBe(jadarat['--color-nav-item-current']);
+    expect(jadarat['--color-brand']).toBe('#2F4858');
+    expect(burgundy['--color-brand']).not.toBe(jadarat['--color-brand']);
     const dark = brandProperties(
       { primaryColor: '#7A1F2B', secondaryColor: '#9B2C3A', useGradient: false },
       'dark',
     );
-    expect(dark['--color-nav-item-current']).toBe(dark['--color-nav-item-current-end']);
+    expect(dark['--color-brand']).toBe(dark['--color-brand-end']);
     expect(
       brandProperties({ primaryColor: 'nope', secondaryColor: 'nope', useGradient: true }, 'light'),
     ).toEqual(jadarat);

@@ -206,6 +206,13 @@ for (const t of [
   test(`${t.locale}: sign-in asks for the e-mail first, then the password`, async ({ page }) => {
     await page.goto(`/${t.locale}/sign-in`);
     await expect(page.locator('#password')).toHaveCount(0);
+    // Direction C: the main button is never disabled — pressed with nothing typed, it says so on the field.
+    const next = page.getByRole('button', { name: t.continue });
+    await expect(next).toBeEnabled();
+    await next.click();
+    await expect(page.locator('#email-error')).toHaveText(t.invalid);
+    await expect(page.locator('#email')).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.locator('#email')).toBeFocused();
     await expect(page.getByRole('link', { name: t.join })).toHaveAttribute(
       'href',
       `/${t.locale}/sign-up`,

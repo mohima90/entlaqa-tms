@@ -82,7 +82,16 @@
     "idleSignOut": "Sign out",
     "needsForms": "Needs forms",
     "structure": "Structure",
-    "branches": "Branches"
+    "branches": "Branches",
+    "searchHintNavigate": "to navigate",
+    "searchHintOpen": "to open",
+    "searchHintClose": "to close",
+    "shortcutsTitle": "Keyboard shortcuts",
+    "shortcuts": {
+      "close": "Close a panel, menu or dialog",
+      "rows": "Move between rows",
+      "open": "Open the selected row"
+    }
   },
   "errors": {
     "malformedRequest": "We couldn't process this request. Refresh the page and try again.",

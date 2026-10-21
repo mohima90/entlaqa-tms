@@ -4,12 +4,13 @@ export {
   type ButtonProps,
   type ButtonSize,
   type ButtonVariant,
+  Spinner,
   buttonClasses,
   iconButtonClasses,
 } from './button';
 export { Card, type CardProps } from './card';
 export { AppShell, type AppShellProps, PoweredBy, type PoweredByProps } from './app-shell';
-export { TextField, type TextFieldProps } from './text-field';
+export { FieldError, TextField, type TextFieldProps, fieldInputClasses } from './text-field';
 export { Alert, type AlertProps, type AlertTone } from './alert';
 export { Badge, type BadgeProps, type BadgeTone } from './badge';
 export { ICON_NAMES, Icon, type IconName, type IconProps, JadaratMark } from './icons';
@@ -52,7 +53,26 @@ export {
   DropdownMenuTrigger,
 } from './dropdown-menu';
 export { EmptyState, type EmptyStateProps } from './empty-state';
-export { PageHeader, type PageHeaderProps } from './page-header';
+export { type Breadcrumb, PageHeader, type PageHeaderProps } from './page-header';
+// Direction C «Bold product» building blocks (redesign package 1, PO 21 Oct 2026).
+export { type ViewCard, ViewCards, type ViewCardsProps } from './view-cards';
+export {
+  FilterBar,
+  FilterPill,
+  type FilterPillProps,
+  ListCard,
+  ListCards,
+  ListSearch,
+  type ListSearchProps,
+  Pagination,
+  type PaginationProps,
+  SortHeader,
+  type SortHeaderProps,
+  TableSkeleton,
+} from './list-patterns';
+export { SaveBar, type SaveBarProps, type SaveBarState } from './save-bar';
+export { FormSection, type FormSectionProps, SidePanel, type SidePanelProps } from './side-panel';
+export { type Shortcut, ShortcutsDialog, type ShortcutsDialogProps } from './shortcuts-dialog';
 export {
   NotificationBell,
   type NotificationBellProps,
@@ -60,6 +80,7 @@ export {
   type ThemeMenuProps,
   UserMenu,
   type UserMenuProps,
+  topBarButtonClasses,
 } from './shell-controls';
 export {
   NAV_COOKIE,

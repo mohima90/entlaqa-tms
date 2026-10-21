@@ -73,6 +73,22 @@ const GROUPS: readonly { key: string; heading?: Copy; entries: readonly DemoEntr
 
 const SOON: Copy = { ar: 'قريبًا', en: 'Coming soon' };
 
+/** The top bar's labelled language pill (as LanguageToggle in the suite). */
+const LANGUAGE_PILL =
+  'inline-flex min-h-10 shrink-0 items-center gap-2 rounded-full border border-border bg-surface px-3 text-[14.5px] font-medium text-text no-underline hover:bg-surface-hover md:min-h-11 md:px-4';
+
+/** The shortcuts the product has (the same list as the suite's account menu). */
+export const DEMO_SHORTCUTS: readonly { readonly label: Copy; readonly keys: readonly string[] }[] =
+  [
+    { label: { ar: 'البحث في الصفحات', en: 'Search pages' }, keys: ['Ctrl', 'K'] },
+    {
+      label: { ar: 'إغلاق اللوحة أو القائمة أو النافذة', en: 'Close a panel, menu or dialog' },
+      keys: ['Esc'],
+    },
+    { label: { ar: 'التنقل بين الصفوف', en: 'Move between rows' }, keys: ['↑', '↓'] },
+    { label: { ar: 'فتح الصف المحدد', en: 'Open the selected row' }, keys: ['↵'] },
+  ];
+
 function demoNavigation(globals: Globals, current: DemoPage) {
   return GROUPS.map((group) => (
     <NavGroup
@@ -112,21 +128,21 @@ export function DemoShell({
   globals,
   collapsed = false,
   current,
-  title,
   children,
 }: {
   readonly globals: Globals;
   readonly collapsed?: boolean;
   readonly current: DemoPage;
-  /** The page title in the top bar. */
-  readonly title: Copy;
+  /** The page's title (the page header shows it since direction C; kept for the stories' readability). */
+  readonly title?: Copy;
   readonly children: ReactNode;
 }) {
   return (
     <AppShell
       brand={pick(globals, { ar: 'جدارات · التدريب', en: 'Jadarat TMS' })}
       organization={pick(globals, { ar: 'شركة الراية', en: 'Al Raya Company' })}
-      title={pick(globals, title)}
+      organizationInitials={pick(globals, { ar: 'ش', en: 'AR' })}
+      organizationDetail={pick(globals, { ar: 'مدير المنظمة', en: 'Organization Admin' })}
       initialCollapsed={collapsed}
       collapseLabels={{
         collapse: pick(globals, { ar: 'طيّ القائمة', en: 'Collapse menu' }),
@@ -151,6 +167,11 @@ export function DemoShell({
             placeholder: pick(globals, { ar: 'اكتب اسم صفحة', en: 'Type a page name' }),
             empty: pick(globals, { ar: 'لا توجد نتائج.', en: 'No results.' }),
             close: pick(globals, { ar: 'إغلاق', en: 'Close' }),
+            hints: {
+              navigate: pick(globals, { ar: 'للتنقل', en: 'to navigate' }),
+              open: pick(globals, { ar: 'للفتح', en: 'to open' }),
+              close: pick(globals, { ar: 'للإغلاق', en: 'to close' }),
+            },
           }}
           onNavigate={() => undefined}
         />
@@ -168,14 +189,12 @@ export function DemoShell({
           />
           <a
             href="#language"
-            aria-label={pick(globals, {
-              ar: 'التبديل إلى اللغة الإنجليزية',
-              en: 'Switch to Arabic',
-            })}
-            title={pick(globals, { ar: 'English', en: 'العربية' })}
-            className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl text-text-muted no-underline hover:bg-surface-hover hover:text-text pointer-coarse:size-11"
+            hrefLang={pick(globals, { ar: 'en', en: 'ar' })}
+            lang={pick(globals, { ar: 'en', en: 'ar' })}
+            className={LANGUAGE_PILL}
           >
-            <Icon name="globe" className="size-5" />
+            <Icon name="globe" className="size-[18px]" />
+            {pick(globals, { ar: 'English', en: 'العربية' })}
           </a>
           <NotificationBell
             texts={{
@@ -187,7 +206,6 @@ export function DemoShell({
               }),
             }}
           />
-          <span aria-hidden="true" className="mx-2 hidden h-6 w-px bg-border md:block" />
           <UserMenu
             name={pick(globals, { ar: 'منيرة القحطاني', en: 'Munira Alqahtani' })}
             subtitle={pick(globals, {
@@ -200,6 +218,14 @@ export function DemoShell({
               signOut: pick(globals, { ar: 'تسجيل الخروج', en: 'Sign out' }),
             }}
             onSignOut={() => Promise.resolve()}
+            shortcuts={{
+              title: pick(globals, { ar: 'اختصارات لوحة المفاتيح', en: 'Keyboard shortcuts' }),
+              closeLabel: pick(globals, { ar: 'إغلاق', en: 'Close' }),
+              items: DEMO_SHORTCUTS.map((item) => ({
+                label: pick(globals, item.label),
+                keys: item.keys,
+              })),
+            }}
           />
         </>
       }

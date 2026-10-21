@@ -31,7 +31,7 @@ export function Avatar({ name, size = 'sm', tone = 'brand', src, className }: Av
       className={cn(
         'grid shrink-0 place-items-center overflow-hidden rounded-full font-semibold',
         tone === 'brand'
-          ? 'bg-brand-gradient text-on-nav-item-current ring-2 ring-border'
+          ? 'bg-brand-gradient text-on-brand ring-2 ring-border'
           : 'bg-primary-subtle text-primary-text',
         size === 'sm' ? 'size-8 text-xs' : 'size-10 text-sm',
         className,

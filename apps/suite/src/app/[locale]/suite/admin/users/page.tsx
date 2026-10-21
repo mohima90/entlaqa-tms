@@ -13,7 +13,7 @@ import {
   EmptyState,
   Icon,
   PageHeader,
-  TabNav,
+  ViewCards,
   buttonClasses,
   tableClasses,
   toolbarFieldClasses,
@@ -22,7 +22,6 @@ import { hasLocale } from 'next-intl';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import { SuiteShell } from '../../../../../components/suite-shell';
-import { TeamStats } from '../../../../../components/users/team-stats';
 import { MemberRoleMenu } from '../../../../../components/users/member-role-menu';
 import { ReactivateMemberButton } from '../../../../../components/users/reactivate-member-button';
 import { roleOptions } from '../../../../../lib/role-choice';
@@ -75,8 +74,6 @@ const STATUS_TONE: Record<'active' | 'invited' | 'suspended', BadgeTone> = {
 };
 const fieldClass = toolbarFieldClasses;
 const selectClass = `${toolbarFieldClasses} select-chevron pe-10`;
-/** Views of the Members tab (Kawadir team page): the status filter under it. */
-const MEMBER_TABS = ['all', 'active', 'deactivated'] as const;
 
 /** Text keys of the invitations table and banner (namespace `invitations.list`). */
 const INVITATION_LIST_KEYS = [
@@ -387,52 +384,21 @@ async function UsersList({
       {banners ? await importBanners(locale, banners) : null}
       {expired.length > 0 ? await expiredBanner(locale, expired) : null}
 
-      <TeamStats
-        label={t('statsLabel')}
-        counts={counts}
-        texts={{
-          total: t('stats.total'),
-          active: t('stats.active'),
-          pending: t('stats.pending'),
-          deactivated: t('stats.deactivated'),
-        }}
-        format={(n) => format.number(n, 'integer')}
-        data-testid="users-stats"
-      />
-
-      <TabNav
+      {/* Saved-view cards with big numbers (direction C, redesign package 1): the four status views of
+          the list — All, Active, Pending invites, Deactivated — each its own address, the current one on
+          the brand gradient. They replace the summary cards and the two rows of tabs. */}
+      <ViewCards
         label={t('viewsLabel')}
-        current={activeTab === 'invited' ? 'invited' : 'members'}
-        items={[
-          {
-            key: 'members',
-            href: usersListHref(locale, params, { tab: undefined, page: undefined }),
-            icon: 'people',
-            label: t('tabs.members'),
-            count: format.number(counts.all, 'integer'),
-          },
-          {
-            key: 'invited',
-            href: usersListHref(locale, params, { tab: 'invited', page: undefined }),
-            icon: 'mail',
-            label: t('tabs.invited'),
-            count: format.number(counts.invited, 'integer'),
-          },
-        ]}
+        current={activeTab}
+        data-testid="users-views"
+        items={TABS.map((tab) => ({
+          key: tab,
+          href: usersListHref(locale, params, { tab, page: undefined }),
+          label: t(`tabs.${tab}`),
+          count: format.number(counts[tab], 'integer'),
+          testId: `users-view-${tab}`,
+        }))}
       />
-      {activeTab === 'invited' ? null : (
-        <TabNav
-          label={t('statusFilterLabel')}
-          variant="segmented"
-          current={activeTab}
-          items={MEMBER_TABS.map((tab) => ({
-            key: tab,
-            href: usersListHref(locale, params, { tab, page: undefined }),
-            label: t(`tabs.${tab}`),
-            count: format.number(counts[tab], 'integer'),
-          }))}
-        />
-      )}
 
       <form
         method="get"

@@ -5,7 +5,7 @@ import { getTranslations } from 'next-intl/server';
 import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 import { connection } from 'next/server';
-import { AuthLanguageSwitch } from '../../../components/auth/auth-shell';
+import { AuthAlt, AuthLanguageSwitch } from '../../../components/auth/auth-shell';
 import { EndedSessionSignOut } from '../../../components/auth/ended-session-sign-out';
 import { SignInView } from '../../../components/auth/sign-in-form';
 import { BrandStyle } from '../../../components/branding/brand-style';
@@ -32,8 +32,8 @@ export async function generateMetadata({
 }
 
 /**
- * Sign-in (T-M1-D03; UI and UX of Kawadir ATS one-to-one, PO 16 Oct 2026): the split frame with the brand
- * panel, «مرحبًا بعودتك» / "Welcome back", the work e-mail first and then the password (the e-mailed code
+ * Sign-in (T-M1-D03; Kawadir ATS's flow, PO 16 Oct 2026; direction C look, redesign package 1): the split
+ * frame with the brand panel, «مرحبًا بعودتك» / "Welcome back", the work e-mail first and then the password (the e-mailed code
  * comes later with the platform sender). Links to "forgot password" (screen 10, T-M2-08) and to joining
  * with an invitation code (/sign-up); shows the notice after a password reset or an ended session.
  */
@@ -95,22 +95,18 @@ export default async function SignInPage({
         }
         before={
           status.auth ? null : (
-            <p className="mb-4 mt-0 text-text-muted" data-testid="auth-not-configured">
+            <Alert tone="info" data-testid="auth-not-configured">
               {t('notConfigured')}
-            </p>
+            </Alert>
           )
         }
         after={
-          <p className="mb-0 mt-6 text-center text-sm text-text-muted">
+          <AuthAlt>
             {t('haveInvitation')}{' '}
-            <a
-              href={`/${locale}/sign-up`}
-              className="font-semibold text-primary-text"
-              data-testid="join-with-code-link"
-            >
+            <a href={`/${locale}/sign-up`} data-testid="join-with-code-link">
               {t('joinWithCode')}
             </a>
-          </p>
+          </AuthAlt>
         }
         labels={{
           email: t('emailLabel'),

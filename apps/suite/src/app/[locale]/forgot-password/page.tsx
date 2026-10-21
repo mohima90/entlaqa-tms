@@ -1,6 +1,7 @@
 import { routing } from '@jadarat/platform-i18n/routing';
 import type { Metadata } from 'next';
 import { hasLocale } from 'next-intl';
+import { Alert } from '@jadarat/ui';
 import { getTranslations } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
@@ -42,20 +43,21 @@ export default async function ForgotPasswordPage({
   const errorsT = await getTranslations({ locale, namespace: 'errors' });
   return (
     <AuthShell
-      variant="simple"
+      variant="split"
+      icon="key"
       brand={authBrandOf(await signInBrand(locale))}
       texts={await authShellTexts(locale)}
       languageSwitch={
         <AuthLanguageSwitch {...await authLanguageSwitch(locale, '/forgot-password')} />
       }
       title={t('forgot.pageTitle')}
-      subtitle={<p className="m-0">{t('forgot.intro')}</p>}
+      subtitle={<p>{t('forgot.intro')}</p>}
       panel={{ icon: 'mail', title: t('forgot.panelTitle'), text: t('forgot.panelText') }}
       notices={
         status.auth ? undefined : (
-          <p className="m-0 text-text-muted" data-testid="forgot-not-configured">
+          <Alert tone="info" data-testid="forgot-not-configured">
             {errorsT('notConfigured')}
-          </p>
+          </Alert>
         )
       }
     >

@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useId, useRef, useState, useTransition } from 'react';
-import { Avatar } from './avatar';
-import { iconButtonClasses } from './button';
+import { Avatar, initialsOf } from './avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,9 +14,15 @@ import {
 } from './dropdown-menu';
 import { EmptyState } from './empty-state';
 import { Icon, type IconName } from './icons';
+import { type Shortcut, ShortcutsDialog } from './shortcuts-dialog';
 import { THEME_MODES, type ThemeMode, applyThemeMode } from './shell-preferences';
 
-const topBarButtonClasses = iconButtonClasses;
+/**
+ * Icon-only buttons of the top bar (direction C): 44 px round, outlined, muted icon (40 px on phones,
+ * still ≥ 24 px targets with spacing; 44 px on touch screens).
+ */
+export const topBarButtonClasses =
+  'relative grid size-10 shrink-0 place-items-center rounded-full border border-border bg-surface text-text-muted transition-colors hover:bg-surface-hover hover:text-text pointer-coarse:size-11 md:size-11';
 
 const THEME_ICON: Record<ThemeMode, IconName> = { light: 'sun', dark: 'moon', system: 'monitor' };
 
@@ -156,9 +161,20 @@ export interface UserMenuProps {
   readonly profileCurrent?: boolean | undefined;
   /** The person's photo, when they have one (initials otherwise). */
   readonly photo?: string | undefined;
+  /** The keyboard shortcuts list (a menu entry that opens it in a small dialog). */
+  readonly shortcuts?:
+    | {
+        readonly title: string;
+        readonly closeLabel: string;
+        readonly items: readonly Shortcut[];
+      }
+    | undefined;
 }
 
-/** The avatar menu (Kawadir): picture, name and "Organization · Role"; My profile; sign out. */
+/**
+ * The account menu (direction C): the avatar on the brand gradient; inside, the picture, name and
+ * "Organization · Role", My profile, the keyboard shortcuts list (when given) and sign out.
+ */
 export function UserMenu({
   name,
   subtitle,
@@ -167,73 +183,98 @@ export function UserMenu({
   onSignOut,
   profileCurrent = false,
   photo,
+  shortcuts,
 }: UserMenuProps) {
   const [pending, startTransition] = useTransition();
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        className="flex min-h-10 items-center gap-3 rounded-xl px-1.5 text-start text-on-header transition-colors hover:bg-surface-hover pointer-coarse:min-h-11 md:px-2"
-        data-testid="account-menu"
-      >
-        {/* Kawadir account chip: the picture with a green «online» dot (this is the signed-in person). */}
-        <span className="relative shrink-0">
-          <Avatar name={name} src={photo} />
-          <span
-            aria-hidden="true"
-            className="absolute -bottom-0.5 -end-0.5 size-3 rounded-full bg-success ring-2 ring-header"
-          />
-        </span>
-        <span className="sr-only flex-col xl:not-sr-only xl:flex">
-          <span className="max-w-48 truncate text-sm font-medium leading-tight text-on-header-muted">
-            {name}
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          ref={trigger}
+          className="flex shrink-0 items-center rounded-full text-start text-on-header"
+          data-testid="account-menu"
+        >
+          {photo ? (
+            <Avatar name={name} src={photo} className="size-10 md:size-11" />
+          ) : (
+            <span
+              aria-hidden="true"
+              className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-gradient text-sm font-semibold text-on-brand md:size-11"
+            >
+              {initialsOf(name)}
+            </span>
+          )}
+          {/* The name says whose account it is (the avatar is decorative). */}
+          <span className="sr-only">
+            {name}, {subtitle}
           </span>
-          <span className="max-w-60 truncate text-[11px] leading-tight text-on-header-muted">
-            {subtitle}
-          </span>
-        </span>
-        <Icon name="chevron-end" className="hidden text-text-muted xl:block" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-64">
-        <DropdownMenuHeader>
-          <div className="flex items-center gap-3">
-            <Avatar name={name} size="md" src={photo} />
-            <div className="flex min-w-0 flex-col">
-              <span className="truncate text-sm font-semibold">{name}</span>
-              <span className="truncate text-xs text-text-muted">{subtitle}</span>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="w-64">
+          <DropdownMenuHeader>
+            <div className="flex items-center gap-3">
+              <Avatar name={name} size="md" src={photo} />
+              <div className="flex min-w-0 flex-col">
+                <span className="truncate text-sm font-semibold">{name}</span>
+                <span className="truncate text-xs text-text-muted">{subtitle}</span>
+              </div>
             </div>
-          </div>
-        </DropdownMenuHeader>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <a
-            href={profileHref}
-            aria-current={profileCurrent ? 'page' : undefined}
-            data-testid="my-profile-link"
-          >
-            <Icon name="user" className="text-text-muted" />
-            {texts.profile}
-          </a>
-        </DropdownMenuItem>
-        {texts.signOut && onSignOut ? (
-          <>
-            <DropdownMenuSeparator />
+          </DropdownMenuHeader>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
+            <a
+              href={profileHref}
+              aria-current={profileCurrent ? 'page' : undefined}
+              data-testid="my-profile-link"
+            >
+              <Icon name="user" className="text-text-muted" />
+              {texts.profile}
+            </a>
+          </DropdownMenuItem>
+          {shortcuts ? (
             <DropdownMenuItem
-              tone="danger"
-              disabled={pending}
-              data-testid="sign-out"
-              onSelect={(event) => {
-                event.preventDefault();
-                startTransition(async () => {
-                  await onSignOut();
-                });
+              data-testid="shortcuts-open"
+              onSelect={() => {
+                setShowShortcuts(true);
               }}
             >
-              <Icon name="sign-out" />
-              {pending ? (texts.signingOut ?? texts.signOut) : texts.signOut}
+              <Icon name="keyboard" className="text-text-muted" />
+              {shortcuts.title}
             </DropdownMenuItem>
-          </>
-        ) : null}
-      </DropdownMenuContent>
-    </DropdownMenu>
+          ) : null}
+          {texts.signOut && onSignOut ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                tone="danger"
+                disabled={pending}
+                data-testid="sign-out"
+                onSelect={(event) => {
+                  event.preventDefault();
+                  startTransition(async () => {
+                    await onSignOut();
+                  });
+                }}
+              >
+                <Icon name="sign-out" />
+                {pending ? (texts.signingOut ?? texts.signOut) : texts.signOut}
+              </DropdownMenuItem>
+            </>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {shortcuts ? (
+        <ShortcutsDialog
+          open={showShortcuts}
+          onClose={() => {
+            setShowShortcuts(false);
+            // Back to the account menu's button (the menu item that opened the list is gone).
+            trigger.current?.focus();
+          }}
+          {...shortcuts}
+        />
+      ) : null}
+    </>
   );
 }

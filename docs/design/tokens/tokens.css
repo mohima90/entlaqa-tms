@@ -24,6 +24,8 @@
   --font-size-latin-2xl: 1.5rem; --font-size-arabic-2xl: 1.6875rem;
   --font-size-latin-3xl: 1.875rem; --font-size-arabic-3xl: 2.0625rem;
   --font-size-latin-4xl: 2.25rem; --font-size-arabic-4xl: 2.5rem;
+  --font-size-latin-5xl: 2.375rem; --font-size-arabic-5xl: 2.5rem; /* page titles (direction C) */
+  --font-size-latin-6xl: 2.75rem; --font-size-arabic-6xl: 2.875rem; /* sign-in titles (direction C) */
   --line-height-arabic-body: 1.7;
   --line-height-arabic-heading: 1.45;
   --line-height-latin-body: 1.5;
@@ -42,6 +44,8 @@
   --font-size-2xl: var(--font-size-arabic-2xl);
   --font-size-3xl: var(--font-size-arabic-3xl);
   --font-size-4xl: var(--font-size-arabic-4xl);
+  --font-size-5xl: var(--font-size-arabic-5xl);
+  --font-size-6xl: var(--font-size-arabic-6xl);
   --line-height-body: var(--line-height-arabic-body);
   --line-height-heading: var(--line-height-arabic-heading);
   --letter-spacing-caps: 0; /* never letter-space Arabic: it breaks joining */
@@ -61,6 +65,7 @@
   --space-16: 4rem;
   /* radius (sm–xl come from the brand theme) */
   --radius-none: 0;
+  --radius-2xl: 32px; /* large panels: the sign-in brand panel (direction C) */
   --radius-full: 9999px;
   /* elevation (1–4 come from the brand theme) */
   --elevation-0: none;
@@ -114,6 +119,8 @@
   --font-size-2xl: var(--font-size-latin-2xl);
   --font-size-3xl: var(--font-size-latin-3xl);
   --font-size-4xl: var(--font-size-latin-4xl);
+  --font-size-5xl: var(--font-size-latin-5xl);
+  --font-size-6xl: var(--font-size-latin-6xl);
   --line-height-body: var(--line-height-latin-body);
   --line-height-heading: var(--line-height-latin-heading);
   --letter-spacing-caps: 0.04em;

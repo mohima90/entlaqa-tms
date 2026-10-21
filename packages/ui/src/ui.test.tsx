@@ -27,7 +27,7 @@ describe('Button', () => {
     expect(html).toContain('type="button"');
     // Kawadir btn-brand: the brand gradient with its own text colour (checked on both ends) and a glow.
     expect(html).toContain('bg-brand-gradient');
-    expect(html).toContain('text-on-nav-item-current');
+    expect(html).toContain('text-on-brand');
     expect(html).toContain('shadow-brand-glow');
     expect(html).toContain('حفظ');
   });
@@ -40,11 +40,14 @@ describe('Button', () => {
     );
     expect(html).toContain('type="submit"');
     expect(html).toContain('bg-danger');
-    expect(html).toContain('min-h-12');
+    // Direction C: pills, 44 px by default, 54 px large.
+    expect(html).toContain('min-h-13.5');
+    expect(html).toContain('rounded-full');
+    expect(buttonClasses()).toContain('min-h-11');
     expect(buttonClasses({ variant: 'ghost', size: 'sm', className: 'x' })).toContain('x');
     expect(buttonClasses({ variant: 'secondary' })).toContain('border-border-strong');
     expect(buttonClasses({ variant: 'danger-outline' })).toContain(
-      'text-danger border border-danger',
+      'border-danger bg-surface text-danger',
     );
   });
 });
@@ -86,18 +89,21 @@ describe('AppShell', () => {
     expect(html).toMatch(/<a href="#main"[^>]*>تخطَّ إلى المحتوى<\/a>/);
   });
 
-  it('shows the organization and product names on the white navigation, with the Jadarat mark', () => {
+  it('shows the organization and product names on the gradient navigation, with the Jadarat mark', () => {
     expect(html).toContain('bg-nav-gradient');
-    expect(html).toContain('bg-brand-gradient');
+    // The organization's tile is the current-entry pill colour (white on the gradient, light mode).
+    expect(html).toContain('bg-nav-current');
     expect(html).toContain('data-nav-scope');
     expect(html).toContain('جدارات · التدريب');
     expect(html).toContain('شركة الراية');
     expect(html).toMatch(/<svg[^>]*aria-hidden="true"/);
   });
 
-  it('sets the organization name as a gradient wordmark in the logo area, or shows its logo', () => {
+  it("sets the organization's name in its chip, or shows its logo", () => {
     expect(html).toMatch(/data-testid="nav-wordmark"/);
-    expect(html).toMatch(/class="[^"]*text-brand-gradient[^"]*"[^>]*data-testid="nav-wordmark"/);
+    expect(html).toMatch(
+      /class="[^"]*truncate[^"]*"[^>]*data-testid="nav-wordmark"[^>]*>شركة الراية/,
+    );
     const withLogo = renderToStaticMarkup(
       <AppShell
         brand="b"
@@ -113,8 +119,8 @@ describe('AppShell', () => {
       </AppShell>,
     );
     expect(withLogo).toContain('alt="شعار شركة الراية"');
-    expect(withLogo).toMatch(/class="[^"]*sr-only[^"]*"[^>]*data-testid="nav-wordmark"/);
-    expect(withLogo).not.toContain('text-brand-gradient');
+    // With a logo the name stays for screen readers only.
+    expect(withLogo).toMatch(/class="[^"]*sr-only[^"]*"><span[^>]*data-testid="nav-wordmark"/);
   });
 
   it('opens the navigation on narrow screens with a disclosure button (closed at first)', () => {
@@ -138,7 +144,7 @@ describe('AppShell', () => {
   it('uses logical (direction-agnostic) utilities only', () => {
     const classes = [...html.matchAll(/class="([^"]*)"/g)].map((m) => m[1]).join(' ');
     expect(classes).not.toMatch(PHYSICAL);
-    expect(classes).toContain('border-e');
+    expect(classes).toContain('ms-auto');
     expect(classes).toContain('start-2');
   });
 
@@ -161,10 +167,9 @@ describe('AppShell', () => {
     expect(minimal).not.toContain('data-testid="nav-collapse"');
   });
 
-  it('collapses on a desktop from 260 to 72 px when given the labels, starting as remembered', () => {
+  it('collapses on a desktop from 264 to 84 px when given the labels, starting as remembered', () => {
     const props = {
       brand: 'جدارات · التدريب',
-      title: 'أعضاء الفريق',
       navigation: <a href="/ar/suite">الرئيسية</a>,
       navigationFooter: <PoweredBy title="مدعوم من جدارات" subtitle="نظام إدارة التدريب" />,
       navigationLabel: 'التنقل الرئيسي',
@@ -174,19 +179,20 @@ describe('AppShell', () => {
       collapseLabels: { collapse: 'طيّ القائمة', expand: 'توسيع القائمة' },
     } as const;
     const expanded = renderToStaticMarkup(<AppShell {...props}>x</AppShell>);
-    expect(expanded).toContain('lg:w-65');
+    expect(expanded).toContain('lg:w-66');
     expect(expanded).not.toContain('data-nav-collapsed');
     expect(expanded).toMatch(
       /<button[^>]*aria-label="طيّ القائمة"[^>]*aria-controls="app-navigation"[^>]*aria-expanded="true"/,
     );
     expect(expanded).toContain('مدعوم من جدارات');
-    expect(expanded).toMatch(/<p[^>]*data-testid="top-bar-title"[^>]*>أعضاء الفريق<\/p>/);
+    // Direction C: the page header carries the title; the top bar has none.
+    expect(expanded).not.toContain('data-testid="top-bar-title"');
     const collapsed = renderToStaticMarkup(
       <AppShell {...props} initialCollapsed>
         x
       </AppShell>,
     );
-    expect(collapsed).toContain('lg:w-18');
+    expect(collapsed).toContain('lg:w-21');
     expect(collapsed).toContain('data-nav-collapsed="true"');
     expect(collapsed).toMatch(/<button[^>]*aria-label="توسيع القائمة"[^>]*aria-expanded="false"/);
     // Collapsed: no footer, the names stay for screen readers.
@@ -241,8 +247,9 @@ describe('Alert', () => {
     expect(info).toContain('role="status"');
     expect(info).toContain('bg-info-subtle');
     // Kawadir notes: rounded-xl with the tone's icon (decorative).
-    expect(info).toContain('rounded-xl');
-    expect(info).toMatch(/<svg[^>]*class="[^"]*text-info"[^>]*aria-hidden="true"/);
+    expect(info).toContain('text-info');
+    expect(info).toContain('rounded-md');
+    expect(info).toMatch(/<svg[^>]*aria-hidden="true"/);
     expect(info).toContain('تم الحفظ');
     expect(renderToStaticMarkup(<Alert tone="success" title="تم" />)).not.toContain('mt-1');
   });
@@ -250,7 +257,15 @@ describe('Alert', () => {
 
 describe('Badge', () => {
   it('renders the label with its tone (neutral by default)', () => {
-    expect(renderToStaticMarkup(<Badge>مسودة</Badge>)).toContain('bg-surface-sunken');
+    expect(renderToStaticMarkup(<Badge>مسودة</Badge>)).toContain('bg-surface-hover');
+    // A status pill: a decorative dot before the text.
+    expect(
+      renderToStaticMarkup(
+        <Badge tone="success" dot>
+          نشط
+        </Badge>,
+      ),
+    ).toMatch(/<span aria-hidden="true" class="[^"]*rounded-full bg-current"><\/span>نشط/);
     expect(renderToStaticMarkup(<Badge tone="success">منشورة</Badge>)).toContain(
       'bg-success-subtle text-success',
     );

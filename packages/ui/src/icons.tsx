@@ -3,6 +3,8 @@ import {
   ArchiveRestore,
   ArrowDown,
   ArrowDownRight,
+  ArrowDownUp,
+  ArrowRight,
   ArrowUp,
   ArrowUpRight,
   Bell,
@@ -31,7 +33,9 @@ import {
   Inbox,
   Info,
   KeyRound,
+  Keyboard,
   Layers,
+  ListFilter,
   LayoutDashboard,
   Lock,
   LogOut,
@@ -42,6 +46,7 @@ import {
   Minimize2,
   Minus,
   Monitor,
+  PanelLeft,
   Moon,
   Palette,
   Pencil,
@@ -145,6 +150,13 @@ const ICONS = {
   'arrow-up': ArrowUp,
   'arrow-down': ArrowDown,
   repeat: Repeat,
+  // Direction C shell and patterns (redesign package 1): the menu's collapse toggle, a forward arrow on
+  // main buttons, the keyboard shortcuts list, filters and sortable columns.
+  sidebar: PanelLeft,
+  'arrow-end': ArrowRight,
+  keyboard: Keyboard,
+  filter: ListFilter,
+  sort: ArrowDownUp,
 } as const satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;
@@ -154,6 +166,8 @@ export const ICON_NAMES = Object.keys(ICONS) as IconName[];
 const MIRRORED: ReadonlySet<IconName> = new Set([
   'chevron-start',
   'chevron-end',
+  'sidebar',
+  'arrow-end',
   'trend-up',
   'trend-down',
 ]);

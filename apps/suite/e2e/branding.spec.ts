@@ -108,18 +108,18 @@ for (const locale of ['en', 'ar'] as const) {
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(t.title);
     await expect(page.getByTestId('branding-not-configured')).toContainText(t.preview);
     await expect(page.getByTestId('brand-contrast-ok')).toContainText(t.contrastOk);
-    await expect.poll(() => previewRole(page, 'nav-item-current')).toBe('#2F4858');
+    await expect.poll(() => previewRole(page, 'brand')).toBe('#2F4858');
     await expectNoSeriousViolations(page);
 
     // A colour typed in the hex field: the preview follows at once (unsaved).
     await page.getByTestId('brand-primaryColor').fill('#1E3A5F');
-    await expect.poll(() => previewRole(page, 'nav-item-current')).toBe('#1E3A5F');
+    await expect.poll(() => previewRole(page, 'brand')).toBe('#1E3A5F');
     // An unreadable colour: the WCAG warning with the real ratio; the preview stays readable.
     await page.getByTestId('brand-primaryColor').fill('#FFD500');
     const warning = page.getByTestId('brand-contrast-warning');
     await expect(warning).toContainText(t.contrastTitle);
     await expect(page.getByTestId('brand-contrast-textOnPrimary')).toHaveText(t.contrastLine);
-    await expect.poll(() => previewRole(page, 'nav-item-current')).not.toBe('#FFD500');
+    await expect.poll(() => previewRole(page, 'brand')).not.toBe('#FFD500');
     await expectNoSeriousViolations(page);
     // A preset: both colours, readable.
     await page.getByRole('button', { name: t.navy }).click();
@@ -134,22 +134,18 @@ for (const locale of ['en', 'ar'] as const) {
     // Gradient off: one colour.
     const gradient = page.getByRole('switch', { name: t.gradient });
     await expect(gradient).toHaveAttribute('aria-checked', 'true');
-    expect(await previewRole(page, 'nav-item-current-end')).not.toBe(
-      await previewRole(page, 'nav-item-current'),
-    );
+    expect(await previewRole(page, 'brand-end')).not.toBe(await previewRole(page, 'brand'));
     await gradient.click();
     await expect(gradient).toHaveAttribute('aria-checked', 'false');
     await expect(page.getByTestId('brand-secondaryColor')).toHaveCount(0);
-    await expect
-      .poll(() => previewRole(page, 'nav-item-current-end'))
-      .toBe(await previewRole(page, 'nav-item-current'));
+    await expect.poll(() => previewRole(page, 'brand-end')).toBe(await previewRole(page, 'brand'));
 
     // Reset to the Jadarat look.
     await page.getByTestId('brand-reset').click();
     await expect(page.getByTestId('brand-primaryColor')).toHaveValue('#2F4858');
     await expect(page.getByTestId('brand-secondaryColor')).toHaveValue('#33658A');
     await expect(gradient).toHaveAttribute('aria-checked', 'true');
-    await expect.poll(() => previewRole(page, 'nav-item-current')).toBe('#2F4858');
+    await expect.poll(() => previewRole(page, 'brand')).toBe('#2F4858');
 
     // Images: a PNG shows in the previews at once; an SVG is refused by its type.
     await page.getByTestId('brand-image-logo-input').setInputFiles({
@@ -226,7 +222,7 @@ test.describe('branding saved', () => {
     await page.reload();
     const current = await page
       .locator('html')
-      .evaluate((el) => getComputedStyle(el).getPropertyValue('--color-nav-item-current').trim());
+      .evaluate((el) => getComputedStyle(el).getPropertyValue('--color-brand').trim());
     expect(current).toBe('#7A1F2B');
     // Back to the Jadarat look for the next run.
     await page.getByTestId('brand-reset').click();

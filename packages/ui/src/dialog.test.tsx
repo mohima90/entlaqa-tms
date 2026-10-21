@@ -142,7 +142,7 @@ describe('Dialog (native <dialog>, Kawadir)', () => {
     const dialog = container.querySelector('dialog')!;
     expect(dialog.open).toBe(true);
     expect(dialog.hasAttribute('aria-describedby')).toBe(false);
-    expect(dialog.className).toContain('max-w-lg');
+    expect(dialog.className).toContain('max-w-[460px]');
     expect(dialog.querySelector('button')?.getAttribute('aria-label')).toBe('إغلاق');
   });
 });

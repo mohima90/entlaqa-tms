@@ -74,6 +74,7 @@ export function SaveBar({ state, texts, form, onCancel }: SaveBarProps) {
           <button
             type="submit"
             form={form}
+            disabled={state === 'saving'}
             aria-busy={state === 'saving' || undefined}
             className={
               active

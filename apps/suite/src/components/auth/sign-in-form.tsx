@@ -85,6 +85,14 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const moved = useRef(false);
+  // The password field is disabled while signing in, so focus moves to it once the answer is shown.
+  const focusPassword = useRef(false);
+
+  useEffect(() => {
+    if (pending || !focusPassword.current) return;
+    focusPassword.current = false;
+    passwordRef.current?.focus();
+  }, [pending, passwordError]);
 
   useEffect(() => {
     onStep?.(step);
@@ -137,7 +145,7 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
         router.refresh();
       } else if (result.error.messageKey === INVALID_CREDENTIALS) {
         setPasswordError(errorText(result.error, errors));
-        passwordRef.current?.focus();
+        focusPassword.current = true;
       } else {
         setMessage(errorText(result.error, errors));
       }

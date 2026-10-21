@@ -15,7 +15,7 @@ import { authLanguageSwitch, authShellTexts } from '../../../lib/auth-shell-text
 import { authErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
 import { getSessionState, redirectFor } from '../../../lib/session-state';
-import { authBrandOf, signInBrand } from '../../../lib/sign-in-brand';
+import { authBrandOf } from '../../../lib/sign-in-brand';
 
 /**
  * Organization chooser after sign-in when the account belongs to several organizations. A Platform Super
@@ -48,7 +48,8 @@ export default async function SelectOrganizationPage({
   return (
     <AuthShell
       variant="focus"
-      brand={authBrandOf(await signInBrand(locale))}
+      // The Jadarat brand: this page is about choosing between organizations, so none of their logos.
+      brand={authBrandOf(null)}
       texts={await authShellTexts(locale)}
       languageSwitch={
         <AuthLanguageSwitch {...await authLanguageSwitch(locale, '/select-organization')} />

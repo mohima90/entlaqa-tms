@@ -50,7 +50,8 @@ export function PageHeader({
       {...props}
     >
       <div className="flex min-w-0 flex-col">
-        {breadcrumbs && breadcrumbs.length > 0 ? (
+        {/* A breadcrumb landmark only when it has a name (an unnamed second «navigation» confuses). */}
+        {breadcrumbs && breadcrumbs.length > 0 && breadcrumbsLabel ? (
           <nav aria-label={breadcrumbsLabel} className="mb-2.5">
             <ol className="m-0 flex list-none flex-wrap items-center gap-2 p-0 text-sm text-text-muted">
               {breadcrumbs.map((crumb, index) => {

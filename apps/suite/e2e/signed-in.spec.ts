@@ -25,6 +25,8 @@ test.describe('signed-in flow', () => {
     const field = page.locator('#password');
     await expect(field).toHaveAttribute('aria-invalid', 'true');
     await expect(field).toHaveAccessibleDescription(/The email or password is incorrect\./);
+    // Focus moves to the field, so a screen reader reads the message out.
+    await expect(field).toBeFocused();
   });
 
   test('sign in shows the organization; sign out protects the suite again', async ({

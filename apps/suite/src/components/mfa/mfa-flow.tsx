@@ -1,7 +1,7 @@
 'use client';
 import { Alert, Button, buttonClasses } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
-import { type SyntheticEvent, useState, useTransition } from 'react';
+import { type SyntheticEvent, useEffect, useRef, useState, useTransition } from 'react';
 import {
   confirmMfaSetupAction,
   dismissMfaPromptAction,
@@ -122,6 +122,15 @@ function CodeForm({
   const [fieldError, setFieldError] = useState<string | undefined>(undefined);
   // The field's error is the server's answer to a wrong code (test id `mfa-error`), or its format.
   const [fieldErrorFromServer, setFieldErrorFromServer] = useState(false);
+  const codeRef = useRef<HTMLInputElement>(null);
+  // The code field is disabled while checking, so focus moves to it once a wrong code is shown.
+  const focusCode = useRef(false);
+
+  useEffect(() => {
+    if (pending || !focusCode.current) return;
+    focusCode.current = false;
+    codeRef.current?.focus();
+  }, [pending, fieldError]);
 
   function submit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -132,6 +141,7 @@ function CodeForm({
     setFieldErrorFromServer(false);
     if (!field.looksValid(code)) {
       setFieldError(field.formatError);
+      codeRef.current?.focus();
       return;
     }
     startTransition(async () => {
@@ -140,6 +150,7 @@ function CodeForm({
       if (WRONG_CODE.has(result.error.code)) {
         setFieldError(errorText(result.error, errors));
         setFieldErrorFromServer(true);
+        focusCode.current = true;
       } else setMessage(errorText(result.error, errors));
     });
   }
@@ -158,6 +169,13 @@ function CodeForm({
         maxLength={16}
         required
         dir="ltr"
+        ref={codeRef}
+        onChange={() => {
+          if (fieldError) {
+            setFieldError(undefined);
+            setFieldErrorFromServer(false);
+          }
+        }}
         error={fieldError}
         errorTestId={fieldErrorFromServer ? 'mfa-error' : undefined}
         disabled={pending}

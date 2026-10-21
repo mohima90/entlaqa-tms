@@ -6,12 +6,19 @@ import { Badge, type BadgeTone } from './badge';
 import { buttonClasses } from './button';
 import { Card } from './card';
 import { Icon, type IconName } from './icons';
+import {
+  FilterBar,
+  FilterPill,
+  ListCard,
+  ListCards,
+  ListSearch,
+  Pagination,
+} from './list-patterns';
 import { PageHeader } from './page-header';
 import { StatCard, StatGrid } from './stat-card';
-import { TabNav } from './tab-nav';
 import { tableClasses } from './table';
 import { TextField } from './text-field';
-import { toolbarFieldClasses } from './toolbar';
+import { ViewCards } from './view-cards';
 
 /**
  * The Organization Admin's pages as the app renders them (T-M2-43 Kawadir polish), in the shell with
@@ -189,7 +196,10 @@ const STATUS: Record<(typeof PEOPLE)[number]['status'], { tone: BadgeTone; label
   suspended: { tone: 'neutral', label: { ar: 'معطّل', en: 'Deactivated' } },
 };
 
-/** Team members (`/suite/admin/users`, Kawadir Candidates): KPI cards, tabs, filters, the table. */
+/**
+ * Team members (`/suite/admin/users`) in direction C: view cards with big numbers, the search pill and
+ * filter pills, the table (cards on phones) and pagination.
+ */
 export const TeamMembers: Story = {
   render: (_args, { globals }) => (
     <DemoShell globals={globals} current="team" title={{ ar: 'أعضاء الفريق', en: 'Team members' }}>
@@ -211,68 +221,67 @@ export const TeamMembers: Story = {
           </>
         }
       />
-      <div className="flex flex-col gap-6">
-        <TeamFigures globals={globals} />
-        <TabNav
+      <div className="flex flex-col gap-4.5">
+        {/* Direction C: saved-view cards with big numbers replace the summary cards and the tabs. */}
+        <ViewCards
           label={pick(globals, { ar: 'عرض أعضاء الفريق', en: 'Team members views' })}
-          current="members"
-          className="-mt-6"
+          current="all"
           items={[
             {
-              key: 'members',
-              href: '#members',
-              icon: 'people',
-              label: pick(globals, { ar: 'الأعضاء', en: 'Members' }),
+              key: 'all',
+              href: '#all',
+              label: pick(globals, { ar: 'الكل', en: 'All' }),
               count: '24',
+            },
+            {
+              key: 'active',
+              href: '#active',
+              label: pick(globals, { ar: 'نشط', en: 'Active' }),
+              count: '19',
             },
             {
               key: 'invited',
               href: '#invited',
-              icon: 'mail',
               label: pick(globals, { ar: 'الدعوات المعلّقة', en: 'Pending invites' }),
               count: '3',
             },
+            {
+              key: 'deactivated',
+              href: '#deactivated',
+              label: pick(globals, { ar: 'معطّل', en: 'Deactivated' }),
+              count: '2',
+            },
           ]}
         />
-        <form
+        <FilterBar
           role="search"
           aria-label={pick(globals, { ar: 'البحث والتصفية', en: 'Search and filters' })}
-          className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5 xl:items-end"
         >
-          <div className="flex flex-col gap-1 xl:col-span-2">
-            <label htmlFor="story-users-q" className="text-sm font-medium">
-              {pick(globals, { ar: 'بحث', en: 'Search' })}
-            </label>
-            <input id="story-users-q" type="search" className={toolbarFieldClasses} />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label htmlFor="story-users-role" className="text-sm font-medium">
-              {pick(globals, { ar: 'الدور', en: 'Role' })}
-            </label>
-            <select id="story-users-role" className={`${toolbarFieldClasses} select-chevron pe-10`}>
-              <option>{pick(globals, { ar: 'كل الأدوار', en: 'All roles' })}</option>
-            </select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label htmlFor="story-users-department" className="text-sm font-medium">
-              {pick(globals, { ar: 'القسم', en: 'Department' })}
-            </label>
-            <select
-              id="story-users-department"
-              className={`${toolbarFieldClasses} select-chevron pe-10`}
-            >
-              <option>{pick(globals, { ar: 'كل الأقسام', en: 'All departments' })}</option>
-            </select>
-          </div>
-          <div>
-            <button type="button" className={buttonClasses({ variant: 'secondary' })}>
-              <Icon name="search" />
-              {pick(globals, { ar: 'تطبيق', en: 'Apply' })}
-            </button>
-          </div>
-        </form>
+          <ListSearch
+            id="story-users-q"
+            label={pick(globals, { ar: 'بحث', en: 'Search' })}
+            placeholder={pick(globals, {
+              ar: 'بالاسم أو البريد الإلكتروني أو الرقم الوظيفي',
+              en: 'By name, email or employee number',
+            })}
+          />
+          <FilterPill
+            href="#role"
+            label={pick(globals, { ar: 'الدور', en: 'Role' })}
+            value={pick(globals, { ar: 'منسق التدريب', en: 'Training Coordinator' })}
+            removeLabel={pick(globals, {
+              ar: 'إزالة عامل التصفية الدور: منسق التدريب',
+              en: 'Remove the filter Role: Training Coordinator',
+            })}
+          />
+          <FilterPill href="#unit" label={pick(globals, { ar: 'الوحدة', en: 'Unit' })} />
+          <FilterPill href="#branch" label={pick(globals, { ar: 'الفرع', en: 'Branch' })} />
+          <a href="#clear" className="font-semibold text-primary-text">
+            {pick(globals, { ar: 'مسح عوامل التصفية', en: 'Clear filters' })}
+          </a>
+        </FilterBar>
         <Card flush>
-          <div className={tableClasses.wrapper}>
+          <div className={`${tableClasses.wrapper} hidden md:block`}>
             <table className={tableClasses.table}>
               <caption className="sr-only">
                 {pick(globals, { ar: 'قائمة أعضاء الفريق', en: 'Team members list' })}
@@ -330,6 +339,33 @@ export const TeamMembers: Story = {
               </tbody>
             </table>
           </div>
+          {/* Phones: one card per row instead of the table. */}
+          <ListCards
+            aria-label={pick(globals, { ar: 'قائمة أعضاء الفريق', en: 'Team members list' })}
+          >
+            {PEOPLE.map((person) => {
+              const name = pick(globals, person);
+              return (
+                <ListCard
+                  key={person.email}
+                  leading={<Avatar name={name} tone="soft" size="md" />}
+                  title={<a href="#member">{name}</a>}
+                  detail={`${pick(globals, person.role)} · ${pick(globals, person.department)}`}
+                  status={
+                    <Badge tone={STATUS[person.status].tone} dot>
+                      {pick(globals, STATUS[person.status].label)}
+                    </Badge>
+                  }
+                />
+              );
+            })}
+          </ListCards>
+          <Pagination
+            label={pick(globals, { ar: 'ترقيم الصفحات', en: 'Pagination' })}
+            range={pick(globals, { ar: 'عرض 1–4 من 24', en: 'Showing 1–4 of 24' })}
+            previous={{ href: null, label: pick(globals, { ar: 'السابق', en: 'Previous' }) }}
+            next={{ href: '#next', label: pick(globals, { ar: 'التالي', en: 'Next' }) }}
+          />
         </Card>
       </div>
     </DemoShell>

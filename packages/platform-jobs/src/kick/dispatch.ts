@@ -113,7 +113,7 @@ let parsedKey: { readonly pem: string; readonly key: KeyObject | null } | null =
 function parsePrivateKey(raw: string): KeyObject | null {
   const pem = raw.includes('\\n') ? raw.replace(/\\n/g, '\n') : raw;
   if (parsedKey?.pem === pem) return parsedKey.key;
-  let key: KeyObject | null = null;
+  let key: KeyObject | null;
   try {
     const candidate = createPrivateKey({ key: pem, format: 'pem' });
     key = candidate.asymmetricKeyType === 'rsa' ? candidate : null;

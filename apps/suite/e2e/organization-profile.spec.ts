@@ -9,9 +9,10 @@ import { freshCode } from './totp';
  * the security journey: the smoke organization requires an authenticator code at sign-in, so the
  * Organization Admin signs in with one; saving itself needs no code — PO decision, 14 Oct 2026). In English
  * and Arabic:
- *  - the Organization Admin opens the page from the menu (no longer «Coming soon»), sees a field error and
- *    keeps what was typed, picks a country (its suggestions fill in), saves; the new display name shows in
- *    the menu and the users list shows dates in the chosen display (Gregorian + Hijri, then Hijri);
+ *  - the Organization Admin opens the page from the menu (no longer «Coming soon»), sees field errors (the
+ *    save bar offers the way to the first one) and keeps what was chosen, picks a country (its suggestions
+ *    fill in, marked «Suggested», with Undo), saves (a toast); the users list shows dates in the chosen
+ *    display (Gregorian + Hijri, then Hijri). The organization's names moved to Branding (WP-ADM-02);
  *  - the page reads well at phone width and has no serious accessibility violation;
  *  - an HR Manager (another organization, no code needed there) has no menu entry and is refused.
  * Skipped without credentials (default CI run).
@@ -22,9 +23,6 @@ const adminPassword = process.env.ORG_PROFILE_E2E_PASSWORD ?? '';
 const adminKey = process.env.ORG_PROFILE_E2E_TOTP_KEY ?? '';
 const hrEmail = process.env.ORG_PROFILE_E2E_HR_EMAIL ?? '';
 const hrPassword = process.env.ORG_PROFILE_E2E_HR_PASSWORD ?? '';
-
-const EN_NAME = 'Sovereign Smoke Holding';
-const AR_NAME = 'شركة الاختبار السيادي القابضة';
 
 async function signIn(page: Page, locale: 'ar' | 'en', email: string, secret: string) {
   await page.goto(`/${locale}/sign-in`);
@@ -77,31 +75,29 @@ test.describe('organization profile', () => {
     await expect(page.getByTestId('organization-read-only')).toHaveCount(0);
     await expectNoSeriousA11yViolations(page);
 
-    // A field error: announced, tied to its field, and nothing typed is lost.
-    await page.getByTestId('org-nameEn').fill('   ');
-    await page.getByTestId('org-nameAr').fill(AR_NAME);
-    await page.getByTestId('org-workStartsAt').fill('17:00');
-    await page.getByTestId('organization-save').click();
-    await expect(page.getByTestId('organization-message')).toHaveAttribute('role', 'alert');
-    // The first field with an error has the focus (review L4).
-    await expect(page.getByTestId('org-nameEn')).toBeFocused();
-    await expect(page.getByTestId('org-nameEn')).toHaveAttribute('aria-invalid', 'true');
-    await expect(page.locator('#org-nameEn-error')).toHaveText('Enter the display name.');
-    await expect(page.getByTestId('org-nameEn')).toHaveAttribute(
+    // Field errors: announced, tied to their fields, and nothing chosen is lost.
+    await page.getByTestId('org-workStartsAt').selectOption('17:00');
+    await expect(page.getByTestId('save-bar')).toHaveAttribute('data-state', 'unsaved');
+    await page.getByTestId('save-bar-save').click();
+    await expect(page.getByTestId('save-bar')).toHaveAttribute('data-state', 'invalid');
+    // The first field with an error has the focus (review L4); the bar offers the way back to it.
+    await expect(page.getByTestId('org-industry')).toBeFocused();
+    await expect(page.getByTestId('org-industry')).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.getByTestId('org-industry')).toHaveAttribute(
       'aria-describedby',
-      /org-nameEn-error/,
+      /org-industry-error/,
     );
+    await expect(page.getByTestId('save-bar-fix')).toHaveText('Go to Industry');
     await expect(page.locator('#org-workEndsAt-error')).toHaveText(
       'The end must be after the start.',
     );
     await expect(page.locator('#org-industry-error')).toHaveText('Choose an industry.');
     await expect(page.locator('#org-countryCode-error')).toHaveText('Choose a country.');
-    await expect(page.getByTestId('org-nameAr')).toHaveValue(AR_NAME);
+    await expect(page.getByTestId('org-workStartsAt')).toHaveValue('17:00');
     await expectNoSeriousA11yViolations(page);
 
     // Country fills in the rest (suggestions only, applied when the country changes).
-    await page.getByTestId('org-nameEn').fill(EN_NAME);
-    await page.getByTestId('org-workStartsAt').fill('٠٨:٠٠'); // Arabic digits are accepted
+    await page.getByTestId('org-workStartsAt').selectOption('08:00');
     await page.getByTestId('org-industry').selectOption('banking_financial');
     await page.getByTestId('org-currencyCode').selectOption('USD');
     await page.getByTestId('org-countryCode').selectOption('SA');
@@ -109,6 +105,8 @@ test.describe('organization profile', () => {
       'Suggestions for Saudi Arabia filled in. Check them, then save.',
     );
     await expect(page.getByTestId('org-currencyCode')).toHaveValue('SAR');
+    await expect(page.getByTestId('org-suggested-currencyCode')).toHaveText('Suggested');
+    await expect(page.getByTestId('org-preset-undo')).toBeVisible();
     await expect(page.getByTestId('org-timeZone')).toHaveValue('Asia/Riyadh');
     await expect(page.getByTestId('org-display-dual')).toBeChecked();
     await expect(page.getByTestId('org-date-preview')).toContainText(' · ');
@@ -123,9 +121,8 @@ test.describe('organization profile', () => {
     await page.getByTestId('org-language-en').check();
     await page.getByTestId('org-fiscalYearStartMonth').selectOption('4');
 
-    await page.getByTestId('organization-save').click();
-    await expect(page.getByTestId('organization-message')).toHaveText('General settings saved.');
-    await expect(page.getByTestId('tenant-context')).toContainText(EN_NAME);
+    await page.getByTestId('save-bar-save').click();
+    await expect(page.getByText('General settings saved.')).toBeVisible();
     await expect(page.getByTestId('organization-last-changed')).toContainText('Last changed by');
     await expect(page.getByTestId('organization-last-changed')).toContainText(' AH');
     await page.reload();
@@ -151,9 +148,8 @@ test.describe('organization profile', () => {
     ).toBeVisible();
   });
 
-  test('Arabic: the Arabic name in the menu, Hijri dates in the users list', async ({ page }) => {
+  test('Arabic: Hijri dates in the users list', async ({ page }) => {
     await signInWithCode(page, 'ar');
-    await expect(page.getByTestId('tenant-context')).toContainText(AR_NAME);
     await page.goto('/ar/suite/admin/settings');
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('الإعدادات العامة');
@@ -164,12 +160,10 @@ test.describe('organization profile', () => {
     await expect(page.getByTestId('org-day-0')).toHaveText('الأحد');
     await expectNoSeriousA11yViolations(page);
 
-    await page.getByTestId('org-nameAr').fill(`${AR_NAME} المحدودة`);
     await page.getByTestId('org-display-hijri').check();
     await expect(page.getByTestId('org-date-preview')).toContainText('هـ');
-    await page.getByTestId('organization-save').click();
-    await expect(page.getByTestId('organization-message')).toHaveText('حُفظت الإعدادات العامة.');
-    await expect(page.getByTestId('tenant-context')).toContainText(`${AR_NAME} المحدودة`);
+    await page.getByTestId('save-bar-save').click();
+    await expect(page.getByText('حُفظت الإعدادات العامة.')).toBeVisible();
 
     await page.goto('/ar/suite/admin/users');
     const lastSignIn = page

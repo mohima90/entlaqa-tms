@@ -302,7 +302,7 @@ async function memberTexts(locale: AppLocale): Promise<Record<string, string>> {
     tableCaption: t('tableCaption'),
     noneLabel: t('noneLabel'),
     openProfile: t('openProfile'),
-    undo: t('undo'),
+    undo: (await getTranslations({ locale, namespace: 'common' }))('undo'),
     moreActions: String(t.raw('moreActions')),
     copyField: String(t.raw('copyField')),
     copied: String(t.raw('copied')),

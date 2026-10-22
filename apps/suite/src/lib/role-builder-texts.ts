@@ -81,8 +81,8 @@ export async function roleBuilderTexts(locale: 'ar' | 'en'): Promise<Record<stri
   texts.summary = users('statsLabel');
   texts.summarySees = t('summarySees');
   texts.searchPermissions = roles('searchPermissions');
-  texts.undo = users('undo');
-  texts.unsaved = t('unsavedChanges');
+  texts.undo = common('undo');
+  texts.unsaved = common('unsavedChanges');
   texts.discardTitle = users('discardTitle');
   texts.discardBody = users('discardBody');
   texts.keepEditing = users('keepEditing');

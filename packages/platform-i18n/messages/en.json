@@ -8,7 +8,21 @@
     "switchLanguage": "العربية",
     "switchLanguageAria": "Switch to Arabic",
     "required": "(required)",
-    "optional": "(optional)"
+    "optional": "(optional)",
+    "unsavedChanges": "You have unsaved changes.",
+    "undo": "Undo",
+    "loading": "Loading…",
+    "tryAgain": "Try again",
+    "reload": "Reload",
+    "goToField": "Go to {field}",
+    "leaveTitle": "Leave without saving?",
+    "leaveText": "Your changes on this page are not saved yet. If you leave now, they are lost.",
+    "leaveStay": "Stay on this page",
+    "leaveGo": "Leave without saving",
+    "edit": "Edit",
+    "saved": "Saved",
+    "close": "Close",
+    "breadcrumbLabel": "Breadcrumb"
   },
   "landing": {
     "title": "Training Management System",
@@ -398,7 +412,6 @@
     "moreActions": "More actions for {name}",
     "copyField": "Copy {field}",
     "copied": "{field} copied.",
-    "undo": "Undo",
     "discardTitle": "Discard your changes?",
     "discardBody": "What you changed here isn’t saved yet. If you leave, it’s lost.",
     "keepEditing": "Keep editing",
@@ -1405,7 +1418,20 @@
       "idleAboveMax": "Inactivity can't be longer than the maximum session length.",
       "invalid": "Check this value."
     },
-    "notConfigured": "Security settings aren't available in this environment yet."
+    "notConfigured": "Security settings aren't available in this environment yet.",
+    "summaryLabel": "Policy at a glance",
+    "summary": {
+      "minChars": "At least {n} characters",
+      "changed": "Changed"
+    },
+    "confirm": {
+      "title": "Require an authenticator app?",
+      "roles": "People with these roles who don't use an authenticator app yet must set one up: {roles}.",
+      "all": "Everyone in {organization} who doesn't use an authenticator app yet must set one up.",
+      "grace": "{days, plural, =0 {They must set it up at their next sign-in.} one {They have # day. After that, they can't sign in without it.} other {They have # days. After that, they can't sign in without it.}}",
+      "go": "Save and require it",
+      "goBack": "Go back"
+    }
   },
   "sessions": {
     "device": "Device and browser",
@@ -2152,7 +2178,8 @@
       "professional_services": "Professional services",
       "non_profit": "Non-profit",
       "other": "Other"
-    }
+    },
+    "suggestedTag": "Suggested"
   },
   "signUp": {
     "pageTitle": "Join your organization",
@@ -2344,8 +2371,7 @@
     "notFound": "This role doesn't exist (any more).",
     "conflict": "Someone changed this role meanwhile. Reload the page to see the latest version.",
     "summarySees": "Sees",
-    "summaryHighRisk": "{count, plural, =0 {No high-risk permission} one {# high-risk permission} other {# high-risk permissions}}",
-    "unsavedChanges": "You have unsaved changes."
+    "summaryHighRisk": "{count, plural, =0 {No high-risk permission} one {# high-risk permission} other {# high-risk permissions}}"
   },
   "needsForms": {
     "title": "Needs forms",
@@ -2683,8 +2709,8 @@
     "loadFailed": "The structure could not be loaded because of a problem on our side. You can try again. Reference: {correlationId}",
     "tabsLabel": "Structure views",
     "tabs": {
-      "tree": "Structure",
-      "levels": "Organization tree"
+      "tree": "Units",
+      "levels": "Levels"
     },
     "stats": {
       "label": "Summary",
@@ -2695,7 +2721,7 @@
     },
     "tree": {
       "title": "Structure tree",
-      "description": "Open a unit's menu to add a unit under it, edit it, deactivate it or delete it.",
+      "description": "Use + on a unit to add a unit under it. Open ⋯ to edit, deactivate or delete it.",
       "empty": "No units yet",
       "emptyBody": "Start with the top level of your structure.",
       "emptyViewOnly": "The HR Manager adds the units of the structure."
@@ -2779,7 +2805,7 @@
       "levelRemoved": "Level removed."
     },
     "levels": {
-      "title": "Organization tree",
+      "title": "Levels",
       "description": "Name the levels of your organization in order. The structure follows these names.",
       "example": "For example: Sector → General Department → Department → Section.",
       "caption": "Levels from the top down",
@@ -2804,6 +2830,12 @@
       "nameTaken": "Another level has this name.",
       "name": "The name needs visible letters, up to 60 characters.",
       "unitCount": "{count, plural, =0 {No units} one {# unit} other {# units}}"
+    },
+    "expandAll": "Expand all",
+    "collapseAll": "Collapse all",
+    "guide": {
+      "levels": "Name your levels",
+      "first": "Add the first unit"
     }
   },
   "branches": {
@@ -2858,7 +2890,8 @@
       "saving": "Saving…",
       "cancel": "Cancel",
       "close": "Close",
-      "audited": "Every change is recorded in the audit log."
+      "audited": "Every change is recorded in the audit log.",
+      "hqMoves": "Headquarters moves from {from} to {to} when you save."
     },
     "fieldErrors": {
       "required": "This field is required.",
@@ -2897,7 +2930,9 @@
       "deactivated": "{name} deactivated.",
       "activated": "{name} activated.",
       "deleted": "{name} deleted."
-    }
+    },
+    "filterAll": "All",
+    "filterLabel": "Show branches"
   },
   "emailSettings": {
     "provider": {

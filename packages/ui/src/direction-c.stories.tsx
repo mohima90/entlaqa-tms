@@ -16,6 +16,8 @@ import { FormSection, SidePanel } from './side-panel';
 import { TableSkeleton } from './list-patterns';
 import { TabNav } from './tab-nav';
 import { TextField } from './text-field';
+import { createToastStore } from './toast-store';
+import { Toaster } from './toaster';
 import { ViewCards } from './view-cards';
 
 /**
@@ -221,6 +223,16 @@ function SettingsForm({ globals, state }: { globals: Globals; state: SaveBarStat
           }),
           save: pick(globals, { ar: 'حفظ التغييرات', en: 'Save changes' }),
           cancel: pick(globals, { ar: 'إلغاء', en: 'Cancel' }),
+          invalid: pick(globals, {
+            ar: 'بعض الحقول تحتاج إلى تصحيح. راجع الحقول المحددة.',
+            en: 'Some fields need correcting. Check the highlighted fields.',
+          }),
+        }}
+        fix={{
+          label: pick(globals, { ar: 'الانتقال إلى القطاع', en: 'Go to Industry' }),
+          onClick: () => {
+            document.getElementById('story-industry')?.focus();
+          },
         }}
       />
     </div>
@@ -232,9 +244,46 @@ export const FormWithUnsavedChanges: Story = {
   render: (_args, { globals }) => <SettingsForm globals={globals} state="unsaved" />,
 };
 
-/** The same form at rest: the save bar says who changed it last. */
+/** The same form at rest: the save bar says who changed it last; Save only (redesign package 2). */
 export const FormSaved: Story = {
   render: (_args, { globals }) => <SettingsForm globals={globals} state="saved" />,
+};
+
+/** After a refused Save (package 2): the bar says fields need correcting, with the way to the first. */
+export const FormWithErrors: Story = {
+  render: (_args, { globals }) => <SettingsForm globals={globals} state="invalid" />,
+};
+
+function UndoToastDemo({ globals }: { globals: Globals }) {
+  const [store] = useState(() => {
+    const created = createToastStore();
+    created.add(
+      'success',
+      pick(globals, { ar: 'أُوقف فرع الدمام.', en: 'Dammam branch deactivated.' }),
+      {
+        duration: null,
+        action: {
+          label: pick(globals, { ar: 'تراجع', en: 'Undo' }),
+          onClick: () => undefined,
+        },
+      },
+    );
+    return created;
+  });
+  return (
+    <div className="min-h-[240px] bg-bg p-6">
+      <Toaster
+        label={pick(globals, { ar: 'رسائل الحالة', en: 'Status messages' })}
+        closeLabel={pick(globals, { ar: 'إغلاق', en: 'Close' })}
+        store={store}
+      />
+    </div>
+  );
+}
+
+/** A reversible change done at once, with «Undo» in its toast (package 2, Q2-9). */
+export const ToastWithUndo: Story = {
+  render: (_args, { globals }) => <UndoToastDemo globals={globals} />,
 };
 
 function PanelDemo({ globals }: { globals: Globals }) {

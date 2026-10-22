@@ -11,7 +11,10 @@ export interface ConfirmDialogProps {
   readonly workingLabel: string;
   readonly keepLabel: string;
   readonly closeLabel: string;
+  /** Cannot be undone: the red tile and button (direction C `tone="danger"`). */
   readonly danger?: boolean;
+  /** Reversible with an effect people should know (e.g. deactivating a unit roles are limited to). */
+  readonly warning?: boolean;
   /** False: only «keep» is offered (e.g. a unit still in use cannot be deleted). */
   readonly canConfirm?: boolean;
   /** Runs the change: null when done (the dialog closes), else the message to show. */
@@ -38,6 +41,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
       description={props.description}
       closeLabel={props.closeLabel}
       size="sm"
+      tone={props.danger ? 'danger' : props.warning ? 'warning' : undefined}
       data-testid={props['data-testid']}
       footer={
         <>

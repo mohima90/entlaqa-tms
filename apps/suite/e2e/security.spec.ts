@@ -274,7 +274,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     // authenticator code (PO decision, 14 Oct 2026, reversing D-IAM-01).
     await expect(page.getByTestId('security-passwordMinLength')).toBeEnabled();
     await expect(page.getByTestId('security-mode-off')).toBeChecked();
-    await expect(page.getByTestId('security-save')).toBeVisible();
+    await expect(page.getByTestId('save-bar-save')).toBeVisible();
     await expectNoSeriousA11yViolations(page);
 
     // No app yet: My profile sets one up on the code page…
@@ -367,7 +367,9 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     await expect(page.getByTestId('security-lockout-note')).toHaveText(EN_LOCKOUT_SCOPE);
     await page.getByTestId('security-lockoutThreshold').fill('10');
     await page.getByTestId('security-lockoutMinutes').fill('5');
-    await page.getByTestId('security-save').click();
+    await page.getByTestId('save-bar-save').click();
+    // The save bar says fields need correcting and offers the way to the first one.
+    await expect(page.getByTestId('save-bar')).toHaveAttribute('data-state', 'invalid');
     await expect(page.locator('#security-lockoutThreshold-error')).toHaveText(
       'Enter a whole number from 3 to 5.',
     );
@@ -381,13 +383,20 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     await page.getByTestId('security-mode-required_all').check();
     await page.getByTestId('security-mfaGraceDays').fill('0');
     await page.getByTestId('security-passwordMinLength').fill('40');
-    await page.getByTestId('security-save').click();
+    await page.getByTestId('save-bar-save').click();
     await expect(page.locator('#security-passwordMinLength-error')).toHaveText(
       'Enter a whole number from 12 to 36.',
     );
     await page.getByTestId('security-passwordMinLength').fill('16');
-    await page.getByTestId('security-save').click();
-    await expect(page.getByTestId('security-message')).toHaveText('Security settings saved.');
+    await page.getByTestId('save-bar-save').click();
+    // MFA becomes required: the confirmation says who must set up an app and when (package 2).
+    const confirm = page.getByTestId('security-confirm');
+    await expect(confirm.getByRole('heading', { level: 2 })).toHaveText(
+      'Require an authenticator app?',
+    );
+    await expect(confirm).toContainText('They must set it up at their next sign-in.');
+    await confirm.getByTestId('security-confirm-save').click();
+    await expect(page.getByText('Security settings saved.')).toBeVisible();
 
     await page.reload();
     await expect(page.getByTestId('security-mode-required_all')).toBeChecked();

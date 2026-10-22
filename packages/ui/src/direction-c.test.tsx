@@ -166,7 +166,30 @@ describe('SaveBar (floating save bar)', () => {
     expect(saving).toContain(SAVE_TEXTS.saving);
     const saved = mount(<SaveBar state="saved" form="settings" texts={SAVE_TEXTS} />);
     expect(saved.querySelector('[role="status"]')?.textContent).toBe(SAVE_TEXTS.saved);
-    expect(saved.querySelector<HTMLButtonElement>('button[type="reset"]')?.disabled).toBe(true);
+    // At rest there is nothing to cancel: only Save, as a quiet (secondary) button.
+    expect(saved.querySelector('button[type="reset"]')).toBeNull();
+    expect(saved.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false);
+  });
+
+  it('invalid: says fields need correcting and offers the way to the first one (package 2)', () => {
+    const fix = vi.fn();
+    const container = mount(
+      <SaveBar
+        state="invalid"
+        form="settings"
+        texts={{ ...SAVE_TEXTS, invalid: 'Some fields need correcting.' }}
+        fix={{ label: 'Go to Industry', onClick: fix }}
+      />,
+    );
+    expect(byTestId('save-bar').dataset.state).toBe('invalid');
+    expect(container.querySelector('[role="status"]')?.textContent).toBe(
+      'Some fields need correcting.',
+    );
+    act(() => {
+      byTestId('save-bar-fix').click();
+    });
+    expect(fix).toHaveBeenCalledTimes(1);
+    expect(byTestId('save-bar-save').getAttribute('type')).toBe('submit');
   });
 });
 

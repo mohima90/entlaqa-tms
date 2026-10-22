@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  deactivatesWithUndo,
+  unitDeleteBlockers,
   levelName,
   nextLevel,
   orgShowsUnitLevels,
@@ -117,5 +119,21 @@ describe('the organization’s own level names (guided-test feedback #3)', () =>
     // No levels (before the migration): the neutral word.
     expect(orgUnitsLabel([], false, 'en', 'Unit')).toBe('Unit');
     expect(orgShowsUnitLevels([], false)).toBe(true);
+  });
+});
+
+describe('unit actions (redesign package 2)', () => {
+  it('lists what keeps a unit from being deleted', () => {
+    expect(unitDeleteBlockers({ childCount: 0, peopleCount: 0, roleScopeCount: 0 })).toEqual([]);
+    expect(unitDeleteBlockers({ childCount: 3, peopleCount: 24, roleScopeCount: 1 })).toEqual([
+      { key: 'remove.inUseUnits', count: 3 },
+      { key: 'remove.inUsePeople', count: 24 },
+      { key: 'remove.inUseRoles', count: 1 },
+    ]);
+  });
+
+  it('deactivates with Undo only when no role is limited to the unit', () => {
+    expect(deactivatesWithUndo({ childCount: 2, peopleCount: 9, roleScopeCount: 0 })).toBe(true);
+    expect(deactivatesWithUndo({ childCount: 0, peopleCount: 0, roleScopeCount: 2 })).toBe(false);
   });
 });

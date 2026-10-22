@@ -28,12 +28,19 @@ export async function stepperProps(locale: AppLocale, current: ImportStep): Prom
 /** «ليست لديك صلاحية لاستيراد المستخدمين» (approved screen 13, no permission). */
 export async function importForbidden(locale: AppLocale) {
   const t = await getTranslations({ locale, namespace: 'userImport.forbidden' });
+  const title = (await getTranslations({ locale, namespace: 'userImport' }))('title');
   return (
-    <Card title={t('title')} data-testid="import-forbidden">
-      <p className="mt-0">{t('body')}</p>
-      <a href={`/${locale}/suite`} className={buttonClasses({ variant: 'secondary', size: 'md' })}>
-        {t('home')}
-      </a>
-    </Card>
+    <>
+      <h1 className="m-0 text-[28px] font-bold md:text-5xl">{title}</h1>
+      <Card title={t('title')} data-testid="import-forbidden">
+        <p className="mt-0">{t('body')}</p>
+        <a
+          href={`/${locale}/suite`}
+          className={buttonClasses({ variant: 'secondary', size: 'md' })}
+        >
+          {t('home')}
+        </a>
+      </Card>
+    </>
   );
 }

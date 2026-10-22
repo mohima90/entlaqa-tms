@@ -8,7 +8,7 @@ import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { SuiteShell } from '../../../../../../../components/suite-shell';
+import { FocusedShell } from '../../../../../../../components/focused-shell';
 import { ImportPoller } from '../../../../../../../components/user-import/import-poller';
 import {
   importForbidden,
@@ -19,7 +19,6 @@ import {
   confirmStep,
   fileState,
   mappingStep,
-  optionsStep,
   progressView,
   resultView,
   reviewStep,
@@ -82,6 +81,8 @@ export default async function UserImportStatusPage({
   const path = `/suite/admin/users/import/${encodeURIComponent(importId)}`;
 
   let body: ReactNode;
+  let steps: ReactNode = null;
+  let subtitle: ReactNode = context.organizationName ?? null;
   let poll: {
     seconds: number;
     statusUrl: string;
@@ -110,6 +111,17 @@ export default async function UserImportStatusPage({
         );
     } else {
       const view = result.value;
+      // The file's name only to whoever may see the import (another member's draft is «not yours»).
+      if (view.record.mine || !isDraft(view.record.status)) {
+        subtitle = <bdi>{view.record.fileName}</bdi>;
+      }
+      if (isDraft(view.record.status) && view.record.mine) {
+        steps = (
+          <Stepper
+            {...await stepperProps(locale, draftStep(view.record.status, one(query, 'step')))}
+          />
+        );
+      }
       body = await content(
         locale,
         view,
@@ -130,17 +142,16 @@ export default async function UserImportStatusPage({
   }
 
   return (
-    <SuiteShell locale={locale} context={context} current="users" path={path}>
-      <nav aria-label={t('breadcrumbLabel')} className="mb-2 text-sm">
-        <a href={`/${locale}/suite/admin/users`} className="underline">
-          {t('breadcrumb')}
-        </a>
-        {' / '}
-        <a href={`/${locale}/suite/admin/users/import`} className="underline">
-          {t('breadcrumbImport')}
-        </a>
-      </nav>
-      <div className="flex flex-col gap-6">{body}</div>
+    <FocusedShell
+      locale={locale}
+      context={context}
+      path={path}
+      closeHref={`/${locale}/suite/admin/users`}
+      title={t('title')}
+      subtitle={subtitle}
+      steps={steps}
+    >
+      {body}
       {poll ? (
         <ImportPoller
           seconds={poll.seconds}
@@ -149,8 +160,14 @@ export default async function UserImportStatusPage({
           announcement={poll.announcement}
         />
       ) : null}
-    </SuiteShell>
+    </FocusedShell>
   );
+}
+
+/** One value of the query string. */
+function one(query: SearchParams, key: string): string | undefined {
+  const raw = query[key];
+  return Array.isArray(raw) ? raw[0] : raw;
 }
 
 /** The sentence announced when the phase changes (never every number). */
@@ -184,38 +201,37 @@ async function content(
   if (isDraft(record.status)) {
     if (!record.mine) {
       return (
-        <Card title={t('notYours.title')} data-testid="import-not-yours">
-          <p className="mt-0">{t('notYours.body')}</p>
-          <a
-            href={`/${locale}/suite/admin/users`}
-            className={buttonClasses({ variant: 'secondary', size: 'md' })}
-          >
-            {t('progress.backToUsers')}
-          </a>
-        </Card>
+        <>
+          <h1 className="m-0 text-[28px] font-bold md:text-5xl">{t('title')}</h1>
+          <Card title={t('notYours.title')} headingLevel={2} data-testid="import-not-yours">
+            <p className="mt-0">{t('notYours.body')}</p>
+            <a
+              href={`/${locale}/suite/admin/users`}
+              className={buttonClasses({ variant: 'secondary', size: 'md' })}
+            >
+              {t('progress.backToUsers')}
+            </a>
+          </Card>
+        </>
       );
     }
     const step = draftStep(record.status, one('step'));
-    const stepper = <Stepper {...await stepperProps(locale, step)} />;
     let main: ReactNode;
     if (record.status === 'uploaded' || record.status === 'validating') {
-      main = await fileState(locale, view, dates);
+      main = (
+        <>
+          <h1 className="m-0 text-[28px] font-bold md:text-5xl">{t('title')}</h1>
+          {await fileState(locale, view, dates)}
+        </>
+      );
     } else if (step === 'mapping') {
       main = await mappingStep(locale, view);
-    } else if (step === 'options') {
-      main = await optionsStep(locale, view, query, organization);
     } else if (step === 'confirm') {
       main = await confirmStep(locale, view, query, organization);
     } else {
       main = await reviewStep(locale, view, query, dates);
     }
-    return (
-      <>
-        <h1 className="m-0 text-2xl font-bold">{t('title')}</h1>
-        {stepper}
-        {main}
-      </>
-    );
+    return main;
   }
   if (isRunning(record.status) || record.status === 'undoing') {
     return progressView(locale, view, dates);

@@ -12,7 +12,8 @@ export function initialsOf(name: string): string {
 
 export interface AvatarProps {
   readonly name: string;
-  readonly size?: 'sm' | 'md' | undefined;
+  /** `xl`: the large tile at the top of a person's profile (redesign package 3). */
+  readonly size?: 'sm' | 'md' | 'xl' | undefined;
   /**
    * `brand` (default): initials on the brand gradient (Kawadir account chip). `soft`: initials in the
    * brand text colour on its tint (Kawadir list rows, e.g. «NI» in Candidates).
@@ -29,11 +30,12 @@ export function Avatar({ name, size = 'sm', tone = 'brand', src, className }: Av
     <span
       aria-hidden="true"
       className={cn(
-        'grid shrink-0 place-items-center overflow-hidden rounded-full font-semibold',
+        'grid shrink-0 place-items-center overflow-hidden font-semibold',
+        size === 'xl' ? 'rounded-[22px]' : 'rounded-full',
         tone === 'brand'
           ? 'bg-brand-gradient text-on-brand ring-2 ring-border'
           : 'bg-primary-subtle text-primary-text',
-        size === 'sm' ? 'size-8 text-xs' : 'size-10 text-sm',
+        size === 'sm' ? 'size-8 text-xs' : size === 'md' ? 'size-10 text-sm' : 'size-19 text-2xl',
         className,
       )}
     >

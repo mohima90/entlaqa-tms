@@ -16,7 +16,7 @@ import { TextField } from '../text-field';
  * Theme preview (EP-ROLES, FR-IAM-07/08; Kawadir's roles screen): the roles table, the role builder with
  * its permissions accordion, a standard role (view only) and the team list's «Edit role» dialog, as
  * built in apps/suite/src/app/[locale]/suite/admin/roles/ and components/roles, components/users
- * (member-role-menu, edit-role-form, role-select). Sample data.
+ * (change-role-panel, role-select). Sample data.
  */
 const meta = {
   title: 'Theme preview/Roles',

@@ -12,7 +12,8 @@ import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { SuiteShell } from '../../../../../../components/suite-shell';
+import { FocusedActions } from '../../../../../../components/focused-actions';
+import { FocusedShell } from '../../../../../../components/focused-shell';
 import { CancelDraftButton } from '../../../../../../components/user-import/cancel-draft-button';
 import { Stepper } from '../../../../../../components/user-import/stepper';
 import { UploadPanel } from '../../../../../../components/user-import/upload-panel';
@@ -97,17 +98,18 @@ export default async function UserImportPage({ params }: { params: Promise<{ loc
   }
 
   return (
-    <SuiteShell locale={locale} context={context} current="users" path="/suite/admin/users/import">
-      <nav aria-label={t('breadcrumbLabel')} className="mb-2 text-sm">
-        <a href={`/${locale}/suite/admin/users`} className="underline">
-          {t('breadcrumb')}
-        </a>
-        {' / '}
-        <span>{t('breadcrumbImport')}</span>
-      </nav>
-      <h1 className="mb-2 mt-0 text-2xl font-bold">{t('title')}</h1>
-      <div className="flex flex-col gap-6">{body}</div>
-    </SuiteShell>
+    <FocusedShell
+      locale={locale}
+      context={context}
+      path="/suite/admin/users/import"
+      closeHref={`/${locale}/suite/admin/users`}
+      title={t('title')}
+      subtitle={context.organizationName}
+      steps={<Stepper {...await stepperProps(locale, 'file')} />}
+    >
+      <h1 className="m-0 text-[28px] font-bold md:text-5xl">{t('title')}</h1>
+      {body}
+    </FocusedShell>
   );
 }
 
@@ -135,8 +137,24 @@ async function stepOne(
 
   return (
     <>
-      <p className="m-0 max-w-3xl">{t('intro')}</p>
-      <Stepper {...await stepperProps(locale, 'file')} />
+      <p className="m-0 max-w-3xl text-text-muted">{t('intro')}</p>
+      <Card title={t('upload.uploadHeading')}>
+        {running ? (
+          <Alert tone="warning" title={t('upload.otherRunning')} data-testid="import-other-running">
+            <a href={`${base}/${running.id}`} className="underline">
+              {t('banners.viewProgress')}
+            </a>
+          </Alert>
+        ) : (
+          <UploadPanel
+            importBase={base}
+            labels={labels}
+            codes={codes}
+            errors={await fileActionErrorTexts(locale)}
+            locale={locale}
+          />
+        )}
+      </Card>
 
       <Card title={t('upload.templateHeading')} data-testid="import-template">
         <p className="mt-0">{t('upload.templateIntro', { organization })}</p>
@@ -187,35 +205,16 @@ async function stepOne(
         {await templateGuide(locale, view.nameLanguage)}
       </Card>
 
-      <Card title={t('upload.uploadHeading')}>
-        {running ? (
-          <Alert tone="warning" title={t('upload.otherRunning')} data-testid="import-other-running">
-            <a href={`${base}/${running.id}`} className="underline">
-              {t('banners.viewProgress')}
-            </a>
-          </Alert>
-        ) : (
-          <UploadPanel
-            importBase={base}
-            labels={labels}
-            codes={codes}
-            errors={await fileActionErrorTexts(locale)}
-            locale={locale}
-          />
-        )}
-      </Card>
+      {await recentImports(locale, view, organization, dates)}
 
-      <div className="flex flex-wrap items-center gap-3">
+      <FocusedActions note={t('upload.nextDisabled')}>
         <a
           href={`/${locale}/suite/admin/users`}
           className={buttonClasses({ variant: 'secondary', size: 'md' })}
         >
           {t('upload.back')}
         </a>
-        <p className="m-0 text-sm text-text-muted">{t('upload.nextDisabled')}</p>
-      </div>
-
-      {await recentImports(locale, view, organization, dates)}
+      </FocusedActions>
     </>
   );
 }

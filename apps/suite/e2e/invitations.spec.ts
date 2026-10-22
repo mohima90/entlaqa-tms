@@ -17,8 +17,23 @@ const run = Date.now().toString(36);
 const CODE = /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/;
 const linkCode = (shown: string) => shown.replaceAll('-', '');
 
-/** The invited users' list rows. */
-const rowsOf = (page: Page) => page.getByTestId('invitations-list').getByTestId('invitation-row');
+/** The invited users' rows: table rows on wider screens, one card each on phones (redesign package 3). */
+const rowsOf = (page: Page) =>
+  page
+    .locator('[data-testid="invitation-row"], [data-testid="invitations-cards"] > li')
+    .filter({ visible: true });
+/** The toasts of the page (a polite live region). */
+const toasts = (page: Page) => page.getByRole('region', { name: 'Status messages' });
+/** A row's ⋯ menu entry (Copy code, Resend invitation, Revoke invitation). */
+async function rowMenu(page: Page, row: ReturnType<typeof rowsOf>, name: string, entry: RegExp) {
+  await row.getByRole('button', { name: `More actions for ${name}` }).click();
+  await page.getByRole('menuitem', { name: entry }).click();
+}
+/** «Send invitation» sits in the invite panel's footer (redesign package 3). */
+const sendInvitation = (page: Page, locale: 'ar' | 'en' = 'en') =>
+  page
+    .getByTestId('invite-panel')
+    .getByRole('button', { name: locale === 'ar' ? 'إرسال الدعوة' : 'Send invitation' });
 
 /** Invites a learner through the form and returns the code shown right away (Kawadir). */
 async function inviteLearner(page: Page, invitee: string, locale: 'ar' | 'en') {
@@ -32,9 +47,7 @@ async function inviteLearner(page: Page, invitee: string, locale: 'ar' | 'en') {
     .getByRole('combobox', { name: locale === 'ar' ? /^الدور/ : /^Role/ })
     .selectOption({ label: locale === 'ar' ? 'موظف' : 'Employee' });
   await form.getByRole('radio', { name: locale === 'ar' ? 'العربية' : 'English' }).check();
-  await form
-    .getByRole('button', { name: locale === 'ar' ? 'إرسال الدعوة' : 'Send invitation' })
-    .click();
+  await sendInvitation(page, locale).click();
   const panel = page.getByTestId('invitation-created-panel');
   await expect(panel).toBeVisible();
   const code = (await panel.getByTestId('invite-code').textContent()) ?? '';
@@ -72,6 +85,10 @@ async function expectNoSeriousA11yViolations(page: Page) {
   // After an in-app navigation (router.replace + refresh) the framework swaps the page's <title> while the
   // new tree streams in: check the page once it has its title again (and fail if it never gets one).
   await expect(page).toHaveTitle(/\S/);
+  // From the top of the page: sticky bars may overlap content at other scroll positions.
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+  });
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
     .analyze();
@@ -85,13 +102,19 @@ test.describe('invitations (admin side)', () => {
   test.skip(!email || !password, 'SIGNED_IN_E2E_* not set');
   test.describe.configure({ mode: 'serial' });
 
-  test('English: invite, see it on the invited tab, resend, revoke', async ({ page }) => {
+  test('English: invite in the side panel, see it on the Pending invites view, resend, revoke', async ({
+    page,
+  }) => {
     const invitee = `invitee-en-${run}@sovereign.example`;
     await signIn(page);
     await page.goto('/en/suite/admin/users');
     await page.getByTestId('invite-user-link').click();
+    // The panel's own address; the list stays behind it.
     await expect(page).toHaveURL(/\/en\/suite\/admin\/users\/invite$/);
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Invite a user');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Team members');
+    await expect(
+      page.getByTestId('invite-panel').getByRole('heading', { name: 'Invite a user' }),
+    ).toBeVisible();
     const form = page.getByTestId('invite-user');
     // AAL1 Organization Admin: privileged roles are open, no authenticator code (PO decision, 14 Oct 2026).
     await expect(form.getByTestId('privileged-locked')).toHaveCount(0);
@@ -102,7 +125,7 @@ test.describe('invitations (admin side)', () => {
     await expectNoSeriousA11yViolations(page);
 
     // Required fields are reported inline
-    await form.getByRole('button', { name: 'Send invitation' }).click();
+    await sendInvitation(page).click();
     await expect(page.getByTestId('invite-message')).toBeVisible();
     await expect(form.locator('#invite-email-error')).toBeVisible();
     // The names follow the organization's default language (English; guided-test feedback #2): the
@@ -124,61 +147,73 @@ test.describe('invitations (admin side)', () => {
       .getByRole('combobox', { name: /^Role/ })
       .selectOption({ label: 'Training Coordinator' });
     await form.getByRole('radio', { name: 'English' }).check();
-    await form.getByRole('button', { name: 'Send invitation' }).click();
+    await sendInvitation(page).click();
 
-    // Kawadir: the code and the copy buttons right away (no e-mail needed).
+    // Kawadir: the code and the copy buttons right away (no e-mail needed), in the same panel.
     const panel = page.getByTestId('invitation-created-panel');
-    await expect(panel.getByRole('heading', { level: 2 })).toHaveText('Invitation created');
-    await expect(panel.getByRole('heading', { level: 2 })).toBeFocused();
+    await expect(panel.getByRole('heading', { name: 'Invitation created' })).toBeFocused();
     const code = (await panel.getByTestId('invite-code').textContent()) ?? '';
     expect(code).toMatch(CODE);
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
     await panel.getByRole('button', { name: 'Copy invite link' }).click();
-    await expect(panel.getByRole('status')).toHaveText('Invitation link copied.');
+    await expect(toasts(page)).toContainText('Invitation link copied.');
     const link = await page.evaluate(() => navigator.clipboard.readText());
     expect(link).toBe(`${new URL(page.url()).origin}/en/sign-up#code=${linkCode(code)}`);
     await panel.getByRole('button', { name: 'Copy code' }).click();
-    await expect(panel.getByRole('status')).toHaveText('Invitation code copied.');
+    await expect(toasts(page)).toContainText('Invitation code copied.');
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(code);
     await expectNoSeriousA11yViolations(page);
 
-    // On to the users list, invited tab, with the confirmation
-    await panel.getByRole('link', { name: 'Go to invited users' }).click();
-    await expect(page).toHaveURL(/\/en\/suite\/admin\/users\?tab=invited&invited=1$/);
-    await expect(page.getByTestId('invitation-created')).toContainText('Invitation created');
+    // «Invite another user» keeps the role and the language from the last invitation.
+    await page.getByTestId('invite-another').click();
+    await expect(page.getByTestId('invite-kept')).toBeVisible();
+    await expect(form.getByRole('combobox', { name: /^Role/ })).toHaveValue('training_coordinator');
+    await expect(form.locator('#invite-email')).toHaveValue('');
+
+    // Something typed: closing asks first (as Edit details; review, 21 Oct 2026).
+    await form.locator('#invite-email').fill('draft@sovereign.example');
+    await page.keyboard.press('Escape');
+    const discard = page.getByTestId('discard-dialog');
+    await expect(discard).toBeVisible();
+    await discard.getByRole('button', { name: 'Keep editing' }).last().click();
+    await expect(discard).toBeHidden();
+    await expect(form.locator('#invite-email')).toHaveValue('draft@sovereign.example');
+    await page.keyboard.press('Escape');
+    await discard.getByTestId('discard-confirm').click();
+
+    // Closing returns to the list (focus on «Invite user»); the Pending invites view shows the invitation.
+    await expect(page).toHaveURL(/\/en\/suite\/admin\/users$/);
+    await expect(page.getByTestId('invite-user-link')).toBeFocused();
+    await page.getByRole('link', { name: /Pending invites/ }).click();
     const row = rowsOf(page).filter({ hasText: invitee });
     await expect(row).toHaveCount(1);
     await expect(row).toContainText('Noura Aldossari');
     await expect(row).toContainText('Training Coordinator');
     await expect(row).toContainText('Invited');
     await expect(row).toContainText('Expires on');
-    // The same code, copyable any time (Kawadir's pending-invite row) — not in the page until copied
-    // (read on demand and audited, security review M2).
-    await expect(row.getByTestId('invite-code')).toHaveCount(0);
+    // The same code, copyable any time (Kawadir's pending-invite row) — never in the page: read when
+    // copied, and audited (security review M2).
     expect(await page.content()).not.toContain(linkCode(code));
-    await row.getByRole('button', { name: /^Copy code \(/ }).click();
-    await expect(row.getByTestId('invite-copy-status')).toHaveText('Invitation code copied.');
-    await expect(row.getByTestId('invite-code')).toHaveText(code);
+    await rowMenu(page, row, 'Noura Aldossari', /^Copy code/);
+    await expect(toasts(page)).toContainText('Invitation code copied.');
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(code);
-    // Copying again is announced again.
     await row.getByRole('button', { name: /^Copy invite link \(/ }).click();
-    await expect(row.getByTestId('invite-copy-status')).toHaveText('Invitation link copied.');
+    await expect(toasts(page)).toContainText('Invitation link copied.');
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(linkCode(code));
     await expectNoSeriousA11yViolations(page);
 
-    // Resend inline: a new code; the old one stops working.
-    await row.getByRole('button', { name: /^Resend invitation \(/ }).click();
-    await expect(page.getByTestId('invitations-message')).toContainText(
-      'Invitation resent with a new code.',
-    );
-    await expect(row.getByTestId('invite-code')).toHaveCount(0);
-    await row.getByRole('button', { name: /^Copy code \(/ }).click();
-    await expect(row.getByTestId('invite-code')).not.toHaveText(code);
+    // Resend: a new code; the old one stops working.
+    await rowMenu(page, row, 'Noura Aldossari', /^Resend invitation/);
+    await expect(toasts(page)).toContainText('Invitation resent with a new code.');
+    await rowMenu(page, row, 'Noura Aldossari', /^Copy code/);
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).not.toBe(code);
 
-    // Revoke after the confirmation; the invitation leaves the list
-    await row.getByRole('button', { name: /^Revoke invitation \(/ }).click();
-    await expect(row).toContainText('The invitation link stops working immediately.');
-    await row.getByRole('button', { name: 'Revoke invitation', exact: true }).click();
-    await expect(page.getByTestId('invitations-message')).toContainText('Invitation revoked');
+    // Revoke after the red confirmation; the invitation leaves the list
+    await rowMenu(page, row, 'Noura Aldossari', /^Revoke invitation/);
+    const revoke = page.getByTestId('revoke-dialog');
+    await expect(revoke).toContainText('The invitation link stops working immediately.');
+    await revoke.getByRole('button', { name: 'Revoke invitation', exact: true }).click();
+    await expect(toasts(page)).toContainText('Invitation revoked');
     await expect(rowsOf(page).filter({ hasText: invitee })).toHaveCount(0);
   });
 
@@ -187,7 +222,9 @@ test.describe('invitations (admin side)', () => {
     await signIn(page);
     await page.goto('/ar/suite/admin/users/invite');
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('دعوة مستخدم');
+    await expect(
+      page.getByTestId('invite-panel').getByRole('heading', { name: 'دعوة مستخدم' }),
+    ).toBeVisible();
     const form = page.getByTestId('invite-user');
     await expect(form.getByTestId('invite-notice')).toContainText('تبقى الدعوة صالحة 7 أيام');
     await expect(form.locator('#invite-role-hint')).toContainText('لكل شخص دور واحد');
@@ -204,17 +241,16 @@ test.describe('invitations (admin side)', () => {
       await form.locator('#invite-firstNameAr').fill('أحمد');
       await form.locator('#invite-familyNameAr').fill('منصور');
       await form.getByRole('combobox', { name: /^الدور/ }).selectOption({ label: 'موظف' });
-      await form.getByRole('button', { name: 'إرسال الدعوة' }).click();
+      await sendInvitation(page, 'ar').click();
     };
     await invite();
     const panel = page.getByTestId('invitation-created-panel');
-    await expect(panel.getByRole('heading', { level: 2 })).toHaveText('أُنشئت الدعوة');
+    await expect(panel.getByRole('heading', { name: 'أُنشئت الدعوة' })).toBeVisible();
     await expect(panel.getByRole('button', { name: 'نسخ الرابط' })).toBeVisible();
     await expect(panel.getByRole('button', { name: 'نسخ الرمز' })).toBeVisible();
     await expectNoSeriousA11yViolations(page);
-    await panel.getByRole('link', { name: 'الانتقال إلى المدعوين' }).click();
-    await expect(page).toHaveURL(/\/ar\/suite\/admin\/users\?tab=invited&invited=1$/);
-    await expect(page.getByTestId('invitation-created')).toContainText('أنشأنا الدعوة');
+    await page.getByTestId('invite-to-list').click();
+    await expect(page).toHaveURL(/\/ar\/suite\/admin\/users\?tab=invited$/);
     const row = rowsOf(page).filter({ hasText: invitee });
     await expect(row).toContainText('أحمد منصور');
     await expect(row).toContainText('مدعو');
@@ -234,9 +270,13 @@ test.describe('invitations (admin side)', () => {
 
     // Revoke (clean-up) in Arabic
     await page.goto('/ar/suite/admin/users?tab=invited');
-    await row.getByRole('button', { name: /^إلغاء الدعوة \(/ }).click();
-    await row.getByRole('button', { name: 'إلغاء الدعوة', exact: true }).click();
-    await expect(page.getByTestId('invitations-message')).toContainText('أُلغيت الدعوة');
+    await row.getByRole('button', { name: 'إجراءات أخرى لـأحمد منصور' }).click();
+    await page.getByRole('menuitem', { name: /^إلغاء الدعوة/ }).click();
+    await page
+      .getByTestId('revoke-dialog')
+      .getByRole('button', { name: 'إلغاء الدعوة', exact: true })
+      .click();
+    await expect(toasts(page)).toContainText('أُلغيت الدعوة');
     await expect(rowsOf(page).filter({ hasText: invitee })).toHaveCount(0);
   });
 
@@ -294,12 +334,13 @@ test.describe('invitations (admin side)', () => {
     const first = await inviteLearner(page, invitee, 'en');
     await page.goto('/en/suite/admin/users?tab=invited');
     const row = rowsOf(page).filter({ hasText: invitee });
-    await row.getByRole('button', { name: /^Resend invitation \(/ }).click();
-    await expect(page.getByTestId('invitations-message')).toContainText('new code');
+    await rowMenu(page, row, 'Salma Alharbi', /^Resend invitation/);
+    await expect(toasts(page)).toContainText('new code');
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
-    await row.getByRole('button', { name: /^Copy code \(/ }).click();
-    await expect(row.getByTestId('invite-code')).not.toHaveText(first);
-    const second = (await row.getByTestId('invite-code').textContent()) ?? '';
+    await rowMenu(page, row, 'Salma Alharbi', /^Copy code/);
+    await expect(toasts(page)).toContainText('Invitation code copied.');
+    const second = await page.evaluate(() => navigator.clipboard.readText());
+    expect(second).not.toBe(first);
     expect(second).toMatch(CODE);
 
     const context = await browser.newContext();
@@ -335,7 +376,7 @@ test.describe('organization structure (HR Manager)', () => {
     await form.locator('#invite-familyNameEn').fill('Resources');
     await form.getByRole('combobox', { name: /^Role/ }).selectOption({ label: 'HR Manager' });
     await form.getByRole('radio', { name: 'English' }).check();
-    await form.getByRole('button', { name: 'Send invitation' }).click();
+    await sendInvitation(page).click();
     const panel = page.getByTestId('invitation-created-panel');
     await expect(panel).toBeVisible();
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -477,7 +518,7 @@ test.describe('invitations left pending (for the acceptance E2E)', () => {
       await form.locator('#invite-familyNameEn').fill('Alotaibi');
       await form.getByRole('combobox', { name: /^Role/ }).selectOption({ label: 'Employee' });
       await form.getByRole('radio', { name: 'العربية' }).check();
-      await form.getByRole('button', { name: 'Send invitation' }).click();
+      await sendInvitation(page).click();
       await expect(page.getByTestId('invitation-created-panel')).toBeVisible();
       await page.goto('/en/suite/admin/users?tab=invited');
       const row = rowsOf(page).filter({ hasText: invitee });

@@ -22,6 +22,11 @@ export interface DialogProps {
   readonly tone?: 'danger' | 'warning' | undefined;
   readonly className?: string | undefined;
   readonly children?: ReactNode;
+  /**
+   * Asked before the dialog closes itself (Escape, the close button, the backdrop): false keeps it open —
+   * e.g. while its action is working. The caller then closes it with `open`.
+   */
+  readonly canClose?: (() => boolean) | undefined;
   readonly 'data-testid'?: string | undefined;
 }
 
@@ -52,6 +57,7 @@ export function Dialog({
   tone,
   className,
   children,
+  canClose,
   'data-testid': testId,
 }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -82,15 +88,21 @@ export function Dialog({
     // A click on the backdrop lands on the <dialog> itself (its content fills the box): close it.
     // Escape and the close button are the keyboard paths.
     const onBackdrop = (event: MouseEvent) => {
-      if (event.target === dialog) dialog.close();
+      if (event.target === dialog && (!canClose || canClose())) dialog.close();
+    };
+    // Escape: the browser's `cancel` comes first and can be refused.
+    const onCancel = (event: Event) => {
+      if (canClose && !canClose()) event.preventDefault();
     };
     dialog.addEventListener('close', onNativeClose);
     dialog.addEventListener('click', onBackdrop);
+    dialog.addEventListener('cancel', onCancel);
     return () => {
       dialog.removeEventListener('close', onNativeClose);
       dialog.removeEventListener('click', onBackdrop);
+      dialog.removeEventListener('cancel', onCancel);
     };
-  }, [onClose]);
+  }, [onClose, canClose]);
 
   return (
     <dialog
@@ -129,7 +141,9 @@ export function Dialog({
         <button
           type="button"
           aria-label={closeLabel}
-          onClick={() => ref.current?.close()}
+          onClick={() => {
+            if (!canClose || canClose()) ref.current?.close();
+          }}
           className="absolute end-3 top-3 grid size-10 place-items-center rounded-full text-text-muted hover:bg-surface-hover hover:text-text pointer-coarse:size-11"
         >
           <Icon name="close" />

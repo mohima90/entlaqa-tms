@@ -7,9 +7,6 @@ export const MAX_SENDS = 4;
 /** Days an invitation link stays valid. */
 export const VALID_DAYS = 7;
 
-/** Search parameter of the users list that shows the "invitation created" confirmation. */
-export const INVITED_FLASH_PARAM = 'invited';
-
 /** Form field and text key for a field error of the invite action (codes only; never values). */
 export function inviteFieldError(
   path: string,

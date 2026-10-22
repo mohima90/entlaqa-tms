@@ -15,6 +15,13 @@ export interface SidePanelProps {
   /** The panel's buttons (Cancel, Save) and, e.g., the audit note — at the bottom, always visible. */
   readonly footer?: ReactNode;
   readonly children?: ReactNode;
+  /** `md` 440 px (look at or change one thing); `lg` 600 px (a form: edit details, invite). */
+  readonly size?: 'md' | 'lg' | undefined;
+  /**
+   * Asked before the panel closes itself (Escape, the close button, the backdrop): false keeps it open —
+   * e.g. to ask «Discard your changes?» first (redesign package 3). The caller then closes it with `open`.
+   */
+  readonly canClose?: (() => boolean) | undefined;
   readonly 'data-testid'?: string | undefined;
 }
 
@@ -34,6 +41,8 @@ export function SidePanel({
   closeLabel,
   footer,
   children,
+  size = 'md',
+  canClose,
   'data-testid': testId,
 }: SidePanelProps) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -62,15 +71,21 @@ export function SidePanel({
       onClose();
     };
     const onBackdrop = (event: MouseEvent) => {
-      if (event.target === dialog) dialog.close();
+      if (event.target === dialog && (!canClose || canClose())) dialog.close();
+    };
+    // Escape: the browser's `cancel` comes first and can be refused.
+    const onCancel = (event: Event) => {
+      if (canClose && !canClose()) event.preventDefault();
     };
     dialog.addEventListener('close', onNativeClose);
     dialog.addEventListener('click', onBackdrop);
+    dialog.addEventListener('cancel', onCancel);
     return () => {
       dialog.removeEventListener('close', onNativeClose);
       dialog.removeEventListener('click', onBackdrop);
+      dialog.removeEventListener('cancel', onCancel);
     };
-  }, [onClose]);
+  }, [onClose, canClose]);
 
   return (
     <dialog
@@ -79,7 +94,8 @@ export function SidePanel({
       aria-describedby={description ? descriptionId : undefined}
       data-testid={testId}
       className={cn(
-        'fixed inset-y-2.5 end-2.5 start-auto m-0 h-auto max-h-none w-[440px] max-w-[calc(100%-1.25rem)] overflow-hidden rounded-xl border border-border bg-surface-raised p-0 text-text shadow-4 backdrop:bg-overlay',
+        'fixed inset-y-2.5 end-2.5 start-auto m-0 h-auto max-h-none max-w-[calc(100%-1.25rem)] overflow-hidden rounded-xl border border-border bg-surface-raised p-0 text-text shadow-4 backdrop:bg-overlay',
+        size === 'lg' ? 'w-[600px]' : 'w-[440px]',
         'open:flex open:flex-col',
       )}
     >
@@ -97,7 +113,9 @@ export function SidePanel({
         <button
           type="button"
           aria-label={closeLabel}
-          onClick={() => ref.current?.close()}
+          onClick={() => {
+            if (!canClose || canClose()) ref.current?.close();
+          }}
           className="-me-2 -mt-1 grid size-10 shrink-0 place-items-center rounded-full text-text-muted hover:bg-surface-hover hover:text-text pointer-coarse:size-11"
         >
           <Icon name="close" />

@@ -1,10 +1,12 @@
 'use client';
-import { Alert, Button, buttonClasses } from '@jadarat/ui';
+import { Alert, Button, Dialog, Icon, buttonClasses } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { cancelUserImportAction, confirmUserImportAction } from '../../actions/user-import';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { fieldErrorCodes } from '../profile/field-errors';
+import { FocusedActions } from '../focused-actions';
+import { useOptionsChanging } from './options-form';
 
 export interface ConfirmActionsProps {
   readonly importId: string;
@@ -22,25 +24,18 @@ export interface ConfirmActionsProps {
 }
 
 /**
- * Step 5's buttons (approved screen 8): «بدء الاستيراد», «رجوع», and «إلغاء الاستيراد وحذف الملف» after a
- * confirmation. The run starts in the background; the page then shows its progress.
+ * The confirmation's buttons (approved screen 8; redesign package 3: in the focused frame's bottom bar):
+ * «بدء الاستيراد», «رجوع», and «إلغاء الاستيراد وحذف الملف» after a red confirmation. The run starts in the
+ * background; the page then shows its progress.
  */
 export function ConfirmActions(props: ConfirmActionsProps) {
   const text = (key: string) => props.labels[key] ?? key;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  // A changed option is still loading: Start would send the previous choice, so it waits (busy).
+  const changing = useOptionsChanging();
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
-  // Focus follows the question (WCAG 2.4.3): «رجوع» when it opens, the opener when it closes.
-  const returnFocus = useRef(false);
-  useEffect(() => {
-    if (confirmingCancel) {
-      document.getElementById('cancel-import-keep')?.focus();
-    } else if (returnFocus.current) {
-      returnFocus.current = false;
-      document.getElementById('cancel-import-opener')?.focus();
-    }
-  }, [confirmingCancel]);
 
   const refusal = (error: Parameters<typeof errorText>[0]) => {
     const code = fieldErrorCodes(error).import;
@@ -48,6 +43,7 @@ export function ConfirmActions(props: ConfirmActionsProps) {
   };
 
   const start = () => {
+    if (changing) return;
     setFailure(null);
     startTransition(async () => {
       const result = await confirmUserImportAction({ importId: props.importId, ...props.options });
@@ -72,58 +68,72 @@ export function ConfirmActions(props: ConfirmActionsProps) {
   };
 
   return (
-    <div className="flex flex-col gap-3">
+    <>
       {failure ? (
         <Alert tone="danger" data-testid="confirm-error">
           {failure}
         </Alert>
       ) : null}
-      {confirmingCancel ? (
-        <div
-          role="alertdialog"
-          aria-labelledby="cancel-import-question"
-          className="flex flex-col gap-3 rounded-lg border border-danger p-4"
+      <FocusedActions
+        start={
+          <Button
+            variant="ghost"
+            disabled={pending}
+            id="cancel-import-opener"
+            onClick={() => {
+              setConfirmingCancel(true);
+            }}
+            data-testid="cancel-import"
+          >
+            <Icon name="trash" className="size-4" />
+            {text('cancel')}
+          </Button>
+        }
+      >
+        <a href={props.backHref} className={buttonClasses({ variant: 'secondary', size: 'md' })}>
+          {text('back')}
+        </a>
+        <Button
+          variant="primary"
+          busy={pending || changing}
+          disabled={pending || changing}
+          onClick={start}
+          data-testid="start-import"
         >
-          <p id="cancel-import-question" className="m-0">
-            {text('cancelConfirm')}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="danger" disabled={pending} onClick={cancel}>
-              {text('cancelConfirmButton')}
-            </Button>
+          <Icon name="arrow-end" />
+          {pending ? text('starting') : text('start')}
+        </Button>
+      </FocusedActions>
+      {/* Cancelling deletes the file and the review: a red confirmation (it cannot be undone). */}
+      <Dialog
+        open={confirmingCancel}
+        onClose={() => {
+          if (!pending) setConfirmingCancel(false);
+        }}
+        tone="danger"
+        title={text('cancel')}
+        description={text('cancelConfirm')}
+        closeLabel={text('keep')}
+        size="sm"
+        data-testid="cancel-import-dialog"
+        footer={
+          <>
             <Button
               variant="secondary"
               disabled={pending}
               id="cancel-import-keep"
               onClick={() => {
-                returnFocus.current = true;
                 setConfirmingCancel(false);
               }}
             >
               {text('keep')}
             </Button>
-          </div>
-        </div>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-3">
-        <a href={props.backHref} className={buttonClasses({ variant: 'secondary', size: 'md' })}>
-          {text('back')}
-        </a>
-        <Button variant="primary" disabled={pending} onClick={start} data-testid="start-import">
-          {pending ? text('starting') : text('start')}
-        </Button>
-        <Button
-          variant="ghost"
-          disabled={pending}
-          id="cancel-import-opener"
-          onClick={() => {
-            setConfirmingCancel(true);
-          }}
-          data-testid="cancel-import"
-        >
-          {text('cancel')}
-        </Button>
-      </div>
-    </div>
+            <Button variant="danger" busy={pending} disabled={pending} onClick={cancel}>
+              {text('cancelConfirmButton')}
+            </Button>
+          </>
+        }
+      />
+    </>
   );
 }

@@ -50,6 +50,18 @@
     "emptyBody": "Sessions and courses will appear here once the Training module is set up for your organization.",
     "setupTitle": "Set up your organization",
     "setupBody": "Fill in your general settings, invite your team members, check their roles and set your security policy. More set-up pages are coming soon.",
+    "welcome": "Welcome, {name}",
+    "yourPages": "Your pages",
+    "yourPagesIntro": "The pages you can open today. More appear as the Training module grows.",
+    "searchHint": "Looking for a page? Press {key}",
+    "setupStep": {
+      "team": "Invite the people who run training",
+      "branding": "Logo, colours and the names people see",
+      "roles": "Check who can do what",
+      "general": "Name, industry, country and defaults",
+      "email": "Who sends your organization's e-mails",
+      "security": "Sign-in and password policy"
+    },
     "comingSoon": "Coming soon",
     "roles": "Roles & permissions",
     "planningSettings": "Planning settings",

@@ -17,7 +17,10 @@ export interface ToastAction {
 
 export interface ToastOptions {
   readonly description?: string | undefined;
-  /** Milliseconds before it hides itself; `null` keeps it until closed (errors by default). */
+  /**
+   * Milliseconds before it hides itself; `null` keeps it until closed (errors and toasts with an action by
+   * default). A toast with an action never hides in less than `MIN_ACTION_TOAST_DURATION`.
+   */
   readonly duration?: number | null | undefined;
   /** A button in the toast (e.g. Undo); the toast closes when it is pressed. */
   readonly action?: ToastAction | undefined;
@@ -34,6 +37,11 @@ export interface ToastItem {
 
 /** Long enough to read a sentence (WCAG 2.2.1: hover or focus also pauses it). */
 export const DEFAULT_TOAST_DURATION = 6000;
+/**
+ * The shortest life of a toast with an action (WCAG 2.2.1, 2.1.1): keyboard and screen-reader users must
+ * have time to reach the button (review of redesign package 3, 21 Oct 2026).
+ */
+export const MIN_ACTION_TOAST_DURATION = 20_000;
 /** At most this many at once; the oldest goes first. */
 export const MAX_TOASTS = 4;
 
@@ -57,12 +65,15 @@ export function createToastStore(): ToastStore {
   return {
     add(tone, message, options = {}) {
       const id = nextId++;
-      const duration =
+      // Errors and toasts with an action stay until closed unless told otherwise.
+      const asked =
         options.duration === undefined
-          ? tone === 'error'
+          ? tone === 'error' || options.action
             ? null
             : DEFAULT_TOAST_DURATION
           : options.duration;
+      const duration =
+        options.action && asked !== null ? Math.max(asked, MIN_ACTION_TOAST_DURATION) : asked;
       items = [
         ...items,
         { id, tone, message, description: options.description, duration, action: options.action },

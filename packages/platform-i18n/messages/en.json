@@ -76,6 +76,7 @@
     "notificationsEmptyTitle": "No notifications yet",
     "notificationsEmptyBody": "Notifications about your training and approvals will appear here.",
     "statusMessages": "Status messages",
+    "toastActionHint": "You can use “{action}” from this message until you close it.",
     "accountSubtitle": "{organization} · {role}",
     "myAccount": "My account",
     "groupOrganization": "Organization",

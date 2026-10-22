@@ -489,6 +489,8 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
                   groups={accordionGroups}
                   onToggle={(code, on) => {
                     update({ permissions: togglePermission(groups, values.permissions, code, on) });
+                    // A tick after the scope change: «Undo» would throw it away, so it is no longer offered.
+                    setCleared(null);
                   }}
                   countLabel={(checked, total) => count(text('countLabel'), checked, total)}
                   idPrefix="role-permission"

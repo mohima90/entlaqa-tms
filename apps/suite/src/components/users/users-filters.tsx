@@ -45,6 +45,14 @@ export function UsersFilters(props: UsersFiltersProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [query, setQuery] = useState(params.q ?? '');
+  // While a search waits for the pause, the box is the member's; otherwise it follows the address (Back,
+  // a view card, a link) — adjusted during render, React's pattern for state that follows a prop.
+  const [typing, setTyping] = useState(false);
+  const [shownQ, setShownQ] = useState(params.q);
+  if (params.q !== shownQ) {
+    setShownQ(params.q);
+    if (!typing && (params.q ?? '') !== query.trim()) setQuery(params.q ?? '');
+  }
   const timer = useRef<number | undefined>(undefined);
   // The latest params (the pills may change while a search waits).
   const latest = useRef(params);
@@ -59,19 +67,27 @@ export function UsersFilters(props: UsersFiltersProps) {
     [],
   );
 
-  const go = (changes: Partial<Record<keyof UsersListParams, string | undefined>>) => {
+  /**
+   * A filter pill is a step Back can undo (`push`); the search replaces the address while typing (one
+   * history entry per search, not per pause).
+   */
+  const go = (
+    changes: Partial<Record<keyof UsersListParams, string | undefined>>,
+    mode: 'push' | 'replace',
+  ) => {
+    const href = usersListHref(locale, latest.current, { ...changes, page: undefined });
     startTransition(() => {
-      router.replace(usersListHref(locale, latest.current, { ...changes, page: undefined }), {
-        scroll: false,
-      });
+      if (mode === 'push') router.push(href, { scroll: false });
+      else router.replace(href, { scroll: false });
     });
   };
 
   const applySearch = (value: string) => {
     window.clearTimeout(timer.current);
+    setTyping(false);
     const q = value.trim();
     if (q === (latest.current.q ?? '')) return;
-    go({ q: q === '' ? undefined : q });
+    go({ q: q === '' ? undefined : q }, 'replace');
   };
 
   const onSubmit = (event: SyntheticEvent<HTMLFormElement>) => {
@@ -90,7 +106,7 @@ export function UsersFilters(props: UsersFiltersProps) {
         options={choice.options}
         allLabel={choice.allLabel}
         onChange={(next) => {
-          go({ [key]: next ?? undefined });
+          go({ [key]: next ?? undefined }, 'push');
         }}
         removeLabel={props.texts.removeFilter.replace(
           '{filter}',
@@ -116,6 +132,7 @@ export function UsersFilters(props: UsersFiltersProps) {
           onChange={(event) => {
             const value = event.target.value;
             setQuery(value);
+            setTyping(true);
             window.clearTimeout(timer.current);
             timer.current = window.setTimeout(() => {
               applySearch(value);

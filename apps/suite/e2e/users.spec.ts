@@ -445,14 +445,36 @@ test.describe('users pages', () => {
     await panel.getByRole('button', { name: 'Save role' }).click();
     await expect(panel).toBeHidden();
     await expect(member(page, 'Sarah Abdullah Alqahtani')).toContainText('L&D Manager');
+    // Focus comes back to the row's ⋯ (WCAG 2.4.3; review, 21 Oct 2026).
+    const sarahMenu = member(page, 'Sarah Abdullah Alqahtani').getByRole('button', {
+      name: 'More actions for Sarah Abdullah Alqahtani',
+    });
+    await expect(sarahMenu).toBeFocused();
 
-    // Undo (PO, 21 Oct 2026): the previous role back through the same action (its own audit entry).
+    // Undo (PO, 21 Oct 2026): the previous role back through the same action (its own audit entry). The
+    // toast stays until closed and says so to screen readers (WCAG 2.2.1 / 2.1.1; review, 21 Oct 2026).
     await expect(toasts(page)).toContainText('Role saved.');
+    await expect(toasts(page).getByTestId('toast-action-hint')).toHaveText(
+      'You can use “Undo” from this message until you close it.',
+    );
     await toasts(page).getByRole('button', { name: 'Undo' }).click();
     await expect(toasts(page)).toContainText(
       'Role change undone: Sarah Abdullah Alqahtani is Training Coordinator again.',
     );
     await expect(member(page, 'Sarah Abdullah Alqahtani')).toContainText('Training Coordinator');
+
+    // Cancel also gives focus back: to the ⋯ that opened the panel, or to the name from the quick look.
+    await rowAction(page, 'Sarah Abdullah Alqahtani', 'member-menu-edit-role');
+    await panel.getByRole('button', { name: 'Cancel' }).click();
+    await expect(panel).toBeHidden();
+    await expect(sarahMenu).toBeFocused();
+    const sarahName = member(page, 'Sarah Abdullah Alqahtani').getByTestId('member-peek');
+    await sarahName.click();
+    await page.getByTestId('peek-change-role').click();
+    await expect(panel).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(panel).toBeHidden();
+    await expect(sarahName).toBeFocused();
     await changeRole(page, 'Sarah Abdullah Alqahtani', /^L&D Manager/);
 
     await page.goto(`/en/suite/admin/users/${SARA}`);

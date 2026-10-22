@@ -128,6 +128,7 @@ export {
 } from './table';
 export {
   DEFAULT_TOAST_DURATION,
+  MIN_ACTION_TOAST_DURATION,
   MAX_TOASTS,
   type ToastAction,
   type ToastItem,

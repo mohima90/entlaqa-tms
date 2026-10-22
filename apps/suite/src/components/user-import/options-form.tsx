@@ -1,7 +1,7 @@
 'use client';
 import { ChoiceCard } from '@jadarat/ui';
 import { usePathname, useRouter } from 'next/navigation';
-import { type ReactNode, useTransition } from 'react';
+import { type ReactNode, useEffect, useId, useSyncExternalStore, useTransition } from 'react';
 
 export type ExistingChoice = 'skip' | 'upsert' | 'update_only';
 export type InvitationsChoice = 'send' | 'hold';
@@ -26,11 +26,43 @@ function confirmHref(pathname: string, options: ImportOptions): string {
   return `${pathname}?${query.toString()}`;
 }
 
+/*
+ * Option changes still loading (the confirmation's «Start import» sends the options of the page as the
+ * server last showed it, so it waits until a newer choice has arrived; review, 21 Oct 2026).
+ */
+const changing = new Set<string>();
+const listeners = new Set<() => void>();
+function setChanging(id: string, on: boolean): void {
+  const had = changing.has(id);
+  if (on) changing.add(id);
+  else changing.delete(id);
+  if (had !== on) for (const listener of listeners) listener();
+}
+function subscribeChanging(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+const anyChanging = () => changing.size > 0;
+
+/** True while a changed option is still being applied to the confirmation. */
+export function useOptionsChanging(): boolean {
+  return useSyncExternalStore(subscribeChanging, anyChanging, () => false);
+}
+
 /** A change of option: the confirmation reads its counts again for it (no other state). */
 function useChoose(options: ImportOptions) {
   const router = useRouter();
   const pathname = usePathname();
   const [pending, startTransition] = useTransition();
+  const id = useId();
+  useEffect(() => {
+    setChanging(id, pending);
+    return () => {
+      setChanging(id, false);
+    };
+  }, [id, pending]);
   const choose = (changes: Partial<ImportOptions>) => {
     startTransition(() => {
       router.replace(confirmHref(pathname, { ...options, ...changes }), { scroll: false });

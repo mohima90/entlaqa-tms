@@ -127,15 +127,20 @@ export function BranchesTable(props: BranchesTableProps) {
       toast.success(fill('toasts.activated', { name: branch.name }));
       return;
     }
-    const version = result.value.after?.version ?? branch.version + 1;
-    toast.success(fill('toasts.deactivated', { name: branch.name }), {
-      action: {
-        label: props.undoLabel,
-        onClick: () => {
-          void setStatus({ ...branch, version, active: false }, true);
-        },
-      },
-    });
+    const after = result.value.after;
+    toast.success(
+      fill('toasts.deactivated', { name: branch.name }),
+      after
+        ? {
+            action: {
+              label: props.undoLabel,
+              onClick: () => {
+                void setStatus({ ...branch, version: after.version, active: false }, true);
+              },
+            },
+          }
+        : undefined,
+    );
   }
 
   const statusBadge = (branch: BranchView) => (

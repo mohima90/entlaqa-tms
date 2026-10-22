@@ -560,7 +560,7 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
           }
         />
       ) : null}
-      <LeaveGuard active={editable && dirty && !pending} texts={common} />
+      <LeaveGuard active={dirty && !pending} texts={common} />
     </>
   );
 }

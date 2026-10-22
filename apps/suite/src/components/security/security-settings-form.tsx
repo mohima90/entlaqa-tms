@@ -750,7 +750,7 @@ export function SecuritySettingsForm(props: SecurityFormProps) {
           </div>
         ) : null}
       </Dialog>
-      <LeaveGuard active={editable && dirty && !pending} texts={common} />
+      <LeaveGuard active={props.editable && dirty && !pending} texts={common} />
     </>
   );
 }

@@ -856,7 +856,8 @@ export function BrandingForm(props: BrandingFormProps) {
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(17rem,22rem)]">
         <form
           id={FORM_ID}
-          className="flex min-w-0 flex-col gap-5"
+          // A focused field never hides behind the floating save bar (WCAG 2.4.11).
+          className="flex min-w-0 flex-col gap-5 [&_button]:scroll-mb-40 [&_input]:scroll-mb-40 [&_select]:scroll-mb-40"
           onSubmit={onSubmit}
           onReset={(event) => {
             event.preventDefault();
@@ -1189,7 +1190,7 @@ export function BrandingForm(props: BrandingFormProps) {
           {previewBody(false)}
         </div>
       </Dialog>
-      <LeaveGuard active={editable && dirty && !pending} texts={common} />
+      <LeaveGuard active={props.editable && dirty && !pending} texts={common} />
     </>
   );
 }

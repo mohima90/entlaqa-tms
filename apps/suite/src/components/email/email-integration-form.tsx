@@ -334,7 +334,8 @@ export function EmailIntegrationForm(props: EmailIntegrationFormProps) {
   const senderReady = ownActive || props.platformSenderVerified;
 
   return (
-    <div className="flex flex-col gap-5">
+    // A focused field never hides behind the bottom of the screen (WCAG 2.4.11).
+    <div className="flex flex-col gap-5 [&_button]:scroll-mb-40 [&_input]:scroll-mb-40 [&_select]:scroll-mb-40">
       {stepUp ? <StepUpBanner href={props.stepUp.href} texts={common} /> : null}
       <section
         aria-labelledby="email-integration-status"

@@ -1,4 +1,5 @@
 import { FieldError, cn } from '@jadarat/ui';
+import type { ReactNode, SelectHTMLAttributes } from 'react';
 
 /**
  * The select's look: TextField's field (fieldInputClasses) without its read-only style — a <select> always
@@ -6,7 +7,6 @@ import { FieldError, cn } from '@jadarat/ui';
  */
 const selectClasses =
   'select-chevron min-h-12 w-full rounded-md border-[1.5px] border-border-strong bg-surface ps-3.5 pe-10 text-[15px] text-text transition-[border-color,box-shadow] duration-[var(--duration-base)] focus:border-primary disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:text-text-muted';
-import type { ReactNode, SelectHTMLAttributes } from 'react';
 
 /**
  * Labelled native select with hint and error — the same contract and look as TextField (direction C,

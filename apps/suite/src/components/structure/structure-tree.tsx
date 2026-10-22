@@ -140,15 +140,20 @@ export function StructureTree(props: StructureTreeProps) {
       toast.success(fill('toasts.activated', { name: unit.name }));
       return;
     }
-    const version = result.value.after?.version ?? unit.version + 1;
-    toast.success(fill('toasts.deactivated', { name: unit.name }), {
-      action: {
-        label: props.undoLabel,
-        onClick: () => {
-          void setStatusNow({ ...unit, version, active: false }, true);
-        },
-      },
-    });
+    const after = result.value.after;
+    toast.success(
+      fill('toasts.deactivated', { name: unit.name }),
+      after
+        ? {
+            action: {
+              label: props.undoLabel,
+              onClick: () => {
+                void setStatusNow({ ...unit, version: after.version, active: false }, true);
+              },
+            },
+          }
+        : undefined,
+    );
   }
 
   function changeStatus(unit: UnitView) {

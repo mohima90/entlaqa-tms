@@ -55,7 +55,7 @@ export function Segmented<V extends string>({
                 checked
                   ? 'border-primary bg-primary-subtle font-semibold text-primary-text'
                   : 'border-transparent text-text-muted hover:text-text',
-                disabled ? 'cursor-not-allowed' : 'cursor-pointer',
+                disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
               )}
             >
               <input

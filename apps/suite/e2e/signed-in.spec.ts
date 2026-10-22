@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
+import { type Page, expect, test } from '@playwright/test';
 import { afterSignIn, submitSignIn, signOutFromMenu } from './sign-in';
 
 /**
@@ -10,6 +11,17 @@ import { afterSignIn, submitSignIn, signOutFromMenu } from './sign-in';
 const email = process.env.SIGNED_IN_E2E_EMAIL;
 const password = process.env.SIGNED_IN_E2E_PASSWORD;
 const organization = process.env.SIGNED_IN_E2E_ORGANIZATION_EN;
+
+async function expectNoSeriousA11yViolations(page: Page) {
+  await expect(page).toHaveTitle(/\S/);
+  const results = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+    .analyze();
+  const blocking = results.violations.filter(
+    (v) => v.impact === 'serious' || v.impact === 'critical',
+  );
+  expect(blocking.map((v) => `${v.id}: ${v.help} (${v.nodes.length})`)).toEqual([]);
+}
 
 test.describe('signed-in flow', () => {
   test.skip(!email || !password || !organization, 'SIGNED_IN_E2E_* not set');
@@ -44,18 +56,31 @@ test.describe('signed-in flow', () => {
     // training home; its menu has the set-up sections and no training entries.
     const setup = page.getByTestId('setup-home');
     await expect(setup.getByRole('heading', { name: 'Set up your organization' })).toBeVisible();
+    // Redesign package 6: each page is a tile with one line saying what it is for (name first).
     await expect(setup.getByRole('link')).toHaveText([
-      'Team members',
-      'Roles & permissions',
-      'General',
-      'Security',
+      /^Team members/,
+      /^Branding/,
+      /^Roles & permissions/,
+      /^General/,
+      /^Email integration/,
+      /^Security/,
     ]);
+    // The greeting and the team's figures (each a link to Team members on its tab).
+    await expect(page.getByRole('heading', { level: 1 })).toContainText(/^Welcome, /);
+    await expect(page.getByTestId('home-team-stats').getByRole('link')).toHaveCount(4);
+    await expect(page.getByTestId('home-stat-active')).toHaveAttribute(
+      'href',
+      '/en/suite/admin/users?tab=active',
+    );
     await expect(page.getByText('No training data yet')).toHaveCount(0);
     await expect(page.getByText('Calendar')).toHaveCount(0);
+    await expectNoSeriousA11yViolations(page);
     await page.goto('/ar/suite');
     await expect(
       page.getByTestId('setup-home').getByRole('heading', { name: 'إعداد منشأتك' }),
     ).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1 })).toContainText(/^مرحبًا، /);
+    await expectNoSeriousA11yViolations(page);
     await page.goto('/en/suite');
     // Top-bar controls are 44 px touch targets on a phone (Kawadir top bar, T-M2-43).
     if (isMobile) {

@@ -221,6 +221,10 @@ test.describe('users pages', () => {
     // Not an Organization Admin: the training home and the training entries, no set-up card (T-M2-21).
     await expect(page.getByRole('heading', { name: 'No training data yet' })).toBeVisible();
     await expect(page.getByTestId('setup-home')).toHaveCount(0);
+    // Redesign package 6: «Your pages» lists the pages already in their menu.
+    await expect(
+      page.getByTestId('your-pages').getByRole('link', { name: /^Team members/ }),
+    ).toBeVisible();
     await expect(page.getByText('Coming soon').first()).toBeVisible();
     await expect(mainNavigation(page).getByRole('link', { name: 'General' })).toHaveCount(0);
     await mainNavigation(page).getByRole('link', { name: 'Team members' }).click();

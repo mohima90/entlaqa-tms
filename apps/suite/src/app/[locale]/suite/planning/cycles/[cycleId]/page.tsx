@@ -1,5 +1,6 @@
 import { toClientError } from '@jadarat/platform-core';
 import type { AppLocale } from '@jadarat/platform-i18n';
+import { formatDisplayDate } from '@jadarat/platform-i18n/dates';
 import { routing } from '@jadarat/platform-i18n/routing';
 import type { CycleView } from '@jadarat/tms';
 import { earliestExtension } from '@jadarat/tms/planning-rules';
@@ -170,7 +171,12 @@ export default async function PlanCyclePage({
             {view.cycle.launchedAt ? (
               <span>
                 {t('cycle.launchedOn', {
-                  date: day(view.cycle.launchedAt.toISOString().slice(0, 10)),
+                  date: formatDisplayDate(view.cycle.launchedAt, {
+                    locale,
+                    display: context.regional.dateDisplay,
+                    timeZone: context.regional.timeZone,
+                    style: 'date',
+                  }),
                 })}
               </span>
             ) : null}
@@ -738,7 +744,7 @@ async function Review({
 
       <div className="flex flex-wrap items-center gap-4 rounded-[22px] border border-border bg-surface px-5.5 py-4.5 shadow-2">
         <p className="m-0 min-w-55 flex-1 text-text-muted" id={ready ? undefined : 'launch-why'}>
-          {ready ? t('setup.draftNote') : t('setup.launchBlocked')}
+          {ready ? t('setup.launchReady') : t('setup.launchBlocked')}
         </p>
         <LaunchCycleButton
           locale={locale}

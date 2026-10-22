@@ -163,7 +163,7 @@ export function CoursesScreen(props: CoursesScreenProps) {
         toast.success(archive ? text('archived') : text('restored'), {
           ...(undo
             ? {
-                duration: 10_000,
+                duration: null,
                 action: {
                   label: text('undo'),
                   onClick: () => {

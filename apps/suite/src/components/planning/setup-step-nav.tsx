@@ -1,7 +1,7 @@
 'use client';
 import { Button, Dialog, StepList, type StepListItem } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 
 /*
  * The set-up's side step list (redesign package 4) and the «Leave {step} without saving?» question: each
@@ -39,6 +39,39 @@ export interface SetupStepNavProps {
 export function SetupStepNav({ label, items, current, short, texts }: SetupStepNavProps) {
   const router = useRouter();
   const [leaving, setLeaving] = useState<string | null>(null);
+  const keepId = useId();
+
+  // The same question for the other ways out of the step inside the page (breadcrumb, Back, links in the
+  // forms), and the browser's own warning when the tab is closed or reloaded with unsaved edits.
+  useEffect(() => {
+    const onClick = (event: MouseEvent) => {
+      if (!dirty || event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const target = event.target instanceof Element ? event.target : null;
+      const link = target?.closest<HTMLAnchorElement>('main a[href], a[data-leave-check]');
+      if (!link || link.closest('[data-testid="setup-stepper"]')) return;
+      const url = new URL(link.href, window.location.href);
+      if (url.origin !== window.location.origin || link.target === '_blank') return;
+      event.preventDefault();
+      setLeaving(`${url.pathname}${url.search}${url.hash}`);
+    };
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!dirty) return;
+      event.preventDefault();
+    };
+    document.addEventListener('click', onClick, true);
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      document.removeEventListener('click', onClick, true);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+    };
+  }, []);
+
+  // «Keep editing» is the safe default: it takes the focus when the question opens.
+  useEffect(() => {
+    if (leaving !== null) document.getElementById(keepId)?.focus();
+  }, [leaving, keepId]);
+
   return (
     <>
       <StepList
@@ -79,9 +112,11 @@ export function SetupStepNav({ label, items, current, short, texts }: SetupStepN
               {texts.discard}
             </Button>
             <Button
+              id={keepId}
               onClick={() => {
                 setLeaving(null);
               }}
+              data-testid="setup-leave-keep"
             >
               {texts.keepEditing}
             </Button>

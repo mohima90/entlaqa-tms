@@ -996,7 +996,8 @@
       "launchBlocked": "Fix the items above, then launch the cycle.",
       "leaveTitle": "Leave {step} without saving?",
       "leaveBody": "Your changes in this step are lost if you leave now.",
-      "defaultsLink": "Defaults come from Planning settings."
+      "defaultsLink": "Defaults come from Planning settings.",
+      "launchReady": "Everything is set. Unit heads get their forms when you launch."
     },
     "cycle": {
       "launchedOn": "Launched on {date}",
@@ -2583,7 +2584,8 @@
     "sectionSettings": "Section settings",
     "saveField": "Save field",
     "saveSection": "Save section",
-    "rowActions": "More actions for «{name}»"
+    "rowActions": "More actions for «{name}»",
+    "notSaved": "Not saved"
   },
   "courses": {
     "title": "Courses",

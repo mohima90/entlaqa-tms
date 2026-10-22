@@ -85,7 +85,11 @@ export function StepFooter({
 }) {
   return (
     <div className="flex flex-wrap items-center justify-end gap-2.5 max-md:[&>*]:flex-1">
-      <a href={backHref} className={buttonClasses({ variant: 'secondary', size: 'md' })}>
+      <a
+        href={backHref}
+        className={buttonClasses({ variant: 'secondary', size: 'md' })}
+        data-leave-check
+      >
         {/* «Back» points to the start: the end arrow, turned (it already mirrors in Arabic). */}
         <span className="inline-flex -scale-x-100">
           <Icon name="arrow-end" className="size-4" />

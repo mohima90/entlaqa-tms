@@ -140,7 +140,9 @@ export function NeedsFormsLibrary(props: NeedsFormsLibraryProps) {
       close();
       toast.success(
         done,
-        options.undo ? { action: { label: text('undo'), onClick: options.undo } } : undefined,
+        options.undo
+          ? { duration: null, action: { label: text('undo'), onClick: options.undo } }
+          : undefined,
       );
       // After Create or Duplicate the new form opens in the builder (PO rule, redesign package 4).
       if (options.openBuilder) router.push(builder(result.value.formId));

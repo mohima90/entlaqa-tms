@@ -124,6 +124,8 @@ export function NeedsFormBuilder(props: NeedsFormBuilderProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [pending, startTransition] = useTransition();
+  // A drop whose moves failed partway: the ones that worked are saved, the rest is not.
+  const [notSaved, setNotSaved] = useState(false);
   const [inspectorKey, setInspectorKey] = useState(0);
 
   if (!loaded) return null;
@@ -161,6 +163,7 @@ export function NeedsFormBuilder(props: NeedsFormBuilderProps) {
         failed(result.error, options.inPane ?? false);
         return;
       }
+      setNotSaved(false);
       setForm(result.value.form);
       setMessage(null);
       setFieldErrors({});
@@ -170,17 +173,22 @@ export function NeedsFormBuilder(props: NeedsFormBuilderProps) {
 
   /** A drop: the same Move up / Move down, once per place moved. */
   function moveBy(move: (direction: 'up' | 'down') => Promise<FormResult>, by: number) {
-    if (by === 0) return;
+    if (by === 0 || pending) return;
     startTransition(async () => {
-      let last: FormResult | null = null;
+      let saved: NeedsFormDefinition | null = null;
       for (let i = 0; i < Math.abs(by); i++) {
-        last = await move(by < 0 ? 'up' : 'down');
-        if (!last.ok) {
-          failed(last.error, false);
+        const result = await move(by < 0 ? 'up' : 'down');
+        if (!result.ok) {
+          // The moves that worked are saved: show them, then the error and «Not saved».
+          if (saved) setForm(saved);
+          setNotSaved(true);
+          failed(result.error, false);
           return;
         }
+        saved = result.value.form;
       }
-      if (last?.ok) setForm(last.value.form);
+      if (saved) setForm(saved);
+      setNotSaved(false);
     });
   }
 
@@ -326,7 +334,7 @@ export function NeedsFormBuilder(props: NeedsFormBuilderProps) {
                   if (dragging?.kind === 'section') event.preventDefault();
                 }}
                 onDrop={(event) => {
-                  if (dragging?.kind !== 'section') return;
+                  if (dragging?.kind !== 'section' || pending) return;
                   event.preventDefault();
                   const from = dragging.index;
                   const moving = current.sections[from];
@@ -343,7 +351,7 @@ export function NeedsFormBuilder(props: NeedsFormBuilderProps) {
                   {editable ? (
                     <span
                       aria-hidden="true"
-                      draggable
+                      draggable={!pending}
                       onDragStart={() => {
                         setDragging({ kind: 'section', index: sectionIndex });
                       }}
@@ -553,7 +561,7 @@ export function NeedsFormBuilder(props: NeedsFormBuilderProps) {
                             {editable ? (
                               <span
                                 aria-hidden="true"
-                                draggable
+                                draggable={!pending}
                                 onDragStart={() => {
                                   setDragging({
                                     kind: 'field',
@@ -578,7 +586,11 @@ export function NeedsFormBuilder(props: NeedsFormBuilderProps) {
                                   event.preventDefault();
                               }}
                               onDrop={(event) => {
-                                if (dragging?.kind !== 'field' || dragging.sectionId !== section.id)
+                                if (
+                                  pending ||
+                                  dragging?.kind !== 'field' ||
+                                  dragging.sectionId !== section.id
+                                )
                                   return;
                                 event.preventDefault();
                                 const moving = dragging;
@@ -863,12 +875,20 @@ export function NeedsFormBuilder(props: NeedsFormBuilderProps) {
               role="status"
               className={cn(
                 'm-0 inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-sm font-semibold',
-                pending ? 'bg-surface-hover text-text-muted' : 'bg-success-subtle text-success',
+                pending
+                  ? 'bg-surface-hover text-text-muted'
+                  : notSaved
+                    ? 'bg-warning-subtle text-warning'
+                    : 'bg-success-subtle text-success',
               )}
               data-testid="builder-save-status"
             >
-              {pending ? <Spinner /> : <Icon name="success" className="size-4" />}
-              {pending ? text('saving') : text('allSaved')}
+              {pending ? (
+                <Spinner />
+              ) : (
+                <Icon name={notSaved ? 'warning' : 'success'} className="size-4" />
+              )}
+              {pending ? text('saving') : notSaved ? text('notSaved') : text('allSaved')}
             </p>
           ) : null}
         </div>

@@ -75,3 +75,20 @@ Every pair is checked in light and dark for the shipped theme and for hundreds o
 Panels and dialogs of one person keep their own addresses (`/users/[id]/edit`, `/roles`, `/deactivate`,
 `/users/invite`): the address opens the page with the panel open, closing returns to the page and focus to
 the opener. Toasts replace the `?invited=1`-style messages.
+
+## Package 2 additions (Organization settings, PO 21 Oct 2026)
+
+| Block | Use |
+|---|---|
+| `SaveBar` states | At rest «Last changed by …» and a quiet Save (no Cancel); `invalid` after a refused Save: «Some fields need correcting…» with «Go to {field}» (`fix`); `extra` holds e.g. the phone «Preview» of Branding. |
+| Leave guard (apps/suite `LeaveGuard`) | «Leave without saving?» on a link inside the site while a settings page has unsaved edits; the browser's own question on reload or close (Q2-2). |
+| Step-up banner (apps/suite `StepUpBanner`, `lib/step-up-view`) | «Verify with the app» BEFORE editing, form read-only, only when saving needs a fresh authenticator code under the existing rules (Q2-1; none today) or the server asked for one. |
+| `Segmented` (apps/suite) | A radio question as one pill (default language, date display). |
+| `SelectField` (apps/suite) | Same look and contract as `TextField` (label above, 48 px, hint and error under the field). |
+| Toast `action` | «Undo» after deactivating a branch, or a unit no role is limited to (Q2-9), and after «Reset to the Jadarat look» — the package 3 rule (stays until closed). |
+
+Settings pages: breadcrumbs, two-column sections, a toast on save (nothing kept in the URL), conflict banner
+with Reload, «Try again» on a failed load. Lists of branches: status pills with counts as links
+(`?status=`), cards on phones. Breakpoints are the project's (`sm` 360 px, `md` 600 px, `lg` 900 px): the
+phone / wider switch is `md`.
+

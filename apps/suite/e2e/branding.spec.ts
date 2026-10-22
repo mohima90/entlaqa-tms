@@ -238,8 +238,8 @@ test.describe('branding saved', () => {
     await expect(page).toHaveURL(/\/en\/(suite|mfa)$/, afterSignIn);
     await page.goto('/en/suite/admin/branding');
     await page.getByRole('button', { name: 'Use the Burgundy colours' }).click();
-    await page.getByTestId('branding-save').click();
-    await expect(page.getByTestId('branding-message')).toContainText('Branding saved');
+    await page.getByTestId('save-bar-save').click();
+    await expect(page.getByText('Branding saved', { exact: false })).toBeVisible();
     await page.reload();
     const current = await page
       .locator('html')
@@ -247,8 +247,42 @@ test.describe('branding saved', () => {
     expect(current).toBe('#7A1F2B');
     // Back to the Jadarat look for the next run.
     await page.getByTestId('brand-reset').click();
-    await page.getByTestId('branding-save').click();
-    await expect(page.getByTestId('branding-message')).toContainText('Branding saved');
+    await page.getByTestId('save-bar-save').click();
+    await expect(page.getByText('Branding saved', { exact: false })).toBeVisible();
+  });
+
+  test('the names: an empty English name is refused on its field; saved names show in the menu', async ({
+    page,
+  }) => {
+    await page.goto('/en/sign-in');
+    await fillSignIn(page, 'en', adminEmail, adminPassword);
+    await expect(page).toHaveURL(/\/en\/(suite|mfa)$/, afterSignIn);
+    await page.goto('/en/suite/admin/branding');
+    const nameEn = page.getByTestId('brand-nameEn');
+    const nameAr = page.getByTestId('brand-nameAr');
+    const originalEn = await nameEn.inputValue();
+    const originalAr = await nameAr.inputValue();
+    // Empty: refused before anything is sent, on the field, which gets the focus.
+    await nameEn.fill('   ');
+    await page.getByTestId('save-bar-save').click();
+    await expect(page.getByTestId('save-bar')).toHaveAttribute('data-state', 'invalid');
+    await expect(nameEn).toBeFocused();
+    await expect(nameEn).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.locator('#brand-nameEn-error')).toHaveText('Enter the name.');
+    // Both names saved: the menu shows the new one at once.
+    const run = Date.now().toString(36);
+    await nameEn.fill(`Branding Smoke ${run}`);
+    await nameAr.fill(`هوية تجريبية ${run}`);
+    await page.getByTestId('save-bar-save').click();
+    await expect(page.getByText('Branding saved', { exact: false })).toBeVisible();
+    await expect(page.getByTestId('tenant-context')).toContainText(`Branding Smoke ${run}`);
+    // The original names back for the other journeys.
+    await page.reload();
+    await nameEn.fill(originalEn);
+    await nameAr.fill(originalAr);
+    await page.getByTestId('save-bar-save').click();
+    await expect(page.getByText('Branding saved', { exact: false })).toBeVisible();
+    await expect(page.getByTestId('tenant-context')).toContainText(originalEn);
   });
 
   test('an HR Manager is refused', async ({ page }) => {

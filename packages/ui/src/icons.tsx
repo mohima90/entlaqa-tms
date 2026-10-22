@@ -1,5 +1,15 @@
 import {
   Archive,
+  Ban,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  Clock,
+  Image,
+  MailCheck,
+  Send,
+  Server,
+  Undo2,
+  Upload,
   ArchiveRestore,
   ArrowDown,
   ArrowDownRight,
@@ -12,7 +22,6 @@ import {
   Building2,
   CalendarDays,
   Check,
-  Clock,
   Download,
   ChevronDown,
   ChevronUp,
@@ -67,8 +76,6 @@ import {
   Sun,
   Trash2,
   TriangleAlert,
-  Undo2,
-  Upload,
   User,
   UserPlus,
   Users,
@@ -162,13 +169,21 @@ const ICONS = {
   keyboard: Keyboard,
   filter: ListFilter,
   sort: ArrowDownUp,
-  // People & roles (redesign package 3): import upload and downloads, invitations waiting, sign-in
-  // effects, Undo.
+  // Organization settings (redesign package 2) and People & roles (redesign package 3): the save bar at
+  // rest and invitations waiting (clock), sending a test e-mail, uploads and downloads, Undo, expand /
+  // collapse all, the sender card, image rows, deactivate and sign-in effects.
+  clock: Clock,
+  send: Send,
   upload: Upload,
   download: Download,
-  clock: Clock,
-  'log-in': LogIn,
   undo: Undo2,
+  'expand-all': ChevronsUpDown,
+  'collapse-all': ChevronsDownUp,
+  'mail-check': MailCheck,
+  server: Server,
+  image: Image,
+  ban: Ban,
+  'log-in': LogIn,
 } as const satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;

@@ -1,7 +1,7 @@
 import { toClientError } from '@jadarat/platform-core';
 import { type AppLocale, INDUSTRIES, getMessages } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
-import { Alert, PageHeader } from '@jadarat/ui';
+import { Alert, Icon, PageHeader, buttonClasses } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
@@ -11,6 +11,7 @@ import { SuiteShell } from '../../../../../components/suite-shell';
 import { flattenTexts } from '../../../../../lib/flatten-texts';
 import { organizationChoices } from '../../../../../lib/organization-options';
 import { pageDates } from '../../../../../lib/page-dates';
+import { pageStepUp, settingsCommonTexts } from '../../../../../lib/settings-page';
 import { profileErrorTexts } from '../../../../../lib/profile-texts';
 import { type SuiteContext, getSuiteContext } from '../../../../../lib/suite-context';
 import { organizationProfileQuery } from '../../../../../lib/users-queries';
@@ -25,8 +26,10 @@ const PATH = SUITE_PATHS.general;
  * BR-ADM-3; T-M2-22), one card per section. The former address /suite/admin/organization redirects here. The Organization Admin edits it
  * (organization-wide platform.tenant.manage); the Auditor reads it (platform.tenant.read, BRD Appendix B;
  * PO decision 14 Oct 2026); everyone else — HR Manager, Learner… — is refused.
- * Saving needs an authenticator code (AAL2, as the security policy): at AAL1 the page says so, links to
- * the code and shows the profile read-only. The database enforces who may change it and every rule.
+ * Direction C (redesign package 2, PO 21 Oct 2026): breadcrumbs, two-column sections, the floating
+ * save bar, a toast on save, the leave guard; when saving needs a fresh authenticator code the page asks
+ * first (Q2-1 — no organization setting needs one today, PO decision 14 Oct 2026). The database enforces
+ * who may change it and every rule.
  */
 export default async function GeneralSettingsPage({
   params,
@@ -59,8 +62,21 @@ export default async function GeneralSettingsPage({
           </Alert>
         );
       } else {
+        const common = await getTranslations({ locale, namespace: 'common' });
         content = (
-          <Alert tone="danger">
+          <Alert
+            tone="danger"
+            data-testid="organization-load-failed"
+            action={
+              <a
+                href={`/${locale}${PATH}`}
+                className={buttonClasses({ variant: 'secondary', size: 'sm' })}
+              >
+                <Icon name="sync" />
+                {common('tryAgain')}
+              </a>
+            }
+          >
             {users('loadFailed', { correlationId: error.correlationId ?? '' })}
           </Alert>
         );
@@ -73,15 +89,8 @@ export default async function GeneralSettingsPage({
   return (
     <SuiteShell locale={locale} context={context} current="general" path={PATH}>
       <PageHeader
-        eyebrow={
-          <nav aria-label={t('breadcrumbLabel')}>
-            <ol className="m-0 flex list-none flex-wrap gap-1.5 p-0">
-              <li>{t('breadcrumbSection')}</li>
-              <li aria-hidden="true">/</li>
-              <li aria-current="page">{t('title')}</li>
-            </ol>
-          </nav>
-        }
+        breadcrumbs={[{ label: t('breadcrumbSection') }, { label: t('title') }]}
+        breadcrumbsLabel={t('breadcrumbLabel')}
         title={t('title')}
         description={t('intro')}
       />
@@ -135,8 +144,10 @@ async function Profile({
         choices={choices}
         industries={INDUSTRIES.map((code) => ({ value: code, label: t(`industries.${code}`) }))}
         texts={flattenTexts(getMessages(locale).organizationProfile)}
+        common={await settingsCommonTexts(locale)}
         lastChanged={lastChanged}
         errors={await profileErrorTexts(locale)}
+        stepUp={await pageStepUp(locale, PATH, 'platform.tenant.manage')}
       />
     </div>
   );

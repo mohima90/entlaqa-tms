@@ -472,7 +472,8 @@ test.describe('organization structure (HR Manager)', () => {
     // Deactivate the team, then delete it and its parent.
     await team.getByTestId('unit-menu').click();
     await hrPage.getByTestId('unit-menu-status').click();
-    await hrPage.getByTestId('unit-status-dialog').getByTestId('confirm-dialog-confirm').click();
+    await expect(hrPage.getByTestId('unit-status-dialog')).toHaveCount(0);
+    await expect(hrPage.getByTestId('toast-action')).toHaveText('Undo');
     await expect(team.getByTestId('unit-inactive')).toHaveText('Inactive');
     await team.getByTestId('unit-menu').click();
     await hrPage.getByTestId('unit-menu-delete').click();
@@ -482,6 +483,32 @@ test.describe('organization structure (HR Manager)', () => {
     await hrPage.getByTestId('unit-menu-delete').click();
     await deleteDialog.getByTestId('confirm-dialog-confirm').click();
     await expect(sales).toHaveCount(0);
+
+    // Branches (redesign package 2): add one in the side panel, deactivate it, Undo (Q2-9), delete it.
+    const branchCode = `BR${run}`.slice(0, 32);
+    await hrPage.goto('/en/suite/admin/branches');
+    await hrPage.getByTestId('branch-add').click();
+    const branchPanel = hrPage.getByTestId('branch-dialog');
+    await branchPanel.locator('#branch-nameEn').fill(`Smoke branch ${run}`);
+    await branchPanel.locator('#branch-nameAr').fill(`فرع تجريبي ${run}`);
+    await branchPanel.locator('#branch-code').fill(branchCode);
+    await branchPanel.getByTestId('branch-dialog-submit').click();
+    await expect(branchPanel).toBeHidden();
+    const branchRow = hrPage.getByTestId(`branch-row-${branchCode}`);
+    await expect(branchRow).toContainText('Active');
+    await branchRow.getByTestId('branch-menu').click();
+    await hrPage.getByTestId('branch-status').click();
+    await expect(branchRow).toContainText('Inactive');
+    await hrPage.getByTestId('toast-action').filter({ hasText: 'Undo' }).click();
+    await expect(branchRow).toContainText('Active');
+    await expect(branchRow).not.toContainText('Inactive');
+    await expect(
+      hrPage.getByText('Someone changed this branch meanwhile', { exact: false }),
+    ).toHaveCount(0);
+    await branchRow.getByTestId('branch-menu').click();
+    await hrPage.getByTestId('branch-delete').click();
+    await hrPage.getByTestId('branch-delete-dialog').getByTestId('confirm-dialog-confirm').click();
+    await expect(branchRow).toHaveCount(0);
 
     // The third level is unused again: removed. Arabic, right to left.
     await hrPage.goto('/ar/suite/admin/structure?view=levels');

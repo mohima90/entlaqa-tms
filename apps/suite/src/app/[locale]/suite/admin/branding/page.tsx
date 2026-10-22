@@ -3,7 +3,7 @@ import type { BrandingRecord } from '@jadarat/platform-db';
 import { BRAND_IMAGE_MAX_SIDE, brandImageMaxBytes } from '@jadarat/platform-files';
 import { type AppLocale, getMessages } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
-import { Alert, PageHeader } from '@jadarat/ui';
+import { Alert, Icon, PageHeader, buttonClasses } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
@@ -18,6 +18,7 @@ import { brandingQuery } from '../../../../../lib/branding-queries';
 import { JADARAT_BRAND, brandAssetPath } from '../../../../../lib/branding-view';
 import { flattenTexts } from '../../../../../lib/flatten-texts';
 import { pageDates } from '../../../../../lib/page-dates';
+import { pageStepUp, settingsCommonTexts } from '../../../../../lib/settings-page';
 import { fileActionErrorTexts } from '../../../../../lib/profile-texts';
 import { type SuiteContext, getSuiteContext } from '../../../../../lib/suite-context';
 import { SUITE_PATHS } from '../../../../../lib/suite-navigation';
@@ -74,8 +75,21 @@ export default async function BrandingPage({ params }: { params: Promise<{ local
           </Alert>
         );
       } else {
+        const common = await getTranslations({ locale, namespace: 'common' });
         content = (
-          <Alert tone="danger">
+          <Alert
+            tone="danger"
+            data-testid="branding-load-failed"
+            action={
+              <a
+                href={`/${locale}${PATH}`}
+                className={buttonClasses({ variant: 'secondary', size: 'sm' })}
+              >
+                <Icon name="sync" />
+                {common('tryAgain')}
+              </a>
+            }
+          >
             {users('loadFailed', { correlationId: error.correlationId ?? '' })}
           </Alert>
         );
@@ -103,15 +117,8 @@ export default async function BrandingPage({ params }: { params: Promise<{ local
   return (
     <SuiteShell locale={locale} context={context} current="branding" path={PATH}>
       <PageHeader
-        eyebrow={
-          <nav aria-label={t('breadcrumbLabel')}>
-            <ol className="m-0 flex list-none flex-wrap gap-1.5 p-0">
-              <li>{t('breadcrumbSection')}</li>
-              <li aria-hidden="true">/</li>
-              <li aria-current="page">{t('title')}</li>
-            </ol>
-          </nav>
-        }
+        breadcrumbs={[{ label: t('breadcrumbSection') }, { label: t('title') }]}
+        breadcrumbsLabel={t('breadcrumbLabel')}
         title={t('title')}
         description={t('intro')}
       />
@@ -181,6 +188,8 @@ async function Form({
       texts={flattenTexts(getMessages(locale).branding)}
       errors={await fileActionErrorTexts(locale)}
       lastChanged={lastChanged}
+      common={await settingsCommonTexts(locale)}
+      stepUp={await pageStepUp(locale, PATH, 'platform.tenant.manage')}
     />
   );
 }

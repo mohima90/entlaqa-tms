@@ -1024,7 +1024,6 @@ async function rolePanel(
   back: PanelReturn,
 ): Promise<ReactNode> {
   const t = await getTranslations({ locale, namespace: 'editRoles' });
-  const users = await getTranslations({ locale, namespace: 'users' });
   const result = await editRolesQuery({ personId });
   const common = {
     back,
@@ -1033,7 +1032,7 @@ async function rolePanel(
     selectTexts: await roleSelectTexts(locale),
     labels: await editRoleLabels(locale),
     errors: await profileErrorTexts(locale),
-    undoLabel: users('undo'),
+    undoLabel: (await getTranslations({ locale, namespace: 'common' }))('undo'),
     locale,
   };
   if (!result.ok) {

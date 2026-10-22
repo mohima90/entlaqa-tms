@@ -1,5 +1,5 @@
 'use client';
-import { Alert, Button, Dialog, TextField, toast } from '@jadarat/ui';
+import { Alert, Button, Icon, SidePanel, TextField, toast } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { type SyntheticEvent, useState, useTransition } from 'react';
 import { createBranchAction, updateBranchAction } from '../../actions/branches';
@@ -9,7 +9,7 @@ import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { SelectField } from '../select-field';
 import { type Failure, failureOf } from './failure';
-import type { Choice } from './unit-dialog';
+import type { Choice } from './unit-panel';
 
 /** A branch as the page shows it (names in the page's language, prepared on the server). */
 export interface BranchView {
@@ -34,7 +34,7 @@ export interface BranchView {
   readonly peopleCount: number;
 }
 
-export interface BranchDialogProps {
+export interface BranchPanelProps {
   /** null: a new branch. */
   readonly branch: BranchView | null;
   /** Other branches as parent choices. */
@@ -43,17 +43,26 @@ export interface BranchDialogProps {
   readonly timeZones: readonly Choice[];
   /** The organization's time zone (a new branch starts with it). */
   readonly defaultTimeZone: string;
+  /** The current headquarters' name, when another branch is it (the «moves» note). */
+  readonly headquartersName: string | null;
   readonly texts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
   readonly locale: 'ar' | 'en';
   readonly onClose: () => void;
+  /** After a save: the branch's id (its row is highlighted). */
+  readonly onSaved: (id: string) => void;
 }
 
+const FORM_ID = 'branch-form';
+
 /**
- * Add or edit a branch (FR-ADM-04 core fields): code, names, parent branch, country, city (English, Arabic),
- * time zone and the headquarters flag (one per organization: choosing it here moves it from the current one).
+ * Add or edit a branch (FR-ADM-04 core fields) in a side panel, with the list still in view (redesign
+ * package 2, PO answer Q2-8, 21 Oct 2026; replaces the dialog): code, names, parent branch, country,
+ * city (English, Arabic), time zone and the headquarters flag (one per organization: ticking it here
+ * shows «Headquarters moves from … to … when you save»). Cancel / Save and the audit note stay in the
+ * panel's footer.
  */
-export function BranchDialog(props: BranchDialogProps) {
+export function BranchPanel(props: BranchPanelProps) {
   const { branch, texts, locale } = props;
   const text = (key: string) => texts[key] ?? key;
   const fill = (key: string, values: Record<string, string | number>) =>
@@ -63,10 +72,17 @@ export function BranchDialog(props: BranchDialogProps) {
   const [open, setOpen] = useState(true);
   const [pending, startTransition] = useTransition();
   const [failure, setFailure] = useState<Failure>({ fields: {}, message: null });
+  const [nameEn, setNameEn] = useState(branch?.nameEn ?? '');
+  const [nameAr, setNameAr] = useState(branch?.nameAr ?? '');
   const [parentBranchId, setParentBranchId] = useState(branch?.parentBranchId ?? '');
   const [countryCode, setCountryCode] = useState(branch?.countryCode ?? '');
   const [timezone, setTimezone] = useState(branch?.timezone ?? props.defaultTimeZone);
   const [isHeadquarters, setIsHeadquarters] = useState(branch?.isHeadquarters ?? false);
+  const typedName = (locale === 'en' ? nameEn || nameAr : nameAr || nameEn).trim();
+  const movesFrom =
+    isHeadquarters && !branch?.isHeadquarters && props.headquartersName
+      ? props.headquartersName
+      : null;
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -77,8 +93,8 @@ export function BranchDialog(props: BranchDialogProps) {
     };
     const fields = {
       code: field('code'),
-      nameEn: field('nameEn'),
-      nameAr: field('nameAr'),
+      nameEn,
+      nameAr,
       parentBranchId,
       countryCode,
       cityEn: field('cityEn'),
@@ -94,6 +110,7 @@ export function BranchDialog(props: BranchDialogProps) {
       if (result.ok) {
         const name = locale === 'en' ? fields.nameEn.trim() : fields.nameAr.trim();
         toast.success(branch ? text('toasts.saved') : fill('toasts.created', { name }));
+        props.onSaved(result.value.id);
         setOpen(false);
         router.refresh();
         return;
@@ -104,17 +121,44 @@ export function BranchDialog(props: BranchDialogProps) {
   }
 
   return (
-    <Dialog
+    <SidePanel
       open={open}
       onClose={props.onClose}
       title={branch ? fill('form.editTitle', { name: branch.name }) : text('form.addTitle')}
       description={text('form.description')}
       closeLabel={text('form.close')}
-      size="lg"
       data-testid="branch-dialog"
+      footer={
+        <>
+          <p className="m-0 flex w-full items-center gap-2 text-[13px] text-text-muted">
+            <Icon name="shield-outline" />
+            {text('form.audited')}
+          </p>
+          <div className="ms-auto flex gap-2.5">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setOpen(false);
+              }}
+              disabled={pending}
+            >
+              {text('form.cancel')}
+            </Button>
+            <Button
+              type="submit"
+              form={FORM_ID}
+              disabled={pending}
+              aria-busy={pending || undefined}
+              data-testid="branch-dialog-submit"
+            >
+              {pending ? text('form.saving') : branch ? text('form.save') : text('form.create')}
+            </Button>
+          </div>
+        </>
+      }
     >
-      <form className="flex flex-col gap-4" onSubmit={onSubmit} noValidate>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <form id={FORM_ID} className="flex flex-col gap-4" onSubmit={onSubmit} noValidate>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <TextField
             id="branch-nameEn"
             name="nameEn"
@@ -125,7 +169,10 @@ export function BranchDialog(props: BranchDialogProps) {
             lang="en"
             maxLength={200}
             autoComplete="off"
-            defaultValue={branch?.nameEn ?? ''}
+            value={nameEn}
+            onChange={(event) => {
+              setNameEn(event.target.value);
+            }}
             error={failure.fields.nameEn}
             disabled={pending}
           />
@@ -139,42 +186,47 @@ export function BranchDialog(props: BranchDialogProps) {
             lang="ar"
             maxLength={200}
             autoComplete="off"
-            defaultValue={branch?.nameAr ?? ''}
+            value={nameAr}
+            onChange={(event) => {
+              setNameAr(event.target.value);
+            }}
             error={failure.fields.nameAr}
             disabled={pending}
           />
-          <TextField
-            id="branch-code"
-            name="code"
-            label={text('form.code')}
-            marker={text('required')}
-            hint={text('form.codeHint')}
-            required
-            dir="ltr"
-            maxLength={32}
-            autoComplete="off"
-            defaultValue={branch?.code ?? ''}
-            error={failure.fields.code}
-            disabled={pending}
-          />
-          <SelectField
-            id="branch-parent"
-            label={text('form.parent')}
-            marker={text('optional')}
-            value={parentBranchId}
-            onChange={(event) => {
-              setParentBranchId(event.target.value);
-            }}
-            error={failure.fields.parentBranchId}
-            disabled={pending}
-          >
-            <option value="">{text('form.noParent')}</option>
-            {props.parents.map((choice) => (
-              <option key={choice.value} value={choice.value}>
-                {choice.label}
-              </option>
-            ))}
-          </SelectField>
+        </div>
+        <TextField
+          id="branch-code"
+          name="code"
+          label={text('form.code')}
+          marker={text('required')}
+          hint={text('form.codeHint')}
+          required
+          dir="ltr"
+          maxLength={32}
+          autoComplete="off"
+          defaultValue={branch?.code ?? ''}
+          error={failure.fields.code}
+          disabled={pending}
+        />
+        <SelectField
+          id="branch-parent"
+          label={text('form.parent')}
+          marker={text('optional')}
+          value={parentBranchId}
+          onChange={(event) => {
+            setParentBranchId(event.target.value);
+          }}
+          error={failure.fields.parentBranchId}
+          disabled={pending}
+        >
+          <option value="">{text('form.noParent')}</option>
+          {props.parents.map((choice) => (
+            <option key={choice.value} value={choice.value}>
+              {choice.label}
+            </option>
+          ))}
+        </SelectField>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <SelectField
             id="branch-country"
             label={text('form.country')}
@@ -238,46 +290,45 @@ export function BranchDialog(props: BranchDialogProps) {
             disabled={pending}
           />
         </div>
-        <div className="flex flex-col gap-1">
-          <label className="inline-flex min-h-11 items-center gap-3">
-            <input
-              type="checkbox"
-              checked={isHeadquarters}
-              onChange={(event) => {
-                setIsHeadquarters(event.target.checked);
-              }}
-              disabled={pending}
-              aria-describedby="branch-headquarters-hint"
-              className="size-5"
-              data-testid="branch-headquarters"
-            />
-            <span className="text-sm font-medium">{text('form.headquarters')}</span>
-          </label>
-          <p id="branch-headquarters-hint" className="m-0 text-sm text-text-muted">
-            {text('form.headquartersHint')}
-          </p>
+        <div className="flex items-start gap-3 rounded-lg border border-border bg-surface-sunken p-4">
+          <input
+            id="branch-headquarters"
+            type="checkbox"
+            checked={isHeadquarters}
+            onChange={(event) => {
+              setIsHeadquarters(event.target.checked);
+            }}
+            disabled={pending}
+            aria-describedby="branch-headquarters-hint"
+            className="mt-0.5 size-5 shrink-0 accent-primary"
+            data-testid="branch-headquarters"
+          />
+          <span className="flex flex-col gap-0.5">
+            <label htmlFor="branch-headquarters" className="cursor-pointer font-semibold">
+              {text('form.headquarters')}
+            </label>
+            <span id="branch-headquarters-hint" className="text-sm text-text-muted">
+              {text('form.headquartersHint')}
+            </span>
+          </span>
         </div>
-        <p className="m-0 text-sm text-text-muted">{text('form.audited')}</p>
+        {/* Polite: the consequence appears as the box is ticked. */}
+        <div aria-live="polite">
+          {movesFrom ? (
+            <Alert tone="warning" role="none" data-testid="branch-hq-moves">
+              {fill('form.hqMoves', {
+                from: movesFrom,
+                to: typedName || text('form.addTitle'),
+              })}
+            </Alert>
+          ) : null}
+        </div>
         {failure.message ? (
           <Alert tone="danger" data-testid="branch-dialog-message">
             {failure.message}
           </Alert>
         ) : null}
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button
-            variant="secondary"
-            onClick={() => {
-              setOpen(false);
-            }}
-            disabled={pending}
-          >
-            {text('form.cancel')}
-          </Button>
-          <Button type="submit" disabled={pending} data-testid="branch-dialog-submit">
-            {pending ? text('form.saving') : branch ? text('form.save') : text('form.create')}
-          </Button>
-        </div>
       </form>
-    </Dialog>
+    </SidePanel>
   );
 }

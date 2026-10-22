@@ -197,3 +197,32 @@ export function scopeUnitChoices(
     };
   });
 }
+
+/** What a unit's delete or deactivation depends on (the tree's counts). */
+export interface UnitUse {
+  readonly childCount: number;
+  readonly peopleCount: number;
+  readonly roleScopeCount: number;
+}
+
+/**
+ * What still depends on a unit and keeps it from being deleted (message key and count), in the order the
+ * page lists them; empty: it can be deleted (redesign package 2 shows them before asking).
+ */
+export function unitDeleteBlockers(
+  unit: UnitUse,
+): { readonly key: string; readonly count: number }[] {
+  return [
+    { key: 'remove.inUseUnits', count: unit.childCount },
+    { key: 'remove.inUsePeople', count: unit.peopleCount },
+    { key: 'remove.inUseRoles', count: unit.roleScopeCount },
+  ].filter((item) => item.count > 0);
+}
+
+/**
+ * Deactivating a unit at once with «Undo» (redesign package 2, Q2-9) only when nobody loses access: no
+ * role is limited to it. Otherwise the confirmation stays (other people's access changes at once).
+ */
+export function deactivatesWithUndo(unit: UnitUse): boolean {
+  return unit.roleScopeCount === 0;
+}

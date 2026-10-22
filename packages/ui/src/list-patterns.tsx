@@ -227,7 +227,8 @@ export function ListCard({
   status,
   action,
   className,
-}: {
+  ...props
+}: Omit<HTMLAttributes<HTMLLIElement>, 'title'> & {
   readonly leading?: ReactNode;
   readonly title: ReactNode;
   readonly detail?: ReactNode;
@@ -237,6 +238,7 @@ export function ListCard({
 }) {
   return (
     <li
+      {...props}
       className={cn(
         'flex items-center gap-3 border-b border-border px-4 py-3.5 last:border-b-0',
         className,

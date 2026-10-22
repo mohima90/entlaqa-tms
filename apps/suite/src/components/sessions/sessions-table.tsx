@@ -1,5 +1,5 @@
 'use client';
-import { Alert, Badge, Button } from '@jadarat/ui';
+import { Alert, Badge, Button, Icon, toast } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { endMemberSessionsAction, endMySessionsAction } from '../../actions/security';
@@ -46,7 +46,9 @@ export function SessionsTable({ target, sessions, labels, errors }: SessionsTabl
           ? await endMySessionsAction({ sessionId })
           : await endMemberSessionsAction({ personId: target.personId, sessionId });
       if (result.ok) {
-        setMessage({ tone: 'success', text: t('ended') });
+        // On My profile a toast (redesign package 6); a user manager's list keeps its inline message.
+        if (target.kind === 'own') toast.success(t('ended'));
+        else setMessage({ tone: 'success', text: t('ended') });
         router.refresh();
       } else if (!sessionRefused(result.error)) {
         setMessage({ tone: 'danger', text: errorText(result.error, errors) });
@@ -59,71 +61,58 @@ export function SessionsTable({ target, sessions, labels, errors }: SessionsTabl
       {sessions.length === 0 ? (
         <p className="m-0 text-text-muted">{t('empty')}</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-start">
-            <thead>
-              <tr className="border-b border-border text-sm text-text-muted">
-                <th scope="col" className="py-2 pe-4 text-start font-medium">
-                  {t('device')}
-                </th>
-                {target.kind === 'own' ? (
-                  <th scope="col" className="py-2 pe-4 text-start font-medium">
-                    {t('organization')}
-                  </th>
-                ) : null}
-                <th scope="col" className="py-2 pe-4 text-start font-medium">
-                  {t('started')}
-                </th>
-                <th scope="col" className="py-2 pe-4 text-start font-medium">
-                  {t('lastActive')}
-                </th>
-                <th scope="col" className="py-2 text-start font-medium">
-                  <span className="sr-only">{t('action')}</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {sessions.map((session) => (
-                <tr
-                  key={session.sessionId}
-                  className="border-b border-border last:border-b-0"
-                  data-testid="session-row"
-                  data-current={session.isCurrent ? 'true' : undefined}
+        <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
+          {sessions.map((session) => (
+            <li
+              key={session.sessionId}
+              className={`grid grid-cols-[40px_minmax(0,1fr)] items-center gap-3.5 rounded-xl border px-4 py-3.5 sm:grid-cols-[44px_minmax(0,1fr)_auto] ${
+                session.isCurrent
+                  ? 'border-primary/40 bg-primary-subtle'
+                  : 'border-border bg-surface'
+              }`}
+              data-testid="session-row"
+              data-current={session.isCurrent ? 'true' : undefined}
+            >
+              <span
+                aria-hidden="true"
+                className={`grid size-10 place-items-center rounded-[14px] sm:size-11 ${
+                  session.isCurrent
+                    ? 'bg-brand-gradient text-on-brand'
+                    : 'bg-surface-hover text-text-muted'
+                }`}
+              >
+                <Icon name="monitor" className="size-5" />
+              </span>
+              <div className="min-w-0">
+                <p className="m-0 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                  <span className="font-semibold">{session.device}</span>
+                  {session.isCurrent ? <Badge tone="info">{t('thisDevice')}</Badge> : null}
+                  {session.withCode ? <Badge tone="success">{t('withCode')}</Badge> : null}
+                </p>
+                <p className="m-0 mt-0.5 text-[13.5px] text-text-muted">
+                  {target.kind === 'own' ? `${session.organization ?? t('noOrganization')} · ` : ''}
+                  {t('started')} {session.started} · {t('lastActive')} {session.lastActive}
+                </p>
+              </div>
+              {session.isCurrent ? null : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="col-start-2 justify-self-start sm:col-start-auto"
+                  disabled={pending}
+                  aria-label={t('endLabel').replace('{device}', session.device)}
+                  onClick={() => {
+                    end(session.sessionId);
+                  }}
+                  data-testid="session-end"
                 >
-                  <td className="py-3 pe-4">
-                    <span className="flex flex-wrap items-center gap-2">
-                      <span>{session.device}</span>
-                      {session.isCurrent ? <Badge tone="info">{t('thisDevice')}</Badge> : null}
-                      {session.withCode ? <Badge tone="success">{t('withCode')}</Badge> : null}
-                    </span>
-                  </td>
-                  {target.kind === 'own' ? (
-                    <td className="py-3 pe-4">{session.organization ?? t('noOrganization')}</td>
-                  ) : null}
-                  <td className="py-3 pe-4">{session.started}</td>
-                  <td className="py-3 pe-4">{session.lastActive}</td>
-                  <td className="py-3">
-                    {session.isCurrent ? null : (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={pending}
-                        aria-label={t('endLabel').replace('{device}', session.device)}
-                        onClick={() => {
-                          end(session.sessionId);
-                        }}
-                        data-testid="session-end"
-                      >
-                        {t('end')}
-                      </Button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  {t('end')}
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
       {message ? (
         <Alert tone={message.tone} data-testid="sessions-message">

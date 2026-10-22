@@ -24,7 +24,8 @@
     "close": "Close",
     "breadcrumbLabel": "Breadcrumb",
     "keepEditing": "Keep editing",
-    "discardChanges": "Discard changes"
+    "discardChanges": "Discard changes",
+    "cancel": "Cancel"
   },
   "landing": {
     "title": "Training Management System",
@@ -52,6 +53,18 @@
     "emptyBody": "Sessions and courses will appear here once the Training module is set up for your organization.",
     "setupTitle": "Set up your organization",
     "setupBody": "Fill in your general settings, invite your team members, check their roles and set your security policy. More set-up pages are coming soon.",
+    "welcome": "Welcome, {name}",
+    "yourPages": "Your pages",
+    "yourPagesIntro": "The pages you can open today. More appear as the Training module grows.",
+    "searchHint": "Looking for a page? Press {key}",
+    "setupStep": {
+      "team": "Invite the people who run training",
+      "branding": "Logo, colours and the names people see",
+      "roles": "Check who can do what",
+      "general": "Name, industry, country and defaults",
+      "email": "Who sends your organization's e-mails",
+      "security": "Sign-in and password policy"
+    },
     "comingSoon": "Coming soon",
     "roles": "Roles & permissions",
     "planningSettings": "Planning settings",
@@ -517,6 +530,11 @@
   },
   "profile": {
     "title": "My profile",
+    "tabs": {
+      "profile": "Profile",
+      "security": "Sign-in and security",
+      "label": "My profile sections"
+    },
     "personal": "Personal details",
     "personalIntro": "Your name, mobile number and interface language can be changed here.",
     "arabicName": "Name in Arabic",
@@ -583,7 +601,8 @@
       "cancelling": "Cancelling…",
       "cancelled": "The set-up was cancelled.",
       "elsewhere": "Added from another sign-in",
-      "elsewhereText": "An authenticator app was added to your account from another sign-in on {date} with {device}. If it wasn't you, remove it: your other sign-in sessions end."
+      "elsewhereText": "An authenticator app was added to your account from another sign-in on {date} with {device}. If it wasn't you, remove it: your other sign-in sessions end.",
+      "removeConfirm": "Remove the authenticator app?"
     },
     "sessions": {
       "title": "Sign-in sessions",
@@ -2320,7 +2339,14 @@
       "text": "Manage organizations as Platform Super Admin."
     },
     "settingsNav": "Platform settings",
-    "emailNav": "Email"
+    "emailNav": "Email",
+    "search": "Search by name or short name",
+    "resultCount": "{count, plural, one {# organization} other {# organizations}}",
+    "noMatch": {
+      "title": "No organizations match your search",
+      "body": "Check the spelling, or search by the short name.",
+      "clear": "Clear search"
+    }
   },
   "roleBuilder": {
     "titleNew": "Create role",

@@ -84,7 +84,7 @@ export function mayContinueWithoutApp(state: SessionAccessState, stepUp: boolean
  * Where to go after the code: only a page of the suite in a known language (never another site or a
  * path the visitor made up). Linear pattern (no nested quantifiers).
  */
-const NEXT_PATH = /^\/(ar|en)\/suite(\/[A-Za-z0-9_-]{1,64}){0,6}$/;
+const NEXT_PATH = /^\/(ar|en)\/suite(\/[A-Za-z0-9_-]{1,64}){0,6}(\?tab=(security|profile))?$/;
 
 export function safeNextPath(value: unknown): string | null {
   return typeof value === 'string' && NEXT_PATH.test(value) ? value : null;

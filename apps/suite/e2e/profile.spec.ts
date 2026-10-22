@@ -71,7 +71,9 @@ test.describe('My profile', () => {
     // save does not switch the page (that switch is checked below).
     await page.getByLabel('Interface and message language').selectOption('en');
     await page.getByRole('button', { name: 'Save changes' }).click();
-    await expect(page.getByTestId('profile-message')).toHaveText('Changes saved.');
+    // Redesign package 6: a toast says it was saved, and the save bar goes away.
+    await expect(page.getByText('Changes saved.').first()).toBeVisible();
+    await expect(page.getByTestId('save-bar')).toHaveCount(0);
     await expect(page).toHaveURL(/\/en\/suite\/profile$/);
     await page.reload();
     await expect(page.getByLabel('Mobile number')).toHaveValue('+966551112233');
@@ -83,8 +85,13 @@ test.describe('My profile', () => {
 
     // A local number without the country code is refused.
     await page.getByLabel('Mobile number').fill('0551234567');
+    await expect(page.getByTestId('save-bar')).toHaveAttribute('data-state', 'unsaved');
     await page.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.getByText('Enter the full number with the country code.')).toBeVisible();
+    // The bar says fields need correcting and leads to the first one.
+    await expect(page.getByTestId('save-bar')).toHaveAttribute('data-state', 'invalid');
+    await page.getByTestId('save-bar-fix').click();
+    await expect(page.getByLabel('Mobile number')).toBeFocused();
 
     // Choosing Arabic switches the page to Arabic.
     await page.getByLabel('Mobile number').fill('+966551112233');
@@ -94,6 +101,11 @@ test.describe('My profile', () => {
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('ملفي الشخصي');
     await expect(page.getByTestId('account-menu')).toContainText('منيرة');
+    await expectNoSeriousA11yViolations(page);
+    // The second tab, in Arabic too (the address keeps the tab).
+    await page.getByRole('link', { name: 'الدخول والأمان' }).click();
+    await expect(page).toHaveURL(/\/ar\/suite\/profile\?tab=security$/);
+    await expect(page.getByRole('heading', { name: 'كلمة المرور' })).toBeVisible();
     await expectNoSeriousA11yViolations(page);
   });
 
@@ -111,14 +123,21 @@ test.describe('My profile', () => {
     await other.close();
     await signInRemembered(page);
     expect(trustedBrowsers(email ?? '')).toBeGreaterThanOrEqual(2);
-    await page.goto('/en/suite/profile');
+    // The password is a row of the Sign-in and security tab: «Change password» opens the form in place.
+    await page.goto('/en/suite/profile?tab=security');
+    await expectNoSeriousA11yViolations(page);
+    await page.getByRole('button', { name: 'Change password' }).click();
     await page.getByLabel('Current password').fill('not-the-password-123');
     await page.getByLabel(/^New password/).fill(newPassword ?? '');
     await page.getByLabel('Confirm the new password').fill(newPassword ?? '');
     await page.getByRole('button', { name: 'Change password' }).click();
-    await expect(page.getByTestId('password-message')).toHaveText(
+    // The message sits on the field.
+    await expect(page.locator('#password-current-error')).toHaveText(
       'The current password is incorrect.',
     );
+    await expect(page.getByLabel('Current password')).toHaveAttribute('aria-invalid', 'true');
+    // Focus moves to the field once the answer is shown (it was disabled while waiting).
+    await expect(page.getByLabel('Current password')).toBeFocused();
 
     await page.getByLabel('Current password').fill(password ?? '');
     await page.getByLabel('Confirm the new password').fill('something-else-entirely');
@@ -127,9 +146,13 @@ test.describe('My profile', () => {
 
     await page.getByLabel('Confirm the new password').fill(newPassword ?? '');
     await page.getByRole('button', { name: 'Change password' }).click();
-    await expect(page.getByTestId('password-message')).toHaveText(
-      'Password changed. Sign-in sessions on other devices have ended.',
-    );
+    await expect(
+      page.getByText('Password changed. Sign-in sessions on other devices have ended.').first(),
+    ).toBeVisible();
+    // The form closed again; the sessions list below was refreshed.
+    await expect(page.getByLabel('Current password')).toHaveCount(0);
+    // Closing the form returns focus to «Change password».
+    await expect(page.getByTestId('password-change')).toBeFocused();
     // Every OTHER remembered browser is forgotten — in Next.js after(), once the answer was sent, outside the
     // action's transaction (integration review: proves the transaction rules let it run); this one stays.
     await expect

@@ -1,7 +1,7 @@
 'use client';
 import { Alert, Button, Icon, TextField, toast } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
-import { type SyntheticEvent, useRef, useState, useTransition } from 'react';
+import { type SyntheticEvent, useEffect, useRef, useState, useTransition } from 'react';
 import { changeMyPasswordAction } from '../../actions/profile';
 import { minFromParams, passwordRuleState, withMin } from '../../lib/password-rules';
 import { type ErrorTexts, errorText } from '../auth/error-text';
@@ -60,7 +60,23 @@ export function ChangePasswordForm({
   const [problem, setProblem] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
 
+  // The current-password field is disabled while the answer is awaited, so focus moves to it (a refused
+  // password) once the answer is shown; closing the form returns focus to «Change password».
+  const focusCurrent = useRef(false);
+  const returnFocus = useRef(false);
+  useEffect(() => {
+    if (pending || !focusCurrent.current) return;
+    focusCurrent.current = false;
+    document.getElementById('password-current')?.focus();
+  }, [pending, fieldErrors.currentPassword]);
+  useEffect(() => {
+    if (open || !returnFocus.current) return;
+    returnFocus.current = false;
+    document.getElementById('password-change')?.focus();
+  }, [open]);
+
   function close() {
+    returnFocus.current = true;
     setOpen(false);
     setPassword('');
     setConfirmation('');
@@ -112,7 +128,7 @@ export function ChangePasswordForm({
       // The current password is checked on its own field (same text as before).
       if (result.error.code === 'AUTH_CURRENT_PASSWORD_INVALID') {
         setFieldErrors({ currentPassword: errorText(result.error, errors) });
-        document.getElementById('password-current')?.focus();
+        focusCurrent.current = true;
         return;
       }
       setProblem(errorText(result.error, errors));
@@ -145,6 +161,7 @@ export function ChangePasswordForm({
                   document.getElementById('password-current')?.focus();
                 });
               }}
+              id="password-change"
               data-testid="password-change"
             >
               <Icon name="pencil" />

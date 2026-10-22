@@ -16,6 +16,7 @@ export function OrganizationsSearch({
   base,
   label,
   placeholder,
+  resultText,
 }: {
   /** The search now (from the address). */
   readonly q: string;
@@ -23,6 +24,8 @@ export function OrganizationsSearch({
   readonly base: string;
   readonly label: string;
   readonly placeholder: string;
+  /** «3 organizations», announced politely when the search changes the list. */
+  readonly resultText: string;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -75,6 +78,9 @@ export function OrganizationsSearch({
         }}
         data-testid="organizations-search"
       />
+      <p role="status" className="sr-only" data-testid="organizations-result-count">
+        {resultText}
+      </p>
     </form>
   );
 }

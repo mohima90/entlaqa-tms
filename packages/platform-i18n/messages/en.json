@@ -2320,6 +2320,7 @@
     "settingsNav": "Platform settings",
     "emailNav": "Email",
     "search": "Search by name or short name",
+    "resultCount": "{count, plural, one {# organization} other {# organizations}}",
     "noMatch": {
       "title": "No organizations match your search",
       "body": "Check the spelling, or search by the short name.",

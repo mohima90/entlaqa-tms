@@ -130,10 +130,9 @@ export default async function PlatformOrganizationsPage({
   const searchBase = view === 'all' ? path : `${path}?view=${view}`;
 
   const invite = (org: (typeof rows)[number]) =>
-    isPending(org) &&
-    (org.adminState === 'pending' ||
-      org.adminState === 'expired' ||
-      org.adminState === 'issuer_revoked') ? (
+    org.adminState === 'pending' ||
+    org.adminState === 'expired' ||
+    org.adminState === 'issuer_revoked' ? (
       <OrganizationAdminInvite
         {...shared}
         tenantId={org.tenantId}
@@ -188,6 +187,7 @@ export default async function PlatformOrganizationsPage({
               base={searchBase}
               label={t('search')}
               placeholder={t('search')}
+              resultText={t('resultCount', { count: shown.length })}
             />
             {shown.length === 0 ? (
               <div className="rounded-xl border border-border bg-surface" data-testid="no-match">

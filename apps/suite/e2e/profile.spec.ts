@@ -136,6 +136,8 @@ test.describe('My profile', () => {
       'The current password is incorrect.',
     );
     await expect(page.getByLabel('Current password')).toHaveAttribute('aria-invalid', 'true');
+    // Focus moves to the field once the answer is shown (it was disabled while waiting).
+    await expect(page.getByLabel('Current password')).toBeFocused();
 
     await page.getByLabel('Current password').fill(password ?? '');
     await page.getByLabel('Confirm the new password').fill('something-else-entirely');
@@ -149,6 +151,8 @@ test.describe('My profile', () => {
     ).toBeVisible();
     // The form closed again; the sessions list below was refreshed.
     await expect(page.getByLabel('Current password')).toHaveCount(0);
+    // Closing the form returns focus to «Change password».
+    await expect(page.getByTestId('password-change')).toBeFocused();
     // Every OTHER remembered browser is forgotten — in Next.js after(), once the answer was sent, outside the
     // action's transaction (integration review: proves the transaction rules let it run); this one stays.
     await expect

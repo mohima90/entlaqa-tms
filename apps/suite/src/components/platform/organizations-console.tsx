@@ -2,7 +2,7 @@
 import type { AppError } from '@jadarat/platform-core';
 import { Alert, Button, Dialog, Icon, SidePanel, TextField, initialsOf } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
-import { type SyntheticEvent, useId, useRef, useState, useTransition } from 'react';
+import { type SyntheticEvent, useEffect, useId, useRef, useState, useTransition } from 'react';
 import {
   createOrganizationAction,
   reissueOrganizationAdminCodeAction,
@@ -86,6 +86,13 @@ export function CreateOrganization(props: Shared) {
   const [failure, setFailure] = useState<string | null>(null);
   const [result, setResult] = useState<CreatedOrganization | null>(null);
   const [pending, startTransition] = useTransition();
+  // The fields are disabled while the answer is awaited: a field the server refused takes focus after.
+  const focusAfter = useRef<Field | null>(null);
+  useEffect(() => {
+    if (pending || !focusAfter.current) return;
+    document.getElementById(`${formId}-${focusAfter.current}`)?.focus();
+    focusAfter.current = null;
+  }, [pending, errors, formId]);
 
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -152,7 +159,7 @@ export function CreateOrganization(props: Shared) {
       setErrors(next);
       if (next.form) setFailure(next.form);
       const first = FIELDS.find((f) => next[f]);
-      if (first) document.getElementById(`${formId}-${first}`)?.focus();
+      if (first) focusAfter.current = first;
       return;
     }
     setFailure(errorText(error, props.errors));

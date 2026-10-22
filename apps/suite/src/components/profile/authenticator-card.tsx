@@ -1,7 +1,14 @@
 'use client';
 import { Alert, Badge, Button, Dialog, Icon, buttonClasses, toast } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
-import { type ReactNode, createContext, useContext, useState, useTransition } from 'react';
+import {
+  type ReactNode,
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useTransition,
+} from 'react';
 import { removeMfaAppAction } from '../../auth/mfa';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
@@ -66,6 +73,9 @@ interface Shared {
   readonly confirming: boolean;
   readonly setItWasMe: (value: boolean) => void;
   readonly setConfirming: (value: boolean) => void;
+  /** Set after a removal: the row moves focus to its heading once the new state shows. */
+  readonly headingFocus: boolean;
+  readonly setHeadingFocus: (value: boolean) => void;
   readonly remove: (
     factorId: string,
     done: string,
@@ -116,6 +126,7 @@ export function AuthenticatorProvider({
   const [itWasMe, setItWasMe] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
+  const [headingFocus, setHeadingFocus] = useState(false);
 
   function remove(
     factorId: string,
@@ -127,6 +138,7 @@ export function AuthenticatorProvider({
       const result = await removeMfaAppAction({ factorId });
       setConfirming(false);
       if (result.ok) {
+        setHeadingFocus(true);
         if (options.newPassword) {
           setMessage({ tone: 'success', text: done, where: 'banner', newPassword: true });
         } else {
@@ -154,6 +166,8 @@ export function AuthenticatorProvider({
         confirming,
         setItWasMe,
         setConfirming,
+        headingFocus,
+        setHeadingFocus,
         remove,
       }}
     >
@@ -242,8 +256,26 @@ export function AuthenticatorBanner() {
 
 /** The multi-factor row of the security rows: its status as a pill and the action that fits it. */
 export function AuthenticatorRow() {
-  const { app, labels, setUpHref, pending, message, confirming, setConfirming, remove } =
-    useShared();
+  const {
+    app,
+    labels,
+    setUpHref,
+    pending,
+    message,
+    confirming,
+    setConfirming,
+    headingFocus,
+    setHeadingFocus,
+    remove,
+  } = useShared();
+  // After a removal the button that was pressed is gone: focus goes to the row's heading.
+  useEffect(() => {
+    if (!headingFocus) return;
+    setHeadingFocus(false);
+    requestAnimationFrame(() => {
+      document.getElementById('mfa-title')?.focus();
+    });
+  }, [app.state, headingFocus, setHeadingFocus]);
   const badge =
     app.state === 'on'
       ? { tone: 'success' as const, text: labels.on }
@@ -264,7 +296,11 @@ export function AuthenticatorRow() {
           <Icon name="shield" className="size-5" />
         </span>
         <div className="min-w-0">
-          <h2 id="mfa-title" className="m-0 flex flex-wrap items-center gap-2.5 text-lg font-bold">
+          <h2
+            id="mfa-title"
+            tabIndex={-1}
+            className="m-0 flex flex-wrap items-center gap-2.5 text-lg font-bold"
+          >
             {labels.title}
             <Badge tone={badge.tone} dot data-testid="profile-mfa-status">
               {badge.text}

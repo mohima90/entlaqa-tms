@@ -1,7 +1,7 @@
 'use client';
-import { NEEDS_FORM_LIMITS, type NeedsFormSection } from '@jadarat/tms/needs-forms';
-import { Alert, Button, Dialog, TextField } from '@jadarat/ui';
-import { type SyntheticEvent, useState } from 'react';
+import { NEEDS_FORM_LIMITS, type NeedsFormSection, localized } from '@jadarat/tms/needs-forms';
+import { Alert, Button, Icon, TextField } from '@jadarat/ui';
+import { type SyntheticEvent, useId, useState } from 'react';
 
 export interface SectionDialogValues {
   readonly nameEn: string;
@@ -14,8 +14,10 @@ export interface SectionDialogValues {
 }
 
 export interface SectionDialogProps {
-  readonly open: boolean;
+  readonly locale: 'ar' | 'en';
   readonly section: NeedsFormSection | null;
+  /** Delete this section (asks first); none for a new section or the fixed one. */
+  readonly onDelete?: (() => void) | undefined;
   readonly pending: boolean;
   readonly message: string | null;
   readonly fieldErrors: Readonly<Record<string, string>>;
@@ -25,11 +27,13 @@ export interface SectionDialogProps {
 }
 
 /**
- * Add or edit a section (Kawadir's section dialog): names and descriptions in English and Arabic, and
- * whether department heads can fill it in more than once («repeatable», with minimum and maximum entries).
+ * The section settings of the form builder (redesign package 4: an inspector pane instead of the section
+ * dialog): names and descriptions in English and Arabic, and whether unit heads can fill it in more than
+ * once («repeatable», with minimum and maximum entries). Saved with «Save section».
  */
-export function SectionDialog(props: SectionDialogProps) {
-  const { text, section } = props;
+export function SectionInspector(props: SectionDialogProps) {
+  const { text, section, locale } = props;
+  const headingId = useId();
   const [values, setValues] = useState<SectionDialogValues>(() => ({
     nameEn: section?.name.en ?? '',
     nameAr: section?.name.ar ?? '',
@@ -53,15 +57,32 @@ export function SectionDialog(props: SectionDialogProps) {
   }
 
   return (
-    <Dialog
-      open={props.open}
-      onClose={props.onClose}
-      title={section ? text('editSectionTitle') : text('addSectionTitle')}
-      description={text('sectionDialogDesc')}
-      closeLabel={text('close')}
-      data-testid="section-dialog"
+    <section
+      aria-labelledby={headingId}
+      className="flex flex-col rounded-[22px] border border-border bg-surface shadow-2"
+      data-testid="section-inspector"
     >
-      <form className="flex flex-col gap-4" onSubmit={submit} noValidate>
+      <div className="flex items-start gap-3 px-4.5 pb-2 pt-4">
+        <div className="min-w-0 flex-1">
+          <p className="m-0 text-[12.5px] font-semibold uppercase tracking-[var(--letter-spacing-caps)] text-text-muted">
+            {text('sectionSettings')}
+          </p>
+          <h2 id={headingId} className="m-0 text-lg font-bold [overflow-wrap:anywhere]">
+            {section ? localized(section.name, locale) : text('addSectionTitle')}
+          </h2>
+          <p className="m-0 mt-1 text-sm text-text-muted">{text('sectionDialogDesc')}</p>
+        </div>
+        <button
+          type="button"
+          onClick={props.onClose}
+          aria-label={text('close')}
+          className="grid size-10 shrink-0 place-items-center rounded-full text-text-muted hover:bg-surface-hover hover:text-text"
+          data-testid="section-inspector-close"
+        >
+          <Icon name="close" />
+        </button>
+      </div>
+      <form className="flex flex-col gap-4 px-4.5 pb-4.5 pt-2" onSubmit={submit} noValidate>
         {props.message ? (
           <Alert tone="danger" data-testid="section-dialog-error">
             {props.message}
@@ -167,20 +188,30 @@ export function SectionDialog(props: SectionDialogProps) {
             </div>
           ) : null}
         </div>
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <div className="-mx-4.5 mt-1 flex flex-wrap items-center gap-2.5 border-t border-border px-4.5 pt-4">
+          {props.onDelete ? (
+            <Button
+              variant="ghost"
+              className="text-danger hover:bg-danger-subtle"
+              disabled={props.pending}
+              onClick={props.onDelete}
+              data-testid="section-inspector-delete"
+            >
+              <Icon name="trash" />
+              {text('delete')}
+            </Button>
+          ) : null}
           <Button
-            variant="secondary"
-            type="button"
+            type="submit"
+            className="ms-auto"
             disabled={props.pending}
-            onClick={props.onClose}
+            busy={props.pending}
+            data-testid="section-save"
           >
-            {text('cancel')}
-          </Button>
-          <Button type="submit" disabled={props.pending} data-testid="section-dialog-save">
-            {props.pending ? text('saving') : section ? text('save') : text('addSection')}
+            {props.pending ? text('saving') : section ? text('saveSection') : text('addSection')}
           </Button>
         </div>
       </form>
-    </Dialog>
+    </section>
   );
 }

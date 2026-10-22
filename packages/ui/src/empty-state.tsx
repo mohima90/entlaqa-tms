@@ -17,6 +17,8 @@ export interface EmptyStateProps extends Omit<HTMLAttributes<HTMLDivElement>, 't
    */
   readonly steps?:
     readonly { readonly title: ReactNode; readonly description?: ReactNode }[] | undefined;
+  /** A heading for the steps, for screen readers (e.g. «How a planning cycle works»). */
+  readonly stepsTitle?: string | undefined;
 }
 
 /**
@@ -31,10 +33,12 @@ export function EmptyState({
   action,
   headingLevel = 2,
   steps,
+  stepsTitle,
   className,
   ...props
 }: EmptyStateProps) {
   const Heading = headingLevel === 2 ? 'h2' : 'h3';
+  const StepsHeading = headingLevel === 2 ? 'h3' : 'h4';
   return (
     <div
       className={cn('flex flex-col items-center gap-2.5 px-6 py-11 text-center', className)}
@@ -49,8 +53,16 @@ export function EmptyState({
       <Heading className="m-0 mt-1.5 text-xl font-bold">{title}</Heading>
       {description ? <p className="m-0 max-w-[460px] text-text-muted">{description}</p> : null}
       {action ? <div className="mt-2">{action}</div> : null}
+      {steps && steps.length > 0 && stepsTitle ? (
+        <StepsHeading className="sr-only">{stepsTitle}</StepsHeading>
+      ) : null}
       {steps && steps.length > 0 ? (
-        <ol className="m-0 mt-3.5 grid w-full max-w-[760px] list-none grid-cols-1 gap-3.5 p-0 text-start md:grid-cols-2">
+        <ol
+          className={cn(
+            'm-0 mt-3.5 grid w-full list-none grid-cols-1 gap-3.5 p-0 text-start',
+            steps.length === 3 ? 'max-w-[880px] md:grid-cols-3' : 'max-w-[760px] md:grid-cols-2',
+          )}
+        >
           {steps.map((step, index) => (
             <li
               key={index}

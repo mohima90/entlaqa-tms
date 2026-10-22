@@ -10,8 +10,8 @@ import {
   hasOptions,
   localized,
 } from '@jadarat/tms/needs-forms';
-import { Alert, Button, Dialog, Icon, TextField } from '@jadarat/ui';
-import { type SyntheticEvent, useState } from 'react';
+import { Alert, Button, Icon, type IconName, TextField, cn } from '@jadarat/ui';
+import { type SyntheticEvent, useId, useState } from 'react';
 import { SelectField } from '../select-field';
 
 export interface FieldDialogValues {
@@ -57,8 +57,24 @@ export function fieldDialogValues(field: NeedsFormField | null): FieldDialogValu
   };
 }
 
+/** An icon per field type (the outline rows and the type palette). */
+export const FIELD_TYPE_ICON: Readonly<Record<FieldType, IconName>> = {
+  text: 'fields',
+  textarea: 'form',
+  number: 'billing',
+  date: 'calendar',
+  email: 'mail',
+  phone: 'user',
+  url: 'globe',
+  select: 'chevron-down',
+  multiselect: 'check',
+  radio: 'success',
+  checkbox: 'check',
+  file: 'upload',
+  people: 'people',
+};
+
 export interface FieldDialogProps {
-  readonly open: boolean;
   readonly locale: 'ar' | 'en';
   readonly section: NeedsFormSection | null;
   /** The field being edited, or null to add one. */
@@ -69,20 +85,29 @@ export interface FieldDialogProps {
   readonly text: (key: string, values?: Record<string, string | number>) => string;
   readonly onClose: () => void;
   readonly onSave: (values: FieldDialogValues) => void;
+  /** Delete this field (asks first); none for a new or a fixed field. */
+  readonly onDelete?: (() => void) | undefined;
+  /** «You have unsaved changes.» (shown next to Save field while the inputs differ from the field). */
+  readonly unsavedText: string;
 }
 
 /**
- * Add or edit a field (Kawadir's field dialog): English and Arabic labels, type (12 types), placeholders,
- * required, options in both languages for choice types, the people mode for the people field, and one
+ * The field settings of the form builder (redesign package 4: an inspector pane instead of the field
+ * dialog): English and Arabic labels side by side, the type from a palette (12 types), placeholders, a
+ * Required switch, options in both languages for choice types, the people mode for the people field, and one
  * condition — show only when a dropdown or single-choice field of the same section has a given answer. A
  * system field keeps its type, stays required and is never conditional (those controls are not offered).
+ * Saved with «Save field», as the dialog was.
  */
-export function FieldDialog(props: FieldDialogProps) {
+export function FieldInspector(props: FieldDialogProps) {
   const { text, locale, section, field } = props;
   const [values, setValues] = useState<FieldDialogValues>(() => fieldDialogValues(field));
   const [newOption, setNewOption] = useState({ en: '', ar: '' });
   const [optionError, setOptionError] = useState<string | null>(null);
+  const [choosingType, setChoosingType] = useState(field === null);
   const system = field?.systemKey ?? null;
+  const unsaved = JSON.stringify(values) !== JSON.stringify(fieldDialogValues(field));
+  const headingId = useId();
 
   const update = (next: Partial<FieldDialogValues>) => {
     setValues((current) => ({ ...current, ...next }));
@@ -116,16 +141,34 @@ export function FieldDialog(props: FieldDialogProps) {
   }
 
   return (
-    <Dialog
-      open={props.open}
-      onClose={props.onClose}
-      title={field ? text('editFieldTitle') : text('addFieldTitle')}
-      description={system ? text('systemNote') : text('fieldDialogDesc')}
-      closeLabel={text('close')}
-      size="lg"
-      data-testid="field-dialog"
+    <section
+      aria-labelledby={headingId}
+      className="flex flex-col rounded-[22px] border border-border bg-surface shadow-2"
+      data-testid="field-inspector"
     >
-      <form className="flex flex-col gap-4" onSubmit={submit} noValidate>
+      <div className="flex items-start gap-3 px-4.5 pb-2 pt-4">
+        <div className="min-w-0 flex-1">
+          <p className="m-0 text-[12.5px] font-semibold uppercase tracking-[var(--letter-spacing-caps)] text-text-muted">
+            {text('fieldSettings')}
+          </p>
+          <h2 id={headingId} className="m-0 text-lg font-bold [overflow-wrap:anywhere]">
+            {field ? localized(field.label, locale) : text('addFieldTitle')}
+          </h2>
+          <p className="m-0 mt-1 text-sm text-text-muted">
+            {system ? text('systemNote') : text('fieldDialogDesc')}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={props.onClose}
+          aria-label={text('close')}
+          className="grid size-10 shrink-0 place-items-center rounded-full text-text-muted hover:bg-surface-hover hover:text-text"
+          data-testid="field-inspector-close"
+        >
+          <Icon name="close" />
+        </button>
+      </div>
+      <form className="flex flex-col gap-4 px-4.5 pb-4.5 pt-2" onSubmit={submit} noValidate>
         {props.message ? (
           <Alert tone="danger" data-testid="field-dialog-error">
             {props.message}
@@ -158,23 +201,67 @@ export function FieldDialog(props: FieldDialogProps) {
             }}
           />
         </div>
-        {system ? null : (
-          <SelectField
-            id="field-type"
-            label={text('type')}
-            value={values.type}
-            error={props.fieldErrors.type}
-            onChange={(e) => {
-              const type = e.target.value as FieldType;
-              update({ type, options: hasOptions(type) ? values.options : [] });
-            }}
+        {system ? null : choosingType ? (
+          <fieldset
+            className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0"
+            data-testid="field-types"
           >
-            {FIELD_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {text(`types.${type}`)}
-              </option>
-            ))}
-          </SelectField>
+            <legend className="mb-2 p-0 text-sm font-semibold">{text('type')}</legend>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {FIELD_TYPES.map((type) => (
+                <label
+                  key={type}
+                  className={cn(
+                    'flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border-[1.5px] px-3 text-sm font-medium has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus-ring',
+                    values.type === type
+                      ? 'border-primary bg-primary-subtle text-primary-text'
+                      : 'border-border hover:bg-surface-hover',
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="field-type"
+                    value={type}
+                    checked={values.type === type}
+                    onChange={() => {
+                      update({ type, options: hasOptions(type) ? values.options : [] });
+                      if (field) setChoosingType(false);
+                    }}
+                    className="sr-only"
+                    data-testid={`field-type-${type}`}
+                  />
+                  <Icon name={FIELD_TYPE_ICON[type]} className="size-4" />
+                  {text(`types.${type}`)}
+                </label>
+              ))}
+            </div>
+            {props.fieldErrors.type ? (
+              <p className="m-0 text-sm font-medium text-danger">{props.fieldErrors.type}</p>
+            ) : null}
+          </fieldset>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm font-semibold" id={`${headingId}-type`}>
+              {text('type')}
+            </span>
+            <div className="flex items-center gap-2.5 rounded-[14px] border-[1.5px] border-border-strong px-3 py-2">
+              <span className="grid size-8 place-items-center rounded-lg bg-primary-subtle text-primary-text">
+                <Icon name={FIELD_TYPE_ICON[values.type]} className="size-4" />
+              </span>
+              <b className="flex-1">{text(`types.${values.type}`)}</b>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-describedby={`${headingId}-type`}
+                onClick={() => {
+                  setChoosingType(true);
+                }}
+                data-testid="field-type-change"
+              >
+                {text('edit')}
+              </Button>
+            </div>
+          </div>
         )}
         {values.type === 'people' ? (
           <SelectField
@@ -310,16 +397,18 @@ export function FieldDialog(props: FieldDialogProps) {
           />
         </div>
         {system ? null : (
-          <label className="flex items-center gap-2 text-sm font-medium">
+          <label className="flex min-h-11 items-center justify-between gap-3 text-sm font-semibold">
+            {text('requiredField')}
             <input
               id="field-required"
               type="checkbox"
+              role="switch"
               checked={values.required}
               onChange={(e) => {
                 update({ required: e.target.checked });
               }}
+              className="relative h-6 w-11 shrink-0 cursor-pointer appearance-none rounded-full bg-border-strong transition-colors before:absolute before:start-0.5 before:top-0.5 before:size-5 before:rounded-full before:bg-surface before:transition-transform checked:bg-primary checked:before:translate-x-5 rtl:checked:before:-translate-x-5"
             />
-            {text('requiredField')}
           </label>
         )}
         {!system && triggers.length > 0 ? (
@@ -368,20 +457,35 @@ export function FieldDialog(props: FieldDialogProps) {
             </div>
           </fieldset>
         ) : null}
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <div className="-mx-4.5 mt-1 flex flex-wrap items-center gap-2.5 border-t border-border px-4.5 pt-4">
+          {props.onDelete ? (
+            <Button
+              variant="ghost"
+              className="text-danger hover:bg-danger-subtle"
+              disabled={props.pending}
+              onClick={props.onDelete}
+              data-testid="field-inspector-delete"
+            >
+              <Icon name="trash" />
+              {text('delete')}
+            </Button>
+          ) : null}
+          {unsaved ? (
+            <p className="m-0 text-sm text-text-muted" data-testid="field-unsaved">
+              {props.unsavedText}
+            </p>
+          ) : null}
           <Button
-            variant="secondary"
-            type="button"
+            type="submit"
+            className="ms-auto"
             disabled={props.pending}
-            onClick={props.onClose}
+            busy={props.pending}
+            data-testid="field-save"
           >
-            {text('cancel')}
-          </Button>
-          <Button type="submit" disabled={props.pending} data-testid="field-dialog-save">
-            {props.pending ? text('saving') : field ? text('save') : text('addField')}
+            {props.pending ? text('saving') : field ? text('saveField') : text('addField')}
           </Button>
         </div>
       </form>
-    </Dialog>
+    </section>
   );
 }

@@ -1,13 +1,18 @@
 'use client';
 import { savePlanCycleScopeAction } from '@jadarat/tms/actions/planning';
 import { departmentsInScope, effectiveHead } from '@jadarat/tms/planning-rules';
-import { Alert, Badge, Button, Card, EmptyState, buttonClasses } from '@jadarat/ui';
+import { Alert, Badge, Card, EmptyState } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { type SyntheticEvent, useMemo, useState, useTransition } from 'react';
 import { cycleHref } from '../../lib/planning-view';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
+import { StepFooter } from './cycle-chain-forms';
+import { useUnsavedStep } from './setup-step-nav';
 import { usePlanningTexts } from './use-planning-texts';
+
+const sameSet = (set: ReadonlySet<string>, list: readonly string[]) =>
+  set.size === list.length && list.every((id) => set.has(id));
 
 export interface ScopeUnit {
   readonly id: string;
@@ -55,6 +60,10 @@ export function CycleScopeForm(props: CycleScopeFormProps) {
   );
   const [branches, setBranches] = useState<ReadonlySet<string>>(new Set(props.initial.branchIds));
   const [notice, setNotice] = useState<string | null>(null);
+  useUnsavedStep(
+    !sameSet(departments, props.initial.departmentIds) ||
+      !sameSet(branches, props.initial.branchIds),
+  );
 
   const structure = useMemo(
     () =>
@@ -114,20 +123,47 @@ export function CycleScopeForm(props: CycleScopeFormProps) {
     );
   }
 
+  const summary = (
+    <div
+      className="flex flex-col gap-3 rounded-[20px] border border-border bg-surface-sunken p-5 xl:sticky xl:top-24"
+      aria-live="polite"
+      data-testid="scope-summary"
+    >
+      <span aria-hidden="true" className="text-[40px] font-bold leading-none tabular-nums">
+        {String(inScope.length)}
+      </span>
+      <p className="m-0 font-semibold" data-testid="scope-forms-count">
+        {t('setup.scope.formsTitle', { count: inScope.length })}
+      </p>
+      <p className="m-0 text-sm text-text-muted">{t('setup.scope.formsHint')}</p>
+      {withoutHead > 0 ? (
+        <Alert tone="warning" data-testid="scope-no-head">
+          {t('setup.scope.noHeadWarning', { count: withoutHead })}
+        </Alert>
+      ) : null}
+    </div>
+  );
+
   return (
-    <form onSubmit={onSubmit} noValidate className="flex flex-col gap-6" data-testid="cycle-scope">
+    <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4" data-testid="cycle-scope">
       {notice ? <Alert tone="danger">{notice}</Alert> : null}
       <Card title={t('setup.scope.title')} description={t('setup.scope.intro')}>
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <fieldset className="m-0 border-0 p-0 lg:col-span-2">
-            <legend className="mb-2 text-sm font-semibold">{t('setup.scope.departments')}</legend>
-            <ul className="m-0 flex list-none flex-col gap-1 p-0" data-testid="scope-units">
+        <div className="grid grid-cols-1 items-start gap-5.5 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+          <fieldset className="m-0 min-w-0 border-0 p-0">
+            <legend className="mb-2 p-0 text-sm font-bold">{t('setup.scope.departments')}</legend>
+            <ul className="m-0 flex list-none flex-col gap-0.5 p-0" data-testid="scope-units">
               {props.units.map((unit) => {
                 const id = `scope-unit-${unit.id}`;
                 const covered = inScope.includes(unit.id);
                 return (
                   <li key={unit.id} className={INDENT[Math.min(unit.depth, INDENT.length - 1)]}>
-                    <div className="flex min-h-11 items-center gap-3 rounded-xl px-2 hover:bg-surface-hover">
+                    <div
+                      className={`flex min-h-12 items-center gap-3 rounded-xl px-2.5 hover:bg-surface-hover ${
+                        unit.depth > 0
+                          ? `rounded-s-none border-s-2 ${covered ? 'border-primary' : 'border-border'}`
+                          : ''
+                      }`}
+                    >
                       <input
                         id={id}
                         type="checkbox"
@@ -157,10 +193,11 @@ export function CycleScopeForm(props: CycleScopeFormProps) {
               })}
             </ul>
           </fieldset>
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-5">
+            {summary}
             {props.branches.length > 0 ? (
               <fieldset className="m-0 border-0 p-0" aria-describedby="scope-branches-hint">
-                <legend className="mb-1 text-sm font-semibold">{t('setup.scope.branches')}</legend>
+                <legend className="mb-1 p-0 text-sm font-bold">{t('setup.scope.branches')}</legend>
                 <p id="scope-branches-hint" className="m-0 mb-2 text-sm text-text-muted">
                   {t('setup.scope.branchesHint')}
                 </p>
@@ -191,32 +228,17 @@ export function CycleScopeForm(props: CycleScopeFormProps) {
                 </ul>
               </fieldset>
             ) : null}
-            <div
-              className="flex flex-col gap-2 rounded-2xl border border-border bg-surface-sunken p-4"
-              aria-live="polite"
-              data-testid="scope-summary"
-            >
-              <p className="m-0 font-semibold" data-testid="scope-forms-count">
-                {t('setup.scope.formsTitle', { count: inScope.length })}
-              </p>
-              <p className="m-0 text-sm text-text-muted">{t('setup.scope.formsHint')}</p>
-              {withoutHead > 0 ? (
-                <Alert tone="warning" data-testid="scope-no-head">
-                  {t('setup.scope.noHeadWarning', { count: withoutHead })}
-                </Alert>
-              ) : null}
-            </div>
           </div>
         </div>
       </Card>
-      <div className="flex flex-wrap items-center justify-end gap-3">
-        <a href={props.backHref} className={buttonClasses({ variant: 'secondary', size: 'md' })}>
-          {t('setup.back')}
-        </a>
-        <Button type="submit" disabled={pending} data-testid="cycle-scope-save">
-          {pending ? t('setup.working') : t('setup.saveAndContinue')}
-        </Button>
-      </div>
+      <StepFooter
+        backHref={props.backHref}
+        backLabel={t('setup.back')}
+        saveLabel={t('setup.saveAndContinue')}
+        workingLabel={t('setup.working')}
+        pending={pending}
+        testId="cycle-scope-save"
+      />
     </form>
   );
 }

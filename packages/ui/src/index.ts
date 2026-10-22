@@ -81,6 +81,9 @@ export {
   type AttentionStripProps,
 } from './attention-strip';
 export { CopyButton, type CopyButtonProps } from './copy-button';
+// Redesign package 4 (Planning & courses, PO 21 Oct 2026): the progress bar and the side step list.
+export { ProgressBar, type ProgressBarProps } from './progress-bar';
+export { StepList, type StepListItem, type StepListProps, type StepListState } from './step-list';
 export { SaveBar, type SaveBarProps, type SaveBarState } from './save-bar';
 export { FormSection, type FormSectionProps, SidePanel, type SidePanelProps } from './side-panel';
 export { type Shortcut, ShortcutsDialog, type ShortcutsDialogProps } from './shortcuts-dialog';

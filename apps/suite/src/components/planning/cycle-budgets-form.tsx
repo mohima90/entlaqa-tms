@@ -1,12 +1,14 @@
 'use client';
 import { savePlanCycleBudgetsAction } from '@jadarat/tms/actions/planning';
 import { budgetAmountText } from '@jadarat/tms/planning-rules';
-import { Alert, Button, Card, EmptyState, buttonClasses, tableClasses } from '@jadarat/ui';
+import { Alert, Card, EmptyState, FieldError, buttonClasses, tableClasses } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { type SyntheticEvent, useState, useTransition } from 'react';
 import { cycleHref, sumAmounts } from '../../lib/planning-view';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
+import { StepFooter } from './cycle-chain-forms';
+import { useUnsavedStep } from './setup-step-nav';
 import { usePlanningTexts } from './use-planning-texts';
 
 export interface BudgetRow {
@@ -45,6 +47,9 @@ export function CycleBudgetsForm(props: CycleBudgetsFormProps) {
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
+  useUnsavedStep(
+    props.rows.some((row) => (amounts[row.departmentId] ?? '') !== (row.amount ?? '')),
+  );
   const total = sumAmounts(Object.values(amounts));
   const totalText = new Intl.NumberFormat(`${props.locale}-u-nu-latn`, {
     style: 'currency',
@@ -112,90 +117,117 @@ export function CycleBudgetsForm(props: CycleBudgetsFormProps) {
     <form
       onSubmit={onSubmit}
       noValidate
-      className="flex flex-col gap-6"
+      className="flex flex-col gap-4"
       data-testid="cycle-budgets"
     >
       {notice ? <Alert tone="danger">{notice}</Alert> : null}
-      <Card flush title={t('setup.budget.title')} description={t('setup.budget.intro')}>
-        <div className={tableClasses.wrapper}>
-          <table className={tableClasses.table}>
-            <caption className="sr-only">{t('setup.budget.title')}</caption>
-            <thead className={tableClasses.header}>
-              <tr>
-                <th scope="col" className={tableClasses.head} data-testid="budget-unit-column">
-                  {props.unitColumn}
-                </th>
-                <th scope="col" className={tableClasses.head}>
-                  {t('setup.budget.columns.head')}
-                </th>
-                <th scope="col" className={tableClasses.head}>
-                  {t('setup.budget.columns.envelope', { currency: props.currency })}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {props.rows.map((row) => {
-                const id = `budget-${row.departmentId}`;
-                const error = errors[row.departmentId];
-                return (
-                  <tr key={row.departmentId} className={tableClasses.row} data-testid="budget-row">
-                    <th scope="row" className={`${tableClasses.cell} text-start font-medium`}>
-                      {row.name}
-                    </th>
-                    <td className={`${tableClasses.cell} text-text-muted`}>{row.head}</td>
-                    <td className={tableClasses.cell}>
-                      <label htmlFor={id} className="sr-only">
-                        {t('setup.budget.amountLabel', { name: row.name })}
-                      </label>
-                      <input
-                        id={id}
-                        inputMode="decimal"
-                        dir="ltr"
-                        value={amounts[row.departmentId] ?? ''}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setAmounts((current) => ({ ...current, [row.departmentId]: value }));
-                          setErrors((current) => ({ ...current, [row.departmentId]: '' }));
-                        }}
-                        maxLength={20}
-                        placeholder="0"
-                        aria-invalid={error ? true : undefined}
-                        aria-describedby={error ? `${id}-error` : 'budget-hint'}
-                        disabled={pending}
-                        className={`min-h-9 w-40 rounded-full border bg-surface px-4 text-end text-sm shadow-1 pointer-coarse:min-h-11 ${
-                          error ? 'border-danger' : 'border-border-strong'
-                        }`}
-                        data-testid="budget-amount"
-                      />
-                      {error ? (
-                        <p id={`${id}-error`} className="m-0 mt-1 text-sm font-medium text-danger">
-                          {error}
-                        </p>
-                      ) : null}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3 text-sm">
-          <p id="budget-hint" className="m-0 text-text-muted">
-            {t('setup.budget.amountHint')}
+      <Card title={t('setup.budget.title')} description={t('setup.budget.intro')}>
+        <div className="flex flex-col gap-4">
+          <p
+            className="m-0 flex flex-wrap items-center justify-between gap-3 rounded-[18px] bg-brand-gradient px-5 py-3.5 text-on-brand"
+            aria-live="polite"
+            data-testid="budget-total"
+          >
+            <span>{t('setup.budget.total', { amount: '' }).replace(/[:：]\s*$/, '')}</span>
+            <b className="text-xl tabular-nums">{totalText}</b>
           </p>
-          <p className="m-0 font-semibold" aria-live="polite" data-testid="budget-total">
-            {t('setup.budget.total', { amount: totalText })}
+          <div className="overflow-hidden rounded-2xl border border-border">
+            {/* One table; on phones each row reads as a card (no second set of inputs). */}
+            <table className={`${tableClasses.table} max-md:block`}>
+              <caption className="sr-only">{t('setup.budget.title')}</caption>
+              <thead className={`${tableClasses.header} max-md:hidden`}>
+                <tr>
+                  <th scope="col" className={tableClasses.head} data-testid="budget-unit-column">
+                    {props.unitColumn}
+                  </th>
+                  <th scope="col" className={tableClasses.head}>
+                    {t('setup.budget.columns.head')}
+                  </th>
+                  <th scope="col" className={tableClasses.head}>
+                    {t('setup.budget.columns.envelope', { currency: props.currency })}
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="max-md:block">
+                {props.rows.map((row) => {
+                  const id = `budget-${row.departmentId}`;
+                  const error = errors[row.departmentId];
+                  return (
+                    <tr
+                      key={row.departmentId}
+                      className={`${tableClasses.row} max-md:flex max-md:flex-col max-md:gap-2 max-md:px-4 max-md:py-3.5`}
+                      data-testid="budget-row"
+                    >
+                      <th
+                        scope="row"
+                        className={`${tableClasses.cell} text-start font-medium max-md:h-auto max-md:p-0`}
+                      >
+                        {row.name}
+                      </th>
+                      <td
+                        className={`${tableClasses.cell} text-text-muted max-md:h-auto max-md:p-0 max-md:text-[13px]`}
+                      >
+                        {row.head}
+                      </td>
+                      <td className={`${tableClasses.cell} py-2 max-md:h-auto max-md:p-0`}>
+                        <label htmlFor={id} className="sr-only">
+                          {t('setup.budget.amountLabel', { name: row.name })}
+                        </label>
+                        <div
+                          className={`flex w-full items-stretch overflow-hidden rounded-xl border-[1.5px] bg-surface focus-within:outline-2 focus-within:outline-offset-1 focus-within:outline-primary md:w-50 ${
+                            error ? 'border-danger' : 'border-border-strong'
+                          }`}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className="grid place-items-center border-e border-border bg-surface-sunken px-3 text-[13.5px] font-semibold text-text-muted"
+                          >
+                            {props.currency}
+                          </span>
+                          <input
+                            id={id}
+                            inputMode="decimal"
+                            dir="ltr"
+                            value={amounts[row.departmentId] ?? ''}
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              setAmounts((current) => ({ ...current, [row.departmentId]: value }));
+                              setErrors((current) => ({ ...current, [row.departmentId]: '' }));
+                            }}
+                            maxLength={20}
+                            placeholder="0"
+                            aria-invalid={error ? true : undefined}
+                            aria-describedby={error ? `${id}-error` : 'budget-hint'}
+                            disabled={pending}
+                            className="min-h-[42px] w-full min-w-0 border-0 bg-transparent px-3 text-end tabular-nums outline-none pointer-coarse:min-h-11"
+                            data-testid="budget-amount"
+                          />
+                        </div>
+                        {error ? (
+                          <div className="mt-1 whitespace-normal">
+                            <FieldError id={`${id}-error`}>{error}</FieldError>
+                          </div>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p id="budget-hint" className="m-0 text-sm text-text-muted">
+            {t('setup.budget.amountHint')}
           </p>
         </div>
       </Card>
-      <div className="flex flex-wrap items-center justify-end gap-3">
-        <a href={props.backHref} className={buttonClasses({ variant: 'secondary', size: 'md' })}>
-          {t('setup.back')}
-        </a>
-        <Button type="submit" disabled={pending} data-testid="cycle-budgets-save">
-          {pending ? t('setup.working') : t('setup.saveAndContinue')}
-        </Button>
-      </div>
+      <StepFooter
+        backHref={props.backHref}
+        backLabel={t('setup.back')}
+        saveLabel={t('setup.saveAndContinue')}
+        workingLabel={t('setup.working')}
+        pending={pending}
+        testId="cycle-budgets-save"
+      />
     </form>
   );
 }

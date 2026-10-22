@@ -26,6 +26,8 @@ export interface NeedsFormRendererProps {
   readonly errors?: Readonly<Record<string, string>>;
   /** Prefix of the element ids (two renderers on one page). */
   readonly idPrefix?: string;
+  /** A field to outline (the form builder's preview: the field being edited). */
+  readonly highlight?: string | undefined;
 }
 
 /**
@@ -121,21 +123,30 @@ export function NeedsFormRenderer(props: NeedsFormRendererProps) {
                       <p className="m-0 text-sm text-text-muted">{text('renderer.nothingShown')}</p>
                     ) : null}
                     {fields.map((field) => (
-                      <FieldControl
+                      <div
                         key={field.id}
-                        field={field}
-                        id={`${prefix}-${section.id.slice(0, 8)}-${String(index)}-${field.id.slice(0, 8)}`}
-                        locale={locale}
-                        value={entry[field.id]}
-                        error={
-                          props.errors?.[`sections.${section.id}.${String(index)}.${field.id}`]
+                        className={
+                          field.id === props.highlight
+                            ? '-m-1.5 rounded-xl border-2 border-dashed border-primary p-1'
+                            : undefined
                         }
-                        text={text}
-                        errorMessage={errorMessage}
-                        onChange={(value) => {
-                          setAnswer(section, index, field.id, value);
-                        }}
-                      />
+                        data-highlighted={field.id === props.highlight ? true : undefined}
+                      >
+                        <FieldControl
+                          field={field}
+                          id={`${prefix}-${section.id.slice(0, 8)}-${String(index)}-${field.id.slice(0, 8)}`}
+                          locale={locale}
+                          value={entry[field.id]}
+                          error={
+                            props.errors?.[`sections.${section.id}.${String(index)}.${field.id}`]
+                          }
+                          text={text}
+                          errorMessage={errorMessage}
+                          onChange={(value) => {
+                            setAnswer(section, index, field.id, value);
+                          }}
+                        />
+                      </div>
                     ))}
                   </div>
                 );

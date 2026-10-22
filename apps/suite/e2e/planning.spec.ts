@@ -54,7 +54,9 @@ const TEXTS = {
 for (const locale of ['en', 'ar'] as const) {
   const t = TEXTS[locale];
 
-  test(`${locale}: the cycles list in the Kawadir layout`, async ({ page }, testInfo) => {
+  test(`${locale}: the cycles list grouped by status (redesign package 4)`, async ({
+    page,
+  }, testInfo) => {
     const errors: string[] = [];
     page.on('console', (message) => {
       if (message.type() === 'error') errors.push(message.text());
@@ -63,8 +65,10 @@ for (const locale of ['en', 'ar'] as const) {
     await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(t.cycles);
     await expect(page.getByTestId('planning-not-configured')).toBeVisible();
-    await expect(page.getByTestId('cycles-stats').locator('dd')).toHaveCount(4);
-    await expect(page.getByTestId('cycles-tabs').getByRole('link')).toHaveCount(4);
+    // The summary cards and tabs gave way to groups (open · drafts · closed); none without cycles.
+    await expect(page.getByTestId('cycles-stats')).toHaveCount(0);
+    await expect(page.getByTestId('cycles-tabs')).toHaveCount(0);
+    await expect(page.getByTestId('cycles-open')).toHaveCount(0);
     await expect(page.getByTestId('cycles-empty')).toContainText(t.empty);
     // The menu opens the planning pages (preview: every entry).
     // (On phones the menu is a drawer, rendered when opened.)
@@ -76,14 +80,26 @@ for (const locale of ['en', 'ar'] as const) {
     expect(errors).toEqual([]);
   });
 
-  test(`${locale}: the new-cycle form checks its fields before saving`, async ({ page }) => {
+  test(`${locale}: the new-cycle form checks its fields before saving`, async ({
+    page,
+  }, testInfo) => {
     await page.goto(`/${locale}/suite/planning/cycles/new`);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(t.newTitle);
     const form = page.getByTestId('cycle-basics');
-    // Suggested period (the next fiscal year) and deadline are filled in.
+    // Suggested period (the next fiscal year) and deadline are filled in, «Shown as» the organization does.
     await expect(form.locator('#cycle-period-start')).not.toHaveValue('');
     await expect(form.locator('#cycle-deadline')).not.toHaveValue('');
+    await expect(page.getByTestId('cycle-period-shown')).toBeVisible();
+    await expect(page.getByTestId('cycle-deadline-shown')).toBeVisible();
     await expect(page.getByTestId('cycle-needs-form').locator('option')).toHaveCount(1);
+    // The whole journey is shown: six steps, only Basics reachable before the draft exists.
+    if (!testInfo.project.name.startsWith('mobile')) {
+      const steps = page.getByTestId('setup-stepper').locator('ol > li');
+      await expect(steps).toHaveCount(6);
+      await expect(page.getByTestId('setup-stepper').locator('ol a')).toHaveCount(1);
+    } else {
+      await expect(page.getByTestId('step-list-short')).toBeVisible();
+    }
     await expectNoSeriousA11yViolations(page);
     await expectNoHorizontalOverflow(page);
 
@@ -109,21 +125,35 @@ for (const locale of ['en', 'ar'] as const) {
     for (const [index, kind] of t.defaultSteps.entries()) {
       await expect(steps.nth(index)).toContainText(kind);
     }
+    // Reminders are chips; the save bar shows only once something changed.
     await expect(page.getByTestId('reminder-day')).toHaveCount(2);
+    await expect(page.getByTestId('save-bar')).toHaveCount(0);
     await expectNoSeriousA11yViolations(page);
     await expectNoHorizontalOverflow(page);
 
     await page.getByTestId('chain-add-step').click();
     await expect(steps).toHaveCount(4);
+    await expect(page.getByTestId('save-bar')).toBeVisible();
     await steps.nth(3).getByTestId('chain-step-remove').click();
     await expect(steps).toHaveCount(3);
+    await expect(page.getByTestId('save-bar')).toHaveCount(0);
+    await page.locator('#reminder-new').fill('14');
     await page.getByTestId('reminder-add').click();
     await expect(page.getByTestId('reminder-day')).toHaveCount(3);
-    // A repeated day is caught before anything is sent.
-    await page.getByTestId('reminder-day').nth(2).fill('7');
-    await page.getByTestId('planning-settings-save').click();
+    await expect(page.getByTestId('save-bar')).toBeVisible();
+    // A repeated day is caught when it is added, before anything is sent.
+    await page.locator('#reminder-new').fill('7');
+    await page.getByTestId('reminder-add').click();
     await expect(page.locator('#reminders-error')).toBeVisible();
+    await expect(page.getByTestId('reminder-day')).toHaveCount(3);
     await expectNoSeriousA11yViolations(page);
+    // Discard brings the saved settings back.
+    await page
+      .getByTestId('save-bar')
+      .getByRole('button', { name: locale === 'en' ? 'Discard changes' : 'تجاهل التغييرات' })
+      .click();
+    await expect(page.getByTestId('reminder-day')).toHaveCount(2);
+    await expect(page.getByTestId('save-bar')).toHaveCount(0);
   });
 }
 

@@ -1,6 +1,7 @@
-import { type AppLocale, type DateDisplay, displayDateFormatter } from '@jadarat/platform-i18n';
+import type { AppLocale, DateDisplay } from '@jadarat/platform-i18n';
+import { displayDateFormatter } from '@jadarat/platform-i18n/dates';
 
-/** Server-side formatting of the planning pages (EP-PLN, T-M3-04): days and amounts. */
+/** Formatting of the planning pages (EP-PLN, T-M3-04): days and amounts — server and client (no catalogs). */
 
 /**
  * A calendar day (YYYY-MM-DD) as the organization shows dates (Gregorian, Hijri or both — FR-SCH-07). Read

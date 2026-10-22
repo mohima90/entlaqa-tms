@@ -80,6 +80,8 @@ describe('safeNextPath', () => {
   it('only suite pages in a known language', () => {
     expect(safeNextPath('/ar/suite/admin/security')).toBe('/ar/suite/admin/security');
     expect(safeNextPath('/en/suite')).toBe('/en/suite');
+    // My profile's security tab (redesign package 6): the one query the step-up may carry.
+    expect(safeNextPath('/en/suite/profile?tab=security')).toBe('/en/suite/profile?tab=security');
     expect(
       safeNextPath('/en/suite/admin/users/a0000000-0000-4000-8000-000000000001/roles'),
     ).not.toBeNull();
@@ -90,6 +92,8 @@ describe('safeNextPath', () => {
       '/fr/suite',
       '/ar/sign-in',
       '/ar/suite?x=1',
+      '/ar/suite/profile?tab=security&x=1',
+      '/ar/suite/profile?tab=//evil.example',
       '/ar/suite/a b',
       undefined,
       ['/ar/suite'],

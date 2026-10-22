@@ -5,6 +5,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   FilterPill,
+  ListCard,
+  ListCards,
   Pagination,
   SaveBar,
   SidePanel,
@@ -299,5 +301,18 @@ describe('the keyboard shortcuts list (account menu)', () => {
     await flush();
     expect(dialog.open).toBe(false);
     expect(document.activeElement).toBe(trigger);
+  });
+});
+
+describe('ListCard (redesign package 5)', () => {
+  it('passes test ids and data attributes to its row, so a phone card can be found like a table row', () => {
+    const html = renderToStaticMarkup(
+      <ListCards>
+        <ListCard data-testid="organization-card" data-slug="demo-org" title="Demo" />
+      </ListCards>,
+    );
+    expect(html).toContain('data-testid="organization-card"');
+    expect(html).toContain('data-slug="demo-org"');
+    expect(html).toContain('Demo');
   });
 });

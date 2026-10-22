@@ -22,7 +22,8 @@
     "edit": "Edit",
     "saved": "Saved",
     "close": "Close",
-    "breadcrumbLabel": "Breadcrumb"
+    "breadcrumbLabel": "Breadcrumb",
+    "cancel": "Cancel"
   },
   "landing": {
     "title": "Training Management System",
@@ -527,6 +528,11 @@
   },
   "profile": {
     "title": "My profile",
+    "tabs": {
+      "profile": "Profile",
+      "security": "Sign-in and security",
+      "label": "My profile sections"
+    },
     "personal": "Personal details",
     "personalIntro": "Your name, mobile number and interface language can be changed here.",
     "arabicName": "Name in Arabic",
@@ -593,7 +599,8 @@
       "cancelling": "Cancelling…",
       "cancelled": "The set-up was cancelled.",
       "elsewhere": "Added from another sign-in",
-      "elsewhereText": "An authenticator app was added to your account from another sign-in on {date} with {device}. If it wasn't you, remove it: your other sign-in sessions end."
+      "elsewhereText": "An authenticator app was added to your account from another sign-in on {date} with {device}. If it wasn't you, remove it: your other sign-in sessions end.",
+      "removeConfirm": "Remove the authenticator app?"
     },
     "sessions": {
       "title": "Sign-in sessions",

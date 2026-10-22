@@ -2,15 +2,17 @@ import { toClientError } from '@jadarat/platform-core';
 import type { UserProfile } from '@jadarat/platform-db';
 import { type AppLocale, type DisplayDateFormatter, formatHijriDate } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
-import { Alert, Card, PageHeader } from '@jadarat/ui';
+import { Alert, Avatar, Badge, FormSection, Icon, PageHeader, TabNav } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { NotSet } from '../../../../components/not-set';
 import {
-  AuthenticatorCard,
+  AuthenticatorBanner,
   type AuthenticatorCardApp,
+  AuthenticatorProvider,
+  AuthenticatorRow,
 } from '../../../../components/profile/authenticator-card';
 import { ChangePasswordForm } from '../../../../components/profile/change-password-form';
 import { PersonalDetailsForm } from '../../../../components/profile/personal-details-form';
@@ -22,18 +24,29 @@ import { formStateFrom } from '../../../../lib/profile-form';
 import { profileErrorTexts } from '../../../../lib/profile-texts';
 import { sessionLabels, sessionRows } from '../../../../lib/sessions-view';
 import { getSuiteContext } from '../../../../lib/suite-context';
+import { settingsCommonTexts } from '../../../../lib/settings-page';
 import { pageDates } from '../../../../lib/page-dates';
 import { myProfileQuery, mySecurityQuery } from '../../../../lib/users-queries';
 import { describeUserAgent } from '../../../../lib/user-agent';
 import { type LevelLabel, unitFieldLabel } from '../../../../lib/structure-view';
-import { localizedName } from '../../../../lib/users-view';
+import { localizedName, roleName } from '../../../../lib/users-view';
 
 /**
  * My profile (FR-IAM-16, T-M2-15a; PO decision 5 Oct 2026): the member changes their own personal
  * details and password; e-mail and job data are read-only (changed by HR). Opened from the header.
  */
-export default async function MyProfilePage({ params }: { params: Promise<{ locale: string }> }) {
+export default async function MyProfilePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ locale: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { locale } = await params;
+  const rawTab = (await searchParams).tab;
+  // Two views of the page, each its own address (`?tab=security`): the step-up and the authenticator
+  // set-up return to the right tab (redesign package 6).
+  const tab = (Array.isArray(rawTab) ? rawTab[0] : rawTab) === 'security' ? 'security' : 'profile';
   if (!hasLocale(routing.locales, locale)) notFound();
   const context = await getSuiteContext(locale);
   const t = await getTranslations({ locale, namespace: 'profile' });
@@ -71,13 +84,25 @@ export default async function MyProfilePage({ params }: { params: Promise<{ loca
           security={security.ok ? security.value : null}
           dates={pageDates(locale, context)}
           nameLanguage={context.regional.defaultLocale}
+          tab={tab}
+          primaryRole={
+            context.me?.primaryRole
+              ? roleName(locale, context.me.primaryRole.code, context.me.primaryRole.customName)
+              : null
+          }
+          organizationName={context.organizationName}
         />
       );
     }
   }
 
   return (
-    <SuiteShell locale={locale} context={context} current="profile" path="/suite/profile">
+    <SuiteShell
+      locale={locale}
+      context={context}
+      current="profile"
+      path={tab === 'security' ? '/suite/profile?tab=security' : '/suite/profile'}
+    >
       <PageHeader title={t('title')} />
       {content}
     </SuiteShell>
@@ -92,6 +117,9 @@ async function MyProfile({
   dates,
   nameLanguage,
   levels,
+  tab,
+  primaryRole,
+  organizationName,
 }: {
   /** The organization's own level names: the unit field says its level (guided-test feedback #3). */
   levels: readonly LevelLabel[];
@@ -103,6 +131,10 @@ async function MyProfile({
   details: Parameters<typeof formStateFrom>[0];
   profile: UserProfile;
   security: Extract<Awaited<ReturnType<typeof mySecurityQuery>>, { ok: true }>['value'] | null;
+  tab: 'profile' | 'security';
+  /** The member's role name, display only. */
+  primaryRole: string | null;
+  organizationName: string | null;
 }) {
   const reset = await getTranslations({ locale, namespace: 'passwordReset.reset' });
   const t = await getTranslations({ locale, namespace: 'profile' });
@@ -117,6 +149,8 @@ async function MyProfile({
     ar ? localizedName(locale, ar, en) : null;
   const jobTitle =
     locale === 'en' ? (profile.jobTitleEn ?? profile.jobTitleAr) : profile.jobTitleAr;
+  const unitName = named(profile.departmentNameAr, profile.departmentNameEn);
+  const fullName = localizedName(locale, details.displayNameAr, details.displayNameEn);
 
   const work: { key: string; label: string; value: ReactNode }[] = [
     {
@@ -145,7 +179,7 @@ async function MyProfile({
         locale,
         fields('fields.department'),
       ),
-      value: named(profile.departmentNameAr, profile.departmentNameEn) ?? none,
+      value: unitName ?? none,
     },
     {
       key: 'branch',
@@ -180,138 +214,221 @@ async function MyProfile({
     },
   ];
 
-  return (
-    <div className="flex flex-col gap-6" data-testid="my-profile">
-      <Card title={t('personal')}>
-        <p className="mb-4 mt-0 text-text-muted">{t('personalIntro')}</p>
-        <PersonalDetailsForm
-          locale={locale}
-          initial={formStateFrom(details)}
-          nameLanguage={nameLanguage}
-          labels={{
-            arabicName: t('arabicName'),
-            englishName: t('englishName'),
-            addArabicName: t('addArabicName'),
-            addEnglishName: t('addEnglishName'),
-            parts: {
-              firstName: t('fields.firstName'),
-              fatherName: t('fields.fatherName'),
-              grandfatherName: t('fields.grandfatherName'),
-              familyName: t('fields.familyName'),
-            },
-            mobile: t('fields.mobile'),
-            mobileHint: t('mobileHint'),
-            language: t('fields.language'),
-            languages: { ar: t('languages.ar'), en: t('languages.en') },
-            required: common('required'),
-            optional: common('optional'),
-            save: t('save'),
-            saving: t('saving'),
-            saved: t('saved'),
-            noChanges: t('noChanges'),
-            prefilledName: t('prefilledName'),
-            currentName: t('currentName'),
-            currentNameKept: t('currentNameKept'),
-          }}
-          fieldTexts={{
-            required: t('fieldErrors.required'),
-            name: t('fieldErrors.name'),
-            mobile: t('fieldErrors.mobile'),
-            nameTooLong: t('fieldErrors.nameTooLong'),
-          }}
-          errors={errors}
-        />
-      </Card>
+  // The address of each tab (a link, so a step-up and the set-up come back to the right one).
+  const profileHref = `/${locale}/suite/profile`;
+  const securityHref = `${profileHref}?tab=security`;
 
-      <Card title={t('work')}>
-        <p className="mb-4 mt-0 text-text-muted">{t('workIntro')}</p>
-        <dl className="m-0 grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+  const identity = (
+    <section
+      aria-labelledby="profile-identity-name"
+      className="mb-5 flex flex-wrap items-center gap-4 rounded-2xl border border-border bg-surface p-4.5 shadow-2 md:gap-5 md:px-6 md:py-5.5"
+      data-testid="profile-identity"
+    >
+      <Avatar name={fullName || (profile.email ?? '')} size="xl" />
+      <div className="min-w-56 flex-1">
+        <h2 id="profile-identity-name" className="m-0 text-2xl font-bold">
+          {fullName}
+        </h2>
+        {jobTitle || unitName ? (
+          <p className="m-0 mt-1 text-text-muted">
+            {[jobTitle, unitName].filter(Boolean).join(' · ')}
+          </p>
+        ) : null}
+        <p className="m-0 mt-2.5 flex flex-wrap gap-2">
+          {primaryRole ? <Badge tone="brand">{primaryRole}</Badge> : null}
+          {organizationName ? (
+            <Badge>
+              <Icon name="building" className="size-3.5" />
+              {organizationName}
+            </Badge>
+          ) : null}
+          {profile.email ? (
+            <Badge>
+              <bdi dir="ltr">{profile.email}</bdi>
+            </Badge>
+          ) : null}
+        </p>
+      </div>
+    </section>
+  );
+
+  const tabs = (
+    <TabNav
+      variant="underline"
+      label={t('tabs.label')}
+      current={tab}
+      className="mb-5"
+      items={[
+        { key: 'profile', href: profileHref, label: t('tabs.profile'), icon: 'user' },
+        { key: 'security', href: securityHref, label: t('tabs.security'), icon: 'shield' },
+      ]}
+    />
+  );
+
+  const settingsCommon = await settingsCommonTexts(locale);
+
+  const profileTab = (
+    <PersonalDetailsForm
+      locale={locale}
+      initial={formStateFrom(details)}
+      nameLanguage={nameLanguage}
+      labels={{
+        personal: t('personal'),
+        personalIntro: t('personalIntro'),
+        arabicName: t('arabicName'),
+        englishName: t('englishName'),
+        addArabicName: t('addArabicName'),
+        addEnglishName: t('addEnglishName'),
+        parts: {
+          firstName: t('fields.firstName'),
+          fatherName: t('fields.fatherName'),
+          grandfatherName: t('fields.grandfatherName'),
+          familyName: t('fields.familyName'),
+        },
+        mobile: t('fields.mobile'),
+        mobileHint: t('mobileHint'),
+        language: t('fields.language'),
+        languages: { ar: t('languages.ar'), en: t('languages.en') },
+        required: common('required'),
+        optional: common('optional'),
+        save: t('save'),
+        saving: t('saving'),
+        saved: t('saved'),
+        cancel: common('cancel'),
+        noChanges: t('noChanges'),
+        prefilledName: t('prefilledName'),
+        currentName: t('currentName'),
+        currentNameKept: t('currentNameKept'),
+      }}
+      fieldTexts={{
+        required: t('fieldErrors.required'),
+        name: t('fieldErrors.name'),
+        mobile: t('fieldErrors.mobile'),
+        nameTooLong: t('fieldErrors.nameTooLong'),
+      }}
+      errors={errors}
+      common={settingsCommon}
+    >
+      <FormSection title={t('work')} description={t('workIntro')} className="mt-5.5">
+        <dl className="m-0 grid grid-cols-1 gap-x-7 gap-y-4.5 sm:grid-cols-2 md:col-span-2">
           {work.map((field) => (
-            <div key={field.key} className="flex flex-col gap-1">
-              <dt className="text-sm text-text-muted">{field.label}</dt>
-              <dd className="m-0">{field.value}</dd>
+            <div key={field.key} className="flex min-w-0 flex-col gap-1">
+              <dt className="text-[13.5px] text-text-muted">{field.label}</dt>
+              <dd className="m-0 font-medium [overflow-wrap:anywhere]">{field.value}</dd>
             </div>
           ))}
         </dl>
-      </Card>
+      </FormSection>
+    </PersonalDetailsForm>
+  );
 
-      <Card title={t('password')}>
-        <p className="mb-4 mt-0 text-text-muted">{t('passwordIntro')}</p>
-        <ChangePasswordForm
-          minLength={security?.passwordMinLength ?? 12}
-          rules={{
-            rulesLabel: reset('rulesLabel'),
-            ruleMinLength: reset('rules.minLength', { min: '{min}' }),
-            ruleMaxBytes: reset('rules.maxBytes'),
-            ruleMatches: reset('rules.matches'),
-            ruleMet: reset('rules.met'),
-            ruleNotMet: reset('rules.notMet'),
-          }}
-          labels={{
-            current: t('currentPassword'),
-            next: t('newPassword'),
-            nextHint: t('newPasswordHint', { min: '{min}' }),
-            confirm: t('confirmPassword'),
-            required: common('required'),
-            submit: t('changePassword'),
-            submitting: t('changing'),
-            changed: t('passwordChanged'),
-          }}
-          fieldTexts={{
-            tooShort: t('fieldErrors.tooShort', { min: '{min}' }),
-            tooLong: t('fieldErrors.tooLong'),
-            mismatch: t('fieldErrors.mismatch'),
-            currentRequired: t('fieldErrors.currentRequired'),
-          }}
-          errors={errors}
-        />
-      </Card>
-
-      {security ? (
-        <>
-          <Card title={t('mfa.title')}>
-            <p className="mb-4 mt-0 text-text-muted">{t('mfa.intro')}</p>
-            <AuthenticatorCard
-              app={await authenticatorApp(locale, security.apps, dates)}
-              setUpHref={stepUpHref(locale, `/${locale}/suite/profile`)}
-              forgotPasswordHref={`/${locale}/forgot-password`}
-              labels={{
-                on: t('mfa.on'),
-                off: t('mfa.off'),
-                setUp: t('mfa.setUp'),
-                remove: t('mfa.remove'),
-                removing: t('mfa.removing'),
-                removed: t('mfa.removed'),
-                removeNeedsCode: t('mfa.removeNeedsCode'),
-                verifyFirst: t('mfa.verifyFirst'),
-                removeWarning: t('mfa.removeWarning'),
-                pending: t('mfa.pending'),
-                pendingText: t('mfa.pendingText'),
-                enterCode: t('mfa.enterCode'),
-                cancel: t('mfa.cancel'),
-                cancelling: t('mfa.cancelling'),
-                cancelled: t('mfa.cancelled'),
-                elsewhere: t('mfa.elsewhere'),
-                removeElsewhere: mfa('elsewhere.remove'),
-                removedElsewhere: mfa('elsewhere.removed'),
-                newPassword: mfa('elsewhere.newPassword'),
-                itWasMe: mfa('elsewhere.itWasMe'),
-                itWasMeText: mfa('elsewhere.itWasMeText'),
-              }}
-              errors={await mfaErrorTexts(locale)}
-            />
-          </Card>
-          <Card title={t('sessions.title')}>
-            <p className="mb-4 mt-0 text-text-muted">{t('sessions.intro')}</p>
+  const securityTab = (
+    <AuthenticatorProvider
+      app={security ? await authenticatorApp(locale, security.apps, dates) : { state: 'off' }}
+      setUpHref={stepUpHref(locale, securityHref)}
+      forgotPasswordHref={`/${locale}/forgot-password`}
+      labels={{
+        title: t('mfa.title'),
+        intro: t('mfa.intro'),
+        on: t('mfa.on'),
+        off: t('mfa.off'),
+        setUp: t('mfa.setUp'),
+        remove: t('mfa.remove'),
+        removing: t('mfa.removing'),
+        removed: t('mfa.removed'),
+        removeConfirm: t('mfa.removeConfirm'),
+        removeNeedsCode: t('mfa.removeNeedsCode'),
+        verifyFirst: t('mfa.verifyFirst'),
+        removeWarning: t('mfa.removeWarning'),
+        pending: t('mfa.pending'),
+        pendingText: t('mfa.pendingText'),
+        enterCode: t('mfa.enterCode'),
+        cancel: t('mfa.cancel'),
+        cancelling: t('mfa.cancelling'),
+        cancelled: t('mfa.cancelled'),
+        dismiss: common('cancel'),
+        close: common('close'),
+        elsewhere: t('mfa.elsewhere'),
+        removeElsewhere: mfa('elsewhere.remove'),
+        removedElsewhere: mfa('elsewhere.removed'),
+        newPassword: mfa('elsewhere.newPassword'),
+        itWasMe: mfa('elsewhere.itWasMe'),
+        itWasMeText: mfa('elsewhere.itWasMeText'),
+      }}
+      errors={await mfaErrorTexts(locale)}
+    >
+      <div className="flex flex-col gap-5">
+        {security ? <AuthenticatorBanner /> : null}
+        <div className="flex flex-col divide-y divide-border rounded-2xl border border-border bg-surface shadow-2 *:px-4.5 *:py-5 md:*:px-6.5">
+          <ChangePasswordForm
+            minLength={security?.passwordMinLength ?? 12}
+            rules={{
+              rulesLabel: reset('rulesLabel'),
+              ruleMinLength: reset('rules.minLength', { min: '{min}' }),
+              ruleMaxBytes: reset('rules.maxBytes'),
+              ruleMatches: reset('rules.matches'),
+              ruleMet: reset('rules.met'),
+              ruleNotMet: reset('rules.notMet'),
+            }}
+            labels={{
+              title: t('password'),
+              intro: t('passwordIntro'),
+              current: t('currentPassword'),
+              next: t('newPassword'),
+              nextHint: t('newPasswordHint', { min: '{min}' }),
+              confirm: t('confirmPassword'),
+              required: common('required'),
+              submit: t('changePassword'),
+              submitting: t('changing'),
+              changed: t('passwordChanged'),
+              cancel: common('cancel'),
+            }}
+            fieldTexts={{
+              tooShort: t('fieldErrors.tooShort', { min: '{min}' }),
+              tooLong: t('fieldErrors.tooLong'),
+              mismatch: t('fieldErrors.mismatch'),
+              currentRequired: t('fieldErrors.currentRequired'),
+            }}
+            errors={errors}
+          />
+          {security ? <AuthenticatorRow /> : null}
+        </div>
+        {security ? (
+          <section
+            aria-labelledby="sessions-title"
+            className="rounded-2xl border border-border bg-surface px-4.5 py-5 shadow-2 md:px-6.5"
+          >
+            <div className="mb-4 flex items-start gap-4">
+              <span
+                aria-hidden="true"
+                className="hidden size-11 shrink-0 place-items-center rounded-[14px] bg-primary-subtle text-primary-text md:grid"
+              >
+                <Icon name="monitor" className="size-5" />
+              </span>
+              <div>
+                <h2 id="sessions-title" className="m-0 text-lg font-bold">
+                  {t('sessions.title')}
+                </h2>
+                <p className="m-0 mt-1 text-text-muted">{t('sessions.intro')}</p>
+              </div>
+            </div>
             <SessionsTable
               target={{ kind: 'own' }}
               sessions={await sessionRows(locale, security.sessions, dates)}
               labels={sessionLabels(locale)}
               errors={errors}
             />
-          </Card>
-        </>
-      ) : null}
+          </section>
+        ) : null}
+      </div>
+    </AuthenticatorProvider>
+  );
+
+  return (
+    <div className="max-w-4xl" data-testid="my-profile">
+      {identity}
+      {tabs}
+      {tab === 'security' ? securityTab : profileTab}
     </div>
   );
 }

@@ -235,7 +235,11 @@ async function expectNoSeriousA11yViolations(page: Page) {
 
 /** Tries a new password on My profile; the strictest rule (16) refuses it before Auth is asked. */
 async function expectShorterPasswordRefused(page: Page, locale: 'ar' | 'en') {
-  await page.goto(`/${locale}/suite/profile`);
+  await page.goto(`/${locale}/suite/profile?tab=security`);
+  const change = page.getByRole('button', {
+    name: locale === 'ar' ? 'تغيير كلمة المرور' : 'Change password',
+  });
+  await change.click();
   const rule = locale === 'ar' ? '16 حرفًا على الأقل' : 'At least 16 characters';
   await expect(page.locator('#password-rules')).toContainText(rule);
   await page.locator('#password-current').fill(memberPassword);
@@ -278,9 +282,10 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     await expectNoSeriousA11yViolations(page);
 
     // No app yet: My profile sets one up on the code page…
-    await page.goto('/en/suite/profile');
+    await page.goto('/en/suite/profile?tab=security');
     await page.getByTestId('profile-mfa-set-up').click();
-    const stepUpUrl = /\/en\/mfa\?next=%2Fen%2Fsuite%2Fprofile$/;
+    // The step-up comes back to the Sign-in and security tab (redesign package 6).
+    const stepUpUrl = /\/en\/mfa\?next=%2Fen%2Fsuite%2Fprofile%3Ftab%3Dsecurity$/;
     await expect(page).toHaveURL(stepUpUrl);
     await expect(page.getByTestId('mfa-enrol')).toBeVisible();
     await expectNoSeriousA11yViolations(page);
@@ -296,7 +301,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     );
     await expectNoSeriousA11yViolations(page);
     // My profile says the app waits for that code, and leads back to the page that takes it.
-    await page.goto('/en/suite/profile');
+    await page.goto('/en/suite/profile?tab=security');
     await expect(page.getByTestId('profile-mfa-status')).toHaveText(
       'Waiting for the code from the email',
     );
@@ -357,7 +362,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     );
     await enterMailedCode(page, newest);
     // Confirmed: back on My profile, the app is on; then the settings.
-    await expect(page).toHaveURL(/\/en\/suite\/profile$/, afterSignIn);
+    await expect(page).toHaveURL(/\/en\/suite\/profile\?tab=security$/, afterSignIn);
     await expect(page.getByTestId('profile-mfa-status')).toHaveText('On · authenticator app');
     await page.goto('/en/suite/admin/security');
 
@@ -551,7 +556,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
       await enterCode(member, memberKey);
       await expect(member).toHaveURL(/\/en\/suite$/, afterSignIn);
       await expect.poll(async () => (await deviceCookie(member))?.httpOnly).toBe(true);
-      await member.goto('/en/suite/profile');
+      await member.goto('/en/suite/profile?tab=security');
       const own = member.getByTestId('sessions-own');
       await expect(own.locator('[data-testid="session-row"][data-current="true"]')).toHaveCount(1);
 

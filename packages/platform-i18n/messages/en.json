@@ -2299,7 +2299,13 @@
       "text": "Manage organizations as Platform Super Admin."
     },
     "settingsNav": "Platform settings",
-    "emailNav": "Email"
+    "emailNav": "Email",
+    "search": "Search by name or short name",
+    "noMatch": {
+      "title": "No organizations match your search",
+      "body": "Check the spelling, or search by the short name.",
+      "clear": "Clear search"
+    }
   },
   "roleBuilder": {
     "titleNew": "Create role",

@@ -145,7 +145,7 @@ test.describe('platform console: the Super Admin (configured deployment)', () =>
       const nameEn = `Organization ${slug}`;
       const adminEmail = `org-admin-${slug}@example.test`;
       await page.getByRole('button', { name: t.open }).click();
-      const dialog = page.getByTestId('create-organization-dialog');
+      const dialog = page.getByTestId('create-organization-panel');
       await expect(dialog).toBeVisible();
       await expectNoSeriousA11yViolations(page);
       // Validated before sending: a short name with upper case is refused.
@@ -172,20 +172,35 @@ test.describe('platform console: the Super Admin (configured deployment)', () =>
       const link = await page.evaluate(() => navigator.clipboard.readText());
       // APP_BASE_URL on the self-hosted stack is this origin; the link carries the 12 symbols.
       expect(link).toBe(`${new URL(page.url()).origin}/${locale}/sign-up#code=${linkCode(code)}`);
-      await created.getByRole('button', { name: t.done }).click();
+      await page.getByTestId('organization-created-done').click();
 
-      const row = page.locator(`[data-testid="organization-row"][data-slug="${slug}"]`);
+      // Rows on a desktop, cards on a phone (only one of them is visible).
+      const row = page.locator(
+        `[data-testid="${project === 'm' ? 'organization-card' : 'organization-row'}"][data-slug="${slug}"]`,
+      );
       await expect(row.getByTestId('org-admin-state')).toHaveText(t.pending);
       // The row action shows the same code (an audited read) and issues a new one on request.
       await row.getByRole('button', { name: new RegExp(t.adminLink) }).click();
-      const invite = page.getByTestId('org-admin-invite-dialog');
+      const invite = row.getByTestId('org-admin-invite-dialog');
       await expect(invite.getByTestId('invite-code')).toHaveText(code);
+      await expectNoSeriousA11yViolations(page);
       await invite.getByRole('button', { name: t.newCode }).click();
       await expect(invite.getByTestId('org-admin-invite-message')).toHaveText(t.newCodeIssued);
       const newCode = (await invite.getByTestId('invite-code').textContent()) ?? '';
       expect(newCode).toMatch(CODE);
       expect(newCode).not.toBe(code);
       await page.keyboard.press('Escape');
+
+      // Search by short name (redesign package 5): the new organization is found, a stranger is not.
+      const search = page.getByTestId('organizations-search');
+      await search.fill(slug);
+      await expect(page).toHaveURL(new RegExp(`q=${slug}`));
+      await expect(row).toBeVisible();
+      await search.fill('no-such-organization-zzz');
+      await expect(page.getByTestId('no-match')).toBeVisible();
+      await expectNoSeriousA11yViolations(page);
+      await search.fill(slug);
+      await expect(row).toBeVisible();
 
       await joinAsOrganizationAdmin(
         browser,

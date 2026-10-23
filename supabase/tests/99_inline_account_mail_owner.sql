@@ -409,3 +409,30 @@ begin
     'the sixth reset e-mail within the hour is refused (the cap of the worker''s account mailer)');
 end $$;
 rollback;
+
+-- ---------------------------------------------------------------------------------------------------
+-- The "password changed" notice after a reset: the platform-only reset e-mail of an account of several
+-- organizations counts as OUR reset e-mail (it did not: such an account never got the notice)
+-- ---------------------------------------------------------------------------------------------------
+begin;
+insert into platform.message_deliveries (tenant_id, template, template_version, locale, recipient_person_id, destination,
+                                         destination_masked, subject, html_body, text_body)
+values ('a0000000-0000-4000-8000-000000000001', 'platform.password_reset_platform', 1, 'en',
+        'a1000000-0000-4000-8000-0000000000ab', 'uab@ab.test', 'u***@ab.test', 's', '<p>h</p>', 't');
+set local session authorization app_server;
+set local role authenticated;
+select tests.set_claims(null);
+select private.request_password_changed_mail('00000000-0000-4000-8000-0000000000ab');
+select private.request_password_changed_mail('00000000-0000-4000-8000-0000000000a1');
+reset role;
+reset session authorization;
+do $$
+begin
+  perform tests.assert(exists (select 1 from private.account_mail_requests
+                               where kind = 'password_changed' and user_id = '00000000-0000-4000-8000-0000000000ab'),
+    'after a platform-only reset e-mail the notice is queued');
+  perform tests.assert(not exists (select 1 from private.account_mail_requests
+                                   where kind = 'password_changed' and user_id = '00000000-0000-4000-8000-0000000000a1'),
+    'and still not for an account that got no reset e-mail of ours');
+end $$;
+rollback;

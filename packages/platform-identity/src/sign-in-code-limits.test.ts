@@ -340,6 +340,58 @@ describe("the Send Email hook's own limits (re-review M-A and L1)", () => {
     expect(await limiter.allowSend('11111111-2222-4333-8444-555555555555')).toBe(true);
   });
 
+  it('the password reset has limits of its own: 5 in 15 minutes and 20 a day, in buckets of their own (WP-ADM-05 follow-up)', async () => {
+    const store = fakeStore();
+    const { limiter, log } = hookLimiter(store);
+    const max = PLATFORM_AUTH_LIMITS.passwordReset.hookSendsPerAccount.max;
+    expect(max).toBe(5);
+    for (let i = 0; i < max; i += 1) {
+      expect(await limiter.allowSend(USER, 'password_reset')).toBe(true);
+    }
+    expect(await limiter.allowSend(USER, 'password_reset')).toBe(false);
+    expect(log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'auth.rate_limited',
+        limit: LIMIT_BUCKETS.passwordResetHookSend,
+      }),
+    );
+    expect(JSON.stringify(log.mock.calls)).not.toContain(USER);
+    // The sign-in code's budget is untouched, and another account is not affected.
+    expect(await limiter.allowSend(USER)).toBe(true);
+    expect(await limiter.allowSend('11111111-2222-4333-8444-555555555555', 'password_reset')).toBe(
+      true,
+    );
+  });
+
+  it('and 20 reset e-mails a day', async () => {
+    const store = fakeStore();
+    const { log } = hookLimiter(store);
+    const dailyMax = PLATFORM_AUTH_LIMITS.passwordReset.hookSendsPerAccountDaily.max;
+    expect(dailyMax).toBe(20);
+    // The 15-minute window is far smaller: only the daily bucket can stop it after many windows. The fake store
+    // has no clock, so count the daily bucket directly through a limiter whose short window is wide.
+    const wide = createSendEmailHookLimiter({
+      store,
+      limits: {
+        ...PLATFORM_AUTH_LIMITS,
+        passwordReset: {
+          ...PLATFORM_AUTH_LIMITS.passwordReset,
+          hookSendsPerAccount: { max: 1000, windowSeconds: 900 },
+        },
+      },
+      log,
+      action: 'platform.auth.send_email_hook',
+    });
+    let allowedCount = 0;
+    for (let i = 0; i < dailyMax + 5; i += 1) {
+      if (await wide.allowSend(USER, 'password_reset')) allowedCount += 1;
+    }
+    expect(allowedCount).toBe(dailyMax);
+    expect(log).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: LIMIT_BUCKETS.passwordResetHookSendDaily }),
+    );
+  });
+
   it('and at most 40 a day', async () => {
     const store = fakeStore();
     const { limiter, log } = hookLimiter(store);

@@ -10,6 +10,7 @@
     "./next": "./src/next.ts",
     "./auth": "./src/auth-next.ts",
     "./inline-mail": "./src/inline-mail.ts",
+    "./inline-account-mail": "./src/inline-account-mail.ts",
     "./jobs": "./src/jobs/index.ts"
   },
   "scripts": {

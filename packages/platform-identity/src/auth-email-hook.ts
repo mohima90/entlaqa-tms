@@ -1,8 +1,9 @@
 import 'server-only';
-import { createHmac, timingSafeEqual } from 'node:crypto';
-import type { AuthMailApi } from '@jadarat/platform-db';
-import { renderEmail } from '@jadarat/platform-notifications';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import type { AuthMailApi, InlineRecoveryApi } from '@jadarat/platform-db';
+import { isSafeLink, renderEmail } from '@jadarat/platform-notifications';
 import { type InlineEmailSender, brandAssetUrl } from '@jadarat/platform-notifications/inline';
+import { composeReset } from './account-mail-compose';
 import { generateSignInCode, hookSecretBytes, sealTokenHash } from './sign-in-code-seal';
 import type { SendEmailHookLimiter } from './sign-in-code-limits';
 
@@ -25,11 +26,20 @@ import type { SendEmailHookLimiter } from './sign-in-code-limits';
  * is e-mailed at most 10 codes per 15 minutes and 40 a day (Auth's public /otp does not pass the app's request
  * limits); over the limit nothing is sent and the skip is logged.
  *
+ * THE PASSWORD RESET (type recovery; PO 23 Oct 2026: "forgot password" arrives at once too). Auth has created the
+ * recovery token already and hands its `token_hash` to the hook; the link is the one the reset page has always
+ * taken (`/reset-password#token_hash=...&type=recovery`, the token in the fragment), so the page and its
+ * completion are unchanged and NO Auth admin key is needed in the web tier. The hook counts what it e-mails per
+ * account (5 per 15 minutes, 20 a day; Auth's public /recover does not pass the app's request limits), reads the
+ * account's facts, and queues the e-mail as a DELIVERY (the database allows five an hour per person and only the
+ * account's own address) that the web app sends right after answering Auth - the worker is the safety net for
+ * one nobody finished. Every outcome but a database failure is answered with success, so the hook's answer
+ * (and its short time) does not tell whether an account exists. Without the `recovery` dependency the type is
+ * refused as before.
+ *
  * Every other type is REFUSED (HTTP 400, nothing sent), so enabling the hook breaks nothing that works today:
  *   magiclink          the sign-in code (signInWithOtp)                                  -> sent here
- *   recovery           password reset - PASSWORD_RESET_DELIVERY=worker: the worker mails it with an admin
- *                      link and Auth sends nothing; `auth` is switched to `worker` while the hook is on
- *                      (readPasswordResetDelivery), so this type never arrives
+ *   recovery           the password reset                                                -> queued here, sent at once
  *   signup / invite    invitations are the app's own (sign-up with auto-confirm, "Confirm email" off)
  *   email_change /     the app has neither flow
  *   reauthentication
@@ -64,6 +74,20 @@ export interface AuthEmailHookDeps {
   readonly api: AuthMailApi;
   readonly sender: InlineEmailSender;
   readonly limiter: SendEmailHookLimiter;
+  /**
+   * The password reset (type recovery): the database side, how to run the send once Auth has its answer, and
+   * how to send a queued delivery. Absent: the type is refused.
+   */
+  readonly recovery?:
+    | {
+        readonly api: InlineRecoveryApi;
+        readonly schedule: (work: () => Promise<unknown>) => void;
+        readonly deliver: (ticket: {
+          readonly id: string;
+          readonly secret: Buffer;
+        }) => Promise<unknown>;
+      }
+    | undefined;
   /** Six random digits; replaced in tests. */
   readonly generateCode?: (() => string) | undefined;
   readonly now: () => number;
@@ -171,6 +195,9 @@ export async function handleSendEmailHook(
     return failure(400, 'unreadable request');
   }
   const { type } = parsed;
+  if (type === 'recovery' && deps.recovery) {
+    return handleRecovery(deps, deps.recovery, request, parsed);
+  }
   if (type !== 'magiclink') {
     // Refused safely: nothing is sent, nothing breaks that worked before (see the list above).
     deps.log('warn', 'send-email hook: e-mail type not handled', { type });
@@ -263,6 +290,118 @@ export async function handleSendEmailHook(
             : 'unknown',
     });
     // A failed call may be retried: its id is given back.
+    if (claimed) await deps.limiter.releaseWebhook(webhookId);
+    return failure(500, 'the e-mail could not be sent');
+  }
+}
+
+/** The link's token hash: only characters that are safe in the reset URL's fragment (the page checks the same). */
+const RECOVERY_TOKEN_HASH = /^[A-Za-z0-9_-]{16,128}$/;
+
+type RecoveryDeps = NonNullable<AuthEmailHookDeps['recovery']>;
+
+/**
+ * Type recovery: queue the reset e-mail for the account Auth is e-mailing and send it once Auth has its answer.
+ * Success for every outcome that is not a failure of ours (no usable account, over a limit, a repeat call).
+ */
+async function handleRecovery(
+  deps: AuthEmailHookDeps,
+  recovery: RecoveryDeps,
+  request: HookRequest,
+  parsed: HookBody,
+): Promise<HookResponse> {
+  // Trailing slashes trimmed without a backtracking regular expression (CodeQL js/polynomial-redos).
+  let base = deps.appBaseUrl?.trim() ?? '';
+  while (base.endsWith('/')) base = base.slice(0, -1);
+  if (base === '' || !isSafeLink(base)) {
+    deps.log(
+      'error',
+      'send-email hook: reset e-mail not sent (APP_BASE_URL is not a usable origin)',
+    );
+    return ok();
+  }
+  if (!RECOVERY_TOKEN_HASH.test(parsed.tokenHash)) {
+    deps.log('error', 'send-email hook: Auth sent no usable recovery token hash');
+    return ok();
+  }
+  // `verifyHookSignature` accepted the call, so the id is present.
+  const webhookId = request.webhookId ?? '';
+  let claimed = false;
+  try {
+    if (!(await deps.limiter.claimWebhook(webhookId))) {
+      deps.log('info', 'send-email hook: repeated call ignored');
+      return ok();
+    }
+    claimed = true;
+    if (!(await deps.limiter.allowSend(parsed.userId, 'password_reset'))) {
+      deps.log('warn', 'send-email hook: reset e-mail not sent (too many for this account)');
+      return ok();
+    }
+    const facts = await recovery.api.facts(parsed.userId);
+    // Nothing for an account Auth knows but we cannot write to (banned, no usable membership): the answer does
+    // not tell.
+    if (!facts) {
+      deps.log('info', 'send-email hook: reset e-mail not sent (no usable account)');
+      return ok();
+    }
+    if (facts.email.toLowerCase() !== parsed.userEmail.trim().toLowerCase()) {
+      deps.log('info', 'send-email hook: reset e-mail not sent (another address)');
+      return ok();
+    }
+    const template = facts.platformSender
+      ? 'platform.password_reset_platform'
+      : 'platform.password_reset';
+    const email = renderEmail(
+      template,
+      facts.locale,
+      composeReset({
+        organizationName: facts.organizationName,
+        loginEmail: facts.email,
+        appBase: base,
+        tokenHash: parsed.tokenHash,
+        codeNeeded: facts.hasApp,
+      }),
+      facts.brand
+        ? {
+            actionColor: facts.brand.actionColor,
+            linkColor: facts.brand.linkColor,
+            logoUrl: brandAssetUrl(base, facts.brand.logoAssetId),
+          }
+        : null,
+    );
+    const ticket = await recovery.api.queue({
+      userId: parsed.userId,
+      template,
+      templateVersion: email.version,
+      locale: facts.locale,
+      to: facts.email,
+      subject: email.subject,
+      html: email.html,
+      text: email.text,
+      // One delivery per signed call: the webhook id, hashed (it is Auth's, and mixed-case).
+      sourceKey: `recovery:${createHash('sha256').update(webhookId).digest('hex').slice(0, 32)}`,
+    });
+    if (!ticket) {
+      deps.log(
+        'info',
+        'send-email hook: reset e-mail not queued (over the hourly cap or queued already)',
+      );
+      return ok();
+    }
+    // After Auth has its answer: the send takes as long as the provider takes; the worker is the safety net.
+    recovery.schedule(() => recovery.deliver(ticket));
+    deps.log('info', 'send-email hook: reset e-mail queued');
+    return ok();
+  } catch (error) {
+    const reason = (error as { code?: unknown } | null)?.code;
+    deps.log('error', 'send-email hook: reset e-mail not queued', {
+      reason:
+        typeof reason === 'string' && /^[A-Z0-9_]{2,64}$/.test(reason)
+          ? reason
+          : error instanceof Error && /^[A-Za-z]{2,64}$/.test(error.name)
+            ? error.name
+            : 'unknown',
+    });
     if (claimed) await deps.limiter.releaseWebhook(webhookId);
     return failure(500, 'the e-mail could not be sent');
   }

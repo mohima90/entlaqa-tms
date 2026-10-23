@@ -1005,6 +1005,112 @@ describe('defineAction (ADR 0003 §4)', () => {
     });
   });
 
+  describe('account e-mails sent at once (WP-ADM-05 follow-up, PO 23 Oct 2026)', () => {
+    const define = (rt: ActionRuntime<FakeTx>, extra: Record<string, unknown> = {}) =>
+      createDefineAction(rt)({
+        permission: approve,
+        input: Input,
+        resource: (input) => ({ type: 'enrollment', id: input.enrollmentId }),
+        handler: () => Promise.resolve(ok('done')),
+        ...extra,
+      });
+
+    function mailRuntime(over: Partial<ActionRuntime<FakeTx>> = {}) {
+      const base = runtime(over);
+      const tagged: string[][] = [];
+      const sent: { ticket: unknown; log: string[] }[] = [];
+      const rt: ActionRuntime<FakeTx> = {
+        ...base.rt,
+        tagInlineAccountMail: () => {
+          tagged.push([...base.log]);
+          return Promise.resolve({ key: 'ticket-1' });
+        },
+        sendInlineAccountMail: (ticket) => {
+          sent.push({ ticket, log: [...base.log] });
+        },
+        ...over,
+      };
+      return { ...base, rt, tagged, sent };
+    }
+
+    it('queuesAccountMail: tags inside the transaction, sends once AFTER the commit', async () => {
+      const { rt, tagged, sent } = mailRuntime();
+      expect(await define(rt, { queuesAccountMail: true })({ enrollmentId: ENROLLMENT })).toEqual(
+        ok('done'),
+      );
+      expect(tagged).toEqual([['begin']]);
+      expect(sent).toEqual([{ ticket: { key: 'ticket-1' }, log: ['begin', 'commit'] }]);
+    });
+
+    it('an action that does not declare it never tags; nothing tagged sends nothing', async () => {
+      const plain = mailRuntime();
+      await define(plain.rt)({ enrollmentId: ENROLLMENT });
+      expect(plain.tagged).toEqual([]);
+      expect(plain.sent).toEqual([]);
+      const empty = mailRuntime({ tagInlineAccountMail: () => Promise.resolve(null) });
+      await define(empty.rt, { queuesAccountMail: true })({ enrollmentId: ENROLLMENT });
+      expect(empty.sent).toEqual([]);
+    });
+
+    it('a refused or failed action sends nothing (its transaction rolled back)', async () => {
+      const { rt, sent } = mailRuntime();
+      await define(rt, {
+        queuesAccountMail: true,
+        handler: () => Promise.resolve(err(appError('CONFLICT_VERSION'))),
+      })({ enrollmentId: ENROLLMENT });
+      await define(rt, {
+        queuesAccountMail: true,
+        handler: () => Promise.reject(new Error('boom')),
+      })({ enrollmentId: ENROLLMENT });
+      expect(sent).toEqual([]);
+    });
+
+    it('a throwing send never changes the answer; afterCommit still runs; a runtime without the hooks just commits', async () => {
+      const after = vi.fn(() => Promise.resolve(ok('after')));
+      const { rt } = mailRuntime({
+        sendInlineAccountMail: () => {
+          throw new Error('send failed');
+        },
+      });
+      expect(
+        await define(rt, { queuesAccountMail: true, afterCommit: after })({
+          enrollmentId: ENROLLMENT,
+        }),
+      ).toEqual(ok('after'));
+      expect(after).toHaveBeenCalledOnce();
+      const bare = runtime();
+      expect(
+        await define(bare.rt, { queuesAccountMail: true })({ enrollmentId: ENROLLMENT }),
+      ).toEqual(ok('done'));
+      expect(bare.log).toEqual(['begin', 'commit']);
+    });
+
+    it('after a conflict retry only the committed attempt is sent', async () => {
+      const conflict = Object.assign(new Error('deadlock'), { code: '40P01' });
+      let attempt = 0;
+      const base = mailRuntime();
+      const rt: ActionRuntime<FakeTx> = {
+        ...base.rt,
+        withUserTx: async (c, fn, o) => {
+          attempt += 1;
+          try {
+            return await base.rt.withUserTx(c, async (tx) => {
+              const out = await fn(tx);
+              if (attempt === 1) throw conflict;
+              return out;
+            });
+          } catch (error) {
+            if (error !== conflict || o?.retryOnConflict !== true) throw error;
+            attempt += 1;
+            return base.rt.withUserTx(c, fn);
+          }
+        },
+      };
+      await define(rt, { queuesAccountMail: true })({ enrollmentId: ENROLLMENT });
+      expect(base.sent).toHaveLength(1);
+    });
+  });
+
   describe('afterCommit (work after the commit, T-M2-18 integration review M1)', () => {
     const conflict = Object.assign(new Error('could not serialize access'), { code: '40001' });
     // What platform-db withUserTx does with retryOnConflict (tested there): one more transaction; `open`

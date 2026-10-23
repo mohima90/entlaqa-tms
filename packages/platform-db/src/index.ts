@@ -57,6 +57,33 @@ export {
   queueInlineEmail,
 } from './inline-mail';
 export {
+  INLINE_ACCOUNT_MAIL_KINDS,
+  type InlineAccountMailApi,
+  type InlineAccountMailClaim,
+  type InlineAccountMailKind,
+  type InlineAccountMailSend,
+  type InlineAccountMailSkip,
+  type InlineAccountMailTicket,
+  type InlineAccountMailToQueue,
+  type InlineRecoveryApi,
+  type InlineRecoveryFacts,
+  type InlineRecoveryToQueue,
+  createInlineAccountMailApi,
+  createInlineRecoveryApi,
+  inlineAccountMailApi,
+  inlineRecoveryApi,
+  tagInlineAccountMail,
+} from './inline-account-mail';
+export type { InlineOption } from './account-mail';
+export {
+  MFA_REMOVAL_REASONS,
+  type MfaRemovalReason,
+  type PolicyChange,
+  type SecurityDigest,
+  policyChangeOf,
+  securityDigestOf,
+} from './account-mail-detail';
+export {
   type KeptSession,
   forgetKeptSessions,
   keepSession,

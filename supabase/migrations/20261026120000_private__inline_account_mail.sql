@@ -642,6 +642,49 @@ $$;
 comment on function private.inline_recovery_queue(uuid, text, integer, text, text, text, text, text, text, bytea) is
   'SECURITY-RELEVANT (WP-ADM-05 follow-up). The Send Email hook, type recovery: queues the reset e-mail for an immediate send to the account''s own address (platform-only variant where the sender rule requires it), at most five an hour per person. app_server only (the route verifies Auth''s signature first).';
 
+-- The "password changed" notice after a reset (no session) needs OUR reset e-mail to the account within 65
+-- minutes and its link used. The reset e-mail of an account of several organizations or a platform role goes
+-- out as the platform-only variant (20261026100200): that template counts too (it did not, so such an account
+-- never got the notice).
+create or replace function private.request_password_changed_mail(p_user_id uuid)
+returns void
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+declare
+  v_tenant uuid;
+begin
+  if session_user <> 'app_server' or p_user_id is null then
+    raise exception 'reserved to the web app' using errcode = 'insufficient_privilege';
+  end if;
+  delete from private.account_mail_requests r where private.account_mail_request_expired(r.kind, r.created_at);
+  if private.request_claims() is not null then
+    v_tenant := private.current_tenant_id();
+    if v_tenant is null or private.request_user_id() is distinct from p_user_id then
+      raise exception 'only for the signed-in user' using errcode = 'insufficient_privilege';
+    end if;
+  elsif not exists (select 1 from platform.tenant_memberships m
+                    join platform.message_deliveries d
+                      on d.tenant_id = m.tenant_id and d.recipient_person_id = m.person_id
+                    where m.user_id = p_user_id
+                      and d.template in ('platform.password_reset', 'platform.password_reset_platform')
+                      and d.created_at > now() - interval '65 minutes')
+        or exists (select 1 from private.auth_account a where a.id = p_user_id and a.recovery_pending) then
+    return;  -- no reset e-mail of ours within 65 minutes, or its link was not used: not after a reset
+  end if;
+  if not exists (select 1 from private.auth_account a where a.id = p_user_id)
+     or (select count(*) from (select 1 from private.account_mail_requests limit 10000) w) >= 10000
+     or exists (select 1 from private.account_mail_requests r
+                where r.user_id = p_user_id and r.kind = 'password_changed') then
+    return;
+  end if;
+  insert into private.account_mail_requests (kind, user_id, tenant_id) values ('password_changed', p_user_id, v_tenant);
+end
+$$;
+
+comment on function private.request_password_changed_mail(uuid) is
+  'SECURITY-RELEVANT (FR-IAM-13/16, T-M2-17). Queues the "password changed" notice of an account (the signed-in user''s own, or after a reset of ours - the platform-only reset e-mail counts too). app_server only.';
+
 -- ---------------------------------------------------------------------------------------------------
 -- Ownership hand-over and grants
 -- ---------------------------------------------------------------------------------------------------

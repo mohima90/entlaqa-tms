@@ -149,7 +149,7 @@ module.exports = {
       from: {
         pathNot: [
           '^packages/platform-notifications/src/',
-          '^packages/platform-identity/src/(auth-next|auth-email-hook|inline-mail)\\.ts$',
+          '^packages/platform-identity/src/(auth-next|auth-email-hook|inline-mail|inline-account-mail)\\.ts$',
           '^apps/suite/src/app/api/auth/send-email/route\\.ts$',
           '^apps/worker/',
           '\\.(integration\\.)?test\\.tsx?$',

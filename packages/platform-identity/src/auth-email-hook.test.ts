@@ -335,3 +335,162 @@ describe('the Send Email hook', () => {
     expect(logged).not.toContain('sara');
   });
 });
+
+describe('the password reset (type recovery)', () => {
+  const facts = {
+    email: EMAIL,
+    tenantId: TENANT,
+    personId: '8c3f5e40-6d7f-4081-8c9d-1e2f3a4b5c6d',
+    locale: 'en' as const,
+    platformSender: false,
+    hasApp: false,
+    organizationName: { ar: 'شركة الراية', en: 'Al Raya' },
+    brand: { actionColor: '#112233', linkColor: '#445566', logoAssetId: null },
+  };
+
+  function recoverySetup(
+    over: { facts?: Partial<typeof facts> | null; queue?: boolean; allow?: boolean } = {},
+  ) {
+    const base = setup();
+    const factsFn = vi.fn((_userId: string) =>
+      Promise.resolve(over.facts === null ? null : { ...facts, ...over.facts }),
+    );
+    const queue = vi.fn((_mail: unknown) =>
+      Promise.resolve(over.queue === false ? null : { id: 'd1', secret: Buffer.alloc(32, 7) }),
+    );
+    const scheduled: (() => Promise<unknown>)[] = [];
+    const deliver = vi.fn((_ticket: unknown) => Promise.resolve());
+    base.allowSend.mockImplementation(() => Promise.resolve(over.allow !== false));
+    const deps: AuthEmailHookDeps = {
+      ...base.deps,
+      recovery: {
+        api: { facts: factsFn, queue },
+        schedule: (work) => {
+          scheduled.push(work);
+        },
+        deliver,
+      },
+    };
+    return { ...base, deps, factsFn, queue, scheduled, deliver };
+  }
+
+  it("queues the reset e-mail with Auth's own token hash in the link's fragment and sends it after the answer", async () => {
+    const { deps, queue, scheduled, deliver, send, issue, allowSend } = recoverySetup();
+    const answer = await handleSendEmailHook(deps, request(payload('recovery')));
+    expect(answer).toEqual({ status: 200, body: {} });
+    expect(allowSend).toHaveBeenCalledWith(USER, 'password_reset');
+    expect(queue).toHaveBeenCalledTimes(1);
+    const mail = queue.mock.calls[0]?.[0] as Record<string, string>;
+    expect(mail).toMatchObject({
+      userId: USER,
+      template: 'platform.password_reset',
+      locale: 'en',
+      to: EMAIL,
+    });
+    expect(mail.sourceKey).toMatch(/^recovery:[a-f0-9]{32}$/);
+    // The link: the reset page's own format, the token in the fragment, no other secret in the e-mail.
+    expect(mail.html).toContain(
+      `https://tms.example.com/en/reset-password#token_hash=${TOKEN_HASH}&amp;type=recovery`,
+    );
+    expect(mail.text).toContain(`#token_hash=${TOKEN_HASH}&type=recovery`);
+    expect(mail.html).not.toContain(AUTH_OTP);
+    expect(mail.text).not.toContain(AUTH_OTP);
+    // Not sent yet: after the answer, through the queued delivery; never the sign-in code's paths.
+    expect(deliver).not.toHaveBeenCalled();
+    expect(scheduled).toHaveLength(1);
+    await scheduled[0]?.();
+    expect(deliver).toHaveBeenCalledWith({ id: 'd1', secret: Buffer.alloc(32, 7) });
+    expect(send).not.toHaveBeenCalled();
+    expect(issue).not.toHaveBeenCalled();
+  });
+
+  it('an account with an authenticator app: the link says the page will ask for a code', async () => {
+    const { deps, queue } = recoverySetup({ facts: { hasApp: true } });
+    await handleSendEmailHook(deps, request(payload('recovery')));
+    const mail = queue.mock.calls[0]?.[0] as Record<string, string>;
+    expect(mail.text).toContain('&type=recovery&mfa=1');
+  });
+
+  it('an account of several organizations or with a platform role: the platform-only template', async () => {
+    const { deps, queue } = recoverySetup({ facts: { platformSender: true } });
+    await handleSendEmailHook(deps, request(payload('recovery')));
+    expect(queue.mock.calls[0]?.[0]).toMatchObject({
+      template: 'platform.password_reset_platform',
+    });
+  });
+
+  it('every outcome that is not a failure of ours is a success that tells nothing: no account, another address, over the limit, over the hourly cap', async () => {
+    const none = recoverySetup({ facts: null });
+    expect(await handleSendEmailHook(none.deps, request(payload('recovery')))).toEqual({
+      status: 200,
+      body: {},
+    });
+    expect(none.queue).not.toHaveBeenCalled();
+    const other = recoverySetup({ facts: { email: 'someone.else@raya.example' } });
+    expect((await handleSendEmailHook(other.deps, request(payload('recovery')))).status).toBe(200);
+    expect(other.queue).not.toHaveBeenCalled();
+    const limited = recoverySetup({ allow: false });
+    expect((await handleSendEmailHook(limited.deps, request(payload('recovery')))).status).toBe(
+      200,
+    );
+    expect(limited.factsFn).not.toHaveBeenCalled();
+    expect(limited.queue).not.toHaveBeenCalled();
+    const capped = recoverySetup({ queue: false });
+    expect((await handleSendEmailHook(capped.deps, request(payload('recovery')))).status).toBe(200);
+    expect(capped.scheduled).toHaveLength(0);
+  });
+
+  it('a token hash that is not safe for the link, or no usable app origin, sends nothing (and still tells nothing)', async () => {
+    const bad = recoverySetup();
+    expect(
+      (
+        await handleSendEmailHook(
+          bad.deps,
+          request(payload('recovery', { tokenHash: 'has space in it that is long enough' })),
+        )
+      ).status,
+    ).toBe(200);
+    expect(bad.queue).not.toHaveBeenCalled();
+    const noBase = recoverySetup();
+    const answer = await handleSendEmailHook(
+      { ...noBase.deps, appBaseUrl: undefined },
+      request(payload('recovery')),
+    );
+    expect(answer.status).toBe(200);
+    expect(noBase.queue).not.toHaveBeenCalled();
+    const insecure = recoverySetup();
+    await handleSendEmailHook(
+      { ...insecure.deps, appBaseUrl: 'http://tms.example.com' },
+      request(payload('recovery')),
+    );
+    expect(insecure.queue).not.toHaveBeenCalled();
+  });
+
+  it('a repeated signed call is ignored (replay)', async () => {
+    const { deps, queue, claimWebhook } = recoverySetup();
+    claimWebhook.mockResolvedValue(false);
+    expect((await handleSendEmailHook(deps, request(payload('recovery')))).status).toBe(200);
+    expect(queue).not.toHaveBeenCalled();
+  });
+
+  it('a database failure is a 500 (the id is given back), without the address or the token in the log', async () => {
+    const { deps, queue, releaseWebhook, log } = recoverySetup();
+    queue.mockRejectedValue(
+      Object.assign(new Error(`boom ${EMAIL} ${TOKEN_HASH}`), { code: 'ECONNRESET' }),
+    );
+    expect(await handleSendEmailHook(deps, request(payload('recovery')))).toMatchObject({
+      status: 500,
+    });
+    expect(releaseWebhook).toHaveBeenCalledWith('msg_1');
+    const logged = JSON.stringify(log.mock.calls);
+    expect(logged).not.toContain(EMAIL);
+    expect(logged).not.toContain(TOKEN_HASH);
+    expect(logged).toContain('ECONNRESET');
+  });
+
+  it('without the recovery dependency the type is refused as before', async () => {
+    const { deps, send } = setup();
+    expect((await handleSendEmailHook(deps, request(payload('recovery')))).status).toBe(400);
+    expect(send).not.toHaveBeenCalled();
+  });
+});

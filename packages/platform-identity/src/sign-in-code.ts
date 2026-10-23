@@ -22,7 +22,7 @@ import {
   continueAfterFirstStep,
   sessionTokens,
 } from './auth-flow';
-import { DEVICE_TOKEN_PATTERN, newDeviceToken } from './auth-limits';
+import { newDeviceToken } from './auth-limits';
 import { type SignInCodeLimiter, rememberedBrowserHash } from './sign-in-code-limits';
 import { verifyClaims } from './verify-claims';
 
@@ -41,10 +41,14 @@ import { verifyClaims } from './verify-claims';
  *              `verifyOtp` opens the session (cookies written) → the same continuation as after a password:
  *              organizations, then the organization's MFA policy. When MFA applies the second step is the
  *              authenticator app - never a second e-mailed code - exactly as after a password.
- *   remember → with «Remember this browser» ticked and the organizations allowing it, the browser gets a random
- *              256-bit token in an HttpOnly cookie (only its SHA-256 is stored, per person and organization);
+ *   remember → with «Remember this browser» ticked and the organizations allowing it, the browser gets a NEW random
+ *              256-bit token in an HttpOnly cookie (only its SHA-256 is stored, per person and organization) -
+ *              but only once the organization's second step has passed (BR-AUTH-f): at once when none is asked,
+ *              else after the authenticator code (a short-lived cookie carries the tick, bound to the session);
  *              on that browser «Email me a code» then signs in WITHOUT a code for the period the strictest
- *              organization of the person chose. The worker still mints the token, so the web app polls briefly.
+ *              organization of the person chose, and the token is replaced at every such sign-in (a token
+ *              planted or stolen once does not stay valid). The worker still mints the token, so the web app
+ *              polls briefly.
  *
  * Nothing here logs or returns a code, a token or whether an address has an account.
  */
@@ -60,7 +64,34 @@ export interface RememberedBrowserCookie {
 /** The remembered-browser cookie lives at most as long as the longest period an organization can choose. */
 export const REMEMBERED_BROWSER_COOKIE_SECONDS = 30 * 24 * 60 * 60;
 
-export interface SignInCodeDeps extends AuthFlowDeps {
+/**
+ * The tick of «Remember this browser» while the second step is still to come: a short-lived HttpOnly cookie whose
+ * value names the session it belongs to (`user.session`), so another person signing in on the same browser can
+ * never complete it.
+ */
+export interface PendingRememberCookie {
+  read(): string | null;
+  write(value: string, maxAgeSeconds: number): void;
+  clear(): void;
+}
+
+/** How long the tick waits for the second step. */
+export const PENDING_REMEMBER_SECONDS = 15 * 60;
+
+/** What remembering a browser needs (also used where the second step ends: the organization chooser, MFA). */
+export interface RememberDeps extends Pick<AuthFlowDeps, 'withUserTx' | 'logWarning'> {
+  readonly rememberBrowser: (
+    tx: UserTx,
+    tokenHash: Uint8Array,
+    label: string | null,
+  ) => Promise<number>;
+  readonly cookie: RememberedBrowserCookie;
+  readonly pendingRemember: PendingRememberCookie;
+  /** "Chrome on Windows" from the request's user agent (well-known names only), or null. */
+  readonly browserLabel: () => string | null;
+}
+
+export interface SignInCodeDeps extends AuthFlowDeps, RememberDeps {
   readonly limiter: SignInCodeLimiter;
   readonly codes: {
     readonly request: (
@@ -72,16 +103,10 @@ export interface SignInCodeDeps extends AuthFlowDeps {
       requestId: string,
       email: string,
       rememberHash: Uint8Array,
+      newHash: Uint8Array,
     ) => Promise<RememberedSignInTake>;
+    readonly isRemembered: (email: string, rememberHash: Uint8Array) => Promise<boolean>;
   };
-  readonly rememberBrowser: (
-    tx: UserTx,
-    tokenHash: Uint8Array,
-    label: string | null,
-  ) => Promise<number>;
-  readonly cookie: RememberedBrowserCookie;
-  /** "Chrome on Windows" from the request's user agent (well-known names only), or null. */
-  readonly browserLabel: () => string | null;
   /** Called after a request was queued: asks the worker for a pass (best effort). */
   readonly kickWorker: () => void;
 }
@@ -99,15 +124,28 @@ export async function requestSignInCode(
   deps: SignInCodeDeps,
   input: { readonly email: string; readonly forceCode?: boolean },
 ): Promise<Result<SignInCodeStart, AppError>> {
-  if (!(await deps.limiter.allowRequest(input.email))) return err(appError('RATE_LIMITED'));
   const token = input.forceCode ? null : deps.cookie.read();
-  const answer = await deps.codes.request(input.email, token ? rememberedBrowserHash(token) : null);
+  const hash = token ? rememberedBrowserHash(token) : null;
+  // A remembered browser asks for no code: the address's ceilings do not stop it (asked after the client's).
+  const trusted = hash ? () => deps.codes.isRemembered(input.email, hash) : undefined;
+  if (!(await deps.limiter.allowRequest(input.email, trusted ? { trusted } : undefined))) {
+    return err(appError('RATE_LIMITED'));
+  }
+  const answer = await deps.codes.request(input.email, hash);
   if (answer.outcome === 'too_soon') {
     return err(
       appError(IdentityErrors.SIGN_IN_CODE_TOO_SOON, {
         params: { seconds: answer.retryAfterSeconds },
       }),
     );
+  }
+  if (answer.outcome === 'full') {
+    // The queue is full (nothing was stored): the person sees the same screen; this is for the operator.
+    deps.logWarning('sign-in code queue is full; the request was not stored', {
+      action: 'platform.auth.sign_in_code_request',
+      securityEvent: 'auth.sign_in_code.queue_full',
+      reason: 'queue_full',
+    });
   }
   deps.kickWorker();
   return ok(
@@ -151,14 +189,14 @@ async function openSession(
 }
 
 /**
- * «Remember this browser» ticked on the code screen: remembers the browser in every organization of the
- * account (none when any has the setting Off) and writes the cookie only when something was remembered.
- * Best effort: a failure never blocks the sign-in.
+ * Remembers the browser in every organization of the account, for each organization's days - none when any has
+ * the setting Off (the strictest wins) - and writes the cookie only when something was remembered. ALWAYS with a
+ * brand-new token (security review H2): a token the browser already holds (planted, or kept from an earlier
+ * remembering) is never adopted. Best effort: a failure never blocks the sign-in.
  */
-async function rememberThisBrowser(deps: SignInCodeDeps, claims: VerifiedClaims): Promise<void> {
+async function rememberThisBrowser(deps: RememberDeps, claims: VerifiedClaims): Promise<void> {
   try {
-    const existing = deps.cookie.read();
-    const token = existing && DEVICE_TOKEN_PATTERN.test(existing) ? existing : newDeviceToken();
+    const token = newDeviceToken();
     const remembered = await deps.withUserTx(claims, (tx) =>
       deps.rememberBrowser(tx, rememberedBrowserHash(token), deps.browserLabel()),
     );
@@ -166,6 +204,48 @@ async function rememberThisBrowser(deps: SignInCodeDeps, claims: VerifiedClaims)
   } catch {
     deps.logWarning('could not remember the browser', { action: 'platform.auth.sign_in_code' });
   }
+}
+
+/** The value of the pending tick: the account and the Auth session it belongs to. */
+function pendingValue(claims: VerifiedClaims): string {
+  return `${claims.sub}.${claims.session_id ?? 'none'}`;
+}
+
+/**
+ * «Remember this browser» was ticked but the organization's second step is still to come (BR-AUTH-f: nothing is
+ * remembered on the first step alone): the tick waits in a short-lived cookie, bound to this session.
+ */
+async function settleRemember(
+  deps: RememberDeps,
+  remember: boolean,
+  claims: VerifiedClaims,
+  next: SignInOutcome['next'],
+): Promise<void> {
+  if (!remember || next === 'platform') {
+    if (deps.pendingRemember.read() !== null) deps.pendingRemember.clear();
+    return;
+  }
+  if (next === 'home') {
+    deps.pendingRemember.clear();
+    await rememberThisBrowser(deps, claims);
+    return;
+  }
+  deps.pendingRemember.write(pendingValue(claims), PENDING_REMEMBER_SECONDS);
+}
+
+/**
+ * Where the second step ends (the authenticator code passed, or the organization chosen with none to pass): the
+ * tick of this session, if any, remembers the browser now. A tick of another session or account is dropped.
+ */
+export async function rememberAfterSecondStep(
+  deps: RememberDeps,
+  claims: VerifiedClaims,
+): Promise<void> {
+  const pending = deps.pendingRemember.read();
+  if (pending === null) return;
+  deps.pendingRemember.clear();
+  if (pending !== pendingValue(claims)) return;
+  await rememberThisBrowser(deps, claims);
 }
 
 /** The tries left on the screen: `tries` in the params of SIGN_IN_CODE_INVALID. */
@@ -184,7 +264,15 @@ export async function signInWithEmailedCode(
     readonly remember: boolean;
   },
 ): Promise<Result<SignInOutcome, AppError>> {
-  const gate = await deps.limiter.checkCode(input.email);
+  // A browser remembered for this address is not stopped by the address's pause: its own budget counts instead.
+  const cookieToken = deps.cookie.read();
+  const remembered =
+    cookieToken !== null &&
+    (await deps.codes.isRemembered(input.email, rememberedBrowserHash(cookieToken)));
+  const gate = await deps.limiter.checkCode(
+    input.email,
+    remembered ? { rememberedToken: cookieToken } : undefined,
+  );
   if (!gate.allowed) return err(appError(IdentityErrors.SIGN_IN_CODE_LOCKED));
   const check = await deps.codes.verify(input.requestId, input.email, input.code);
   if (check.outcome === 'locked') {
@@ -202,8 +290,9 @@ export async function signInWithEmailedCode(
   await gate.attempt.succeeded();
   const session = await openSession(deps, check.linkToken);
   if (!session.ok) return session;
-  if (input.remember) await rememberThisBrowser(deps, session.value.claims);
-  return continueAfterFirstStep(deps, session.value);
+  const next = await continueAfterFirstStep(deps, session.value);
+  if (next.ok) await settleRemember(deps, input.remember, session.value.claims, next.value.next);
+  return next;
 }
 
 /** How long one call waits for the worker before the screen asks again (a server action's budget). */
@@ -227,11 +316,16 @@ export async function completeRememberedSignIn(
   const token = deps.cookie.read();
   if (!token) return err(appError(IdentityErrors.SIGN_IN_CODE_EXPIRED));
   const hash = rememberedBrowserHash(token);
+  // The token is replaced at every use (security review H2): the database swaps the hash when it hands the
+  // sign-in token out, and the browser gets the new one with this answer.
+  const fresh = newDeviceToken();
+  const freshHash = rememberedBrowserHash(fresh);
   const deadline = deps.now() + REMEMBERED_SIGN_IN_WAIT_MS;
   for (;;) {
-    const taken = await deps.codes.takeRemembered(input.requestId, input.email, hash);
+    const taken = await deps.codes.takeRemembered(input.requestId, input.email, hash, freshHash);
     if (taken.outcome === 'gone') return err(appError(IdentityErrors.SIGN_IN_CODE_EXPIRED));
     if (taken.outcome === 'ok') {
+      deps.cookie.write(fresh, REMEMBERED_BROWSER_COOKIE_SECONDS);
       const session = await openSession(deps, taken.linkToken);
       if (!session.ok) return session;
       const outcome = await continueAfterFirstStep(deps, session.value);

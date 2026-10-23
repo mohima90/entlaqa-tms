@@ -105,6 +105,14 @@ async function recordSender(tx: ClaimsTx, id: string, sender: string): Promise<v
   }
 }
 
+/** The template of a delivery that is not final (null: final or unknown). */
+export async function getEmailDeliveryTemplate(tx: ClaimsTx, id: string): Promise<string | null> {
+  const [row] = await tx.execute<{ template: string }>(sql`
+    select template from platform.message_deliveries
+    where id = ${id}::uuid and channel = 'email' and status in ('queued', 'sending')`);
+  return row?.template ?? null;
+}
+
 export type DeliveryOutcome =
   | {
       readonly status: 'sent';

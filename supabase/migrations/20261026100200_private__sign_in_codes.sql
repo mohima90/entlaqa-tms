@@ -134,6 +134,7 @@ declare
   v_email text := lower(btrim(p_email));
   v_recent timestamptz;
   v_user uuid;
+  v_ok boolean;
   v_id uuid;
 begin
   if session_user <> 'app_server' then
@@ -141,12 +142,19 @@ begin
   end if;
   delete from private.sign_in_codes c where c.created_at < now() - interval '30 minutes';
   if v_email is null or char_length(v_email) not between 3 and 320 or v_email !~ '^[^@\s]+@[^@\s]+$'
-     or (p_remember_hash is not null and octet_length(p_remember_hash) <> 32)
-     or (select count(*) from (select 1 from private.sign_in_codes limit 10000) w) >= 10000 then
-    -- Nothing is queued, the answer is the same (a flood while no worker runs cannot grow the table).
+     or (p_remember_hash is not null and octet_length(p_remember_hash) <> 32) then
+    -- Nothing is queued, the answer is the same.
     return query select gen_random_uuid(), 'queued'::text, 0;
     return;
   end if;
+  if (select count(*) from (select 1 from private.sign_in_codes limit 10000) w) >= 10000 then
+    -- A flood while no worker runs cannot grow the table. The person gets the same answer; the caller logs the
+    -- outcome `full` (security review L5), which is never shown.
+    return query select gen_random_uuid(), 'full'::text, 0;
+    return;
+  end if;
+  -- One request at a time per address (security review L4): the one-a-minute rule cannot be raced.
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('jadarat.sign_in_code:' || v_email, 0));
   select max(c.created_at) into v_recent from private.sign_in_codes c where c.email = v_email and c.mode = 'code';
   if v_recent is not null and v_recent > now() - interval '60 seconds' then
     return query select null::uuid, 'too_soon'::text,
@@ -157,7 +165,9 @@ begin
     select a.id into v_user from private.auth_account a
     where a.email = v_email and not coalesce(a.is_sso_user, false) and a.deleted_at is null
     order by a.id limit 1;
-    if v_user is not null and private.remembered_browser_ok(v_user, p_remember_hash) then
+    -- Always evaluated, with a placeholder when there is no account, so the work does not tell (review L1).
+    v_ok := private.remembered_browser_ok(coalesce(v_user, '00000000-0000-0000-0000-000000000000'::uuid), p_remember_hash);
+    if v_user is not null and v_ok then
       insert into private.sign_in_codes (mode, email, user_id, remember_hash)
       values ('remembered', v_email, v_user, p_remember_hash) returning id into v_id;
       return query select v_id, 'remembered'::text, 0;
@@ -218,6 +228,15 @@ begin
       link_token = case when c.tries + 1 >= 5 then null else c.link_token end
   where c.id = p_id
   returning c.state into v_row.state;
+  -- "Code refused" in the organization's audit trail (BR-AUTH-i, security review L6) - only for an account that has
+  -- a code (an address without one has no organization); no code, no address.
+  if v_row.user_id is not null and v_row.tenant_id is not null then
+    insert into platform.audit_events (tenant_id, actor_user_id, actor_person_id, action, entity_type, entity_id, data)
+    select v_row.tenant_id, v_row.user_id, m.person_id, 'platform.auth.sign_in_code_refused', 'user', v_row.user_id::text,
+           jsonb_build_object('method', 'email_code', 'killed', v_row.state = 'locked')
+    from platform.tenant_memberships m
+    where m.tenant_id = v_row.tenant_id and m.user_id = v_row.user_id and m.status = 'active';
+  end if;
   return query select case when v_row.state = 'locked' then 'locked' else 'wrong' end, null::text;
 end
 $$;
@@ -227,7 +246,7 @@ comment on function private.verify_sign_in_code(uuid, text, text) is
 -- ---------------------------------------------------------------------------------------------------
 -- Web app: take the sign-in token of a remembered browser (no session)
 -- ---------------------------------------------------------------------------------------------------
-create or replace function private.take_remembered_sign_in(p_id uuid, p_email text, p_remember_hash bytea)
+create or replace function private.take_remembered_sign_in(p_id uuid, p_email text, p_remember_hash bytea, p_new_hash bytea)
 returns table (outcome text, link_token text)
 language plpgsql volatile security definer
 set search_path = ''
@@ -239,7 +258,8 @@ begin
   if session_user <> 'app_server' then
     raise exception 'reserved to the web app' using errcode = 'insufficient_privilege';
   end if;
-  if p_id is null or v_email is null or p_remember_hash is null or octet_length(p_remember_hash) <> 32 then
+  if p_id is null or v_email is null or p_remember_hash is null or octet_length(p_remember_hash) <> 32
+     or p_new_hash is null or octet_length(p_new_hash) <> 32 or p_new_hash = p_remember_hash then
     raise exception 'invalid remembered sign-in request' using errcode = 'invalid_parameter_value';
   end if;
   select * into v_row from private.sign_in_codes c
@@ -264,13 +284,42 @@ begin
     return query select 'gone'::text, null::text;
     return;
   end if;
-  update platform.remembered_browsers r set last_used_at = now()
+  -- The token is rotated on every use (security review H2): the browser gets the new one with this answer, the old
+  -- one is useless from now on. The dates are not extended.
+  update platform.remembered_browsers r set last_used_at = now(), token_hash = p_new_hash
   where r.user_id = v_row.user_id and r.token_hash = p_remember_hash;
   return query select 'ok'::text, v_row.link_token;
 end
 $$;
-comment on function private.take_remembered_sign_in(uuid, text, bytea) is
-  'SECURITY-RELEVANT (WP-ADM-05). Hands out the minted sign-in token of a remembered browser once, after checking again that the browser is still remembered. app_server only.';
+comment on function private.take_remembered_sign_in(uuid, text, bytea, bytea) is
+  'SECURITY-RELEVANT (WP-ADM-05). Hands out the minted sign-in token of a remembered browser once, after checking again that the browser is still remembered, and replaces the browser''s token hash with a new one. app_server only.';
+
+-- Web app: is this browser remembered for the typed address? (security review M3: such a browser is not stopped by
+-- the address's pause of code checks.) Only a browser that already proved the account learns anything.
+create or replace function private.remembered_browser_for_email(p_email text, p_hash bytea)
+returns boolean
+language plpgsql stable security definer
+set search_path = ''
+as $$
+declare
+  v_email text := lower(btrim(p_email));
+  v_user uuid;
+begin
+  if session_user <> 'app_server' then
+    raise exception 'reserved to the web app' using errcode = 'insufficient_privilege';
+  end if;
+  if v_email is null or p_hash is null or octet_length(p_hash) <> 32 then
+    return false;
+  end if;
+  select a.id into v_user from private.auth_account a
+  where a.email = v_email and not coalesce(a.is_sso_user, false) and a.deleted_at is null
+  order by a.id limit 1;
+  return private.remembered_browser_ok(coalesce(v_user, '00000000-0000-0000-0000-000000000000'::uuid), p_hash)
+         and v_user is not null;
+end
+$$;
+comment on function private.remembered_browser_for_email(text, bytea) is
+  'SECURITY-RELEVANT (WP-ADM-05). Is the browser (token hash) remembered for the account with this address? app_server only.';
 
 -- ---------------------------------------------------------------------------------------------------
 -- Worker: lease the oldest waiting request and say whom to write (as private.claim_account_mail_request)
@@ -282,7 +331,7 @@ comment on function private.take_remembered_sign_in(uuid, text, bytea) is
 -- ---------------------------------------------------------------------------------------------------
 create or replace function private.claim_sign_in_code_request()
 returns table (id uuid, mode text, outcome text, email text, user_id uuid, tenant_id uuid, person_id uuid,
-               locale text, attempts integer)
+               locale text, attempts integer, platform_sender boolean)
 language plpgsql volatile security definer
 set search_path = ''
 as $$
@@ -291,6 +340,7 @@ declare
   v_request record;
   v_account record;
   v_member record;
+  v_platform boolean;
 begin
   if session_user <> 'app_worker' or coalesce(v_claims ->> 'role', '') <> 'system'
      or coalesce(btrim(v_claims ->> 'job_id'), '') = '' then
@@ -322,12 +372,12 @@ begin
   end if;
   if v_account.id is null or v_account.email is null then
     return query select v_request.id, v_request.mode, 'unknown_account'::text, null::text, null::uuid, null::uuid,
-                        null::uuid, null::text, v_request.attempts::integer;
+                        null::uuid, null::text, v_request.attempts::integer, false;
     return;
   end if;
   if v_account.banned_until is not null and v_account.banned_until > now() then
     return query select v_request.id, v_request.mode, 'banned'::text, null::text, null::uuid, null::uuid,
-                        null::uuid, null::text, v_request.attempts::integer;
+                        null::uuid, null::text, v_request.attempts::integer, false;
     return;
   end if;
   -- The organization whose look, sender and language the e-mail uses: the one most recently selected in a
@@ -343,13 +393,19 @@ begin
   limit 1;
   if v_member.tenant_id is null then
     return query select v_request.id, v_request.mode, 'no_membership'::text, null::text, null::uuid, null::uuid,
-                        null::uuid, null::text, v_request.attempts::integer;
+                        null::uuid, null::text, v_request.attempts::integer, false;
     return;
   end if;
+  -- Whose sender may carry the code (security review M1): the organization's own only when the person belongs to
+  -- exactly this one organization and holds no platform role; otherwise the platform sender, so one organization's
+  -- mail server never sees the codes of an account that signs in to others.
+  v_platform := (select count(*) from platform.tenant_memberships m2 join platform.tenants t2 on t2.id = m2.tenant_id
+                 where m2.user_id = v_account.id and m2.status = 'active' and t2.status in ('active', 'trial')) > 1
+                or private.platform_admin_is_active(v_account.id);
   return query select v_request.id, v_request.mode, 'send'::text, v_account.email::text, v_account.id,
                       v_member.tenant_id, v_member.person_id,
                       case when v_member.preferred_locale = 'en' then 'en' else 'ar' end,
-                      v_request.attempts::integer;
+                      v_request.attempts::integer, v_platform;
 end
 $$;
 comment on function private.claim_sign_in_code_request() is
@@ -469,7 +525,8 @@ grant create on schema private to account_mail_guard;
 alter function private.sign_in_code_hmac(uuid, text) owner to account_mail_guard;
 alter function private.request_sign_in_code(text, bytea) owner to account_mail_guard;
 alter function private.verify_sign_in_code(uuid, text, text) owner to account_mail_guard;
-alter function private.take_remembered_sign_in(uuid, text, bytea) owner to account_mail_guard;
+alter function private.take_remembered_sign_in(uuid, text, bytea, bytea) owner to account_mail_guard;
+alter function private.remembered_browser_for_email(text, bytea) owner to account_mail_guard;
 alter function private.claim_sign_in_code_request() owner to account_mail_guard;
 alter function private.issue_sign_in_code(uuid, uuid, uuid, text, text) owner to account_mail_guard;
 alter function private.sign_in_code_dead_end(uuid) owner to account_mail_guard;
@@ -479,7 +536,8 @@ revoke create on schema private from account_mail_guard;
 revoke all on function private.sign_in_code_hmac(uuid, text) from public;
 revoke all on function private.request_sign_in_code(text, bytea) from public;
 revoke all on function private.verify_sign_in_code(uuid, text, text) from public;
-revoke all on function private.take_remembered_sign_in(uuid, text, bytea) from public;
+revoke all on function private.take_remembered_sign_in(uuid, text, bytea, bytea) from public;
+revoke all on function private.remembered_browser_for_email(text, bytea) from public;
 revoke all on function private.claim_sign_in_code_request() from public;
 revoke all on function private.issue_sign_in_code(uuid, uuid, uuid, text, text) from public;
 revoke all on function private.sign_in_code_dead_end(uuid) from public;
@@ -488,7 +546,10 @@ revoke all on function private.retry_sign_in_code_request(uuid) from public;
 -- each function checks the LOGIN role (session_user) itself.
 grant execute on function private.request_sign_in_code(text, bytea) to authenticated;
 grant execute on function private.verify_sign_in_code(uuid, text, text) to authenticated;
-grant execute on function private.take_remembered_sign_in(uuid, text, bytea) to authenticated;
+grant execute on function private.take_remembered_sign_in(uuid, text, bytea, bytea) to authenticated;
+grant execute on function private.remembered_browser_for_email(text, bytea) to authenticated;
+-- The claim asks whether the account is a Platform Super Admin (the sender rule).
+grant execute on function private.platform_admin_is_active(uuid) to account_mail_guard;
 grant execute on function private.claim_sign_in_code_request() to authenticated;
 grant execute on function private.issue_sign_in_code(uuid, uuid, uuid, text, text) to authenticated;
 grant execute on function private.sign_in_code_dead_end(uuid) to authenticated;

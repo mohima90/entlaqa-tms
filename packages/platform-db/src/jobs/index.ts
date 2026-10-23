@@ -31,6 +31,7 @@ export {
   claimEmailDelivery,
   discardInactiveTenantDelivery,
   finishEmailDelivery,
+  getEmailDeliveryTemplate,
   insertEmailDelivery,
 } from './deliveries';
 export {

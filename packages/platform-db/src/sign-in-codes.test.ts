@@ -104,9 +104,13 @@ describe('sign-in codes on the request path (WP-ADM-05)', () => {
       outcome: 'expired',
     });
     await expect(api.verify(ID, 'a@example.test', '12345')).rejects.toThrow('six-digit');
-    await expect(api.takeRemembered('nope', 'a@example.test', new Uint8Array(32))).resolves.toEqual(
-      { outcome: 'gone' },
-    );
+    await expect(
+      api.takeRemembered('nope', 'a@example.test', new Uint8Array(32), new Uint8Array(32)),
+    ).resolves.toEqual({ outcome: 'gone' });
+    await expect(
+      api.takeRemembered(ID, 'a@example.test', new Uint8Array(32), new Uint8Array(5)),
+    ).resolves.toEqual({ outcome: 'gone' });
+    await expect(api.isRemembered('a@example.test', new Uint8Array(5))).resolves.toBe(false);
     expect(executed).toEqual([]);
   });
 
@@ -119,9 +123,54 @@ describe('sign-in codes on the request path (WP-ADM-05)', () => {
       const api = createSignInCodeApi(
         () => fakeDb([{ outcome, link_token: outcome === 'ok' ? 'tok-tok-tok-tok-tok' : null }]).db,
       );
-      await expect(api.takeRemembered(ID, 'a@example.test', new Uint8Array(32))).resolves.toEqual(
-        expected,
-      );
+      await expect(
+        api.takeRemembered(
+          ID,
+          'a@example.test',
+          new Uint8Array(32).fill(1),
+          new Uint8Array(32).fill(2),
+        ),
+      ).resolves.toEqual(expected);
     }
+  });
+
+  it('hands the new token hash over with the take (rotation)', async () => {
+    const { db, executed } = fakeDb([{ outcome: 'ok', link_token: 'tok-tok-tok-tok-tok' }]);
+    const api = createSignInCodeApi(() => db);
+    await api.takeRemembered(
+      ID,
+      'a@example.test',
+      new Uint8Array(32).fill(1),
+      new Uint8Array(32).fill(2),
+    );
+    expect(executed.at(-1)?.params).toEqual([
+      ID,
+      'a@example.test',
+      `\\x${'01'.repeat(32)}`,
+      `\\x${'02'.repeat(32)}`,
+    ]);
+  });
+
+  it('a full queue answers like any request, flagged for the log', async () => {
+    const api = createSignInCodeApi(
+      () => fakeDb([{ request_id: ID, outcome: 'full', retry_after: 0 }]).db,
+    );
+    await expect(api.request('a@example.test')).resolves.toEqual({
+      outcome: 'full',
+      requestId: ID,
+    });
+  });
+
+  it('asks whether a browser is remembered for an address', async () => {
+    const { db, executed } = fakeDb([{ ok: true }]);
+    const api = createSignInCodeApi(() => db);
+    await expect(api.isRemembered('a@example.test', new Uint8Array(32).fill(1))).resolves.toBe(
+      true,
+    );
+    expect(executed.at(-1)?.params).toEqual(['a@example.test', `\\x${'01'.repeat(32)}`]);
+    const no = createSignInCodeApi(() => fakeDb([{ ok: false }]).db);
+    await expect(no.isRemembered('a@example.test', new Uint8Array(32).fill(1))).resolves.toBe(
+      false,
+    );
   });
 });

@@ -85,7 +85,8 @@ grant select, insert, update, delete on platform.remembered_browsers to account_
 
 -- Account-level audit rows written by the remember function (an allow-list of actions, no personal data).
 create policy audit_events_account_mail_guard_insert on platform.audit_events for insert to account_mail_guard
-  with check (action in ('platform.auth.browser_remembered', 'platform.auth.sign_in_code_sent')
+  with check (action in ('platform.auth.browser_remembered', 'platform.auth.sign_in_code_sent',
+                         'platform.auth.sign_in_code_refused')
               and impersonator_user_id is null);
 grant insert (tenant_id, actor_user_id, actor_person_id, action, entity_type, entity_id, data)
   on platform.audit_events to account_mail_guard;
@@ -213,6 +214,38 @@ comment on function private.remember_browser(bytea, text) is
   'SECURITY-RELEVANT (WP-ADM-05, BR-AUTH-f). Remembers a browser (SHA-256 of its cookie token) for the signed-in account in every organization, for each organization''s days; nothing when any has the setting Off. app_server, user claims.';
 
 -- ---------------------------------------------------------------------------------------------------
+-- My profile's list (security review H1: `authenticated` has no column grant on token_hash, so the list asks
+-- a definer function which of the caller's own rows is the browser asking)
+-- ---------------------------------------------------------------------------------------------------
+create or replace function private.my_remembered_browsers(p_current_hash bytea)
+returns table (id uuid, label text, created_at timestamptz, last_used_at timestamptz, valid_until timestamptz,
+               is_current boolean)
+language plpgsql stable security definer
+set search_path = ''
+as $$
+declare
+  v_user uuid := private.request_user_id();
+  v_tenant uuid := private.current_tenant_id();
+begin
+  if session_user <> 'app_server' or v_user is null or v_tenant is null
+     or coalesce(private.request_claims() ->> 'role', '') <> 'authenticated' then
+    raise exception 'reserved to a signed-in member' using errcode = 'insufficient_privilege';
+  end if;
+  return query
+  select r.id, r.label, r.created_at, r.last_used_at,
+         case when p.remembered_browser_days > 0
+              then least(r.expires_at, r.created_at + make_interval(days => p.remembered_browser_days)) end,
+         p_current_hash is not null and r.token_hash = p_current_hash
+  from platform.remembered_browsers r
+  left join platform.security_policies p on p.tenant_id = r.tenant_id
+  where r.tenant_id = v_tenant and r.user_id = v_user
+  order by r.created_at desc, r.id;
+end
+$$;
+comment on function private.my_remembered_browsers(bytea) is
+  'SECURITY-RELEVANT (WP-ADM-05). The caller''s own remembered browsers in the session''s organization, marking the one with this token hash (never returned). app_server, user claims.';
+
+-- ---------------------------------------------------------------------------------------------------
 -- Forgetting for a member (the Organization Admin's «End sessions») and on deactivation
 -- ---------------------------------------------------------------------------------------------------
 create or replace function private.forget_member_remembered_browsers(p_person_id uuid)
@@ -263,16 +296,16 @@ create trigger tenant_memberships_forget_remembered after update of status on pl
 grant create on schema private to account_mail_guard, tenant_guard;
 alter function private.remembered_browser_ok(uuid, bytea) owner to account_mail_guard;
 alter function private.remember_browser(bytea, text) owner to account_mail_guard;
+alter function private.my_remembered_browsers(bytea) owner to account_mail_guard;
 alter function private.forget_member_remembered_browsers(uuid) owner to tenant_guard;
 alter function private.forget_remembered_browsers_of_inactive_member() owner to tenant_guard;
 revoke create on schema private from account_mail_guard, tenant_guard;
 
 revoke all on function private.remembered_browser_ok(uuid, bytea) from public;
 revoke all on function private.remember_browser(bytea, text) from public;
+revoke all on function private.my_remembered_browsers(bytea) from public;
 revoke all on function private.forget_member_remembered_browsers(uuid) from public;
 revoke all on function private.forget_remembered_browsers_of_inactive_member() from public;
 grant execute on function private.remember_browser(bytea, text) to authenticated;
+grant execute on function private.my_remembered_browsers(bytea) to authenticated;
 grant execute on function private.forget_member_remembered_browsers(uuid) to authenticated;
--- remember_browser reads memberships, tenants and policies as its owner.
-grant execute on function private.request_claims() to account_mail_guard;
-grant execute on function private.request_user_id() to account_mail_guard;

@@ -32,8 +32,16 @@ export const EMAIL_TEMPLATES = {
   'platform.sign_in_unlocked': signInUnlockedTemplate,
   'platform.mfa_code_locked': mfaCodeLockedTemplate,
   'platform.sign_in_code': signInCodeTemplate,
+  // The same e-mail, for an account that belongs to several organizations or holds a platform role: it goes out
+  // with the platform sender only (WP-ADM-05 security review M1).
+  'platform.sign_in_code_platform': signInCodeTemplate,
   'platform.email_test': emailTestTemplate,
 } as const;
+
+/** Templates whose messages never go through an organization's own provider (the platform sender only). */
+export const PLATFORM_SENDER_TEMPLATES: ReadonlySet<string> = new Set([
+  'platform.sign_in_code_platform',
+]);
 
 export type EmailTemplateKey = keyof typeof EMAIL_TEMPLATES;
 export type EmailVariables<K extends EmailTemplateKey> = z.input<

@@ -28,7 +28,15 @@ export interface EmailRouter {
    * organization's sealed secrets are bound to it). Settings that cannot be used make the message WAIT
    * (CREDENTIALS_UNAVAILABLE, logged with its code) — never another sender.
    */
-  resolve(tx: SystemTx, tenantId: string): Promise<EmailRoute>;
+  resolve(
+    tx: SystemTx,
+    tenantId: string,
+    /**
+     * `platformOnly`: skip the organization's own provider (mail whose content must not pass through an
+     * organization's mail server, e.g. the sign-in code of an account that belongs to several organizations).
+     */
+    options?: { readonly platformOnly?: boolean },
+  ): Promise<EmailRoute>;
   /** Closes the cached transports (worker stop). */
   close(): Promise<void>;
 }
@@ -59,7 +67,8 @@ export function brandName(
 
 /**
  * The sender rule (WP-ADM-01, FR-NTF-11; Kawadir sender-rule.ts) over the settings in the database:
- *   1. the organization's own provider, when configured AND enabled (enabled implies verified);
+ *   1. the organization's own provider, when configured AND enabled (enabled implies verified) - not for the
+ *      messages that ask for the platform sender only (`platformOnly`);
  *   2. else the platform sender, once verified by its test e-mail — sent with the ORGANIZATION's brand name
  *      as display name and the platform's address;
  *   3. else, while the platform sender was never saved in the product, the installation's sender
@@ -135,7 +144,7 @@ export function createEmailRouter(options: {
   }
 
   return {
-    async resolve(tx, tenantId) {
+    async resolve(tx, tenantId, resolveOptions) {
       let row: EmailRouteRow | null;
       try {
         row = await tx.transaction((savepoint) => loadEmailRoute(savepoint));
@@ -152,7 +161,7 @@ export function createEmailRouter(options: {
           : { kind: 'wait', code: 'NO_SENDER' };
       }
       if (!row) return { kind: 'wait', code: 'NO_SENDER' };
-      if (row.tenant?.enabled) {
+      if (row.tenant?.enabled && resolveOptions?.platformOnly !== true) {
         try {
           return {
             kind: 'send',

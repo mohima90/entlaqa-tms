@@ -116,6 +116,16 @@ export interface AuthLimits {
     readonly checkAccountFailures: RateLimit;
     readonly checkClientFailures: RateLimit;
     readonly sharedClientCheckFailures: RateLimit;
+    /** On top of `requestsPerAccount`: the most code requests per typed address in a day. */
+    readonly requestsPerAccountDaily: RateLimit;
+    /**
+     * Wrong codes from ALL clients together (security review M2, as the unknown invitation codes): the defence
+     * against guessing spread over many addresses. When it is used up, code checks are refused for everybody
+     * until the window ends (`auth.sign_in_codes.global_limit` is logged). Right codes give their hit back.
+     */
+    readonly checkWrongAllClients: RateLimit;
+    /** A remembered browser's own budget of wrong codes - it is not stopped by the typed address's pause. */
+    readonly checkRememberedBrowserFailures: RateLimit;
   };
 }
 
@@ -171,5 +181,8 @@ export const PLATFORM_AUTH_LIMITS: AuthLimits = {
     checkAccountFailures: { max: 5, windowSeconds: WINDOW },
     checkClientFailures: { max: 100, windowSeconds: WINDOW },
     sharedClientCheckFailures: { max: 1000, windowSeconds: WINDOW },
+    requestsPerAccountDaily: { max: 40, windowSeconds: 24 * 60 * 60 },
+    checkWrongAllClients: { max: 2000, windowSeconds: WINDOW },
+    checkRememberedBrowserFailures: { max: 10, windowSeconds: WINDOW },
   },
 };

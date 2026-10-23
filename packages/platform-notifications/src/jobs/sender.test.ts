@@ -9,6 +9,7 @@ const db = vi.hoisted(() => ({
   claimEmailDelivery: vi.fn(),
   finishEmailDelivery: vi.fn(),
   discardInactiveTenantDelivery: vi.fn(),
+  getEmailDeliveryTemplate: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db/jobs', () => db);
 
@@ -278,5 +279,63 @@ describe('e-mail sender', () => {
     await sender.discard?.({ event: { ...event, subject: null }, inTenant });
     expect(db.discardInactiveTenantDelivery).toHaveBeenCalledTimes(2);
     expect(log).not.toHaveBeenCalled();
+  });
+
+  it('a platform-sender template (the sign-in code of an account of several organizations) skips the organization provider', async () => {
+    db.claimEmailDelivery.mockResolvedValue(claimed);
+    const send = vi.fn<EmailTransport['send']>(() => Promise.resolve({ providerMessageId: 'p_1' }));
+    const resolve = vi.fn<EmailRouter['resolve']>(() =>
+      Promise.resolve({
+        kind: 'send' as const,
+        transport: transport(send),
+        from,
+        sender: 'platform' as const,
+      }),
+    );
+    const router: EmailRouter = { resolve, close: () => Promise.resolve() };
+    await createEmailSender({ log: vi.fn(), router }).perform({
+      event: { ...event, data: { template: 'platform.sign_in_code_platform' } },
+      inTenant,
+      attempt: 1,
+      maxAttempts: EMAIL_MAX_ATTEMPTS,
+    });
+    expect(resolve).toHaveBeenCalledWith(tx, 't1', { platformOnly: true });
+    expect(db.claimEmailDelivery).toHaveBeenCalledWith(tx, ID, 'platform');
+  });
+
+  it('an event queued again by the resume task carries no template: it is looked up in the delivery', async () => {
+    db.claimEmailDelivery.mockResolvedValue(claimed);
+    db.getEmailDeliveryTemplate.mockResolvedValue('platform.sign_in_code_platform');
+    const resolve = vi.fn<EmailRouter['resolve']>(() =>
+      Promise.resolve({ kind: 'wait' as const, code: 'NO_SENDER' as const }),
+    );
+    const resumed = { ...event, data: { resumed: true } };
+    await createEmailSender({
+      log: vi.fn(),
+      router: { resolve, close: () => Promise.resolve() },
+    }).perform({
+      event: resumed,
+      inTenant,
+      attempt: 1,
+      maxAttempts: EMAIL_MAX_ATTEMPTS,
+    });
+    expect(db.getEmailDeliveryTemplate).toHaveBeenCalledWith(tx, ID);
+    expect(resolve).toHaveBeenCalledWith(tx, 't1', { platformOnly: true });
+
+    // A delivery that is already final: nothing to do.
+    resolve.mockClear();
+    db.claimEmailDelivery.mockClear();
+    db.getEmailDeliveryTemplate.mockResolvedValue(null);
+    await createEmailSender({
+      log: vi.fn(),
+      router: { resolve, close: () => Promise.resolve() },
+    }).perform({
+      event: resumed,
+      inTenant,
+      attempt: 1,
+      maxAttempts: EMAIL_MAX_ATTEMPTS,
+    });
+    expect(resolve).not.toHaveBeenCalled();
+    expect(db.claimEmailDelivery).not.toHaveBeenCalled();
   });
 });

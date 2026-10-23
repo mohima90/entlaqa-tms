@@ -43,6 +43,7 @@ const send = (overrides: Partial<Extract<SignInCodeRequest, { outcome: 'send' }>
     tenantId: TENANT,
     personId: PERSON,
     locale: 'en',
+    platformSender: false,
     ...overrides,
   }) as const;
 
@@ -139,6 +140,23 @@ describe('sign-in code mailer (WP-ADM-05)', () => {
     // The token is requested from Auth after the checks and before the storing.
     expect(links.issue.mock.invocationCallOrder[0]).toBeLessThan(
       db.issueSignInCode.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it('an account of several organizations (or with a platform role) gets the platform-sender variant of the e-mail', async () => {
+    const { task } = build(issuer());
+    queue(send({ platformSender: true }));
+    await task.run({ jobId: 'j' });
+    expect(mail.queueEmail).toHaveBeenCalledWith(
+      tenantTx,
+      expect.objectContaining({ template: 'platform.sign_in_code_platform' }),
+    );
+    mail.queueEmail.mockClear();
+    queue(send({ platformSender: false }));
+    await task.run({ jobId: 'j' });
+    expect(mail.queueEmail).toHaveBeenCalledWith(
+      tenantTx,
+      expect.objectContaining({ template: 'platform.sign_in_code' }),
     );
   });
 

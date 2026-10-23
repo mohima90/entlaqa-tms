@@ -11,9 +11,13 @@ import type { UserTx } from './with-user-tx';
  * e-mails it. What the database answers is the same for every address: nothing here reveals an account.
  */
 
-/** The outcome of a request: `queued` (a code is on its way — for any address), `remembered`, `too_soon`. */
+/**
+ * The outcome of a request: `queued` (a code is on its way — for any address), `remembered`, `too_soon`.
+ * `full`: the queue was full and nothing was stored; the person gets the same answer as for `queued` (the caller
+ * logs it, security review L5).
+ */
 export type SignInCodeRequest =
-  | { readonly outcome: 'queued' | 'remembered'; readonly requestId: string }
+  | { readonly outcome: 'queued' | 'remembered' | 'full'; readonly requestId: string }
   /** A code was requested for this address less than a minute ago: no new request, wait this many seconds. */
   | { readonly outcome: 'too_soon'; readonly retryAfterSeconds: number };
 
@@ -39,12 +43,18 @@ export interface SignInCodeApi {
   request(email: string, rememberHash?: Uint8Array | null): Promise<SignInCodeRequest>;
   /** Checks a code of a request: wrong tries are counted by the database (5 kill the code). */
   verify(requestId: string, email: string, code: string): Promise<SignInCodeCheck>;
-  /** A remembered browser takes its minted sign-in token (once). */
+  /**
+   * A remembered browser takes its minted sign-in token (once); `newHash` (SHA-256 of a NEW token, different from
+   * the old one) replaces the browser's token in the same step (rotation, security review H2).
+   */
   takeRemembered(
     requestId: string,
     email: string,
     rememberHash: Uint8Array,
+    newHash: Uint8Array,
   ): Promise<RememberedSignInTake>;
+  /** Is this browser remembered for the typed address? (it is not stopped by the address's pause, review M3) */
+  isRemembered(email: string, rememberHash: Uint8Array): Promise<boolean>;
 }
 
 const RequestId = z.uuid();
@@ -72,7 +82,10 @@ export function createSignInCodeApi(getDb: () => AppDatabase): SignInCodeApi {
           retryAfterSeconds: Math.min(Math.max(row.retry_after, 1), 60),
         };
       }
-      if (!row?.request_id || (row.outcome !== 'queued' && row.outcome !== 'remembered')) {
+      if (
+        !row?.request_id ||
+        (row.outcome !== 'queued' && row.outcome !== 'remembered' && row.outcome !== 'full')
+      ) {
         throw new Error('requestSignInCode: unexpected answer');
       }
       return { outcome: row.outcome, requestId: row.request_id };
@@ -90,18 +103,31 @@ export function createSignInCodeApi(getDb: () => AppDatabase): SignInCodeApi {
       if (row?.outcome === 'wrong' || row?.outcome === 'locked') return { outcome: row.outcome };
       return { outcome: 'expired' };
     },
-    async takeRemembered(requestId, email, rememberHash) {
-      if (!RequestId.safeParse(requestId).success || rememberHash.length !== 32) {
+    async takeRemembered(requestId, email, rememberHash, newHash) {
+      if (
+        !RequestId.safeParse(requestId).success ||
+        rememberHash.length !== 32 ||
+        newHash.length !== 32
+      ) {
         return { outcome: 'gone' };
       }
       const [row] = await withoutClaims((tx) =>
         tx.execute<{ outcome: string; link_token: string | null }>(
-          sql`select * from private.take_remembered_sign_in(${requestId}::uuid, ${email}, ${hex(rememberHash)}::bytea)`,
+          sql`select * from private.take_remembered_sign_in(${requestId}::uuid, ${email}, ${hex(rememberHash)}::bytea, ${hex(newHash)}::bytea)`,
         ),
       );
       if (row?.outcome === 'ok' && row.link_token)
         return { outcome: 'ok', linkToken: row.link_token };
       return { outcome: row?.outcome === 'pending' ? 'pending' : 'gone' };
+    },
+    async isRemembered(email, rememberHash) {
+      if (rememberHash.length !== 32) return false;
+      const [row] = await withoutClaims((tx) =>
+        tx.execute<{ ok: boolean }>(
+          sql`select private.remembered_browser_for_email(${email}, ${hex(rememberHash)}::bytea) as ok`,
+        ),
+      );
+      return row?.ok === true;
     },
   };
 }
@@ -112,8 +138,14 @@ export const requestSignInCode = (email: string, rememberHash?: Uint8Array | nul
   defaultApi.request(email, rememberHash);
 export const verifySignInCode = (requestId: string, email: string, code: string) =>
   defaultApi.verify(requestId, email, code);
-export const takeRememberedSignIn = (requestId: string, email: string, rememberHash: Uint8Array) =>
-  defaultApi.takeRemembered(requestId, email, rememberHash);
+export const takeRememberedSignIn = (
+  requestId: string,
+  email: string,
+  rememberHash: Uint8Array,
+  newHash: Uint8Array,
+) => defaultApi.takeRemembered(requestId, email, rememberHash, newHash);
+export const isRememberedBrowserForEmail = (email: string, rememberHash: Uint8Array) =>
+  defaultApi.isRemembered(email, rememberHash);
 
 // ---------------------------------------------------------------------------------------------------
 // Remembered browsers (migration 20261026100100): the signed-in user's own
@@ -153,10 +185,9 @@ export async function listMyRememberedBrowsers(
   tx: UserTx,
   currentTokenHash: Uint8Array | null,
 ): Promise<readonly RememberedBrowser[]> {
-  const current = currentTokenHash
-    ? sql`exists (select 1 from platform.remembered_browsers x where x.tenant_id = r.tenant_id and x.id = r.id
-                  and x.token_hash = ${hex(currentTokenHash)}::bytea)`
-    : sql`false`;
+  // The comparison with the cookie's token happens inside a definer function (the hash column is not readable
+  // by the member, security review H1).
+  const hash = currentTokenHash ? sql`${hex(currentTokenHash)}::bytea` : sql`null::bytea`;
   const rows = await tx.execute<{
     id: string;
     label: string | null;
@@ -164,15 +195,7 @@ export async function listMyRememberedBrowsers(
     last_used_at: string | Date | null;
     valid_until: string | Date | null;
     is_current: boolean;
-  }>(sql`
-    select r.id, r.label, r.created_at, r.last_used_at,
-           case when p.remembered_browser_days > 0
-                then least(r.expires_at, r.created_at + make_interval(days => p.remembered_browser_days)) end as valid_until,
-           ${current} as is_current
-    from platform.remembered_browsers r
-    left join platform.security_policies p on p.tenant_id = r.tenant_id
-    where r.tenant_id = (select private.current_tenant_id())
-    order by r.created_at desc`);
+  }>(sql`select * from private.my_remembered_browsers(${hash})`);
   return rows.map((row) => {
     const until = row.valid_until ? new Date(row.valid_until) : null;
     return {

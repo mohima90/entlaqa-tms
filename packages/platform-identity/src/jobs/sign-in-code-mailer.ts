@@ -58,6 +58,17 @@ export function newSignInCode(): string {
 type Sendable = Extract<SignInCodeRequest, { outcome: 'send' }>;
 
 /**
+ * The organization's own sender may carry the code only for a person who belongs to that one organization and
+ * holds no platform role; any other account gets the platform-sender variant of the same e-mail (the sender
+ * recognises the key, WP-ADM-05 security review M1).
+ */
+function templateFor(
+  request: Sendable,
+): 'platform.sign_in_code' | 'platform.sign_in_code_platform' {
+  return request.platformSender ? 'platform.sign_in_code_platform' : 'platform.sign_in_code';
+}
+
+/**
  * Sign-in codes (WP-ADM-05, FR-IAM-12; migration 20261026100200): leases waiting requests in a platform
  * transaction; the database says whether the address has a usable account and whom to write in which
  * organization and language. For an account: ask the Auth admin API for a one-time sign-in token - the LAST
@@ -99,7 +110,7 @@ export function createSignInCodeMailer(options: SignInCodeMailerOptions): Platfo
       if (request.mode === 'code') {
         // The e-mail's content must render before a token exists (a new token replaces the old one).
         try {
-          renderEmail('platform.sign_in_code', request.locale, {
+          renderEmail(templateFor(request), request.locale, {
             organizationName: context.organizationName,
             code: '000000',
             validMinutes: SIGN_IN_CODE_VALID_MINUTES,
@@ -155,7 +166,7 @@ export function createSignInCodeMailer(options: SignInCodeMailerOptions): Platfo
           temporary: false,
         });
       await queueEmail(tx, {
-        template: 'platform.sign_in_code',
+        template: templateFor(request),
         locale: request.locale,
         to: request.email,
         recipientPersonId: request.personId,

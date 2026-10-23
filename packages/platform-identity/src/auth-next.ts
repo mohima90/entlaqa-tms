@@ -41,6 +41,7 @@ import {
   rateLimitStore,
   rememberBrowser,
   requestSignInCode as requestSignInCodeInDatabase,
+  isRememberedBrowserForEmail,
   takeRememberedSignIn,
   verifySignInCode as verifySignInCodeInDatabase,
   rejectMfaFactor,
@@ -116,9 +117,12 @@ import {
   verifyTotpCode,
 } from './mfa';
 import {
+  type PendingRememberCookie,
+  type RememberDeps,
   type RememberedBrowserCookie,
   type SignInCodeDeps,
   completeRememberedSignIn,
+  rememberAfterSecondStep,
   requestSignInCode,
   signInWithEmailedCode,
 } from './sign-in-code';
@@ -274,6 +278,46 @@ function rememberedBrowserCookie(store: CookieStore): RememberedBrowserCookie {
 }
 
 /**
+ * The tick of «Remember this browser» while the organization's second step is still to come (BR-AUTH-f): a
+ * short-lived HttpOnly cookie that names the account and Auth session it belongs to, nothing else. Completed
+ * (and removed) where the second step ends - the authenticator code, or the organization chosen with no code to
+ * pass; a tick of another session is dropped.
+ */
+export const PENDING_REMEMBER_COOKIE = SECURE_COOKIES
+  ? '__Host-jadarat-remember-next'
+  : 'jadarat-remember-next';
+const PENDING_REMEMBER_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
+
+function pendingRememberCookie(store: CookieStore): PendingRememberCookie {
+  return {
+    read: () => {
+      const value = store.get(PENDING_REMEMBER_COOKIE)?.value ?? '';
+      return PENDING_REMEMBER_PATTERN.test(value) ? value : null;
+    },
+    write: (value, maxAgeSeconds) => {
+      try {
+        store.set(PENDING_REMEMBER_COOKIE, value, {
+          httpOnly: true,
+          secure: SECURE_COOKIES,
+          sameSite: 'lax',
+          path: '/',
+          maxAge: maxAgeSeconds,
+        });
+      } catch {
+        // Not in a server action (cookies are read-only there): the browser is not remembered.
+      }
+    },
+    clear: () => {
+      try {
+        store.delete(PENDING_REMEMBER_COOKIE);
+      } catch {
+        // Not in a server action: the tick expires by itself.
+      }
+    },
+  };
+}
+
+/**
  * The organization whose own host this request came to, VERIFIED (never a client-supplied value).
  * INTEGRATION POINT (ADR 0002 §4, host → tenant resolution): not built yet — the proxy only classifies the
  * Host header (apps/suite lib/host-tenant.ts) — so every request is on the platform's host today. Return
@@ -390,29 +434,61 @@ export async function signInWithPasswordForRequest(
 const SIGN_IN_CODE_REQUEST_ACTION = 'platform.auth.sign_in_code_request';
 const SIGN_IN_CODE_VERIFY_ACTION = 'platform.auth.sign_in_code_verify';
 
+/** "Chrome on Windows" from the request's user agent (well-known names only), or null. */
+async function browserLabelOfRequest(): Promise<string | null> {
+  const device = describeUserAgent((await headers()).get('user-agent'));
+  return device.browser && device.system
+    ? `${device.browser} on ${device.system}`
+    : (device.browser ?? device.system);
+}
+
+/** What remembering a browser needs, for the places where the second step ends. */
+async function rememberDepsForRequest(): Promise<RememberDeps> {
+  const auth = await requestDeps();
+  const store = await cookies();
+  const label = await browserLabelOfRequest();
+  return {
+    withUserTx: auth.withUserTx,
+    logWarning: auth.logWarning,
+    rememberBrowser,
+    cookie: rememberedBrowserCookie(store),
+    pendingRemember: pendingRememberCookie(store),
+    browserLabel: () => label,
+  };
+}
+
 async function signInCodeDeps(client: RequestClient): Promise<SignInCodeDeps> {
   const auth = await requestDeps(undefined, client);
-  const userAgent = (await headers()).get('user-agent');
-  const device = describeUserAgent(userAgent);
-  const label =
-    device.browser && device.system
-      ? `${device.browser} on ${device.system}`
-      : (device.browser ?? device.system);
+  const store = await cookies();
+  const label = await browserLabelOfRequest();
+  const limiterBase = limiterDeps();
   return {
     ...auth,
     limiter: createSignInCodeLimiter({
-      ...limiterDeps(),
+      ...limiterBase,
       client,
       requestAction: SIGN_IN_CODE_REQUEST_ACTION,
       checkAction: SIGN_IN_CODE_VERIFY_ACTION,
+      // The organization's lock-out policy sets the typed address's budget of wrong codes, as at the password
+      // step (security review L2).
+      accountBudget: organizationAccountLockout(
+        {
+          hostTenantId: hostTenantIdForRequest(),
+          lockoutPolicyFor: getLockoutPolicy,
+          accountInTenant: signInAccountInTenant,
+        },
+        limiterBase.limits.signInCode.checkAccountFailures,
+      ),
     }),
     codes: {
       request: (email, rememberHash) => requestSignInCodeInDatabase(email, rememberHash),
       verify: verifySignInCodeInDatabase,
       takeRemembered: takeRememberedSignIn,
+      isRemembered: isRememberedBrowserForEmail,
     },
     rememberBrowser,
-    cookie: rememberedBrowserCookie(await cookies()),
+    cookie: rememberedBrowserCookie(store),
+    pendingRemember: pendingRememberCookie(store),
     browserLabel: () => label,
     kickWorker: () => {
       kickWorkerAfterResponse('sign_in_code');
@@ -459,7 +535,21 @@ export async function completeRememberedSignInForRequest(
 }
 
 export async function selectOrganizationForRequest(tenantId: string) {
-  return selectOrganization(await requestDeps(), tenantId);
+  const deps = await requestDeps();
+  const selected = await selectOrganization(deps, tenantId);
+  // A sign-in with an e-mailed code that ticked «Remember this browser» and had to choose an organization:
+  // with no second step to pass, the browser is remembered now (BR-AUTH-f). Never blocks the sign-in.
+  if (selected.ok && selected.value.next === 'home') {
+    try {
+      const claims = await verifyClaims(deps.supabase);
+      if (claims.ok) await rememberAfterSecondStep(await rememberDepsForRequest(), claims.value);
+    } catch {
+      deps.logWarning('could not remember the browser', {
+        action: 'platform.auth.select_organization',
+      });
+    }
+  }
+  return selected;
 }
 
 export async function getSessionOrganizationsForRequest() {
@@ -546,14 +636,21 @@ export async function verifyTotpCodeForRequest(
   return verifyTotpCode(
     {
       ...deps,
-      rememberBrowser: (session) =>
-        rememberBrowserAfterCode(
+      rememberBrowser: async (session) => {
+        await rememberBrowserAfterCode(
           limiterDeps(),
           MFA_VERIFY_ACTION,
           device,
           (presented, fresh, days) =>
             withUserTx(session, (tx) => trustDeviceAfterCode(tx, presented, fresh, days)),
-        ),
+        );
+        // The second step of a code sign-in that ticked «Remember this browser» has passed (BR-AUTH-f).
+        try {
+          await rememberAfterSecondStep(await rememberDepsForRequest(), session);
+        } catch {
+          log.warn('could not remember the browser', { action: MFA_VERIFY_ACTION });
+        }
+      },
     },
     input,
   );

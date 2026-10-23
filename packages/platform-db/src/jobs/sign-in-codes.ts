@@ -25,6 +25,12 @@ export type SignInCodeRequest =
       readonly tenantId: string;
       readonly personId: string;
       readonly locale: 'ar' | 'en';
+      /**
+       * The code goes out with the platform sender only: the person belongs to several organizations or holds a
+       * platform role (an organization's own mail server must not see the codes of an account that signs in to
+       * others, security review M1).
+       */
+      readonly platformSender: boolean;
     }
   | {
       readonly id: string;
@@ -51,6 +57,7 @@ export async function claimSignInCodeRequest(tx: ClaimsTx): Promise<SignInCodeRe
     person_id: string | null;
     locale: string | null;
     attempts: number;
+    platform_sender: boolean | null;
   }>(sql`select * from private.claim_sign_in_code_request()`);
   if (!row) return null;
   const mode = row.mode === 'remembered' ? 'remembered' : row.mode === 'code' ? 'code' : null;
@@ -69,6 +76,8 @@ export async function claimSignInCodeRequest(tx: ClaimsTx): Promise<SignInCodeRe
       tenantId: row.tenant_id,
       personId: row.person_id,
       locale: row.locale === 'en' ? 'en' : 'ar',
+      // Unknown (an older database): the safe answer - the platform sender.
+      platformSender: row.platform_sender !== false,
     };
   }
   if (!SKIPS.has(row.outcome)) throw new Error('claimSignInCodeRequest: unknown outcome');

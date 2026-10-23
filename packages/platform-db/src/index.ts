@@ -31,6 +31,7 @@ export {
   createSignInCodeApi,
   forgetMemberRememberedBrowsers,
   forgetMyRememberedBrowsers,
+  isRememberedBrowserForEmail,
   listMyRememberedBrowsers,
   rememberBrowser,
   requestSignInCode,

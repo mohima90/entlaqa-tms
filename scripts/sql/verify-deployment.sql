@@ -320,7 +320,7 @@ begin
       -- The workflow's allow-list and audit data (review L3, L5): SECURITY INVOKER, called by the above.
       ('private.platform_admin_operator()', 'platform_admin_guard', array['platform_admin_guard'], false),
       ('private.platform_admin_workflow_data(text, text)', 'platform_admin_guard', array['platform_admin_guard'], false),
-      ('private.platform_admin_is_active(uuid)', 'platform_admin_guard', array['platform_admin_guard', 'invitation_guard', 'email_guard'], true),
+      ('private.platform_admin_is_active(uuid)', 'platform_admin_guard', array['platform_admin_guard', 'invitation_guard', 'email_guard', 'account_mail_guard'], true),
       ('private.is_platform_invitation(uuid)', 'platform_admin_guard', array['platform_admin_guard', 'invitation_guard'], true),
       -- email_guard: the Super Admin's e-mail settings functions (20261022100100, WP-ADM-01) use the same check.
       ('private.platform_admin_caller()', 'platform_admin_guard', array['platform_admin_guard', 'email_guard'], false),
@@ -608,9 +608,10 @@ begin
         'private.publish_profile_photo(uuid,text,bigint,text,bytea)', 'private.remove_profile_photo()',
         -- Sign-in extras (WP-ADM-05)
         'private.remembered_browser_ok(uuid,bytea)', 'private.remember_browser(bytea,text)',
+        'private.my_remembered_browsers(bytea)', 'private.remembered_browser_for_email(text,bytea)',
         'private.forget_member_remembered_browsers(uuid)', 'private.forget_remembered_browsers_of_inactive_member()',
         'private.sign_in_code_hmac(uuid,text)', 'private.request_sign_in_code(text,bytea)',
-        'private.verify_sign_in_code(uuid,text,text)', 'private.take_remembered_sign_in(uuid,text,bytea)',
+        'private.verify_sign_in_code(uuid,text,text)', 'private.take_remembered_sign_in(uuid,text,bytea,bytea)',
         'private.claim_sign_in_code_request()', 'private.issue_sign_in_code(uuid,uuid,uuid,text,text)',
         'private.sign_in_code_dead_end(uuid)', 'private.retry_sign_in_code_request(uuid)')
   loop

@@ -40,17 +40,25 @@ function fakeStore() {
 function limiterFor(
   store: RateLimitStore,
   client: { key: string | null } = { key: '203.0.113.7' },
+  more: {
+    signInCode?: Partial<typeof PLATFORM_AUTH_LIMITS.signInCode>;
+    accountBudget?: (email: string) => Promise<RateLimit>;
+  } = {},
 ) {
   const log = vi.fn();
   return {
     log,
     limiter: createSignInCodeLimiter({
       store,
-      limits: PLATFORM_AUTH_LIMITS,
+      limits: {
+        ...PLATFORM_AUTH_LIMITS,
+        signInCode: { ...PLATFORM_AUTH_LIMITS.signInCode, ...more.signInCode },
+      },
       log,
       client,
       requestAction: 'platform.auth.sign_in_code_request',
       checkAction: 'platform.auth.sign_in_code_verify',
+      accountBudget: more.accountBudget,
     }),
   };
 }
@@ -88,6 +96,62 @@ describe('sign-in code requests', () => {
     await expect(limiter.allowRequest('a@example.test')).rejects.toBeInstanceOf(
       RateLimiterUnavailableError,
     );
+  });
+});
+
+describe('sign-in code requests: more ceilings (security review M2, M3)', () => {
+  it('a daily cap per typed address on top of the 15-minute one', async () => {
+    const store = fakeStore();
+    const { limiter, log } = limiterFor(store, undefined, {
+      signInCode: {
+        requestsPerAccount: { max: 100, windowSeconds: 900 },
+        requestsPerAccountDaily: { max: 3, windowSeconds: 86_400 },
+      },
+    });
+    for (let i = 0; i < 3; i += 1) expect(await limiter.allowRequest('a@example.test')).toBe(true);
+    expect(await limiter.allowRequest('a@example.test')).toBe(false);
+    expect(log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'auth.rate_limited',
+        limit: LIMIT_BUCKETS.signInCodeRequestAccountDaily,
+      }),
+    );
+    expect(await limiter.allowRequest('b@example.test')).toBe(true);
+  });
+
+  it('an IPv6 client is counted by its /48, not its /64', async () => {
+    const store = fakeStore();
+    const max = PLATFORM_AUTH_LIMITS.signInCode.requestsPerClient.max;
+    for (let i = 0; i < max; i += 1) {
+      const { limiter } = limiterFor(store, { key: `2001:db8:1:${String(i + 1)}::/64` });
+      expect(await limiter.allowRequest(`user${String(i)}@example.test`)).toBe(true);
+    }
+    // Another /64 of the same /48: the same budget, already used up.
+    const { limiter } = limiterFor(store, { key: '2001:db8:1:ffff::/64' });
+    expect(await limiter.allowRequest('late@example.test')).toBe(false);
+    // Another /48 is another client.
+    const other = limiterFor(store, { key: '2001:db8:2:1::/64' });
+    expect(await other.limiter.allowRequest('late@example.test')).toBe(true);
+  });
+
+  it("a remembered browser (needs no code) is not stopped by the address ceilings, only by the client's", async () => {
+    const store = fakeStore();
+    const { limiter } = limiterFor(store);
+    for (let i = 0; i < PLATFORM_AUTH_LIMITS.signInCode.requestsPerAccount.max; i += 1) {
+      await limiter.allowRequest('a@example.test');
+    }
+    expect(await limiter.allowRequest('a@example.test')).toBe(false);
+    const trusted = vi.fn(() => Promise.resolve(true));
+    expect(await limiter.allowRequest('a@example.test', { trusted })).toBe(true);
+    expect(trusted).toHaveBeenCalledTimes(1);
+    // A client over its budget is refused before the trust is even asked.
+    const busy = limiterFor(store, { key: '198.51.100.9' });
+    for (let i = 0; i < PLATFORM_AUTH_LIMITS.signInCode.requestsPerClient.max; i += 1) {
+      await busy.limiter.allowRequest(`u${String(i)}@example.test`);
+    }
+    const asked = vi.fn(() => Promise.resolve(true));
+    expect(await busy.limiter.allowRequest('a@example.test', { trusted: asked })).toBe(false);
+    expect(asked).not.toHaveBeenCalled();
   });
 });
 
@@ -152,6 +216,117 @@ describe('sign-in code checks', () => {
     const gate = await limiter.checkCode('secret.person@example.test');
     if (gate.allowed) await gate.attempt.failed();
     expect(JSON.stringify(log.mock.calls)).not.toContain('secret.person');
+  });
+});
+
+describe('sign-in code checks: more ceilings (security review M2, M3, L2)', () => {
+  it('wrong codes from all clients together have a ceiling, with an alert line and nobody blamed', async () => {
+    const store = fakeStore();
+    const signInCode = { checkWrongAllClients: { max: 3, windowSeconds: 900 } };
+    for (let i = 0; i < 3; i += 1) {
+      const { limiter } = limiterFor(store, { key: `203.0.113.${String(i + 1)}` }, { signInCode });
+      const gate = await limiter.checkCode(`user${String(i)}@example.test`);
+      if (!gate.allowed) throw new Error('unreachable');
+      await gate.attempt.failed();
+    }
+    const { limiter, log } = limiterFor(store, { key: '203.0.113.99' }, { signInCode });
+    expect(await limiter.checkCode('late@example.test')).toEqual({
+      allowed: false,
+      retryAfterSeconds: 900,
+    });
+    const alert = log.mock.calls.find(
+      ([e]) => (e as { event: string }).event === 'auth.sign_in_codes.global_limit',
+    )?.[0] as Record<string, unknown>;
+    expect(alert).toMatchObject({ limit: LIMIT_BUCKETS.signInCodeCheckAllClients });
+    // No address, no client reference: the ceiling belongs to nobody.
+    expect(alert).not.toHaveProperty('clientRef');
+    expect(alert).not.toHaveProperty('subjectRef');
+    // The refused visitor's own hits were given back: their address and client budgets are untouched.
+    const givenBack = store.giveBack.mock.calls.map(([bucket]) => bucket);
+    expect(givenBack).toContain(LIMIT_BUCKETS.signInCodeCheckAccount);
+    expect(givenBack).toContain(LIMIT_BUCKETS.signInCodeCheckClient);
+  });
+
+  it('the alert also fires the moment the ceiling is reached, and right codes give their hit back', async () => {
+    const store = fakeStore();
+    const signInCode = { checkWrongAllClients: { max: 2, windowSeconds: 900 } };
+    const { limiter, log } = limiterFor(store, undefined, { signInCode });
+    const first = await limiter.checkCode('a@example.test');
+    if (!first.allowed) throw new Error('unreachable');
+    await first.attempt.succeeded();
+    const second = await limiter.checkCode('b@example.test');
+    if (!second.allowed) throw new Error('unreachable');
+    await second.attempt.failed();
+    expect(log).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'auth.sign_in_codes.global_limit' }),
+    );
+    const third = await limiter.checkCode('c@example.test');
+    if (!third.allowed) throw new Error('unreachable');
+    await third.attempt.failed();
+    expect(log).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'auth.sign_in_codes.global_limit' }),
+    );
+  });
+
+  it('a remembered browser has its own budget: the address pause does not stop it', async () => {
+    const store = fakeStore();
+    const { limiter } = limiterFor(store);
+    for (let i = 0; i < 5; i += 1) {
+      const gate = await limiter.checkCode('a@example.test');
+      if (gate.allowed) await gate.attempt.failed();
+    }
+    expect((await limiter.checkCode('a@example.test')).allowed).toBe(false);
+    const token = 'T'.repeat(43);
+    const gate = await limiter.checkCode('a@example.test', { rememberedToken: token });
+    expect(gate.allowed).toBe(true);
+    if (!gate.allowed) throw new Error('unreachable');
+    expect(gate.attempt.triesIfWrong).toBe(
+      PLATFORM_AUTH_LIMITS.signInCode.checkRememberedBrowserFailures.max - 1,
+    );
+    await gate.attempt.failed();
+    // The browser's budget is its own: after its failures it is paused as well - but only that browser.
+    for (let i = 0; i < 9; i += 1) {
+      const next = await limiter.checkCode('a@example.test', { rememberedToken: token });
+      if (next.allowed) await next.attempt.failed();
+    }
+    expect((await limiter.checkCode('a@example.test', { rememberedToken: token })).allowed).toBe(
+      false,
+    );
+    expect(
+      (await limiter.checkCode('a@example.test', { rememberedToken: 'U'.repeat(43) })).allowed,
+    ).toBe(true);
+  });
+
+  it("the typed address follows the organization's lock-out policy where it applies (L2)", async () => {
+    const store = fakeStore();
+    const accountBudget = vi.fn(() => Promise.resolve({ max: 3, windowSeconds: 600 }));
+    const { limiter } = limiterFor(store, undefined, { accountBudget });
+    const left: number[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const gate = await limiter.checkCode('a@example.test');
+      if (!gate.allowed) throw new Error('unreachable');
+      left.push(gate.attempt.triesIfWrong);
+      await gate.attempt.failed();
+    }
+    expect(left).toEqual([2, 1, 0]);
+    expect(accountBudget).toHaveBeenCalledWith('a@example.test');
+    expect(await limiter.checkCode('a@example.test')).toEqual({
+      allowed: false,
+      retryAfterSeconds: 600,
+    });
+  });
+
+  it('an IPv6 client is counted by its /48 for wrong codes too', async () => {
+    const store = fakeStore();
+    const max = PLATFORM_AUTH_LIMITS.signInCode.checkClientFailures.max;
+    for (let i = 0; i < max; i += 1) {
+      const { limiter } = limiterFor(store, { key: `2001:db8:1:${String(i + 1)}::/64` });
+      const gate = await limiter.checkCode(`user${String(i)}@example.test`);
+      if (!gate.allowed) throw new Error(`refused at ${String(i)}`);
+      await gate.attempt.failed();
+    }
+    const { limiter } = limiterFor(store, { key: '2001:db8:1:ffff::/64' });
+    expect((await limiter.checkCode('late@example.test')).allowed).toBe(false);
   });
 });
 

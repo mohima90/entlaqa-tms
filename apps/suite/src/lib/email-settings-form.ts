@@ -198,6 +198,8 @@ export function fieldOfPath(path: string, provider: EmailProviderId): string {
 
 /** The e-mail kinds of the delivery errors list (message key under `emailSettings.templates`). */
 export function templateKey(template: string): string {
+  // The sign-in code that goes out with the platform sender only is the same kind of e-mail for the list.
+  if (template === 'platform.sign_in_code_platform') return 'sign_in_code';
   const known = [
     'platform.invitation',
     'platform.password_reset',

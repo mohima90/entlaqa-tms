@@ -118,15 +118,15 @@ begin
     v_got := v_got || concat_ws('|', r.mode, r.outcome, coalesce(r.email, ''),
                                 case when r.email = 'uab@ab.test' and r.tenant_id in ('a0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001')
                                      then 'a0000000-0000-4000-8000-000000000001' else coalesce(r.tenant_id::text, '') end,
-                                coalesce(r.locale, ''), r.attempts::text);
+                                coalesce(r.locale, ''), r.attempts::text, r.platform_sender::text);
     exit when cardinality(v_got) > 10;
   end loop;
   perform tests.assert_eq(v_got, array[
-    'code|send|ua@a.test|a0000000-0000-4000-8000-000000000001|ar|1',
-    'code|unknown_account||||1',
-    'code|no_membership||||1',
-    'code|no_membership||||1',
-    'code|send|uab@ab.test|a0000000-0000-4000-8000-000000000001|ar|1'], 'oldest first: send / unknown / suspended / no membership / two organizations');
+    'code|send|ua@a.test|a0000000-0000-4000-8000-000000000001|ar|1|false',
+    'code|unknown_account||||1|false',
+    'code|no_membership||||1|false',
+    'code|no_membership||||1|false',
+    'code|send|uab@ab.test|a0000000-0000-4000-8000-000000000001|ar|1|true'], 'oldest first: send / unknown / suspended / no membership / two organizations (the platform sender only for the person of two)');
   perform tests.assert_eq((select count(*) from private.claim_sign_in_code_request()), 0::bigint, 'leased requests are not handed out twice');
   perform tests.assert(private.retry_sign_in_code_request('11111111-0000-4000-8000-000000000001'), 'put back for a later attempt');
   perform tests.assert(not private.retry_sign_in_code_request(gen_random_uuid()), 'unknown request: false');
@@ -233,6 +233,13 @@ do $$
 begin
   perform tests.assert((select link_token is null and tries = 5 and state = 'locked' from private.sign_in_codes where id = '33333333-0000-4000-8000-000000000001'),
     'the token is gone with the code');
+  -- Every refusal is in the organization's audit trail (BR-AUTH-i), without the code or the address.
+  perform tests.assert_eq((select count(*) from platform.audit_events where action = 'platform.auth.sign_in_code_refused' and tenant_id = 'a0000000-0000-4000-8000-000000000001'),
+    5::bigint, 'five refusals are audited (the locked answers are not counted again)');
+  perform tests.assert_eq((select count(*) from platform.audit_events where action = 'platform.auth.sign_in_code_refused' and data ->> 'killed' = 'true'),
+    1::bigint, 'the fifth kills the code');
+  perform tests.assert((select bool_and(data ->> 'method' = 'email_code' and (select count(*) from jsonb_object_keys(data)) = 2) from platform.audit_events where action = 'platform.auth.sign_in_code_refused'),
+    'only the method and whether the code was killed');
 end $$;
 rollback;
 
@@ -270,6 +277,27 @@ declare
 begin
   select * into r from private.verify_sign_in_code('44444444-0000-4000-8000-000000000002', 'ua@a.test', '333444');
   perform tests.assert(r.outcome = 'expired' and r.link_token is null, 'after 10 minutes: expired, even with the right code');
+end $$;
+rollback;
+
+-- A full queue: the same answer, nothing stored, the outcome tells the caller (logged, never shown).
+begin;
+delete from private.sign_in_codes;
+insert into private.sign_in_codes (mode, email) select 'code', 'f' || g || '@full.test' from generate_series(1, 10000) g;
+set local session authorization app_server;
+set local role authenticated;
+select tests.set_claims(null);
+do $$
+declare
+  r record;
+begin
+  select * into r from private.request_sign_in_code('ua@a.test');
+  perform tests.assert(r.outcome = 'full' and r.request_id is not null and r.retry_after = 0, 'a full queue: an answer of the same shape, flagged for the log');
+end $$;
+set local session authorization default;
+do $$
+begin
+  perform tests.assert_eq((select count(*) from private.sign_in_codes), 10000::bigint, 'nothing was added');
 end $$;
 rollback;
 
@@ -345,12 +373,22 @@ begin
   select * into r from private.request_sign_in_code('ua@a.test', sha256('browser-token-one'::bytea));
   perform tests.assert(r.outcome = 'remembered' and r.request_id is not null, 'the remembered browser: no code');
   perform set_config('tests.remembered_id', r.request_id::text, true);
+  -- Is this browser remembered for the typed address? (the per-address pause does not stop it)
+  perform tests.assert(private.remembered_browser_for_email('UA@a.test ', sha256('browser-token-one'::bytea)), 'the remembered browser is known for its address');
+  perform tests.assert(not private.remembered_browser_for_email('ua@a.test', sha256('browser-token-other'::bytea)), 'another browser is not');
+  perform tests.assert(not private.remembered_browser_for_email('nobody@nowhere.test', sha256('browser-token-one'::bytea)), 'nor for an unknown address');
+  perform tests.assert(not private.remembered_browser_for_email('someone@else.test', sha256('browser-token-one'::bytea)), 'nor for another account');
+  perform tests.assert(not private.remembered_browser_for_email('ua@a.test', null) and not private.remembered_browser_for_email(null, sha256('x'::bytea)), 'null: no');
+  perform tests.assert_fails($q$select * from private.take_remembered_sign_in(gen_random_uuid(), 'ua@a.test', sha256('browser-token-one'::bytea), sha256('browser-token-one'::bytea))$q$,
+    array['22023'], 'the new token must differ from the old one');
+  perform tests.assert_fails($q$select * from private.take_remembered_sign_in(gen_random_uuid(), 'ua@a.test', sha256('browser-token-one'::bytea), '\x0102'::bytea)$q$,
+    array['22023'], 'and be 32 bytes');
   -- Not ready until the worker minted the token.
-  select * into r from private.take_remembered_sign_in(current_setting('tests.remembered_id')::uuid, 'ua@a.test', sha256('browser-token-one'::bytea));
+  select * into r from private.take_remembered_sign_in(current_setting('tests.remembered_id')::uuid, 'ua@a.test', sha256('browser-token-one'::bytea), sha256('browser-token-rotated'::bytea));
   perform tests.assert(r.outcome = 'pending' and r.link_token is null, 'pending until the worker is done');
-  select * into r from private.take_remembered_sign_in(current_setting('tests.remembered_id')::uuid, 'ua@a.test', sha256('browser-token-other'::bytea));
+  select * into r from private.take_remembered_sign_in(current_setting('tests.remembered_id')::uuid, 'ua@a.test', sha256('browser-token-other'::bytea), sha256('browser-token-rotated'::bytea));
   perform tests.assert(r.outcome = 'gone', 'another browser cannot take it (bound to the browser)');
-  select * into r from private.take_remembered_sign_in(current_setting('tests.remembered_id')::uuid, 'someone@else.test', sha256('browser-token-one'::bytea));
+  select * into r from private.take_remembered_sign_in(current_setting('tests.remembered_id')::uuid, 'someone@else.test', sha256('browser-token-one'::bytea), sha256('browser-token-rotated'::bytea));
   perform tests.assert(r.outcome = 'gone', 'nor for another address');
 end $$;
 set local session authorization app_worker;
@@ -371,15 +409,18 @@ do $$
 declare
   r record;
 begin
-  select * into r from private.take_remembered_sign_in(current_setting('tests.remembered_id')::uuid, 'ua@a.test', sha256('browser-token-one'::bytea));
+  select * into r from private.take_remembered_sign_in(current_setting('tests.remembered_id')::uuid, 'ua@a.test', sha256('browser-token-one'::bytea), sha256('browser-token-rotated'::bytea));
   perform tests.assert(r.outcome = 'ok' and r.link_token = 'rememberedtokenremembered', 'taken once');
-  select * into r from private.take_remembered_sign_in(current_setting('tests.remembered_id')::uuid, 'ua@a.test', sha256('browser-token-one'::bytea));
+  select * into r from private.take_remembered_sign_in(current_setting('tests.remembered_id')::uuid, 'ua@a.test', sha256('browser-token-one'::bytea), sha256('browser-token-rotated'::bytea));
   perform tests.assert(r.outcome = 'gone', 'only once');
 end $$;
 set local session authorization default;
 do $$
 begin
   perform tests.assert((select last_used_at is not null from platform.remembered_browsers), 'last use recorded');
+  perform tests.assert((select token_hash = sha256('browser-token-rotated'::bytea) from platform.remembered_browsers), 'the token is rotated on use (fixation)');
+  perform tests.assert(not private.remembered_browser_ok('00000000-0000-4000-8000-0000000000a1', sha256('browser-token-one'::bytea)), 'the old token is worth nothing now');
+  perform tests.assert(private.remembered_browser_ok('00000000-0000-4000-8000-0000000000a1', sha256('browser-token-rotated'::bytea)), 'the new one is the browser');
   perform tests.assert_eq((select count(*) from platform.audit_events where action = 'platform.auth.sign_in_code_sent'), 0::bigint, 'no "code sent" for a remembered browser');
 end $$;
 
@@ -387,31 +428,31 @@ end $$;
 update platform.security_policies set remembered_browser_days = 0 where tenant_id = 'a0000000-0000-4000-8000-000000000001';
 do $$
 begin
-  perform tests.assert(not private.remembered_browser_ok('00000000-0000-4000-8000-0000000000a1', sha256('browser-token-one'::bytea)), 'switched off: no longer remembered');
+  perform tests.assert(not private.remembered_browser_ok('00000000-0000-4000-8000-0000000000a1', sha256('browser-token-rotated'::bytea)), 'switched off: no longer remembered');
 end $$;
 update platform.security_policies set remembered_browser_days = 7 where tenant_id = 'a0000000-0000-4000-8000-000000000001';
 do $$
 begin
-  perform tests.assert(private.remembered_browser_ok('00000000-0000-4000-8000-0000000000a1', sha256('browser-token-one'::bytea)), '7 days: still within them');
+  perform tests.assert(private.remembered_browser_ok('00000000-0000-4000-8000-0000000000a1', sha256('browser-token-rotated'::bytea)), '7 days: still within them');
 end $$;
 -- A password change or reset forgets every remembered browser at once (the marker of the stored hash changes).
 update auth.users set encrypted_password = 'a-new-password-hash' where id = '00000000-0000-4000-8000-0000000000a1';
 do $$
 begin
-  perform tests.assert(not private.remembered_browser_ok('00000000-0000-4000-8000-0000000000a1', sha256('browser-token-one'::bytea)),
+  perform tests.assert(not private.remembered_browser_ok('00000000-0000-4000-8000-0000000000a1', sha256('browser-token-rotated'::bytea)),
     'a new password: no browser is remembered any more');
 end $$;
 update auth.users set encrypted_password = null where id = '00000000-0000-4000-8000-0000000000a1';
 update platform.remembered_browsers set created_at = now() - interval '8 days', expires_at = now() + interval '6 days';
 do $$
 begin
-  perform tests.assert(not private.remembered_browser_ok('00000000-0000-4000-8000-0000000000a1', sha256('browser-token-one'::bytea)),
+  perform tests.assert(not private.remembered_browser_ok('00000000-0000-4000-8000-0000000000a1', sha256('browser-token-rotated'::bytea)),
     'shortened to 7 days: a browser remembered 8 days ago is no longer');
 end $$;
 update platform.remembered_browsers set created_at = now() - interval '2 days', expires_at = now() - interval '1 second' + interval '0 seconds';
 do $$
 begin
-  perform tests.assert(not private.remembered_browser_ok('00000000-0000-4000-8000-0000000000a1', sha256('browser-token-one'::bytea)), 'past its own date: no longer');
+  perform tests.assert(not private.remembered_browser_ok('00000000-0000-4000-8000-0000000000a1', sha256('browser-token-rotated'::bytea)), 'past its own date: no longer');
 end $$;
 rollback;
 
@@ -440,6 +481,12 @@ begin
   perform tests.assert_eq((select count(*) from platform.remembered_browsers), 1::bigint, 'uA reads their own row only');
   perform tests.assert_eq((select user_id from platform.remembered_browsers), '00000000-0000-4000-8000-0000000000a1'::uuid, 'which is theirs');
   perform tests.assert_privilege_denied($q$select token_hash from platform.remembered_browsers$q$, 'the hash is not readable');
+  -- The page's own query (security review H1): "this browser" is worked out inside, as the signed-in member.
+  perform tests.assert_eq((select count(*) from private.my_remembered_browsers(sha256('ua-browser'::bytea))), 1::bigint, 'the listing works as the member');
+  perform tests.assert((select is_current and label = 'Chrome on Windows' and valid_until > now() + interval '13 days' from private.my_remembered_browsers(sha256('ua-browser'::bytea))), 'this browser is marked, with its date');
+  perform tests.assert((select not is_current from private.my_remembered_browsers(sha256('other-browser'::bytea))), 'another token marks nothing');
+  perform tests.assert((select not is_current from private.my_remembered_browsers(null)), 'no cookie marks nothing');
+  perform tests.assert_privilege_denied($q$select * from platform.remembered_browsers where token_hash = sha256('ua-browser'::bytea)$q$, 'filtering on the hash as the member is refused');
   perform tests.assert_privilege_denied($q$insert into platform.remembered_browsers (tenant_id, user_id, person_id, token_hash, expires_at) values ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a1', 'a1000000-0000-4000-8000-0000000000a1', sha256('x'::bytea), now() + interval '1 day')$q$,
     'nobody inserts directly');
   perform tests.assert_privilege_denied($q$update platform.remembered_browsers set expires_at = now() + interval '30 days'$q$, 'nor extends a browser');
@@ -453,8 +500,14 @@ select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000b1'
 do $$
 begin
   perform tests.assert_eq((select count(*) from platform.remembered_browsers), 0::bigint, 'uB sees no browsers of organization A (nor their own: none)');
+  perform tests.assert_eq((select count(*) from private.my_remembered_browsers(sha256('ua-browser'::bytea))), 0::bigint, 'the listing shows uB nothing of uA, even with uA''s token');
   -- B's administrator acts on B's rows only: a person of A is out of reach (nothing is forgotten there).
   perform tests.assert_eq(private.forget_member_remembered_browsers('a1000000-0000-4000-8000-0000000000a1'), 0::integer, 'uB cannot forget a person of A');
+end $$;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1', null));
+do $$
+begin
+  perform tests.assert_fails($q$select * from private.my_remembered_browsers(null)$q$, array['42501'], 'the listing needs an organization');
 end $$;
 -- uA forgets their own.
 select tests.set_claims(tests.ua_claims());

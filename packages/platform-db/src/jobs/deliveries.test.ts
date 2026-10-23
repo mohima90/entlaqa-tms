@@ -5,6 +5,7 @@ import {
   claimEmailDelivery,
   discardInactiveTenantDelivery,
   finishEmailDelivery,
+  getEmailDeliveryTemplate,
   insertEmailDelivery,
 } from './deliveries';
 
@@ -141,5 +142,13 @@ describe('message delivery helpers', () => {
     expect(fake.executed[0]?.params).toEqual([ID]);
     expect(await discardInactiveTenantDelivery(fakeTx([{ discarded: false }]).tx, ID)).toBe(false);
     expect(await discardInactiveTenantDelivery(fakeTx([]).tx, ID)).toBe(false);
+  });
+
+  it('reads the template of a delivery that is not final', async () => {
+    const fake = fakeTx([{ template: 'platform.sign_in_code_platform' }]);
+    expect(await getEmailDeliveryTemplate(fake.tx, ID)).toBe('platform.sign_in_code_platform');
+    expect(fake.executed[0]?.sql).toContain("status in ('queued', 'sending')");
+    expect(fake.executed[0]?.params).toEqual([ID]);
+    expect(await getEmailDeliveryTemplate(fakeTx([]).tx, ID)).toBeNull();
   });
 });

@@ -3,9 +3,11 @@ import type { AuthFlowDeps } from './auth-flow';
 import { IdentityErrors, firstFactorOf } from './auth-flow';
 import { NO_SIGN_IN_GUARD } from './auth-limits';
 import {
+  type PendingRememberCookie,
   type RememberedBrowserCookie,
   type SignInCodeDeps,
   completeRememberedSignIn,
+  rememberAfterSecondStep,
   requestSignInCode,
   signInWithEmailedCode,
 } from './sign-in-code';
@@ -44,6 +46,10 @@ interface Options {
   limiterAllows?: boolean;
   triesIfWrong?: number;
   cookie?: string | null;
+  /** The pending tick of an earlier code sign-in. */
+  pending?: string | null;
+  /** The database says the cookie's browser is remembered for the typed address. */
+  remembered?: boolean;
   rememberResult?: number;
   codes?: Partial<SignInCodeDeps['codes']>;
 }
@@ -112,12 +118,25 @@ function setup(options: Options = {}) {
       cookieWrites.push({ token, maxAge });
     },
   };
+  let pendingValue: string | null = options.pending ?? null;
+  const pendingWrites: string[] = [];
+  const pendingRemember: PendingRememberCookie = {
+    read: () => pendingValue,
+    write: (value) => {
+      pendingWrites.push(value);
+      pendingValue = value;
+    },
+    clear: () => {
+      pendingValue = null;
+    },
+  };
   const defaultCodes: SignInCodeDeps['codes'] = {
     request: vi.fn(() => Promise.resolve({ outcome: 'queued' as const, requestId: REQUEST })),
     verify: vi.fn(() =>
       Promise.resolve({ outcome: 'ok' as const, linkToken: 'one-time-sign-in-token' }),
     ),
     takeRemembered: vi.fn(() => Promise.resolve({ outcome: 'gone' as const })),
+    isRemembered: vi.fn(() => Promise.resolve(options.remembered ?? false)),
   };
   const deps: SignInCodeDeps = {
     supabase: { auth },
@@ -154,10 +173,21 @@ function setup(options: Options = {}) {
     codes: { ...defaultCodes, ...options.codes },
     rememberBrowser: vi.fn(() => Promise.resolve(options.rememberResult ?? 1)),
     cookie,
+    pendingRemember,
     browserLabel: () => 'Chrome on Windows',
     kickWorker: vi.fn(),
   };
-  return { deps, auth, attempt, limiter, audited, events, cookieWrites };
+  return {
+    deps,
+    auth,
+    attempt,
+    limiter,
+    audited,
+    events,
+    cookieWrites,
+    pendingWrites,
+    pending: () => pendingValue,
+  };
 }
 
 describe('requestSignInCode', () => {
@@ -170,6 +200,35 @@ describe('requestSignInCode', () => {
     });
     expect(deps.kickWorker).toHaveBeenCalledTimes(1);
     expect(deps.codes.request).toHaveBeenCalledWith(EMAIL, null);
+    // No browser token: the address's ceilings apply to everybody.
+    expect(deps.limiter.allowRequest).toHaveBeenCalledWith(EMAIL, undefined);
+  });
+
+  it('asks the database whether the browser is remembered only when the limiter wants to know', async () => {
+    const { deps } = setup({ cookie: TOKEN, remembered: true });
+    await requestSignInCode(deps, { email: EMAIL });
+    const [, options] = (deps.limiter.allowRequest as unknown as { mock: { calls: unknown[][] } })
+      .mock.calls[0] as [string, { trusted?: () => Promise<boolean> }];
+    expect(deps.codes.isRemembered).not.toHaveBeenCalled();
+    await expect(options.trusted?.()).resolves.toBe(true);
+    expect(deps.codes.isRemembered).toHaveBeenCalledWith(EMAIL, rememberedBrowserHash(TOKEN));
+  });
+
+  it('a full queue answers like any request but is logged for the operator', async () => {
+    const { deps } = setup({
+      codes: {
+        request: vi.fn(() => Promise.resolve({ outcome: 'full' as const, requestId: REQUEST })),
+      },
+    });
+    const result = await requestSignInCode(deps, { email: EMAIL });
+    expect(result).toEqual({
+      ok: true,
+      value: { kind: 'code', requestId: REQUEST, resendAfterSeconds: 60 },
+    });
+    expect(deps.logWarning).toHaveBeenCalledWith(
+      expect.stringContaining('queue is full'),
+      expect.objectContaining({ reason: 'queue_full' }),
+    );
   });
 
   it('presents the remembered browser (as a hash, never the token) unless a code is forced', async () => {
@@ -329,10 +388,81 @@ describe('signInWithEmailedCode', () => {
     const off = setup({ rememberResult: 0 });
     await signInWithEmailedCode(off.deps, { ...input, remember: true });
     expect(off.cookieWrites).toEqual([]);
-    // The same browser keeps its token (one cookie for every account that remembers it).
-    const again = setup({ cookie: TOKEN, rememberResult: 1 });
-    await signInWithEmailedCode(again.deps, { ...input, remember: true });
-    expect(again.cookieWrites[0]?.token).toBe(TOKEN);
+  });
+
+  it('never adopts a token the browser already holds: a fresh one at every remembering (fixation)', async () => {
+    const planted = setup({ cookie: TOKEN, rememberResult: 1 });
+    await signInWithEmailedCode(planted.deps, { ...input, remember: true });
+    expect(planted.cookieWrites).toHaveLength(1);
+    expect(planted.cookieWrites[0]?.token).not.toBe(TOKEN);
+    const [, hash] =
+      (planted.deps.rememberBrowser as unknown as { mock: { calls: unknown[][] } }).mock.calls[0] ??
+      [];
+    expect(hash).not.toEqual(rememberedBrowserHash(TOKEN));
+  });
+
+  it("remembers only after the organization's second step (BR-AUTH-f): the tick waits, bound to the session", async () => {
+    const asked = setup({ access: 'mfa_challenge', rememberResult: 1 });
+    expect(await signInWithEmailedCode(asked.deps, { ...input, remember: true })).toEqual({
+      ok: true,
+      value: { next: 'mfa' },
+    });
+    expect(asked.deps.rememberBrowser).not.toHaveBeenCalled();
+    expect(asked.cookieWrites).toEqual([]);
+    expect(asked.pendingWrites).toEqual([`${USER}.${SESSION}`]);
+
+    // The authenticator code passed: the tick of this session remembers the browser.
+    const claims = { sub: USER, session_id: SESSION } as never;
+    await rememberAfterSecondStep(asked.deps, claims);
+    expect(asked.deps.rememberBrowser).toHaveBeenCalledTimes(1);
+    expect(asked.cookieWrites).toHaveLength(1);
+    expect(asked.pending()).toBeNull();
+    // Used once.
+    await rememberAfterSecondStep(asked.deps, claims);
+    expect(asked.deps.rememberBrowser).toHaveBeenCalledTimes(1);
+
+    // Another account or session on the same browser cannot complete it - and the tick is gone.
+    const other = setup({ pending: `${USER}.${SESSION}`, rememberResult: 1 });
+    await rememberAfterSecondStep(other.deps, { sub: USER, session_id: 'another' } as never);
+    expect(other.deps.rememberBrowser).not.toHaveBeenCalled();
+    expect(other.pending()).toBeNull();
+  });
+
+  it('with several organizations the tick waits for the choice; a sign-in that does not tick drops an old tick', async () => {
+    const several = setup({ rememberResult: 1 });
+    (
+      several.deps.listSessionTenants as unknown as { mockResolvedValue: (v: unknown) => void }
+    ).mockResolvedValue([
+      { tenantId: TENANT, nameAr: 'أ', nameEn: 'A' },
+      { tenantId: 'b0000000-0000-4000-8000-000000000001', nameAr: 'ب', nameEn: 'B' },
+    ]);
+    expect(await signInWithEmailedCode(several.deps, { ...input, remember: true })).toEqual({
+      ok: true,
+      value: { next: 'choose-organization' },
+    });
+    expect(several.deps.rememberBrowser).not.toHaveBeenCalled();
+    expect(several.pendingWrites).toHaveLength(1);
+
+    const stale = setup({ pending: `${USER}.${SESSION}` });
+    await signInWithEmailedCode(stale.deps, input);
+    expect(stale.pending()).toBeNull();
+  });
+
+  it("a remembered browser is checked against its own budget, not the address's pause (M3)", async () => {
+    const remembered = setup({ cookie: TOKEN, remembered: true });
+    await signInWithEmailedCode(remembered.deps, input);
+    expect(remembered.limiter.checkCode).toHaveBeenCalledWith(EMAIL, { rememberedToken: TOKEN });
+    expect(remembered.deps.codes.isRemembered).toHaveBeenCalledWith(
+      EMAIL,
+      rememberedBrowserHash(TOKEN),
+    );
+    // A cookie the database does not know for this address counts for nothing.
+    const unknown = setup({ cookie: TOKEN, remembered: false });
+    await signInWithEmailedCode(unknown.deps, input);
+    expect(unknown.limiter.checkCode).toHaveBeenCalledWith(EMAIL, undefined);
+    const none = setup();
+    await signInWithEmailedCode(none.deps, input);
+    expect(none.deps.codes.isRemembered).not.toHaveBeenCalled();
   });
 
   it('a failure to remember never blocks the sign-in', async () => {
@@ -354,10 +484,16 @@ describe('completeRememberedSignIn', () => {
       .fn()
       .mockResolvedValueOnce({ outcome: 'pending' })
       .mockResolvedValueOnce({ outcome: 'ok', linkToken: 'one-time-sign-in-token' });
-    const { deps, auth } = setup({ cookie: TOKEN, codes: { takeRemembered } });
+    const { deps, auth, cookieWrites } = setup({ cookie: TOKEN, codes: { takeRemembered } });
     const result = await completeRememberedSignIn(deps, { requestId: REQUEST, email: EMAIL });
     expect(result).toEqual({ ok: true, value: { status: 'done', outcome: { next: 'home' } } });
-    expect(takeRemembered).toHaveBeenCalledWith(REQUEST, EMAIL, rememberedBrowserHash(TOKEN));
+    // The token is replaced at every use: the database gets the hash of a new one, the browser the token itself.
+    const [, , oldHash, newHash] = takeRemembered.mock.calls[0] as unknown[];
+    expect(oldHash).toEqual(rememberedBrowserHash(TOKEN));
+    expect(takeRemembered.mock.calls[1]?.[3]).toEqual(newHash);
+    expect(cookieWrites).toHaveLength(1);
+    expect(cookieWrites[0]?.token).not.toBe(TOKEN);
+    expect(rememberedBrowserHash(cookieWrites[0]?.token ?? '')).toEqual(newHash);
     expect(auth.verifyOtp).toHaveBeenCalledTimes(1);
   });
 

@@ -95,6 +95,24 @@ describe('the sender rule (WP-ADM-01, Kawadir)', () => {
     expect(await router.resolve(tx, TENANT)).toMatchObject({ from: { name: 'الراية' } });
   });
 
+  it("platformOnly (the sign-in code of an account of several organizations) skips the organization's own provider", async () => {
+    db.loadEmailRoute.mockResolvedValue(row({ tenant: ownProvider }));
+    const router = createEmailRouter({ keys, installation: null, log: vi.fn() });
+    expect(await router.resolve(tx, TENANT, { platformOnly: true })).toMatchObject({
+      kind: 'send',
+      sender: 'platform',
+      from: { name: 'Al Raya', address: 'no-reply@jadarat.example' },
+    });
+    // The organization's provider is still first for everything else.
+    expect(await router.resolve(tx, TENANT)).toMatchObject({ sender: 'organization' });
+    // No platform sender ready: the message waits - it never falls back to the organization's provider.
+    db.loadEmailRoute.mockResolvedValue(row({ tenant: ownProvider, platform: null }));
+    expect(await router.resolve(tx, TENANT, { platformOnly: true })).toEqual({
+      kind: 'wait',
+      code: 'NO_SENDER',
+    });
+  });
+
   it('a platform sender not verified yet: messages wait (nothing lost) — never the installation sender', async () => {
     const installation = {
       transport: { provider: 'smtp' as const, send: vi.fn() },

@@ -36,6 +36,7 @@ const SETUP_DESCRIPTION: Partial<Record<NavLabelKey, string>> = {
   teamMembers: 'setupStep.team',
   branding: 'setupStep.branding',
   roles: 'setupStep.roles',
+  grades: 'setupStep.grades',
   general: 'setupStep.general',
   emailIntegration: 'setupStep.email',
   security: 'setupStep.security',

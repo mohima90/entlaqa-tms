@@ -113,11 +113,11 @@ describe('the Grades page', () => {
 });
 
 describe('changing the list', () => {
-  const run = <T>(definition: T, roles: TestRoleCode[], input: unknown) => {
+  const run = (definition: unknown, roles: TestRoleCode[], input: unknown) => {
     const { rt, writeAudit } = runtime(roles);
     return {
       writeAudit,
-      result: createDefineAction(rt)(definition as never)(input as never) as Promise<{
+      result: createDefineAction(rt)(definition as never)(input) as Promise<{
         ok: boolean;
         value?: unknown;
         error?: { code: string; fieldErrors?: { path: string; code: string }[] };

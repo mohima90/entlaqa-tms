@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method -- the file service is a bag of vi.fn() mocks, read back by reference */
 import { appError, err, ok } from '@jadarat/platform-core';
 import { brandVerifiedClaims } from '@jadarat/platform-core/internal/verified-claims';
 import type { UserTx } from '@jadarat/platform-db';

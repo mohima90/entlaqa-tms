@@ -61,6 +61,7 @@ test.describe('signed-in flow', () => {
       /^Team members/,
       /^Branding/,
       /^Roles & permissions/,
+      /^Grades/,
       /^General/,
       /^Email integration/,
       /^Security/,

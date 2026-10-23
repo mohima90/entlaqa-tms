@@ -63,7 +63,8 @@
       "roles": "Check who can do what",
       "general": "Name, industry, country and defaults",
       "email": "Who sends your organization's e-mails",
-      "security": "Sign-in and password policy"
+      "security": "Sign-in and password policy",
+      "grades": "Grade codes for your people"
     },
     "comingSoon": "Coming soon",
     "roles": "Roles & permissions",

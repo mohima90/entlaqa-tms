@@ -103,6 +103,20 @@ export interface AuthLimits {
     readonly clientFailures: RateLimit;
     readonly sharedClientFailures: RateLimit;
   };
+  /**
+   * «Email me a code» (WP-ADM-05, PO 23 Oct 2026). Requests: the database allows one code a minute per
+   * address; these are the ceilings per client and per typed address on top. Checks: wrong codes only, per
+   * typed address (consecutive; a right code ends the run) and per client — the 5th wrong code pauses code
+   * checks for the window (15 minutes), as the database kills the code itself after 5 tries.
+   */
+  readonly signInCode: {
+    readonly requestsPerClient: RateLimit;
+    readonly sharedClientRequests: RateLimit;
+    readonly requestsPerAccount: RateLimit;
+    readonly checkAccountFailures: RateLimit;
+    readonly checkClientFailures: RateLimit;
+    readonly sharedClientCheckFailures: RateLimit;
+  };
 }
 
 const WINDOW = 15 * 60;
@@ -149,5 +163,13 @@ export const PLATFORM_AUTH_LIMITS: AuthLimits = {
     resetFailures: { max: 5, windowSeconds: WINDOW },
     clientFailures: { max: 100, windowSeconds: WINDOW },
     sharedClientFailures: { max: 1000, windowSeconds: WINDOW },
+  },
+  signInCode: {
+    requestsPerClient: { max: 20, windowSeconds: WINDOW },
+    sharedClientRequests: { max: 200, windowSeconds: WINDOW },
+    requestsPerAccount: { max: 10, windowSeconds: WINDOW },
+    checkAccountFailures: { max: 5, windowSeconds: WINDOW },
+    checkClientFailures: { max: 100, windowSeconds: WINDOW },
+    sharedClientCheckFailures: { max: 1000, windowSeconds: WINDOW },
   },
 };

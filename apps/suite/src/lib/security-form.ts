@@ -12,7 +12,12 @@ export interface SecurityFormValues {
   readonly sessionIdleMinutes: number;
   readonly sessionMaxHours: number;
   readonly sessionMaxDevices: number;
+  /** How long a remembered browser skips the e-mailed sign-in code: 0 (off), 1, 7, 14 or 30 days. */
+  readonly rememberedBrowserDays: number;
 }
+
+/** The periods the organization may choose (WP-ADM-05); 0 is Off, the default. */
+export const REMEMBERED_BROWSER_CHOICES = [0, 1, 7, 14, 30] as const;
 
 /** Whole numbers in any script (the inputs are numeric): «١٢» and "12" → 12; anything else → null. */
 export function parseWhole(value: string): number | null {

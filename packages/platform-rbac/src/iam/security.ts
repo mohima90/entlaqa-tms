@@ -11,6 +11,7 @@ import {
   changedSettings,
   endMemberSessions,
   endMySessions,
+  forgetMemberRememberedBrowsers,
   getMemberMfa,
   getSecurityPolicy,
   listMemberSessions,
@@ -62,6 +63,8 @@ export const SecuritySettingsInput = z
     sessionIdleMinutes: intIn(SECURITY_LIMITS.sessionIdleMinutes),
     sessionMaxHours: intIn(SECURITY_LIMITS.sessionMaxHours),
     sessionMaxDevices: intIn(SECURITY_LIMITS.sessionMaxDevices),
+    // Off / 1 / 7 / 14 / 30 days (WP-ADM-05); default Off.
+    rememberedBrowserDays: z.union([z.literal(0), z.literal(1), z.literal(7), z.literal(14), z.literal(30)]),
   })
   .superRefine((value, ctx) => {
     if (value.mfaMode === 'required_roles' && value.mfaRequiredRoles.length === 0) {
@@ -322,6 +325,9 @@ export function endMemberSessionsActionDefinition(): ActionDefinition<
       let ended: number;
       try {
         ended = await endMemberSessions(ctx.tx, input.personId, input.sessionId);
+        // Ending ALL of a member's sessions also forgets the browsers they asked to remember (WP-ADM-05,
+        // BR-AUTH-g): their next sign-in on any of them is checked again.
+        if (input.sessionId === null) await forgetMemberRememberedBrowsers(ctx.tx, input.personId);
       } catch (error) {
         if (databaseCode(error) === INSUFFICIENT_PRIVILEGE) return err(appError('FORBIDDEN'));
         throw error;

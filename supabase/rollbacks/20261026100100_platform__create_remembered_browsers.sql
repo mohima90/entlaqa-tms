@@ -8,3 +8,4 @@ drop policy audit_events_account_mail_guard_insert on platform.audit_events;
 revoke insert (tenant_id, actor_user_id, actor_person_id, action, entity_type, entity_id, data)
   on platform.audit_events from account_mail_guard;
 drop table platform.remembered_browsers;
+drop view private.auth_password_marker;

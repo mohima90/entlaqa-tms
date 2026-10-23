@@ -394,6 +394,14 @@ do $$
 begin
   perform tests.assert(private.remembered_browser_ok('00000000-0000-4000-8000-0000000000a1', sha256('browser-token-one'::bytea)), '7 days: still within them');
 end $$;
+-- A password change or reset forgets every remembered browser at once (the marker of the stored hash changes).
+update auth.users set encrypted_password = 'a-new-password-hash' where id = '00000000-0000-4000-8000-0000000000a1';
+do $$
+begin
+  perform tests.assert(not private.remembered_browser_ok('00000000-0000-4000-8000-0000000000a1', sha256('browser-token-one'::bytea)),
+    'a new password: no browser is remembered any more');
+end $$;
+update auth.users set encrypted_password = null where id = '00000000-0000-4000-8000-0000000000a1';
 update platform.remembered_browsers set created_at = now() - interval '8 days', expires_at = now() + interval '6 days';
 do $$
 begin
@@ -461,9 +469,12 @@ begin
     'b0000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-0000000000ab', 'only uAB''s row of organization B is left (A''s administrator never reached it)');
 end $$;
 -- Deactivation: a member who is no longer active loses the browsers of that organization.
-insert into platform.remembered_browsers (tenant_id, user_id, person_id, token_hash, expires_at) values
-  ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000ab', 'a1000000-0000-4000-8000-0000000000ab', sha256('d1'::bytea), now() + interval '1 day'),
-  ('b0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000ab', 'b1000000-0000-4000-8000-0000000000ab', sha256('d1'::bytea), now() + interval '1 day');
+insert into platform.remembered_browsers (tenant_id, user_id, person_id, token_hash, password_marker, expires_at)
+select v.tenant_id, v.user_id, v.person_id, sha256('d1'::bytea), pm.marker, now() + interval '1 day'
+from (values
+  ('a0000000-0000-4000-8000-000000000001'::uuid, '00000000-0000-4000-8000-0000000000ab'::uuid, 'a1000000-0000-4000-8000-0000000000ab'::uuid),
+  ('b0000000-0000-4000-8000-000000000001'::uuid, '00000000-0000-4000-8000-0000000000ab'::uuid, 'b1000000-0000-4000-8000-0000000000ab'::uuid)) v (tenant_id, user_id, person_id)
+join private.auth_password_marker pm on pm.id = v.user_id;
 update platform.tenant_memberships set status = 'suspended'
 where tenant_id = 'a0000000-0000-4000-8000-000000000001' and user_id = '00000000-0000-4000-8000-0000000000ab';
 do $$
@@ -476,9 +487,10 @@ rollback;
 -- At most 10 per person and organization: the oldest go.
 begin;
 update platform.security_policies set remembered_browser_days = 7 where tenant_id = 'a0000000-0000-4000-8000-000000000001';
-insert into platform.remembered_browsers (tenant_id, user_id, person_id, token_hash, created_at, expires_at)
+insert into platform.remembered_browsers (tenant_id, user_id, person_id, token_hash, password_marker, created_at, expires_at)
 select 'a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a1', 'a1000000-0000-4000-8000-0000000000a1',
-       sha256(('old' || i)::bytea), now() - make_interval(hours => i), now() + interval '1 day'
+       sha256(('old' || i)::bytea), (select marker from private.auth_password_marker where id = '00000000-0000-4000-8000-0000000000a1'),
+       now() - make_interval(hours => i), now() + interval '1 day'
 from generate_series(1, 10) i;
 set local session authorization app_server;
 set local role authenticated;

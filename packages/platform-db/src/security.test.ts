@@ -70,6 +70,7 @@ const settings = {
   sessionIdleMinutes: 30,
   sessionMaxHours: 12,
   sessionMaxDevices: 3,
+  rememberedBrowserDays: 0,
 };
 
 describe('security policy (T-M2-10)', () => {

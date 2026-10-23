@@ -22,6 +22,21 @@ export {
   requestPasswordChangedMail,
   requestPasswordResetMail,
 } from './account-mail';
+export {
+  type RememberedBrowser,
+  type RememberedSignInTake,
+  type SignInCodeApi,
+  type SignInCodeCheck,
+  type SignInCodeRequest,
+  createSignInCodeApi,
+  forgetMemberRememberedBrowsers,
+  forgetMyRememberedBrowsers,
+  listMyRememberedBrowsers,
+  rememberBrowser,
+  requestSignInCode,
+  takeRememberedSignIn,
+  verifySignInCode,
+} from './sign-in-codes';
 export { DomainError, isDomainError } from './domain-error';
 export {
   BRAND_IMAGE_KINDS,
@@ -227,6 +242,7 @@ export {
   MFA_APP_REMOVALS,
   MFA_FACTOR_MAIL_OUTCOMES,
   MFA_MODES,
+  REMEMBERED_BROWSER_DAYS,
   MFA_SETUP_CONFIRMATIONS,
   type MemberMfaReset,
   type MfaAppRemoval,

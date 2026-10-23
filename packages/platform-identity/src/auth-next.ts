@@ -9,6 +9,7 @@ import {
   type Result,
   actorFromClaims,
   appError,
+  describeUserAgent,
   err,
   hasTenant,
   ok,
@@ -38,6 +39,10 @@ import {
   passwordMinLengthForCaller,
   queueOwnPasswordChangedMail,
   rateLimitStore,
+  rememberBrowser,
+  requestSignInCode as requestSignInCodeInDatabase,
+  takeRememberedSignIn,
+  verifySignInCode as verifySignInCodeInDatabase,
   rejectMfaFactor,
   removeMfaApp as removeMfaAppInDatabase,
   requestAccountLockedMail as requestAccountLockedMailInDatabase,
@@ -56,7 +61,7 @@ import {
   createSupabaseStatelessClient,
   createSupabaseVerifierClient,
 } from '@jadarat/platform-db/supabase-server';
-import { kicksWorker } from '@jadarat/platform-jobs/kick/next';
+import { kickWorkerAfterResponse, kicksWorker } from '@jadarat/platform-jobs/kick/next';
 import { log } from '@jadarat/platform-observability';
 import { cookies, headers } from 'next/headers';
 import { after } from 'next/server';
@@ -110,6 +115,14 @@ import {
   startTotpSetup,
   verifyTotpCode,
 } from './mfa';
+import {
+  type RememberedBrowserCookie,
+  type SignInCodeDeps,
+  completeRememberedSignIn,
+  requestSignInCode,
+  signInWithEmailedCode,
+} from './sign-in-code';
+import { createSignInCodeLimiter } from './sign-in-code-limits';
 import { type SupabaseAuthLike, verifyClaims } from './verify-claims';
 import { getVerifiedClaims, getVerifiedClaimsStrict } from './next';
 import {
@@ -228,6 +241,39 @@ function trustedDeviceCookie(store: CookieStore): TrustedDeviceCookie {
 }
 
 /**
+ * The remembered-browser cookie (WP-ADM-05, PO 23 Oct 2026): a random 256-bit token only - HttpOnly (never
+ * readable by scripts), Secure with the `__Host-` prefix (this host only, path /), SameSite=Lax. Written only
+ * after a code sign-in with «Remember this browser» ticked, and only when every organization of the person
+ * allows it; the database keeps SHA-256(token) per person and organization, with the dates. Separate from the
+ * trusted-device cookie above (that one only protects against lock-outs).
+ */
+export const REMEMBERED_BROWSER_COOKIE = SECURE_COOKIES
+  ? '__Host-jadarat-remember'
+  : 'jadarat-remember';
+
+function rememberedBrowserCookie(store: CookieStore): RememberedBrowserCookie {
+  return {
+    read: () => {
+      const value = store.get(REMEMBERED_BROWSER_COOKIE)?.value ?? '';
+      return DEVICE_TOKEN_PATTERN.test(value) ? value : null;
+    },
+    write: (token, maxAgeSeconds) => {
+      try {
+        store.set(REMEMBERED_BROWSER_COOKIE, token, {
+          httpOnly: true,
+          secure: SECURE_COOKIES,
+          sameSite: 'lax',
+          path: '/',
+          maxAge: maxAgeSeconds,
+        });
+      } catch {
+        // Not in a server action (cookies are read-only there): the browser is not remembered.
+      }
+    },
+  };
+}
+
+/**
  * The organization whose own host this request came to, VERIFIED (never a client-supplied value).
  * INTEGRATION POINT (ADR 0002 §4, host → tenant resolution): not built yet — the proxy only classifies the
  * Host header (apps/suite lib/host-tenant.ts) — so every request is on the platform's host today. Return
@@ -335,6 +381,72 @@ export async function signInWithPasswordForRequest(
   client: RequestClient,
 ) {
   return signInWithPassword(await requestDeps(await signInGuardFor(client), client), credentials);
+}
+
+// Sign in with an e-mailed code (WP-ADM-05): limits on the shared limiter, the database checks the keyed hash,
+// the worker (which alone holds the Auth admin key) mints the one-time sign-in token and e-mails the code.
+// Public actions: the person is not signed in yet.
+
+const SIGN_IN_CODE_REQUEST_ACTION = 'platform.auth.sign_in_code_request';
+const SIGN_IN_CODE_VERIFY_ACTION = 'platform.auth.sign_in_code_verify';
+
+async function signInCodeDeps(client: RequestClient): Promise<SignInCodeDeps> {
+  const auth = await requestDeps(undefined, client);
+  const userAgent = (await headers()).get('user-agent');
+  const device = describeUserAgent(userAgent);
+  const label =
+    device.browser && device.system
+      ? `${device.browser} on ${device.system}`
+      : (device.browser ?? device.system);
+  return {
+    ...auth,
+    limiter: createSignInCodeLimiter({
+      ...limiterDeps(),
+      client,
+      requestAction: SIGN_IN_CODE_REQUEST_ACTION,
+      checkAction: SIGN_IN_CODE_VERIFY_ACTION,
+    }),
+    codes: {
+      request: (email, rememberHash) => requestSignInCodeInDatabase(email, rememberHash),
+      verify: verifySignInCodeInDatabase,
+      takeRemembered: takeRememberedSignIn,
+    },
+    rememberBrowser,
+    cookie: rememberedBrowserCookie(await cookies()),
+    browserLabel: () => label,
+    kickWorker: () => {
+      kickWorkerAfterResponse('sign_in_code');
+    },
+  };
+}
+
+/** «Email me a code instead»: queues a code for the typed address (the same answer for every address). */
+export async function requestSignInCodeForRequest(
+  input: { readonly email: string },
+  client: RequestClient,
+) {
+  return requestSignInCode(await signInCodeDeps(client), input);
+}
+
+/** The six digits (and «Remember this browser»): opens the session like a password sign-in would. */
+export async function signInWithEmailedCodeForRequest(
+  input: {
+    readonly requestId: string;
+    readonly email: string;
+    readonly code: string;
+    readonly remember: boolean;
+  },
+  client: RequestClient,
+) {
+  return signInWithEmailedCode(await signInCodeDeps(client), input);
+}
+
+/** A remembered browser: finishes the sign-in that needs no code (waits briefly for the worker). */
+export async function completeRememberedSignInForRequest(
+  input: { readonly requestId: string; readonly email: string },
+  client: RequestClient,
+) {
+  return completeRememberedSignIn(await signInCodeDeps(client), input);
 }
 
 export async function selectOrganizationForRequest(tenantId: string) {

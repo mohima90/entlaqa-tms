@@ -116,6 +116,7 @@ const settings = {
   sessionIdleMinutes: 30,
   sessionMaxHours: 12,
   sessionMaxDevices: 3,
+  rememberedBrowserDays: 0 as const,
 };
 const policy = {
   ...settings,

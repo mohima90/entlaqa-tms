@@ -52,6 +52,15 @@ export const IdentityErrors = defineErrorCodes({
    * accounts: the counters are kept per typed e-mail whether or not an account exists.
    */
   AUTH_TOO_MANY_ATTEMPTS: { status: 429, messageKey: 'auth.errors.tooManyAttempts' },
+  /**
+   * «Email me a code» (WP-ADM-05): a wrong code (`tries` in the params: the screen says how many are left),
+   * an expired, used or replaced one, five wrong tries (the code is dead and code checks pause) and a second
+   * request within a minute (`seconds`). The same for every address, with or without an account.
+   */
+  SIGN_IN_CODE_INVALID: { status: 401, messageKey: 'auth.errors.signInCodeInvalid' },
+  SIGN_IN_CODE_EXPIRED: { status: 401, messageKey: 'auth.errors.signInCodeExpired' },
+  SIGN_IN_CODE_LOCKED: { status: 429, messageKey: 'auth.errors.signInCodeLocked' },
+  SIGN_IN_CODE_TOO_SOON: { status: 429, messageKey: 'auth.errors.signInCodeTooSoon' },
 });
 
 /**
@@ -76,6 +85,11 @@ export interface AuthClientLike extends SupabaseAuthLike {
       password: string;
     }): Promise<{ data: unknown; error: { status?: number | undefined } | null }>;
     refreshSession(current?: { refresh_token: string }): Promise<{ data: unknown; error: unknown }>;
+    /** The one-time sign-in token minted for an e-mailed code (WP-ADM-05; the Auth admin key is the worker's). */
+    verifyOtp(params: {
+      token_hash: string;
+      type: 'magiclink';
+    }): Promise<{ data: unknown; error: { status?: number | undefined } | null }>;
     signOut(options: { scope: 'local' }): Promise<{ error: unknown }>;
   };
 }
@@ -283,7 +297,23 @@ export async function signInWithPassword(
   if (!supabase) return err(appError('NOT_CONFIGURED'));
   const session = await startPasswordSession(deps, credentials);
   if (!session.ok) return session;
-  const { tokens, claims } = session.value;
+  return continueAfterFirstStep(deps, session.value);
+}
+
+/**
+ * What follows the first step, whichever way it was taken (the password, or an e-mailed code - WP-ADM-05): the
+ * session's organizations - none (sign out; a Platform Super Admin: the console), one (selected at once) or
+ * several (the chooser) - and then the organization's MFA policy (`selectOrganization`), which asks for the
+ * authenticator app after BOTH ways alike (PO 23 Oct 2026: the second step follows the first, never a second
+ * e-mailed code).
+ */
+export async function continueAfterFirstStep(
+  deps: AuthFlowDeps,
+  session: PasswordSession,
+): Promise<Result<SignInOutcome, AppError>> {
+  const { supabase } = deps;
+  if (!supabase) return err(appError('NOT_CONFIGURED'));
+  const { tokens, claims } = session;
 
   const { tenants, platformAdmin } = await deps.withUserTx(claims, async (tx) => ({
     tenants: await deps.listSessionTenants(tx),
@@ -408,7 +438,7 @@ export async function recordAudit(
   deps: Pick<AuthFlowDeps, 'withUserTx' | 'insertAuditEvent'>,
   claims: VerifiedClaims,
   action: 'platform.auth.signed_in' | 'platform.auth.signed_out',
-  method: 'password' | 'password+totp' = 'password',
+  method: SignInMethodName = firstFactorOf(claims),
 ): Promise<void> {
   if (!hasTenant(claims)) return;
   const actor = actorFromClaims(claims);
@@ -420,4 +450,24 @@ export async function recordAudit(
       data: { method, aal: actor.aal },
     }),
   );
+}
+
+/** How a sign-in was done, as audited (`data.method`). */
+export type SignInMethodName = 'password' | 'password+totp' | 'email_code' | 'email_code+totp';
+
+/**
+ * The first step of a session, from the access token's authentication methods (`amr`): an e-mailed code
+ * shows as `magiclink` / `otp` / `email`, anything else (the password) as `password`.
+ */
+export function firstFactorOf(claims: VerifiedClaims): 'password' | 'email_code' {
+  const amr: unknown = 'amr' in claims ? claims.amr : undefined;
+  if (!Array.isArray(amr)) return 'password';
+  for (const entry of amr as unknown[]) {
+    const method =
+      typeof entry === 'object' && entry !== null && 'method' in entry
+        ? (entry as { method?: unknown }).method
+        : entry;
+    if (method === 'magiclink' || method === 'otp' || method === 'email') return 'email_code';
+  }
+  return 'password';
 }

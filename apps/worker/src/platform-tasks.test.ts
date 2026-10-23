@@ -100,6 +100,7 @@ describe('worker file tasks (T-M2-18) and user imports (T-M2-12)', () => {
     expect(platformTasks({ ...base, authAdmin: settings }).map((t) => t.name)).toEqual([
       'platform.account_mail',
       'platform.session_purge',
+      'platform.sign_in_code',
       'platform.files.housekeeping',
       'platform.user_imports',
       'platform.brand_assets',
@@ -112,6 +113,7 @@ describe('worker file tasks (T-M2-18) and user imports (T-M2-12)', () => {
     ).toEqual([
       'platform.account_mail',
       'platform.session_purge',
+      'platform.sign_in_code',
       'platform.files.housekeeping',
       'platform.user_imports',
       'platform.brand_assets',
@@ -135,6 +137,7 @@ describe('worker file tasks (T-M2-18) and user imports (T-M2-12)', () => {
     expect(tasks.map((t) => t.name)).toEqual([
       'platform.account_mail',
       'platform.session_purge',
+      'platform.sign_in_code',
       'platform.files.housekeeping',
       'platform.user_imports',
       'platform.brand_assets',

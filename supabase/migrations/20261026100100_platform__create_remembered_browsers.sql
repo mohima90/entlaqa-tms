@@ -25,7 +25,10 @@
 --                           (the permission of «End sessions»): forgets that member's remembered browsers.
 --   trigger on platform.tenant_memberships      a member who is no longer active loses their remembered
 --                           browsers of that organization (BR-AUTH-g: deactivation).
---   Also forgotten elsewhere (application code): a password change or reset (the account's other browsers).
+--   private.auth_password_marker   view of auth.users (id, a SHA-256 marker of the stored password hash - never the
+--                           hash): a remembered browser is valid only while the marker is the one it was
+--                           remembered under, so a password CHANGE or RESET forgets every remembered browser of
+--                           the account at once (BR-AUTH-g) without any hook in the application.
 -- Expand-first: new objects only.
 
 create table platform.remembered_browsers (
@@ -35,6 +38,8 @@ create table platform.remembered_browsers (
   person_id uuid not null,
   -- SHA-256 of the cookie's 256-bit random token (the application hashes; the token never reaches the database).
   token_hash bytea not null,
+  -- The account's password marker when the browser was remembered (private.auth_password_marker).
+  password_marker text not null,
   label text,
   created_at timestamptz not null default now(),
   last_used_at timestamptz,
@@ -44,6 +49,7 @@ create table platform.remembered_browsers (
   constraint remembered_browsers_person_fkey foreign key (tenant_id, person_id)
     references platform.persons (tenant_id, id),
   constraint remembered_browsers_token_hash_check check (octet_length(token_hash) = 32),
+  constraint remembered_browsers_password_marker_check check (password_marker ~ '^[0-9a-f]{64}$'),
   constraint remembered_browsers_label_check check (label is null or (char_length(label) between 1 and 80 and label ~ '^[\x20-\x7E]+$')),
   constraint remembered_browsers_expires_check check (expires_at > created_at and expires_at <= created_at + interval '31 days')
 );
@@ -85,6 +91,19 @@ grant insert (tenant_id, actor_user_id, actor_person_id, action, entity_type, en
   on platform.audit_events to account_mail_guard;
 
 -- ---------------------------------------------------------------------------------------------------
+-- The password marker: a hash of the stored password hash (view of auth.users, owned by the migration role, as
+-- private.auth_account)
+-- ---------------------------------------------------------------------------------------------------
+create or replace view private.auth_password_marker
+with (security_barrier = true)  -- defensive only: the view has no WHERE clause
+as select u.id, pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(coalesce(u.encrypted_password, ''), 'UTF8')), 'hex') as marker
+   from auth.users u;
+comment on view private.auth_password_marker is
+  'SECURITY-RELEVANT (WP-ADM-05): auth.users (id, SHA-256 of the stored password hash) for account_mail_guard only - changes with every password change or reset; never the hash.';
+revoke all on view private.auth_password_marker from public;
+grant select on private.auth_password_marker to account_mail_guard;
+
+-- ---------------------------------------------------------------------------------------------------
 -- May this browser skip the code for this account now?
 -- ---------------------------------------------------------------------------------------------------
 create or replace function private.remembered_browser_ok(p_user_id uuid, p_hash bytea)
@@ -105,6 +124,7 @@ as $$
                select 1
                from platform.remembered_browsers r
                join platform.security_policies p on p.tenant_id = r.tenant_id
+               join private.auth_password_marker pm on pm.id = r.user_id and pm.marker = r.password_marker
                where r.tenant_id = m.tenant_id and r.user_id = p_user_id and r.token_hash = p_hash
                  and p.remembered_browser_days > 0
                  and least(r.expires_at, r.created_at + make_interval(days => p.remembered_browser_days)) > now()))
@@ -124,6 +144,7 @@ declare
   v_claims jsonb := private.request_claims();
   v_user uuid := private.request_user_id();
   v_label text := nullif(btrim(p_label), '');
+  v_marker text;
   v_count integer;
 begin
   if session_user <> 'app_server' or v_user is null or coalesce(v_claims ->> 'role', '') <> 'authenticated'
@@ -132,6 +153,10 @@ begin
   end if;
   if v_label is not null and (char_length(v_label) > 80 or v_label !~ '^[\x20-\x7E]+$') then
     v_label := null;
+  end if;
+  select pm.marker into v_marker from private.auth_password_marker pm where pm.id = v_user;
+  if v_marker is null then
+    return 0;
   end if;
   -- The strictest organization wins: nothing is remembered when any organization of the account has the
   -- setting Off (or has no policy row), or when the account is a member nowhere.
@@ -143,15 +168,16 @@ begin
                   and coalesce(p.remembered_browser_days, 0) = 0) then
     return 0;
   end if;
-  insert into platform.remembered_browsers (tenant_id, user_id, person_id, token_hash, label, created_at, expires_at)
-  select m.tenant_id, v_user, m.person_id, p_token_hash, v_label, now(),
+  insert into platform.remembered_browsers (tenant_id, user_id, person_id, token_hash, password_marker, label, created_at, expires_at)
+  select m.tenant_id, v_user, m.person_id, p_token_hash, v_marker, v_label, now(),
          now() + make_interval(days => p.remembered_browser_days)
   from platform.tenant_memberships m
   join platform.tenants t on t.id = m.tenant_id
   join platform.security_policies p on p.tenant_id = m.tenant_id
   where m.user_id = v_user and m.status = 'active' and t.status in ('active', 'trial')
   on conflict (tenant_id, user_id, token_hash) do update
-    set created_at = excluded.created_at, expires_at = excluded.expires_at, label = excluded.label;
+    set created_at = excluded.created_at, expires_at = excluded.expires_at, label = excluded.label,
+        password_marker = excluded.password_marker;
   get diagnostics v_count = row_count;
   -- At most 10 remembered browsers per person and organization: the oldest go.
   delete from platform.remembered_browsers r

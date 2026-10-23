@@ -56,6 +56,8 @@ function setup(options: FakeOptions = {}) {
   const calls: string[] = [];
   let clock = 1_000_000;
   const auth = {
+    // Not used here: the e-mailed sign-in code's token exchange (sign-in-code.test.ts).
+    verifyOtp: vi.fn(() => Promise.resolve({ data: { session: null }, error: { status: 400 } })),
     signInWithPassword: vi.fn(() => {
       clock += options.authLatencyMs ?? 0;
       return Promise.resolve(

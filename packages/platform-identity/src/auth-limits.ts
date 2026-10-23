@@ -199,6 +199,10 @@ export const LIMIT_BUCKETS = {
   mfaCodeAccount: 'mfa_code.account_failures',
   mfaCodeReset: 'mfa_code.reset_failures',
   mfaCodeClient: 'mfa_code.client_failures',
+  signInCodeRequestClient: 'sign_in_code.request_client',
+  signInCodeRequestAccount: 'sign_in_code.request_account',
+  signInCodeCheckAccount: 'sign_in_code.check_account',
+  signInCodeCheckClient: 'sign_in_code.check_client',
 } as const;
 
 /**
@@ -271,6 +275,7 @@ export function limitsFor(
     passwordReset: withWindow(PLATFORM_AUTH_LIMITS.passwordReset, window),
     invitation: withWindow(PLATFORM_AUTH_LIMITS.invitation, window),
     mfaCode: withWindow(PLATFORM_AUTH_LIMITS.mfaCode, window),
+    signInCode: withWindow(PLATFORM_AUTH_LIMITS.signInCode, window),
   };
 }
 
@@ -456,6 +461,7 @@ export type SecurityEventName =
   | 'auth.limiter.unavailable'
   | 'auth.password_change.failed'
   | 'auth.mfa_code.failed'
+  | 'auth.sign_in_code.failed'
   | 'auth.invitation_codes.global_limit';
 
 export interface SecurityEvent {
@@ -484,6 +490,7 @@ const EVENT_MESSAGES: Readonly<Record<SecurityEventName, string>> = {
   'auth.limiter.unavailable': 'rate limiter unavailable',
   'auth.password_change.failed': 'password change refused: current password',
   'auth.mfa_code.failed': 'authenticator code refused',
+  'auth.sign_in_code.failed': 'sign-in code refused',
   'auth.invitation_codes.global_limit':
     'unknown invitation codes: the all-clients limit is reached; code lookups are refused for a while',
 };
@@ -528,7 +535,7 @@ export class RateLimiterUnavailableError extends Error {
   }
 }
 
-function errorNameOf(error: unknown): string {
+export function errorNameOf(error: unknown): string {
   return error instanceof Error ? error.name : 'unknown';
 }
 
@@ -544,7 +551,7 @@ export interface LimiterDeps {
   readonly log: SecurityLog;
 }
 
-async function failClosed<T>(
+export async function failClosed<T>(
   deps: LimiterDeps,
   action: string,
   work: () => Promise<T>,

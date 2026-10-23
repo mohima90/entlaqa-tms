@@ -10,9 +10,34 @@
 --   private.switch_active_tenant    nor does the target organization's idle / maximum-length check
 --   private.touch_session           activity is recorded for a kept session beyond the idle limit too
 --   private.purge_ended_sessions    the worker ends a kept session at its date, not at 24 hours / idle / max
--- Same signatures and owners; the bodies of the latest migrations plus the kept-session conditions.
+-- Same signatures and owners; the bodies of the latest migrations plus the kept-session conditions. A kept
+-- session's date is capped by the PRESENT strictest period (private.kept_until_effective, re-review M-C).
 
 grant tenant_guard to current_user;
+
+-- The date a kept session really lives until: the date it was given, but never beyond the PRESENT strictest
+-- period (security re-review M-C). Lowering the organization's period - or switching «Remember this browser»
+-- off - therefore shortens the sessions already kept: past that date a session is simply not kept any more and
+-- follows the organization's normal rules (idle, maximum length, the platform's 24 hours). An account with no
+-- active membership keeps nothing. Same owner (tenant_guard) as the session rules that call it.
+create or replace function private.kept_until_effective(p_user_id uuid, p_kept_until timestamptz, p_kept_at timestamptz)
+returns timestamptz
+language sql stable security definer
+set search_path = ''
+as $$
+  select least(p_kept_until, p_kept_at + make_interval(days => coalesce(
+    (select min(coalesce(p.remembered_browser_days, 0))::integer
+     from platform.tenant_memberships m
+     join platform.tenants t on t.id = m.tenant_id
+     left join platform.security_policies p on p.tenant_id = m.tenant_id
+     where m.user_id = p_user_id and m.status = 'active' and t.status in ('active', 'trial')), 0)))
+$$;
+comment on function private.kept_until_effective(uuid, timestamptz, timestamptz) is
+  'SECURITY-RELEVANT (WP-ADM-05, security re-review M-C). A kept session''s date capped by when it was kept plus the account''s present strictest remembered_browser_days. Internal.';
+grant create on schema private to tenant_guard;
+alter function private.kept_until_effective(uuid, timestamptz, timestamptz) owner to tenant_guard;
+revoke create on schema private from tenant_guard;
+revoke all on function private.kept_until_effective(uuid, timestamptz, timestamptz) from public;
 
 CREATE OR REPLACE FUNCTION private.user_session_is_valid(p_user_id uuid, p_session_id uuid)
  RETURNS boolean
@@ -32,7 +57,7 @@ begin
       and (s.not_after is null or s.not_after > now())
       and (s.created_at > now() - interval '24 hours'
            or exists (select 1 from private.kept_sessions ks
-                      where ks.session_id = s.id and ks.user_id = s.user_id and ks.kept_until > now()))
+                      where ks.session_id = s.id and ks.user_id = s.user_id and private.kept_until_effective(ks.user_id, ks.kept_until, ks.created_at) > now()))
       and not exists (select 1 from private.revoked_sessions r where r.session_id = s.id)
   );
 end
@@ -71,7 +96,7 @@ begin
   left join private.mfa_factor_confirmations k
     on k.factor_id = s.factor_id and k.user_id = s.user_id and k.confirmed_at is not null
   left join platform.session_context c on c.session_id = s.id and c.user_id = s.user_id
-  left join private.kept_sessions ks on ks.session_id = s.id and ks.user_id = s.user_id and ks.kept_until > now()
+  left join private.kept_sessions ks on ks.session_id = s.id and ks.user_id = s.user_id and private.kept_until_effective(ks.user_id, ks.kept_until, ks.created_at) > now()
   left join platform.tenant_memberships m on m.tenant_id = p_tenant_id and m.user_id = s.user_id
   left join platform.tenants t on t.id = p_tenant_id
   left join platform.security_policies p on p.tenant_id = p_tenant_id
@@ -199,7 +224,7 @@ begin
   -- …and one the TARGET organization's rules would end at once (review L2): its last activity (or its start,
   -- before any organization) older than that organization's inactivity limit, or older than its maximum length.
   select s.created_at,
-         exists (select 1 from private.kept_sessions ks where ks.session_id = s.id and ks.user_id = s.user_id and ks.kept_until > now())
+         exists (select 1 from private.kept_sessions ks where ks.session_id = s.id and ks.user_id = s.user_id and private.kept_until_effective(ks.user_id, ks.kept_until, ks.created_at) > now())
     into v_started, v_kept
   from private.auth_session_validity s where s.id = v_session and s.user_id = v_user;
   select p.session_idle_minutes, p.session_max_hours into v_policy
@@ -266,7 +291,7 @@ begin
     and c.last_seen_at < now() - interval '1 minute'
     and (c.last_seen_at > now() - make_interval(mins => p.session_idle_minutes)
          or exists (select 1 from private.kept_sessions ks
-                    where ks.session_id = c.session_id and ks.user_id = c.user_id and ks.kept_until > now()))
+                    where ks.session_id = c.session_id and ks.user_id = c.user_id and private.kept_until_effective(ks.user_id, ks.kept_until, ks.created_at) > now()))
   for update of c skip locked;
   if not found then
     return;
@@ -329,10 +354,10 @@ begin
       left join platform.security_policies p on p.tenant_id = c.active_tenant_id
       left join private.kept_sessions ks on ks.session_id = s.id and ks.user_id = s.user_id
       where ((ks.session_id is null
-              and (s.created_at <= now() - interval '24 hours'
-                   or s.created_at <= now() - make_interval(hours => p.session_max_hours)
-                   or c.last_seen_at <= now() - make_interval(mins => p.session_idle_minutes)))
-             or ks.kept_until <= now())
+              or private.kept_until_effective(ks.user_id, ks.kept_until, ks.created_at) <= now())
+             and (s.created_at <= now() - interval '24 hours'
+                  or s.created_at <= now() - make_interval(hours => p.session_max_hours)
+                  or c.last_seen_at <= now() - make_interval(mins => p.session_idle_minutes)))
         and not exists (select 1 from private.revoked_sessions r where r.session_id = s.id)
     ) e
     order by e.id

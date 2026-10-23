@@ -14,7 +14,7 @@ import type { CodeCheckLimit } from './auth-limits';
 
 /**
  * Forgot / reset password (FR-IAM-13, NFR-SEC-01; T-M2-08, screens 10 and 11) on Supabase Auth's
- * recovery tokens: single use, expired after `otp_exp` (600 s = 10 minutes since WP-ADM-05). The e-mailed link is
+ * recovery tokens: single use, expired after `otp_exp` (3600 s = 60 minutes). The e-mailed link is
  * `{site}/{ar|en}/reset-password#token_hash=…&type=recovery`: the token travels in the URL FRAGMENT,
  * never sent to the server with a page request (as for invitations, review M3), and loading the page
  * verifies nothing (link scanners cannot use the token up). Framework-free like auth-flow.ts; the

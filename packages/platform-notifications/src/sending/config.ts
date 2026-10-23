@@ -1,3 +1,4 @@
+import 'server-only';
 import { readFileSync } from 'node:fs';
 import { isEmailAddress } from '../address';
 import { createResendTransport } from './resend';

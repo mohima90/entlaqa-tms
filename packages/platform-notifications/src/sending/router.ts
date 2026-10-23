@@ -1,3 +1,4 @@
+import 'server-only';
 import { createHash } from 'node:crypto';
 import type { EmailRouteRow } from '@jadarat/platform-db';
 import { type CredentialsScope, credentialsContext } from '../credentials-seal';

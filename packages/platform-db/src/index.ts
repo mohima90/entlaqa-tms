@@ -26,6 +26,8 @@ export {
   type AuthMailAccount,
   type AuthMailApi,
   type AuthMailRoute,
+  type IssuedSignInCode,
+  type VerifiedSignInCode,
   authMailApi,
   createAuthMailApi,
 } from './auth-mail';

@@ -107,14 +107,22 @@ export interface AuthLimits {
    * «Email me a code» (WP-ADM-05, PO 23 Oct 2026). Requests: the database allows one code a minute per
    * address; these are the ceilings per client and per typed address on top. Checks: wrong codes only, per
    * typed address (consecutive; a right code ends the run) and per client — the 5th wrong code pauses code
-   * checks for the window (15 minutes), as the database kills the code itself after 5 tries.
+   * checks for the window (15 minutes), and the database removes the code itself after 5 wrong tries.
+   * The Send Email hook has limits of its own (`hook*`): Auth's public /otp can be called without passing the
+   * request limits above, so the hook counts what it e-mails per account.
    */
   readonly signInCode: {
     readonly requestsPerClient: RateLimit;
     readonly sharedClientRequests: RateLimit;
     readonly requestsPerAccount: RateLimit;
-    /** One code a minute per typed address (Auth's own OTP frequency is the second line of defence). */
+    /** One code a minute per typed address. */
     readonly requestsPerMinute: RateLimit;
+    /** Codes the hook e-mails to one account (security re-review M-A): per 15 minutes... */
+    readonly hookSendsPerAccount: RateLimit;
+    /** ...and per day. Over the limit nothing is sent (and the skip is logged). */
+    readonly hookSendsPerAccountDaily: RateLimit;
+    /** The same webhook id within 5 minutes is a replay: nothing is done (security re-review L1). */
+    readonly hookReplay: RateLimit;
     readonly checkAccountFailures: RateLimit;
     readonly checkClientFailures: RateLimit;
     readonly sharedClientCheckFailures: RateLimit;
@@ -179,6 +187,9 @@ export const PLATFORM_AUTH_LIMITS: AuthLimits = {
     sharedClientRequests: { max: 200, windowSeconds: WINDOW },
     requestsPerAccount: { max: 10, windowSeconds: WINDOW },
     requestsPerMinute: { max: 1, windowSeconds: 60 },
+    hookSendsPerAccount: { max: 10, windowSeconds: WINDOW },
+    hookSendsPerAccountDaily: { max: 40, windowSeconds: 24 * 60 * 60 },
+    hookReplay: { max: 1, windowSeconds: 5 * 60 },
     checkAccountFailures: { max: 5, windowSeconds: WINDOW },
     checkClientFailures: { max: 100, windowSeconds: WINDOW },
     sharedClientCheckFailures: { max: 1000, windowSeconds: WINDOW },

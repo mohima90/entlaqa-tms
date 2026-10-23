@@ -1,3 +1,4 @@
+import 'server-only';
 import { EmailSendError } from './transport';
 
 /** What every HTTP provider adapter can be given (tests replace the network and the clock). */

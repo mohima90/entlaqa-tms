@@ -1,6 +1,6 @@
 /**
  * The sender rule's inputs as the database returns them (private.email_route() for the worker,
- * private.auth_mail_route() for the web tier's Send Email hook) and their mapping. Kept outside `jobs/` because
+ * private.auth_mail_issue() for the web tier's Send Email hook) and their mapping. Kept outside `jobs/` because
  * the web tier (auth-mail.ts) uses it too; the worker re-exports it from jobs/email.ts.
  */
 
@@ -30,7 +30,7 @@ export interface EmailRouteRow {
   readonly defaultLocale: 'ar' | 'en';
 }
 
-/** The columns private.email_route() and private.auth_mail_route() return. */
+/** The columns private.email_route() and private.auth_mail_issue() return. */
 export interface EmailRouteSqlRow {
   readonly tenant_provider: string | null;
   readonly tenant_options: unknown;

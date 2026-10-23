@@ -3,6 +3,8 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { AuthMailApi } from '@jadarat/platform-db';
 import { renderEmail } from '@jadarat/platform-notifications';
 import { type InlineEmailSender, brandAssetUrl } from '@jadarat/platform-notifications/inline';
+import { generateSignInCode, hookSecretBytes, sealTokenHash } from './sign-in-code-seal';
+import type { SendEmailHookLimiter } from './sign-in-code-limits';
 
 /**
  * Supabase Auth's Send Email hook (WP-ADM-05; PO 23 Oct 2026: e-mails arrive immediately, "the way Kawadir sends
@@ -11,6 +13,17 @@ import { type InlineEmailSender, brandAssetUrl } from '@jadarat/platform-notific
  * signature (the standard-webhooks scheme Supabase uses), decides per e-mail type and sends the one e-mail the
  * app uses Auth for - the sign-in code - at once through the organization's sender, or the platform sender when
  * the account belongs to several organizations or holds a platform role (security review M1).
+ *
+ * THE CODE IS OURS (security re-review H1). Auth's one-time password is long (10 digits) and is NEVER e-mailed:
+ * a short code Auth would accept could be guessed against Auth's public /verify, where none of our limiters
+ * runs. The hook makes its own six-digit code, stores its keyed hash with Auth's `token_hash` (encrypted here,
+ * with a key the database never sees) and e-mails OUR code; the check is ours (private.verify_sign_in_code
+ * behind the limiters), and only a right code releases the token hash that opens the session. See
+ * docs/engineering/sign-in-protection.md §12.
+ *
+ * The hook has limits of its own (M-A): a webhook id is acted on once within five minutes (L1), and an account
+ * is e-mailed at most 10 codes per 15 minutes and 40 a day (Auth's public /otp does not pass the app's request
+ * limits); over the limit nothing is sent and the skip is logged.
  *
  * Every other type is REFUSED (HTTP 400, nothing sent), so enabling the hook breaks nothing that works today:
  *   magiclink          the sign-in code (signInWithOtp)                                  -> sent here
@@ -27,7 +40,7 @@ import { type InlineEmailSender, brandAssetUrl } from '@jadarat/platform-notific
 /** How far a signed timestamp may be from now (standard-webhooks recommends five minutes). */
 export const HOOK_TIMESTAMP_TOLERANCE_S = 5 * 60;
 
-/** How long the code lives in Auth (otp_expiry 600 s), as told in the e-mail. */
+/** How long our code lives (the database's rule: 10 minutes), as told in the e-mail. */
 export const SIGN_IN_CODE_VALID_MINUTES = 10;
 
 export interface HookRequest {
@@ -50,6 +63,9 @@ export interface AuthEmailHookDeps {
   readonly appBaseUrl: string | undefined;
   readonly api: AuthMailApi;
   readonly sender: InlineEmailSender;
+  readonly limiter: SendEmailHookLimiter;
+  /** Six random digits; replaced in tests. */
+  readonly generateCode?: (() => string) | undefined;
   readonly now: () => number;
   readonly log: (
     level: 'info' | 'warn' | 'error',
@@ -66,14 +82,6 @@ const failure = (status: number, message: string): HookResponse => ({
 
 const ok = (): HookResponse => ({ status: 200, body: {} });
 
-/** The key bytes of `v1,whsec_<base64>` / `whsec_<base64>` / `<base64>`. */
-function keyOf(secret: string): Buffer {
-  const trimmed = secret.trim();
-  const withoutVersion = trimmed.startsWith('v1,') ? trimmed.slice(3) : trimmed;
-  const base64 = withoutVersion.startsWith('whsec_') ? withoutVersion.slice(6) : withoutVersion;
-  return Buffer.from(base64, 'base64');
-}
-
 /**
  * standard-webhooks: HMAC-SHA-256 over `id.timestamp.body` with the decoded secret, base64, sent as
  * `v1,<signature>` (several, space separated, during a rotation). Constant-time comparison; a timestamp more
@@ -86,7 +94,7 @@ export function verifyHookSignature(secret: string, request: HookRequest, nowMs:
   if (Math.abs(Math.floor(nowMs / 1000) - Number(webhookTimestamp)) > HOOK_TIMESTAMP_TOLERANCE_S) {
     return false;
   }
-  const key = keyOf(secret);
+  const key = hookSecretBytes(secret);
   if (key.length === 0) return false;
   const expected = createHmac('sha256', key)
     .update(`${webhookId}.${webhookTimestamp}.${request.body}`)
@@ -103,11 +111,13 @@ export function verifyHookSignature(secret: string, request: HookRequest, nowMs:
 interface HookBody {
   readonly userId: string;
   readonly userEmail: string;
-  readonly token: string;
+  readonly tokenHash: string;
   readonly type: string;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Auth's token hash: printable, no spaces (it is hex today); bounded so that sealing it fits the column. */
+const TOKEN_HASH = /^[\x21-\x7e]{16,200}$/;
 
 /** The few fields the hook uses, checked; null for anything else (the body comes from another service). */
 function readBody(raw: string): HookBody | null {
@@ -118,17 +128,16 @@ function readBody(raw: string): HookBody | null {
     return null;
   }
   const user = (value as { user?: { id?: unknown; email?: unknown } } | null)?.user;
-  const data = (value as { email_data?: { token?: unknown; email_action_type?: unknown } } | null)
-    ?.email_data;
+  const data = (
+    value as { email_data?: { token_hash?: unknown; email_action_type?: unknown } } | null
+  )?.email_data;
   if (
     typeof user?.id !== 'string' ||
     !UUID.test(user.id) ||
     typeof user.email !== 'string' ||
     user.email.length < 3 ||
     user.email.length > 320 ||
-    typeof data?.token !== 'string' ||
-    data.token.length > 64 ||
-    typeof data.email_action_type !== 'string' ||
+    typeof data?.email_action_type !== 'string' ||
     data.email_action_type.length > 40
   ) {
     return null;
@@ -136,7 +145,8 @@ function readBody(raw: string): HookBody | null {
   return {
     userId: user.id,
     userEmail: user.email,
-    token: data.token,
+    // Only needed for the type that is sent; checked there.
+    tokenHash: typeof data.token_hash === 'string' ? data.token_hash : '',
     type: data.email_action_type,
   };
 }
@@ -166,25 +176,47 @@ export async function handleSendEmailHook(
     deps.log('warn', 'send-email hook: e-mail type not handled', { type });
     return failure(400, 'this e-mail type is not sent by this application');
   }
-  const code = parsed.token;
-  if (!/^[0-9]{6}$/.test(code)) {
-    deps.log(
-      'error',
-      'send-email hook: the sign-in code is not six digits (check Auth OTP length)',
-    );
-    return failure(400, 'unexpected code');
+  if (!TOKEN_HASH.test(parsed.tokenHash)) {
+    deps.log('error', 'send-email hook: Auth sent no usable token hash');
+    return failure(400, 'unexpected request');
   }
+  // `verifyHookSignature` accepted the call, so the id is present.
+  const webhookId = request.webhookId ?? '';
+  let claimed = false;
   try {
-    const account = await deps.api.account(parsed.userId);
-    // An account Auth knows but we cannot write to (banned, no usable membership): nothing is sent; the
-    // answer is a success so that Auth's reply to the caller does not tell either.
-    if (account?.email.toLowerCase() !== parsed.userEmail.trim().toLowerCase()) {
+    // L1: the same signed call is acted on once within five minutes (a replay is answered, not repeated).
+    if (!(await deps.limiter.claimWebhook(webhookId))) {
+      deps.log('info', 'send-email hook: repeated call ignored');
+      return ok();
+    }
+    claimed = true;
+    // M-A: Auth's public /otp does not pass the app's request limits; the hook counts what it e-mails.
+    if (!(await deps.limiter.allowSend(parsed.userId))) {
+      deps.log('warn', 'send-email hook: sign-in code not sent (too many codes for this account)');
+      return ok();
+    }
+    const sealed = sealTokenHash(secret, parsed.userId, parsed.tokenHash);
+    if (!sealed) {
+      deps.log('error', 'send-email hook: the token hash could not be sealed');
+      await deps.limiter.releaseWebhook(webhookId);
+      return failure(503, 'not configured');
+    }
+    const code = (deps.generateCode ?? generateSignInCode)();
+    const issued = await deps.api.issue({
+      userId: parsed.userId,
+      code,
+      sealedTokenHash: sealed,
+      actionType: 'magiclink',
+    });
+    // An account Auth knows but we cannot write to (banned, no usable membership, an unserved organization):
+    // nothing was stored, nothing is sent; the answer is a success so that Auth's reply does not tell either.
+    if (!issued) {
       deps.log('info', 'send-email hook: sign-in code not sent (no usable account)');
       return ok();
     }
-    const found = await deps.api.route(account.tenantId);
-    if (!found) {
-      deps.log('info', 'send-email hook: sign-in code not sent (organization not served)');
+    const { account, route: found } = issued;
+    if (account.email.toLowerCase() !== parsed.userEmail.trim().toLowerCase()) {
+      deps.log('info', 'send-email hook: sign-in code not sent (another address)');
       return ok();
     }
     const brand = found.brand
@@ -221,10 +253,17 @@ export async function handleSendEmailHook(
     return ok();
   } catch (error) {
     // A code only (EmailSendError.code, a database error name): never the provider's message or the address.
-    const code = (error as { code?: unknown } | null)?.code;
+    const reason = (error as { code?: unknown } | null)?.code;
     deps.log('error', 'send-email hook: sign-in code not sent', {
-      reason: typeof code === 'string' && /^[A-Z0-9_]{2,64}$/.test(code) ? code : 'unknown',
+      reason:
+        typeof reason === 'string' && /^[A-Z0-9_]{2,64}$/.test(reason)
+          ? reason
+          : error instanceof Error && /^[A-Za-z]{2,64}$/.test(error.name)
+            ? error.name
+            : 'unknown',
     });
+    // A failed call may be retried: its id is given back.
+    if (claimed) await deps.limiter.releaseWebhook(webhookId);
     return failure(500, 'the e-mail could not be sent');
   }
 }

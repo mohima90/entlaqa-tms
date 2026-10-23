@@ -32,6 +32,12 @@ const tokenClaims: Record<string, Record<string, unknown>> = {
 
 interface Options {
   verifyOtpError?: { status?: number | undefined };
+  /** What the database says about the typed code (private.verify_sign_in_code). */
+  codeOutcome?: 'ok' | 'wrong' | 'killed' | 'none';
+  /** The sealed token hash cannot be opened (the hook secret changed since the code was made). */
+  unopenable?: boolean;
+  /** Where the continuation ends: the access check of the organization. */
+  nextAfter?: 'home' | 'mfa';
   access?: string;
   limiterAllows?: boolean;
   tooSoon?: number;
@@ -44,6 +50,7 @@ function setup(options: Options = {}) {
   const events: string[] = [];
   const kept: boolean[] = [];
   const markers: boolean[] = [];
+  const pending: boolean[] = [];
   const background: Promise<unknown>[] = [];
   const attempt = {
     triesIfWrong: options.triesIfWrong ?? 3,
@@ -122,7 +129,8 @@ function setup(options: Options = {}) {
     switchActiveTenant: vi.fn(() => Promise.resolve(true)),
     getSessionAccess: vi.fn(() =>
       Promise.resolve({
-        state: (options.access ?? 'ok') as Awaited<
+        state: (options.access ??
+          (options.nextAfter === 'mfa' ? 'mfa_challenge' : 'ok')) as Awaited<
           ReturnType<AuthFlowDeps['getSessionAccess']>
         >['state'],
         mfaDeadline: null,
@@ -144,6 +152,23 @@ function setup(options: Options = {}) {
     }),
     limiter,
     requestOtp,
+    verifyCode: vi.fn(() => {
+      events.push('verifyCode');
+      const outcome = options.codeOutcome ?? 'ok';
+      return Promise.resolve(
+        outcome === 'ok'
+          ? ({
+              outcome,
+              userId: USER,
+              sealedTokenHash: 'v1.sealed',
+              actionType: 'magiclink',
+            } as const)
+          : ({ outcome } as const),
+      );
+    }),
+    openTokenHash: vi.fn((_userId: string, _sealed: string) =>
+      options.unopenable ? null : 'ab12cd34'.repeat(7),
+    ),
     keepSession: vi.fn(() => Promise.resolve(options.keptDays ?? 14)),
     setSessionCookieLifetime: vi.fn((value: boolean) => {
       events.push(`lifetime:${String(value)}`);
@@ -152,12 +177,27 @@ function setup(options: Options = {}) {
     setKeepMarker: vi.fn((value: boolean) => {
       markers.push(value);
     }),
+    setKeepPending: vi.fn((value: boolean) => {
+      pending.push(value);
+    }),
     auditRefused: vi.fn(() => Promise.resolve()),
     keepAlive: (work) => {
       background.push(work);
     },
   };
-  return { deps, auth, attempt, limiter, audited, events, kept, markers, background, requestOtp };
+  return {
+    deps,
+    auth,
+    attempt,
+    limiter,
+    audited,
+    events,
+    kept,
+    markers,
+    pending,
+    background,
+    requestOtp,
+  };
 }
 
 describe('requestSignInCode', () => {
@@ -212,12 +252,18 @@ describe('requestSignInCode', () => {
 describe('signInWithEmailedCode', () => {
   const input = { email: EMAIL, code: '482913', remember: false };
 
-  it("opens the session with Auth's own code, continues like a password sign-in and audits the method", async () => {
+  it("checks OUR code first, then redeems Auth's token hash, continues like a password sign-in and audits the method", async () => {
     const { deps, auth, attempt, audited, events } = setup();
     const result = await signInWithEmailedCode(deps, input);
     expect(result).toEqual({ ok: true, value: { next: 'home' } });
-    expect(auth.verifyOtp).toHaveBeenCalledWith({ email: EMAIL, token: '482913', type: 'email' });
-    expect(events).toEqual(['lifetime:false', 'verifyOtp', 'succeeded']);
+    expect(deps.verifyCode).toHaveBeenCalledWith(EMAIL, '482913');
+    // Auth is asked with the token HASH released by the right code - never with the typed code.
+    expect(auth.verifyOtp).toHaveBeenCalledWith({
+      token_hash: 'ab12cd34'.repeat(7),
+      type: 'magiclink',
+    });
+    expect(JSON.stringify(auth.verifyOtp.mock.calls)).not.toContain('482913');
+    expect(events).toEqual(['lifetime:false', 'verifyCode', 'verifyOtp', 'succeeded']);
     expect(attempt.failed).not.toHaveBeenCalled();
     expect(audited).toEqual([
       { action: 'platform.auth.signed_in', data: { method: 'email_code', aal: 'aal1' } },
@@ -229,40 +275,62 @@ describe('signInWithEmailedCode', () => {
     expect(await signInWithEmailedCode(deps, input)).toEqual({ ok: true, value: { next: 'mfa' } });
   });
 
-  it('a wrong or expired code: counted, the tries left on the screen, the refusal audited; no session', async () => {
-    const { deps, attempt } = setup({
-      triesIfWrong: 3,
-      verifyOtpError: { status: 403 },
-    });
-    const result = await signInWithEmailedCode(deps, input);
-    expect(result).toMatchObject({
-      ok: false,
-      error: { code: 'SIGN_IN_CODE_INVALID', params: { tries: 3 } },
-    });
-    expect(attempt.failed).toHaveBeenCalledTimes(1);
-    expect(deps.auditRefused).toHaveBeenCalledWith(EMAIL, false);
-    expect(deps.keepSession).not.toHaveBeenCalled();
+  it('a wrong, expired or used code: counted, the tries left on the screen, the refusal audited; Auth is not asked', async () => {
+    for (const codeOutcome of ['wrong', 'none'] as const) {
+      const { deps, attempt, auth } = setup({ triesIfWrong: 3, codeOutcome });
+      const result = await signInWithEmailedCode(deps, input);
+      expect(result).toMatchObject({
+        ok: false,
+        error: { code: 'SIGN_IN_CODE_INVALID', params: { tries: 3 } },
+      });
+      expect(attempt.failed).toHaveBeenCalledTimes(1);
+      expect(deps.auditRefused).toHaveBeenCalledWith(EMAIL, false);
+      expect(deps.keepSession).not.toHaveBeenCalled();
+      expect(auth.verifyOtp).not.toHaveBeenCalled();
+    }
   });
 
-  it('the fifth wrong code (no tries left) says the code is dead and checks are paused', async () => {
-    const { deps } = setup({ triesIfWrong: 0, verifyOtpError: { status: 422 } });
+  it('the fifth wrong code (no tries left, or killed by the database) says the code is dead and checks are paused', async () => {
+    const { deps } = setup({ triesIfWrong: 0, codeOutcome: 'wrong' });
     expect(await signInWithEmailedCode(deps, input)).toMatchObject({
       ok: false,
       error: { code: 'SIGN_IN_CODE_LOCKED' },
     });
     expect(deps.auditRefused).toHaveBeenCalledWith(EMAIL, true);
+    const killed = setup({ triesIfWrong: 3, codeOutcome: 'killed' });
+    expect(await signInWithEmailedCode(killed.deps, input)).toMatchObject({
+      ok: false,
+      error: { code: 'SIGN_IN_CODE_INVALID' },
+    });
+    expect(killed.deps.auditRefused).toHaveBeenCalledWith(EMAIL, true);
   });
 
-  it('code checks paused by the limiter: locked, Auth is not asked', async () => {
+  it('code checks paused by the limiter: locked, neither the database nor Auth is asked', async () => {
     const { deps, auth } = setup({ limiterAllows: false });
     expect(await signInWithEmailedCode(deps, input)).toMatchObject({
       ok: false,
       error: { code: 'SIGN_IN_CODE_LOCKED' },
     });
+    expect(deps.verifyCode).not.toHaveBeenCalled();
     expect(auth.verifyOtp).not.toHaveBeenCalled();
   });
 
-  it("Auth rate limiting is not the code's fault; an outage is thrown and costs no try", async () => {
+  it('a right code whose sealed token cannot be opened (the hook secret changed) is a refusal: a new code is needed', async () => {
+    const { deps, auth } = setup({ unopenable: true });
+    expect(await signInWithEmailedCode(deps, input)).toMatchObject({
+      ok: false,
+      error: { code: 'SIGN_IN_CODE_INVALID' },
+    });
+    expect(auth.verifyOtp).not.toHaveBeenCalled();
+  });
+
+  it("Auth refusing the released token is a refusal; its rate limit is not the code's fault; an outage is thrown and costs no try", async () => {
+    const refused = setup({ verifyOtpError: { status: 403 } });
+    expect(await signInWithEmailedCode(refused.deps, input)).toMatchObject({
+      ok: false,
+      error: { code: 'SIGN_IN_CODE_INVALID' },
+    });
+    expect(refused.attempt.failed).toHaveBeenCalledTimes(1);
     const limited = setup({ verifyOtpError: { status: 429 } });
     expect(await signInWithEmailedCode(limited.deps, input)).toMatchObject({
       ok: false,
@@ -279,7 +347,7 @@ describe('signInWithEmailedCode', () => {
   });
 
   it('a failure to audit the refusal never changes the answer', async () => {
-    const { deps } = setup({ verifyOtpError: { status: 403 } });
+    const { deps } = setup({ codeOutcome: 'wrong' });
     (deps.auditRefused as unknown as { mockRejectedValue: (e: Error) => void }).mockRejectedValue(
       new Error('db'),
     );
@@ -294,14 +362,17 @@ describe('signInWithEmailedCode', () => {
 describe('«Remember this browser» = «keep me signed in»', () => {
   const input = { email: EMAIL, code: '482913', remember: true };
 
-  it('ticked: the cookies last from the moment Auth opens the session, and the session is kept', async () => {
-    const { deps, events, markers, kept } = setup({ keptDays: 14 });
+  it('ticked: the cookies are NOT persistent while the policy is unknown (L2); the session is kept once the sign-in is finished (L3)', async () => {
+    const { deps, events, markers, kept, pending } = setup({ keptDays: 14 });
     expect(await signInWithEmailedCode(deps, input)).toEqual({ ok: true, value: { next: 'home' } });
-    // The lifetime is chosen BEFORE Auth writes the cookies.
-    expect(events.indexOf('lifetime:true')).toBeLessThan(events.indexOf('verifyOtp'));
-    expect(kept).toEqual([true]);
+    // The lifetime is chosen BEFORE Auth writes the cookies, and it is "until the browser closes".
+    expect(events.indexOf('lifetime:false')).toBeLessThan(events.indexOf('verifyOtp'));
+    expect(events).not.toContain('lifetime:true');
+    expect(kept).toEqual([false]);
     expect(deps.keepSession).toHaveBeenCalledWith('tx');
+    // The marker (which also makes the written cookies persistent) comes only with the database's yes.
     expect(markers).toEqual([false, true]);
+    expect(pending).toEqual([false]);
   });
 
   it('not ticked: the cookies end with the browser and nothing is kept', async () => {
@@ -328,10 +399,23 @@ describe('«Remember this browser» = «keep me signed in»', () => {
     expect(markers).toEqual([false]);
   });
 
-  it('the second step still follows when the organization requires it', async () => {
-    const { deps } = setup({ access: 'mfa_challenge' });
+  it('the second step pending (or the chooser): nothing is kept yet, the wish waits (L3)', async () => {
+    const { deps, pending, markers } = setup({ nextAfter: 'mfa' });
     expect(await signInWithEmailedCode(deps, input)).toEqual({ ok: true, value: { next: 'mfa' } });
-    expect(deps.keepSession).toHaveBeenCalledTimes(1);
+    expect(deps.keepSession).not.toHaveBeenCalled();
+    expect(pending).toEqual([false, true]);
+    expect(markers).toEqual([false]);
+    // Not ticked: nothing waits.
+    const plain = setup({ nextAfter: 'mfa' });
+    await signInWithEmailedCode(plain.deps, { ...input, remember: false });
+    expect(plain.pending).toEqual([false]);
+  });
+
+  it('a new sign-in forgets an earlier pending wish and the marker of the previous account', async () => {
+    const { deps, markers, pending } = setup({ codeOutcome: 'wrong' });
+    await signInWithEmailedCode(deps, input);
+    expect(markers).toEqual([false]);
+    expect(pending).toEqual([false]);
   });
 });
 

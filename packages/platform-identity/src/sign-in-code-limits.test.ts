@@ -1,7 +1,7 @@
 import type { RateLimit, RateLimitCounter, RateLimitStore } from '@jadarat/platform-db';
 import { describe, expect, it, vi } from 'vitest';
 import { LIMIT_BUCKETS, PLATFORM_AUTH_LIMITS, RateLimiterUnavailableError } from './auth-limits';
-import { createSignInCodeLimiter } from './sign-in-code-limits';
+import { createSendEmailHookLimiter, createSignInCodeLimiter } from './sign-in-code-limits';
 
 /** An in-memory limiter store with the database's counting rules (fixed window, give back, clear). */
 function fakeStore() {
@@ -304,5 +304,83 @@ describe('sign-in code checks', () => {
     }
     const { limiter } = limiterFor(store, { key: '2001:db8:1:ffff::/64' });
     expect((await limiter.checkCode('late@example.test')).allowed).toBe(false);
+  });
+});
+
+describe("the Send Email hook's own limits (re-review M-A and L1)", () => {
+  const USER = '9d406f51-7e80-4192-9dae-2f3a4b5c6d7e';
+  const hookLimiter = (store: RateLimitStore) => {
+    const log = vi.fn();
+    return {
+      log,
+      limiter: createSendEmailHookLimiter({
+        store,
+        limits: PLATFORM_AUTH_LIMITS,
+        log,
+        action: 'platform.auth.send_email_hook',
+      }),
+    };
+  };
+
+  it('e-mails an account at most 10 codes in 15 minutes; the skip is logged without the account', async () => {
+    const store = fakeStore();
+    const { limiter, log } = hookLimiter(store);
+    const max = PLATFORM_AUTH_LIMITS.signInCode.hookSendsPerAccount.max;
+    expect(max).toBe(10);
+    for (let i = 0; i < max; i += 1) expect(await limiter.allowSend(USER)).toBe(true);
+    expect(await limiter.allowSend(USER)).toBe(false);
+    expect(log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'auth.rate_limited',
+        limit: LIMIT_BUCKETS.signInCodeHookSend,
+      }),
+    );
+    expect(JSON.stringify(log.mock.calls)).not.toContain(USER);
+    // Another account is not affected.
+    expect(await limiter.allowSend('11111111-2222-4333-8444-555555555555')).toBe(true);
+  });
+
+  it('and at most 40 a day', async () => {
+    const store = fakeStore();
+    const { limiter, log } = hookLimiter(store);
+    const daily = PLATFORM_AUTH_LIMITS.signInCode.hookSendsPerAccountDaily;
+    expect(daily).toEqual({ max: 40, windowSeconds: 86_400 });
+    // The 15-minute window of the fake never rolls over: reset it between rounds like time would.
+    let allowedCount = 0;
+    for (let i = 0; i < 60; i += 1) {
+      // Forget the short window's hits only (its bucket), as a new quarter of an hour does.
+      for (const call of store.hit.mock.calls) {
+        if (call[0] === LIMIT_BUCKETS.signInCodeHookSend) {
+          await store.clear(call[0], call[1]);
+        }
+      }
+      if (await limiter.allowSend(USER)) allowedCount += 1;
+    }
+    expect(allowedCount).toBe(40);
+    expect(log).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: LIMIT_BUCKETS.signInCodeHookSendDaily }),
+    );
+  });
+
+  it('acts on a webhook id once within the window; a failed call gives its id back', async () => {
+    const store = fakeStore();
+    const { limiter } = hookLimiter(store);
+    expect(await limiter.claimWebhook('msg_1')).toBe(true);
+    expect(await limiter.claimWebhook('msg_1')).toBe(false);
+    expect(await limiter.claimWebhook('msg_2')).toBe(true);
+    // A call that failed gives its id back, so Auth's retry of it is handled.
+    await limiter.releaseWebhook('msg_2');
+    expect(await limiter.claimWebhook('msg_2')).toBe(true);
+    expect(PLATFORM_AUTH_LIMITS.signInCode.hookReplay).toEqual({ max: 1, windowSeconds: 300 });
+  });
+
+  it('fails closed when the limiter cannot answer; giving back never throws', async () => {
+    const store = fakeStore();
+    store.hit.mockRejectedValue(new Error('down'));
+    const { limiter } = hookLimiter(store);
+    await expect(limiter.allowSend(USER)).rejects.toBeInstanceOf(RateLimiterUnavailableError);
+    await expect(limiter.claimWebhook('msg_1')).rejects.toBeInstanceOf(RateLimiterUnavailableError);
+    store.giveBack.mockRejectedValue(new Error('down'));
+    await expect(limiter.releaseWebhook('msg_1')).resolves.toBeUndefined();
   });
 });

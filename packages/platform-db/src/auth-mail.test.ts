@@ -53,19 +53,26 @@ const routeRow = {
   logo_asset_id: null,
 };
 
+const accountRow = {
+  email: 'sara@example.test',
+  tenant_id: TENANT,
+  person_id: USER,
+  locale: 'en',
+  platform_sender: false,
+};
+const issueInput = {
+  userId: USER,
+  code: '482913',
+  sealedTokenHash: 'v1.sealed-token-hash-value',
+  actionType: 'magiclink',
+} as const;
+
 describe('what the Send Email hook reads and writes (WP-ADM-05)', () => {
-  it('asks who the e-mail goes to, in a transaction without claims', async () => {
-    const { db, executed } = fakeDb([
-      {
-        email: 'sara@example.test',
-        tenant_id: TENANT,
-        person_id: USER,
-        locale: 'en',
-        platform_sender: false,
-      },
-    ]);
+  it('stores the code and learns whom to e-mail in ONE call, in a transaction without claims', async () => {
+    const { db, executed } = fakeDb([{ ...accountRow, ...routeRow }]);
     const api = createAuthMailApi(() => db);
-    await expect(api.account(USER)).resolves.toEqual({
+    const issued = await api.issue(issueInput);
+    expect(issued?.account).toEqual({
       email: 'sara@example.test',
       tenantId: TENANT,
       personId: USER,
@@ -74,40 +81,41 @@ describe('what the Send Email hook reads and writes (WP-ADM-05)', () => {
     });
     expect(executed[0]?.sql).toBe('set local role authenticated');
     expect(executed[1]?.params).toEqual(['']);
-    expect(executed.at(-1)?.params).toEqual([USER]);
+    expect(executed.at(-1)?.sql).toBe(
+      'select * from private.auth_mail_issue($1::uuid, $2, $3, $4)',
+    );
+    expect(executed.at(-1)?.params).toEqual([
+      USER,
+      '482913',
+      'v1.sealed-token-hash-value',
+      'magiclink',
+    ]);
+    // The sender settings come only with it: nothing reads them on their own.
+    expect(executed.some((q) => q.sql.includes('auth_mail_route'))).toBe(false);
   });
 
   it('anything but a clear "no" to the platform-sender question means yes; an unknown language is Arabic', async () => {
     const api = createAuthMailApi(
-      () =>
-        fakeDb([
-          {
-            email: 'a@b.test',
-            tenant_id: TENANT,
-            person_id: USER,
-            locale: 'xx',
-            platform_sender: null,
-          },
-        ]).db,
+      () => fakeDb([{ ...accountRow, ...routeRow, locale: 'xx', platform_sender: null }]).db,
     );
-    await expect(api.account(USER)).resolves.toMatchObject({ platformSender: true, locale: 'ar' });
+    await expect(api.issue(issueInput)).resolves.toMatchObject({
+      account: { platformSender: true, locale: 'ar' },
+    });
   });
 
-  it('no row: no account; a malformed id never reaches the database', async () => {
+  it('no row: nothing stored; a malformed id never reaches the database', async () => {
     const { db, executed } = fakeDb([]);
     const api = createAuthMailApi(() => db);
-    await expect(api.account(USER)).resolves.toBeNull();
-    await expect(api.route(TENANT)).resolves.toBeNull();
+    await expect(api.issue(issueInput)).resolves.toBeNull();
     const before = executed.length;
-    await expect(api.account('not-an-id')).resolves.toBeNull();
-    await expect(api.route('not-an-id')).resolves.toBeNull();
+    await expect(api.issue({ ...issueInput, userId: 'not-an-id' })).resolves.toBeNull();
     await api.auditSent('x', TENANT);
     expect(executed.length).toBe(before);
   });
 
-  it('reads the sender settings of the organization and its look', async () => {
-    const api = createAuthMailApi(() => fakeDb([routeRow]).db);
-    const found = await api.route(TENANT);
+  it('returns the sender settings of the organization and its look', async () => {
+    const api = createAuthMailApi(() => fakeDb([{ ...accountRow, ...routeRow }]).db);
+    const found = (await api.issue(issueInput))?.route;
     expect(found?.route).toMatchObject({
       tenant: null,
       platform: { provider: 'resend', verified: true, credentialsSealed: 'sealed' },
@@ -120,12 +128,54 @@ describe('what the Send Email hook reads and writes (WP-ADM-05)', () => {
       logoAssetId: null,
     });
     // Colours are checked again; a bad value is not used.
-    const bad = createAuthMailApi(() => fakeDb([{ ...routeRow, action_color: 'red' }]).db);
-    expect((await bad.route(TENANT))?.brand).toBeNull();
-    const plain = createAuthMailApi(
-      () => fakeDb([{ ...routeRow, action_color: null, link_color: null }]).db,
+    const bad = createAuthMailApi(
+      () => fakeDb([{ ...accountRow, ...routeRow, action_color: 'red' }]).db,
     );
-    expect((await plain.route(TENANT))?.brand).toBeNull();
+    expect((await bad.issue(issueInput))?.route.brand).toBeNull();
+    const plain = createAuthMailApi(
+      () => fakeDb([{ ...accountRow, ...routeRow, action_color: null, link_color: null }]).db,
+    );
+    expect((await plain.issue(issueInput))?.route.brand).toBeNull();
+  });
+
+  it('checks a typed code in the database: a right one releases the sealed token hash and its type', async () => {
+    const { db, executed } = fakeDb([
+      {
+        outcome: 'ok',
+        user_id: USER,
+        token_hash_sealed: 'v1.sealed-token-hash-value',
+        action_type: 'magiclink',
+      },
+    ]);
+    const api = createAuthMailApi(() => db);
+    await expect(api.verifyCode('sara@example.test', '482913')).resolves.toEqual({
+      outcome: 'ok',
+      userId: USER,
+      sealedTokenHash: 'v1.sealed-token-hash-value',
+      actionType: 'magiclink',
+    });
+    expect(executed.at(-1)?.sql).toBe('select * from private.verify_sign_in_code($1, $2)');
+    expect(executed.at(-1)?.params).toEqual(['sara@example.test', '482913']);
+  });
+
+  it('a wrong code, the killing 5th, or no live code release nothing; anything unexpected is a refusal', async () => {
+    for (const outcome of ['wrong', 'killed', 'none'] as const) {
+      const api = createAuthMailApi(
+        () => fakeDb([{ outcome, user_id: USER, token_hash_sealed: null, action_type: null }]).db,
+      );
+      await expect(api.verifyCode('sara@example.test', '000000')).resolves.toEqual({ outcome });
+    }
+    for (const rows of [
+      [],
+      [{ outcome: 'ok', user_id: USER, token_hash_sealed: null, action_type: 'magiclink' }],
+      [{ outcome: 'ok', user_id: USER, token_hash_sealed: 'v1.x', action_type: 'recovery' }],
+      [{ outcome: 'surprise', user_id: USER, token_hash_sealed: 'v1.x', action_type: 'magiclink' }],
+    ]) {
+      const api = createAuthMailApi(() => fakeDb(rows).db);
+      await expect(api.verifyCode('sara@example.test', '000000')).resolves.toEqual({
+        outcome: 'none',
+      });
+    }
   });
 
   it('audits a sent code and a refused one by function, without a code or an address in the first', async () => {

@@ -1,3 +1,4 @@
+import 'server-only';
 import type { EmailProviderId } from '../providers';
 
 /** One message handed to a provider (ADR 0008 §2, e-mail channel). */

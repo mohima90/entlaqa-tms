@@ -1,3 +1,4 @@
+import 'server-only';
 import { formatFrom } from './resend';
 import { type HttpProviderOptions, messageId, postToProvider } from './http-provider';
 import type { EmailTransport } from './transport';

@@ -1,3 +1,4 @@
+import 'server-only';
 import { randomUUID } from 'node:crypto';
 import type { EmailRouteRow } from '@jadarat/platform-db';
 import type { RenderedEmail } from '../templates/types';

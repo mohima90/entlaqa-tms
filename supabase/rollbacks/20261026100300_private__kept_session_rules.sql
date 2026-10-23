@@ -356,3 +356,5 @@ begin
   return v_count;
 end
 $function$;
+
+drop function private.kept_until_effective(uuid, timestamptz, timestamptz);

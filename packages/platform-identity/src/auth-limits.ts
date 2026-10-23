@@ -66,7 +66,7 @@ export interface RequestClient {
 const SUBJECT_DOMAIN = 'jadarat.rate-limit.v1';
 
 function subject(
-  kind: 'account' | 'client' | 'user' | 'device' | 'session' | 'invitation',
+  kind: 'account' | 'client' | 'user' | 'device' | 'session' | 'invitation' | 'webhook',
   value: string,
 ): Buffer {
   return createHash('sha256').update(`${SUBJECT_DOMAIN}\n${kind}\n${value}`).digest();
@@ -130,6 +130,11 @@ export function codeMissesClientKey(client: RequestClient): RequestClient {
 
 /** The one subject of the all-clients budget of unknown invitation codes. */
 export const ALL_CLIENTS_SUBJECT = subject('client', '\nall-clients');
+
+/** A webhook call's id (Auth's Send Email hook, standard-webhooks `webhook-id`): replays within the window. */
+export function webhookSubject(webhookId: string): Buffer {
+  return subject('webhook', webhookId);
+}
 
 export function userSubject(userId: string): Buffer {
   return subject('user', userId.trim().toLowerCase());
@@ -206,6 +211,9 @@ export const LIMIT_BUCKETS = {
   signInCodeRequestAccountDaily: 'sign_in_code.request_account_daily',
   signInCodeCheckAllClients: 'sign_in_code.check_all_clients',
   signInCodeRequestMinute: 'sign_in_code.request_minute',
+  signInCodeHookSend: 'sign_in_code.hook_send',
+  signInCodeHookSendDaily: 'sign_in_code.hook_send_daily',
+  signInCodeHookReplay: 'sign_in_code.hook_replay',
 } as const;
 
 /**

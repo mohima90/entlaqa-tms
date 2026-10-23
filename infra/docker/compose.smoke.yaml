@@ -9,6 +9,7 @@ services:
       AUTH_RATE_LIMIT_WINDOW_SECONDS: ${AUTH_RATE_LIMIT_WINDOW_SECONDS:?smoke.sh sets it}
       AUTH_RATE_LIMIT_WINDOW_SMOKE_ONLY: '1'
       # The app offers «Email me a code instead» only where Auth's Send Email hook is set up (WP-ADM-05). This
-      # stack has no such hook: the placeholder only lets the end-to-end journeys exercise the code screen, which
-      # needs no mailbox. No call is ever signed with it.
-      SEND_EMAIL_HOOK_SECRET: smoke-only-placeholder-not-a-secret
+      # stack has no such hook, and NO hook secret is set here (a placeholder would be a signing key everybody can
+      # read in this repository): the test flag below only shows the code screen to the end-to-end journeys,
+      # which need no mailbox. The hook route stays "not configured" (503) and nothing is sent.
+      SIGN_IN_CODE_SCREEN_SMOKE_ONLY: '1'

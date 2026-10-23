@@ -61,12 +61,26 @@ declare
   v_user uuid := private.request_user_id();
   v_session uuid := private.try_uuid(v_claims ->> 'session_id');
   v_days integer;
+  v_tenant uuid;
+  v_access record;
 begin
   if session_user <> 'app_server' or v_user is null or v_session is null
      or coalesce(v_claims ->> 'role', '') <> 'authenticated' then
     raise exception 'reserved to a signed-in user' using errcode = 'insufficient_privilege';
   end if;
   if not private.user_session_is_valid(v_user, v_session) then
+    return 0;
+  end if;
+  -- Only a session that has finished signing in is kept (security re-review L3): it acts in an organization AND
+  -- that organization's second step (the authenticator app), when it asks for one, is done. The caller asks
+  -- again once the second step is complete.
+  select c.active_tenant_id into v_tenant from platform.session_context c
+  where c.session_id = v_session and c.user_id = v_user;
+  if v_tenant is null then
+    return 0;
+  end if;
+  select * into v_access from private.session_access(v_user, v_session, v_tenant, coalesce(v_claims ->> 'aal', '') = 'aal2', false);
+  if v_access.state is distinct from 'ok' or coalesce(v_access.mfa_pending, false) then
     return 0;
   end if;
   -- The strictest organization wins: nothing is kept when any organization of the account has the setting Off
@@ -82,7 +96,7 @@ begin
   end if;
   insert into private.kept_sessions (session_id, user_id, kept_until)
   values (v_session, v_user, now() + make_interval(days => v_days))
-  on conflict (session_id) do update set kept_until = excluded.kept_until
+  on conflict (session_id) do update set kept_until = excluded.kept_until, created_at = now()
   where private.kept_sessions.user_id = excluded.user_id;
   perform private.audit_account_event(v_user, 'platform.auth.browser_remembered',
                                       jsonb_build_object('method', 'email_code'), 'account');

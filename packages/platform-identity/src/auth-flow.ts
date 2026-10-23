@@ -84,11 +84,13 @@ export interface AuthClientLike extends SupabaseAuthLike {
       password: string;
     }): Promise<{ data: unknown; error: { status?: number | undefined } | null }>;
     refreshSession(current?: { refresh_token: string }): Promise<{ data: unknown; error: unknown }>;
-    /** The e-mailed sign-in code (WP-ADM-05): Auth's own e-mail OTP, checked by Auth. */
+    /**
+     * Redeems Auth's one-time token hash of an e-mailed sign-in (WP-ADM-05): only after OUR code was right
+     * (private.verify_sign_in_code released the hash). Auth's own short OTP is never used or e-mailed.
+     */
     verifyOtp(params: {
-      email: string;
-      token: string;
-      type: 'email';
+      token_hash: string;
+      type: 'magiclink';
     }): Promise<{ data: unknown; error: { status?: number | undefined } | null }>;
     signOut(options: { scope: 'local' }): Promise<{ error: unknown }>;
   };

@@ -5,7 +5,9 @@
 -- is rolled back. Covers: the strictest organization decides the days, no sign-in without a code, the session
 -- rules (idle / maximum length / 24 hours do not end a kept session, its own date does), what ends it (sign-out
 -- by deleting the Auth session, «Forget all», the worker's purge), no access to the table, the hook's account
--- and sender functions (platform sender for several organizations), the audit functions, cross-tenant cases.
+-- and sender functions (platform sender for several organizations; the sender settings are reachable only through
+-- the issue function), the audit functions, cross-tenant cases; and (re-review) that lowering the period shortens
+-- the sessions already kept and that a session with a pending second step is not kept.
 
 -- ---------------------------------------------------------------------------------------------------
 -- Keeping a session: the days, the strictest organization wins
@@ -34,6 +36,16 @@ begin
 end $$;
 set local session authorization default;
 update platform.security_policies set remembered_browser_days = 7 where tenant_id = 'b0000000-0000-4000-8000-000000000001';
+set local session authorization app_server;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ad', null));
+do $$
+begin
+  perform tests.assert_eq(private.keep_session(), 0::integer, 'no organization selected yet (re-review L3): nothing is kept');
+end $$;
+set local session authorization default;
+insert into platform.session_context (session_id, user_id, active_tenant_id)
+values ('10000000-0000-4000-8000-0000000000ad', '00000000-0000-4000-8000-0000000000ab', 'a0000000-0000-4000-8000-000000000001');
 set local session authorization app_server;
 set local role authenticated;
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ad', null));
@@ -150,9 +162,97 @@ begin
 end $$;
 rollback;
 
+-- Lowering the period (or switching it off) shortens a session already kept (security re-review M-C): a kept
+-- session never lives beyond when it was kept plus the PRESENT strictest period; past that it follows the rules.
+begin;
+update platform.security_policies set remembered_browser_days = 14 where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+update auth.sessions set created_at = now() - interval '3 days' where id = '10000000-0000-4000-8000-0000000000a1';
+update platform.session_context set last_seen_at = now() - interval '2 days' where session_id = '10000000-0000-4000-8000-0000000000a1';
+insert into private.kept_sessions (session_id, user_id, kept_until, created_at)
+values ('10000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000a1', now() + interval '11 days', now() - interval '3 days');
+do $$
+begin
+  perform tests.assert(private.user_session_is_valid('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1'), '14 days: kept and valid');
+end $$;
+update platform.security_policies set remembered_browser_days = 7 where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+do $$
+begin
+  perform tests.assert(private.user_session_is_valid('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1'),
+    'lowered to 7 days: kept 3 days ago, still valid for 4 more days');
+  perform tests.assert(private.kept_until_effective('00000000-0000-4000-8000-0000000000a1', now() + interval '11 days', now() - interval '3 days')
+                         between now() + interval '3 days 23 hours' and now() + interval '4 days',
+    'the effective date is the shorter one');
+end $$;
+set local session authorization app_server;
+set local role authenticated;
+select tests.set_claims(tests.ua_claims());
+do $$
+begin
+  perform tests.assert_eq(private.current_tenant_id(), 'a0000000-0000-4000-8000-000000000001'::uuid, 'lowered to 7 days: the session still acts');
+end $$;
+set local session authorization default;
+update platform.security_policies set remembered_browser_days = 1 where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+do $$
+begin
+  perform tests.assert(not private.user_session_is_valid('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1'),
+    'lowered to 1 day: 3 days old, no longer kept: over');
+end $$;
+set local session authorization app_server;
+set local role authenticated;
+select tests.set_claims(tests.ua_claims());
+do $$
+begin
+  perform tests.assert(private.current_tenant_id() is null, 'lowered to 1 day: the session no longer acts');
+end $$;
+set local session authorization default;
+update platform.security_policies set remembered_browser_days = 14 where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+do $$
+begin
+  perform tests.assert(private.user_session_is_valid('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1'),
+    'raised again: the stored date was never shortened, valid');
+end $$;
+-- Switched off: nothing is kept any more (and the worker's purge ends what the rules would).
+update platform.security_policies set remembered_browser_days = 0 where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+do $$
+begin
+  perform tests.assert(not private.user_session_is_valid('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1'),
+    'switched off: not kept any more');
+end $$;
+set local session authorization app_worker;
+set local role authenticated;
+select tests.set_claims(tests.system_claims(null, 'tests.purge'));
+do $$
+begin
+  perform private.purge_ended_sessions(100);
+end $$;
+set local session authorization default;
+do $$
+begin
+  perform tests.assert((select count(*) = 0 from auth.sessions where id = '10000000-0000-4000-8000-0000000000a1'),
+    'switched off: the purge ends the session the rules would have ended');
+end $$;
+rollback;
+
+-- Only a finished sign-in is kept (re-review L3): with the organization''s second step pending nothing is kept; once
+-- the session has passed it (aal2 with a confirmed app) it is.
+begin;
+update platform.security_policies set remembered_browser_days = 14, mfa_mode = 'required_all', mfa_grace_days = 0,
+  mfa_required_since = now() - interval '1 day'
+where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+set local session authorization app_server;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1', null));
+do $$
+begin
+  perform tests.assert_eq(private.keep_session(), 0::integer, 'second step pending (required for everyone, no app yet): nothing is kept');
+  perform tests.assert_eq((select count(*) from private.my_kept_sessions()), 0::bigint, 'and nothing is listed');
+end $$;
+rollback;
+
 -- Ending the Auth session (sign-out, «End sessions», deactivation) ends a kept session: the Auth row is gone and
 -- the worker's purge removes what is left. A kept session expires at its date for the worker too.
 begin;
+update platform.security_policies set remembered_browser_days = 14 where tenant_id in ('a0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001');
 insert into private.kept_sessions (session_id, user_id, kept_until, created_at) values
   ('10000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000a1', now() + interval '10 days', now() - interval '1 day'),
   ('10000000-0000-4000-8000-0000000000ab', '00000000-0000-4000-8000-0000000000ab', now() + interval '10 days', now() - interval '1 day'),
@@ -194,7 +294,7 @@ end $$;
 rollback;
 
 -- ---------------------------------------------------------------------------------------------------
--- The Send Email hook: account, sender rule, route and audit
+-- The Send Email hook: the issue function (account, sender rule, route), the sender settings only through it, audit
 -- ---------------------------------------------------------------------------------------------------
 begin;
 set local session authorization app_server;
@@ -204,21 +304,24 @@ do $$
 declare
   r record;
 begin
-  select * into r from private.auth_mail_account('00000000-0000-4000-8000-0000000000a1');
+  select * into r from private.auth_mail_issue('00000000-0000-4000-8000-0000000000a1', '123456', 'sealedsealedsealedsealed', 'magiclink');
   perform tests.assert(r.email = 'ua@a.test' and r.tenant_id = 'a0000000-0000-4000-8000-000000000001'
                        and r.person_id = 'a1000000-0000-4000-8000-0000000000a1' and r.locale in ('ar', 'en'),
     'the account: address, organization, person and language');
   perform tests.assert(not r.platform_sender, 'one organization, no platform role: the organization''s own sender may carry the e-mail');
-  select * into r from private.auth_mail_account('00000000-0000-4000-8000-0000000000ab');
-  perform tests.assert(r.platform_sender, 'two organizations: the platform sender only (M1)');
-  perform tests.assert_eq((select count(*) from private.auth_mail_account('00000000-0000-4000-8000-0000000000a3')), 0::bigint, 'a suspended member: no e-mail');
-  perform tests.assert_eq((select count(*) from private.auth_mail_account('00000000-0000-4000-8000-0000000000e1')), 0::bigint, 'an account without a membership: no e-mail');
-  perform tests.assert_eq((select count(*) from private.auth_mail_account(gen_random_uuid())), 0::bigint, 'an unknown account: no e-mail');
-  perform tests.assert_eq((select count(*) from private.auth_mail_account(null)), 0::bigint, 'no account: nothing');
-  select * into r from private.auth_mail_route('a0000000-0000-4000-8000-000000000001');
   perform tests.assert(r.brand_name_en = 'Tenant A', 'the route: the organization''s name');
-  perform tests.assert_eq((select count(*) from private.auth_mail_route('c0000000-0000-4000-8000-000000000001')), 0::bigint, 'a suspended organization: no route');
-  perform tests.assert_eq((select count(*) from private.auth_mail_route(gen_random_uuid())), 0::bigint, 'an unknown organization: no route');
+  select * into r from private.auth_mail_issue('00000000-0000-4000-8000-0000000000ab', '123456', 'sealedsealedsealedsealed', 'magiclink');
+  perform tests.assert(r.platform_sender, 'two organizations: the platform sender only (M1)');
+  perform tests.assert_eq((select count(*) from private.auth_mail_issue('00000000-0000-4000-8000-0000000000a3', '123456', 'sealedsealedsealedsealed', 'magiclink')), 0::bigint, 'a suspended member: no e-mail');
+  perform tests.assert_eq((select count(*) from private.auth_mail_issue('00000000-0000-4000-8000-0000000000e1', '123456', 'sealedsealedsealedsealed', 'magiclink')), 0::bigint, 'an account without a membership: no e-mail');
+  perform tests.assert_eq((select count(*) from private.auth_mail_issue(gen_random_uuid(), '123456', 'sealedsealedsealedsealed', 'magiclink')), 0::bigint, 'an unknown account: no e-mail');
+  perform tests.assert_eq((select count(*) from private.auth_mail_issue(null, '123456', 'sealedsealedsealedsealed', 'magiclink')), 0::bigint, 'no account: nothing');
+  perform tests.assert_fails($q$select * from private.auth_mail_issue('00000000-0000-4000-8000-0000000000a1', '12345', 'sealedsealedsealedsealed', 'magiclink')$q$, array['22023'], 'a code that is not six digits');
+  perform tests.assert_fails($q$select * from private.auth_mail_issue('00000000-0000-4000-8000-0000000000a1', '123456', 'short', 'magiclink')$q$, array['22023'], 'a token that is too short');
+  perform tests.assert_fails($q$select * from private.auth_mail_issue('00000000-0000-4000-8000-0000000000a1', '123456', 'sealedsealedsealedsealed', 'recovery')$q$, array['22023'], 'only the sign-in type');
+  -- The sender settings (sealed provider secrets) are not readable on their own, nor the account helper.
+  perform tests.assert_fails($q$select * from private.auth_mail_route('a0000000-0000-4000-8000-000000000001')$q$, array['42501'], 'the web app cannot read the sender settings on their own (M-B)');
+  perform tests.assert_fails($q$select * from private.auth_mail_account('00000000-0000-4000-8000-0000000000a1')$q$, array['42501'], 'nor the account helper');
 end $$;
 -- Only the web app's login role.
 set local session authorization app_worker;
@@ -226,8 +329,9 @@ set local role authenticated;
 select tests.set_claims(tests.system_claims('a0000000-0000-4000-8000-000000000001', 'tests.sic'));
 do $$
 begin
-  perform tests.assert_fails($q$select * from private.auth_mail_account('00000000-0000-4000-8000-0000000000a1')$q$, array['42501'], 'the worker does not ask');
-  perform tests.assert_fails($q$select * from private.auth_mail_route('a0000000-0000-4000-8000-000000000001')$q$, array['42501'], 'nor for the route');
+  perform tests.assert_fails($q$select * from private.auth_mail_issue('00000000-0000-4000-8000-0000000000a1', '123456', 'sealedsealedsealedsealed', 'magiclink')$q$, array['42501'], 'the worker does not issue codes');
+  perform tests.assert_fails($q$select * from private.auth_mail_route('a0000000-0000-4000-8000-000000000001')$q$, array['42501'], 'nor ask for the route');
+  perform tests.assert_fails($q$select * from private.verify_sign_in_code('ua@a.test', '123456')$q$, array['42501'], 'nor check codes');
   perform tests.assert_fails($q$select private.audit_sign_in_code_sent('00000000-0000-4000-8000-0000000000a1', 'a0000000-0000-4000-8000-000000000001')$q$, array['42501'], 'nor audits');
   perform tests.assert_fails($q$select private.audit_sign_in_code_refused('ua@a.test', false)$q$, array['42501'], 'nor audits refusals');
   perform tests.assert(not private.account_needs_platform_sender('00000000-0000-4000-8000-0000000000a1'), 'worker: one organization, no platform role: the organization may send');

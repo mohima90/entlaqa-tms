@@ -1,3 +1,4 @@
+import 'server-only';
 import { EmailSendError, type EmailTransport, type OutgoingEmail } from './transport';
 
 export const RESEND_API_URL = 'https://api.resend.com/emails';

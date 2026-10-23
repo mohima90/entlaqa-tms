@@ -330,7 +330,7 @@
     "sent": {
       "title": "Check your email",
       "text": "If {email} has an account with us, you'll get an email within a few minutes.",
-      "validity": "The link is valid for <b>10 minutes</b> and works once.",
+      "validity": "The link is valid for <b>60 minutes</b> and works once.",
       "spam": "No email? It may be in your spam folder. You can send it again after a minute.",
       "resend": "Send again",
       "resendIn": "Send again ({time})",
@@ -358,7 +358,7 @@
       "sessionsNotice": "After saving, we end every sign-in session on all devices and send a confirmation to your email. You then sign in with the new password.",
       "submit": "Save password",
       "submitting": "Saving…",
-      "validity": "The link is valid for 10 minutes from when it was requested and works once. If it has expired, request a new one on the <link>Forgot password</link> page.",
+      "validity": "The link is valid for 60 minutes from when it was requested and works once. If it has expired, request a new one on the <link>Forgot password</link> page.",
       "codeIntro": "Your account uses an authenticator app: enter the code it shows now. The link works once, so check the code before saving.",
       "codeOptionalIntro": "Does your account use an authenticator app? Then also enter the code it shows now: without it the password can't be changed, and the link is used up.",
       "codeLabel": "Verification code",
@@ -374,7 +374,7 @@
     },
     "invalidLink": {
       "title": "This link has expired or was already used",
-      "text": "Password reset links are valid for 10 minutes and work once. Request a new link.",
+      "text": "Password reset links are valid for 60 minutes and work once. Request a new link.",
       "requestNew": "Request a new link",
       "signIn": "Back to sign in"
     },

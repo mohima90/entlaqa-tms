@@ -25,11 +25,8 @@ import { hashToken } from './invitation-mailer';
 export const ACCOUNT_MAIL_TASK = 'platform.account_mail';
 /** Requests answered per pass; a full pass queues the next one at once. */
 export const ACCOUNT_MAIL_BATCH = 20;
-/**
- * Auth's e-mail one-time token lifetime (`otp_exp` = 600 s since the e-mailed sign-in code, WP-ADM-05: one
- * setting for every e-mail Auth issues), stated in the e-mail.
- */
-export const RESET_LINK_VALID_MINUTES = 10;
+/** Auth's link lifetime (`otp_exp` = 3600 s), stated in the e-mail. */
+export const RESET_LINK_VALID_MINUTES = 60;
 /**
  * Per person and organization: at most this many e-mails of each account template an hour (beyond the web
  * app's own limits and Auth's one link a minute) — a further request is answered without an e-mail.

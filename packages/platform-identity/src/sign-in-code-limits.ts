@@ -11,6 +11,8 @@ import {
   codeMissesClientKey,
   errorNameOf,
   failClosed,
+  userSubject,
+  webhookSubject,
 } from './auth-limits';
 
 /**
@@ -236,6 +238,104 @@ export function createSignInCodeLimiter(
         },
       };
       return { allowed: true, attempt };
+    },
+  };
+}
+
+/**
+ * The Send Email hook's own limits (security re-review M-A and L1). The request limits above run in the app's
+ * server action, but Auth's public /otp endpoint can be called by anyone without passing them - and each call
+ * makes Auth call the hook, which e-mails a code. So the hook counts, per ACCOUNT (the user id Auth sends, not
+ * a typed address): 10 codes in 15 minutes and 40 a day; over the limit nothing is e-mailed and the skip is
+ * logged. And it never acts twice on the same webhook id within five minutes (the signed timestamp's own
+ * tolerance): a captured signed call cannot be replayed. Fail closed like the others.
+ */
+export interface SendEmailHookLimiter {
+  /**
+   * First sight of this webhook id in the last five minutes? false: a replay - do nothing. Throws when the
+   * limiter fails (the hook then sends nothing).
+   */
+  claimWebhook(webhookId: string): Promise<boolean>;
+  /** Gives the webhook id back (the call failed, so a retry of it must be handled). Never throws. */
+  releaseWebhook(webhookId: string): Promise<void>;
+  /** May another code be e-mailed to this account now? Counts it. Throws when the limiter fails. */
+  allowSend(userId: string): Promise<boolean>;
+}
+
+export function createSendEmailHookLimiter(
+  deps: LimiterDeps & { readonly action: string },
+): SendEmailHookLimiter {
+  const limits = deps.limits.signInCode;
+  const B = LIMIT_BUCKETS;
+  return {
+    claimWebhook(webhookId) {
+      return failClosed(deps, deps.action, async () => {
+        const hit = await deps.store.hit(
+          B.signInCodeHookReplay,
+          webhookSubject(webhookId),
+          limits.hookReplay,
+        );
+        if (!hit.allowed) {
+          deps.log({
+            event: 'auth.rate_limited',
+            action: deps.action,
+            reason: B.signInCodeHookReplay,
+            limit: B.signInCodeHookReplay,
+            retryAfterS: hit.retryAfterSeconds,
+          });
+        }
+        return hit.allowed;
+      });
+    },
+    async releaseWebhook(webhookId) {
+      try {
+        await deps.store.giveBack(B.signInCodeHookReplay, webhookSubject(webhookId));
+      } catch (error) {
+        deps.log({
+          event: 'auth.limiter.unavailable',
+          action: deps.action,
+          reason: 'webhook_not_given_back',
+          errorName: errorNameOf(error),
+        });
+      }
+    },
+    allowSend(userId) {
+      return failClosed(deps, deps.action, async () => {
+        const account = userSubject(userId);
+        const recent = await deps.store.hit(
+          B.signInCodeHookSend,
+          account,
+          limits.hookSendsPerAccount,
+        );
+        if (!recent.allowed) {
+          deps.log({
+            event: 'auth.rate_limited',
+            action: deps.action,
+            reason: B.signInCodeHookSend,
+            limit: B.signInCodeHookSend,
+            retryAfterS: recent.retryAfterSeconds,
+            subjectRef: recent.ref,
+          });
+          return false;
+        }
+        const daily = await deps.store.hit(
+          B.signInCodeHookSendDaily,
+          account,
+          limits.hookSendsPerAccountDaily,
+        );
+        if (!daily.allowed) {
+          deps.log({
+            event: 'auth.rate_limited',
+            action: deps.action,
+            reason: B.signInCodeHookSendDaily,
+            limit: B.signInCodeHookSendDaily,
+            retryAfterS: daily.retryAfterSeconds,
+            subjectRef: daily.ref,
+          });
+          return false;
+        }
+        return true;
+      });
     },
   };
 }

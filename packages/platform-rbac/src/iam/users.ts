@@ -24,6 +24,7 @@ import { type LifecycleOffer, NO_LIFECYCLE_OFFER, lifecycleOffer } from './deact
 import { ROLE_CODE } from './edit-roles';
 import { type RoleChoice, loadRoleChoices } from './role-catalogue';
 import { NO_SCOPE_UNITS, type ScopeUnitChoices, loadScopeUnitChoices } from './scope-units';
+import { type PersonRecordView, loadPersonRecordView } from './person-record';
 import { type AccountLockBudget, signInLockForProfile } from './sign-in-lock';
 
 /**
@@ -196,6 +197,13 @@ export interface UserProfileView {
    * تسجيل الدخول» is shown only while `locked`.
    */
   readonly signInLock: MemberSignInLock | null;
+  /**
+   * The grade and the HR-only card as THIS viewer may see them (WP-ADM-04): `null` sections are not rendered
+   * and carry nothing — the database gives the viewer no row (HR-only fields: the person themself and
+   * `platform.person.hr_details` holders only; the grade: HR, the Organization Admin, the person, their
+   * managers and unit heads).
+   */
+  readonly record: PersonRecordView;
 }
 
 /**
@@ -261,6 +269,7 @@ export function userProfileQueryDefinition(
         canEditRoles,
         lifecycle,
         signInLock,
+        record: await loadPersonRecordView(ctx, person.id),
       });
     },
   };

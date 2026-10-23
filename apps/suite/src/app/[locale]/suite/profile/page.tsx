@@ -1,5 +1,6 @@
 import { toClientError } from '@jadarat/platform-core';
 import type { UserProfile } from '@jadarat/platform-db';
+import type { PersonRecordView } from '@jadarat/platform-rbac';
 import { type AppLocale, type DisplayDateFormatter, formatHijriDate } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { Alert, Avatar, Badge, FormSection, Icon, PageHeader, TabNav } from '@jadarat/ui';
@@ -16,9 +17,12 @@ import {
 } from '../../../../components/profile/authenticator-card';
 import { ChangePasswordForm } from '../../../../components/profile/change-password-form';
 import { PersonalDetailsForm } from '../../../../components/profile/personal-details-form';
+import { ProfilePhotoCard } from '../../../../components/profile/profile-photo-card';
 import { SessionsTable } from '../../../../components/sessions/sessions-table';
+import { HrDetailsCard } from '../../../../components/users/hr-details-card';
 import { SuiteShell } from '../../../../components/suite-shell';
 import { mfaErrorTexts } from '../../../../lib/auth-texts';
+import { personPhotoHref } from '../../../../lib/person-photo';
 import { stepUpHref } from '../../../../lib/mfa-view';
 import { formStateFrom } from '../../../../lib/profile-form';
 import { profileErrorTexts } from '../../../../lib/profile-texts';
@@ -81,6 +85,8 @@ export default async function MyProfilePage({
           details={result.value.details}
           profile={result.value.profile}
           levels={result.value.levels}
+          record={result.value.record}
+          live
           security={security.ok ? security.value : null}
           dates={pageDates(locale, context)}
           nameLanguage={context.regional.defaultLocale}
@@ -117,10 +123,16 @@ async function MyProfile({
   dates,
   nameLanguage,
   levels,
+  record,
+  live,
   tab,
   primaryRole,
   organizationName,
 }: {
+  /** The member's own grade and HR-only fields, read-only (WP-ADM-04). */
+  record: PersonRecordView;
+  /** Sign-in and database configured: the photo buttons work. */
+  live: boolean;
   /** The organization's own level names: the unit field says its level (guided-test feedback #3). */
   levels: readonly LevelLabel[];
   locale: AppLocale;
@@ -142,6 +154,7 @@ async function MyProfile({
   const common = await getTranslations({ locale, namespace: 'common' });
   const fields = await getTranslations({ locale, namespace: 'userProfile' });
   const users = await getTranslations({ locale, namespace: 'users' });
+  const people = await getTranslations({ locale, namespace: 'peopleRecord' });
   const format = await getFormatter({ locale });
   const errors = await profileErrorTexts(locale);
   const none = <NotSet label={users('noneLabel')} />;
@@ -151,6 +164,7 @@ async function MyProfile({
     locale === 'en' ? (profile.jobTitleEn ?? profile.jobTitleAr) : profile.jobTitleAr;
   const unitName = named(profile.departmentNameAr, profile.departmentNameEn);
   const fullName = localizedName(locale, details.displayNameAr, details.displayNameEn);
+  const photoHref = personPhotoHref(profile.personId, profile.photoVersion);
 
   const work: { key: string; label: string; value: ReactNode }[] = [
     {
@@ -171,6 +185,15 @@ async function MyProfile({
       value: profile.employeeNumber ? <bdi dir="ltr">{profile.employeeNumber}</bdi> : none,
     },
     { key: 'jobTitle', label: fields('fields.jobTitle'), value: jobTitle ?? none },
+    ...(record.grade
+      ? [
+          {
+            key: 'grade',
+            label: people('grade.label'),
+            value: record.grade.code ? <bdi dir="ltr">{record.grade.code}</bdi> : none,
+          },
+        ]
+      : []),
     {
       key: 'department',
       label: unitFieldLabel(
@@ -224,7 +247,12 @@ async function MyProfile({
       className="mb-5 flex flex-wrap items-center gap-4 rounded-2xl border border-border bg-surface p-4.5 shadow-2 md:gap-5 md:px-6 md:py-5.5"
       data-testid="profile-identity"
     >
-      <Avatar name={fullName || (profile.email ?? '')} size="xl" />
+      <Avatar
+        name={fullName || (profile.email ?? '')}
+        size="xl"
+        src={photoHref ?? undefined}
+        alt={people('photo.alt', { name: fullName || (profile.email ?? '') })}
+      />
       <div className="min-w-56 flex-1">
         <h2 id="profile-identity-name" className="m-0 text-2xl font-bold">
           {fullName}
@@ -268,58 +296,108 @@ async function MyProfile({
   const settingsCommon = await settingsCommonTexts(locale);
 
   const profileTab = (
-    <PersonalDetailsForm
-      locale={locale}
-      initial={formStateFrom(details)}
-      nameLanguage={nameLanguage}
-      labels={{
-        personal: t('personal'),
-        personalIntro: t('personalIntro'),
-        arabicName: t('arabicName'),
-        englishName: t('englishName'),
-        addArabicName: t('addArabicName'),
-        addEnglishName: t('addEnglishName'),
-        parts: {
-          firstName: t('fields.firstName'),
-          fatherName: t('fields.fatherName'),
-          grandfatherName: t('fields.grandfatherName'),
-          familyName: t('fields.familyName'),
-        },
-        mobile: t('fields.mobile'),
-        mobileHint: t('mobileHint'),
-        language: t('fields.language'),
-        languages: { ar: t('languages.ar'), en: t('languages.en') },
-        required: common('required'),
-        optional: common('optional'),
-        save: t('save'),
-        saving: t('saving'),
-        saved: t('saved'),
-        cancel: common('cancel'),
-        noChanges: t('noChanges'),
-        prefilledName: t('prefilledName'),
-        currentName: t('currentName'),
-        currentNameKept: t('currentNameKept'),
-      }}
-      fieldTexts={{
-        required: t('fieldErrors.required'),
-        name: t('fieldErrors.name'),
-        mobile: t('fieldErrors.mobile'),
-        nameTooLong: t('fieldErrors.nameTooLong'),
-      }}
-      errors={errors}
-      common={settingsCommon}
-    >
-      <FormSection title={t('work')} description={t('workIntro')} className="mt-5.5">
-        <dl className="m-0 grid grid-cols-1 gap-x-7 gap-y-4.5 sm:grid-cols-2 md:col-span-2">
-          {work.map((field) => (
-            <div key={field.key} className="flex min-w-0 flex-col gap-1">
-              <dt className="text-[13.5px] text-text-muted">{field.label}</dt>
-              <dd className="m-0 font-medium [overflow-wrap:anywhere]">{field.value}</dd>
-            </div>
-          ))}
-        </dl>
-      </FormSection>
-    </PersonalDetailsForm>
+    <>
+      <ProfilePhotoCard
+        name={fullName || (profile.email ?? '')}
+        photoHref={photoHref}
+        live={live}
+        errors={errors}
+        labels={{
+          title: people('photo.title'),
+          intro: people('photo.intro'),
+          upload: people('photo.upload'),
+          replace: people('photo.replace'),
+          remove: people('photo.remove'),
+          rules: people('photo.rules'),
+          noPhoto: people('photo.noPhoto'),
+          errType: people('photo.errType'),
+          errSize: people('photo.errSize'),
+          errNotUsable: people('photo.errNotUsable'),
+          errUpload: people('photo.errUpload'),
+          removeTitle: people('photo.removeTitle'),
+          removeText: people('photo.removeText'),
+          removeConfirm: people('photo.removeConfirm'),
+          removed: people('photo.removed'),
+          saved: people('photo.saved'),
+          cancel: common('cancel'),
+          close: common('close'),
+        }}
+        crop={{
+          title: people('photo.cropTitle'),
+          help: people('photo.cropHelp'),
+          area: people('photo.cropArea'),
+          zoom: people('photo.zoom'),
+          shrunk: people('photo.shrunk'),
+          save: people('photo.save'),
+          saving: people('photo.saving'),
+          cancel: common('cancel'),
+          close: common('close'),
+          errType: people('photo.errType'),
+          errSize: people('photo.errSize'),
+          errLoad: people('photo.errLoad'),
+        }}
+      />
+      <PersonalDetailsForm
+        locale={locale}
+        initial={formStateFrom(details)}
+        nameLanguage={nameLanguage}
+        labels={{
+          personal: t('personal'),
+          personalIntro: t('personalIntro'),
+          arabicName: t('arabicName'),
+          englishName: t('englishName'),
+          addArabicName: t('addArabicName'),
+          addEnglishName: t('addEnglishName'),
+          parts: {
+            firstName: t('fields.firstName'),
+            fatherName: t('fields.fatherName'),
+            grandfatherName: t('fields.grandfatherName'),
+            familyName: t('fields.familyName'),
+          },
+          mobile: t('fields.mobile'),
+          mobileHint: t('mobileHint'),
+          language: t('fields.language'),
+          languages: { ar: t('languages.ar'), en: t('languages.en') },
+          required: common('required'),
+          optional: common('optional'),
+          save: t('save'),
+          saving: t('saving'),
+          saved: t('saved'),
+          cancel: common('cancel'),
+          noChanges: t('noChanges'),
+          prefilledName: t('prefilledName'),
+          currentName: t('currentName'),
+          currentNameKept: t('currentNameKept'),
+        }}
+        fieldTexts={{
+          required: t('fieldErrors.required'),
+          name: t('fieldErrors.name'),
+          mobile: t('fieldErrors.mobile'),
+          nameTooLong: t('fieldErrors.nameTooLong'),
+        }}
+        errors={errors}
+        common={settingsCommon}
+      >
+        <FormSection title={t('work')} description={t('workIntro')} className="mt-5.5">
+          <dl className="m-0 grid grid-cols-1 gap-x-7 gap-y-4.5 sm:grid-cols-2 md:col-span-2">
+            {work.map((field) => (
+              <div key={field.key} className="flex min-w-0 flex-col gap-1">
+                <dt className="text-[13.5px] text-text-muted">{field.label}</dt>
+                <dd className="m-0 font-medium [overflow-wrap:anywhere]">{field.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </FormSection>
+        {record.hr ? (
+          <HrDetailsCard
+            locale={locale}
+            details={record.hr.details}
+            own={record.hr.own}
+            className="mt-5.5 grid grid-cols-1 gap-x-8 gap-y-6 rounded-xl border border-border bg-surface px-7 py-6.5 md:col-span-2 lg:grid-cols-[260px_minmax(0,1fr)]"
+          />
+        ) : null}
+      </PersonalDetailsForm>
+    </>
   );
 
   const securityTab = (

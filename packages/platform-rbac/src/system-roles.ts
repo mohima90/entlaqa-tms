@@ -104,9 +104,13 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     },
     privileged: true,
     // Every platform permission except the organization structure, which the HR Manager maintains
-    // (PO decision 11 Oct 2026, BRD v2.7 FR-ADM-04/05; T-M2-19).
+    // (PO decision 11 Oct 2026, BRD v2.7 FR-ADM-04/05; T-M2-19), and the HR-only person fields, which the
+    // Organization Admin does not see or edit (PO, 21 Oct 2026, WP-ADM-04).
     grants: tenantWide(
-      ...Object.values(p).filter((permission) => permission !== p['platform.org.manage']),
+      ...Object.values(p).filter(
+        (permission) =>
+          permission !== p['platform.org.manage'] && permission !== p['platform.person.hr_details'],
+      ),
     ),
   },
   {
@@ -127,6 +131,8 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       p['platform.org.read'],
       // Branches and departments (PO decision 11 Oct 2026, BRD v2.7 FR-ADM-04/05; T-M2-19).
       p['platform.org.manage'],
+      // Gender, date of birth and employment category (WP-ADM-04, FR-IAM-02).
+      p['platform.person.hr_details'],
       c['tms.course.read'],
       c['tms.course_cost.read'],
     ),

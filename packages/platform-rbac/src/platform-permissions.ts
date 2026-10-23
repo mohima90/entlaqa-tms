@@ -74,6 +74,20 @@ export const platformPermissions = definePermissions('platform', [
     requiresAal2: false,
   },
   {
+    // WP-ADM-04 (FR-IAM-02; business flow EP-PEOPLE-photo-hr-fields, PO 21 Oct 2026): gender, date of birth and
+    // employment category of every member. The HR Manager holds it; the Organization Admin does NOT (a set-up
+    // role). A custom role may hold it with the whole organization as its scope and is then privileged. The
+    // person always reads their own, read-only, without it.
+    code: 'platform.person.hr_details',
+    label: { ar: 'عرض بيانات الموارد البشرية وتعديلها', en: 'View and edit HR-only fields' },
+    description: {
+      ar: 'الجنس وتاريخ الميلاد وفئة التوظيف لجميع الأعضاء، ولا تمنح هذه البيانات أي وصول',
+      en: 'Gender, date of birth and employment category of every member. They never give access to anything',
+    },
+    risk: 'medium',
+    requiresAal2: false,
+  },
+  {
     code: 'platform.role.read',
     label: { ar: 'عرض الأدوار والصلاحيات', en: 'View roles and permissions' },
     description: {

@@ -32,6 +32,8 @@ import type { ScopeUnitTexts } from './scope-unit-select';
 export interface MemberRowView {
   readonly personId: string;
   readonly name: string;
+  /** The address of the person's photo (WP-ADM-04); null: initials. */
+  readonly photoHref: string | null;
   readonly email: string | null;
   readonly employeeNumber: string | null;
   /** The role in words, or null with `roleNote` saying why («Not visible to you», «Not set»). */
@@ -269,7 +271,12 @@ export function MembersTable(props: MembersTableProps) {
                 >
                   <td className={tableClasses.cell}>
                     <div className="flex items-center gap-3">
-                      <Avatar name={row.name} tone="soft" size="md" />
+                      <Avatar
+                        name={row.name}
+                        tone="soft"
+                        size="md"
+                        src={row.photoHref ?? undefined}
+                      />
                       <div className="min-w-0">
                         {nameButton(row, 'table')}
                         {row.email ? (
@@ -311,7 +318,9 @@ export function MembersTable(props: MembersTableProps) {
         {rows.map((row) => (
           <ListCard
             key={row.personId}
-            leading={<Avatar name={row.name} tone="soft" size="md" />}
+            leading={
+              <Avatar name={row.name} tone="soft" size="md" src={row.photoHref ?? undefined} />
+            }
             title={nameButton(row, 'card')}
             detail={[row.roleName, row.unitName].filter(Boolean).join(' · ') || null}
             status={
@@ -444,7 +453,7 @@ function PeekPanel({
       onClose={onClose}
       title={
         <span className="flex items-center gap-3">
-          <Avatar name={row.name} size="md" />
+          <Avatar name={row.name} size="md" src={row.photoHref ?? undefined} />
           <span>{row.name}</span>
         </span>
       }

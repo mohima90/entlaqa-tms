@@ -121,7 +121,8 @@
       "close": "Close a panel, menu or dialog",
       "rows": "Move between rows",
       "open": "Open the selected row"
-    }
+    },
+    "grades": "Grades"
   },
   "errors": {
     "malformedRequest": "We couldn't process this request. Refresh the page and try again.",
@@ -484,7 +485,12 @@
       "other": "Recorded action ({action})",
       "platform_user_mfa_reset": "Authenticator app reset",
       "platform_user_sessions_ended": "Sign-in sessions ended",
-      "platform_user_sign_in_unlocked": "Sign-in unlocked"
+      "platform_user_sign_in_unlocked": "Sign-in unlocked",
+      "platform_profile_photo_added": "Photo added",
+      "platform_profile_photo_replaced": "Photo replaced",
+      "platform_profile_photo_removed": "Photo removed",
+      "platform_person_hr_details_changed": "HR details changed",
+      "platform_person_grade_changed": "Grade changed"
     },
     "breadcrumbLabel": "Breadcrumb",
     "editDetails": "Edit details",
@@ -3275,6 +3281,114 @@
       "nameTooLong": "Use 80 characters or fewer.",
       "nameInvalid": "Remove special formatting characters from the name.",
       "invalid": "Check this value."
+    }
+  },
+  "peopleRecord": {
+    "photo": {
+      "title": "Photo",
+      "intro": "Shown next to your name wherever people are listed.",
+      "upload": "Upload a photo",
+      "replace": "Replace photo",
+      "remove": "Remove photo",
+      "rules": "PNG, JPG or WebP, up to 2 MB. Large photos from a phone are shrunk for you, and hidden details such as where it was taken are removed.",
+      "noPhoto": "You have no photo yet. Your initials show instead.",
+      "errType": "This file can’t be used. Choose a PNG, JPG or WebP picture.",
+      "errSize": "This photo is still over 2 MB after shrinking. Choose a smaller one.",
+      "errNotUsable": "This photo couldn’t be saved. Choose another one or try again.",
+      "errUpload": "The photo couldn’t be uploaded. Check your connection and try again.",
+      "errLoad": "This picture can’t be opened. Choose another one.",
+      "removeTitle": "Remove your photo?",
+      "removeText": "Your initials will show instead and the photo file is deleted. You can upload another one any time.",
+      "removeConfirm": "Remove photo",
+      "removed": "Photo removed.",
+      "saved": "Photo saved.",
+      "cropTitle": "Adjust your photo",
+      "cropHelp": "Drag the picture to move it and use the slider to zoom. The circle is what people will see.",
+      "cropArea": "Photo area. Use the arrow keys to move the picture.",
+      "zoom": "Zoom",
+      "shrunk": "{file} · shrunk from {from} to {to}",
+      "save": "Save photo",
+      "saving": "Saving…",
+      "alt": "Photo of {name}"
+    },
+    "hr": {
+      "title": "HR details",
+      "lock": "Only HR",
+      "lockMe": "Only you and HR",
+      "askHr": "Something wrong? Ask HR to correct these.",
+      "emptyMe": "HR hasn’t added these yet. They are filled in by HR.",
+      "empty": "No HR details added yet.",
+      "sectionHint": "Only HR and people given this permission can see and change these. They never give access to anything.",
+      "gender": "Gender",
+      "male": "Male",
+      "female": "Female",
+      "dob": "Date of birth",
+      "dobHijri": "Hijri: {date}",
+      "category": "Employment category",
+      "cat": {
+        "management": "Management",
+        "professional": "Professional",
+        "technical": "Technical",
+        "operational": "Operational"
+      },
+      "notSet": "Not set",
+      "dobError": "Enter a real date in the past.",
+      "audit": "Changes to HR details are recorded without their values.",
+      "privNote": "{name} is an Organization Admin, so you can’t change their account details. You can still fill in their HR details.",
+      "errForbidden": "You can’t change HR details."
+    },
+    "grade": {
+      "label": "Grade",
+      "hint": "Pick from your organization’s list.",
+      "none": "No grade",
+      "manage": "Manage grades",
+      "emptyHint": "There are no grades yet.",
+      "addSome": "Add grades first",
+      "errInvalid": "Pick a grade from the list."
+    },
+    "edit": {
+      "work": "Work details",
+      "lockedNote": "The account details below stay as they are. You can fill in the grade and HR details.",
+      "partialSaved": "The details were saved, but the grade or HR details were not. Try again."
+    },
+    "grades": {
+      "title": "Grades",
+      "crumb": "Organization",
+      "desc": "The grade codes your organization uses, such as 7 or G7. HR and the Organization Admin give each person one, and many people can share a grade.",
+      "add": "Add grade",
+      "colCode": "Grade code",
+      "colPeople": "People",
+      "colActions": "Actions",
+      "people": "{count, plural, =0 {No one} one {# person} other {# people}}",
+      "rename": "Rename grade {code}",
+      "deleteAria": "Delete grade {code}",
+      "caption": "Grades of the organization",
+      "emptyTitle": "No grades yet",
+      "emptyBody": "Add the grade codes your organization uses. Then HR can give each person one.",
+      "addTitle": "Add a grade",
+      "editTitle": "Rename grade {code}",
+      "codeLabel": "Grade code",
+      "codeHint": "Letters, digits and punctuation, up to 12 characters, such as 7, G7, #7 or G-7. Each code can be used once.",
+      "errFormat": "Use up to 12 characters without spaces, with at least one letter or digit, such as 7 or G-7.",
+      "errTaken": "{code} is already in the list.",
+      "errRequired": "Enter a grade code.",
+      "editNote": "{count, plural, one {# person has} other {# people have}} this grade. They will show the new code.",
+      "deleteTitle": "Delete grade {code}?",
+      "deleteText": "No one has this grade. It will be removed from the list.",
+      "deleteBlockedTitle": "Can’t delete grade {code}",
+      "deleteBlockedText": "{count, plural, one {# person has} other {# people have}} this grade. Give them another grade first, then delete it.",
+      "addConfirm": "Add grade",
+      "saveConfirm": "Save",
+      "deleteConfirm": "Delete grade",
+      "understood": "Got it",
+      "added": "Grade {code} added.",
+      "renamed": "Grade renamed to {code}.",
+      "deleted": "Grade {code} deleted.",
+      "audit": "Changes to the list are recorded in the audit log.",
+      "count": "{count, plural, one {# grade} other {# grades}}",
+      "loadFailed": "The grades couldn’t be loaded. Reference: {correlationId}",
+      "cancel": "Cancel",
+      "close": "Close"
     }
   }
 }

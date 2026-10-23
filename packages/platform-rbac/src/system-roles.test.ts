@@ -136,14 +136,27 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
     }
   });
 
-  it('gives the Organization Admin every platform permission tenant-wide, except the organization structure', () => {
+  it('gives the Organization Admin every platform permission tenant-wide, except the organization structure and the HR-only fields', () => {
     const admin = getSystemRole('tenant_admin');
     expect(admin.grants.map((g) => g.permission.code).sort()).toEqual(
       Object.keys(platformPermissions)
-        .filter((code) => code !== 'platform.org.manage')
+        .filter((code) => code !== 'platform.org.manage' && code !== 'platform.person.hr_details')
         .sort(),
     );
     expect(admin.grants.every((g) => g.scope === 'tenant')).toBe(true);
+  });
+
+  it('lets only the HR Manager see and edit the HR-only fields (WP-ADM-04, PO 21 Oct 2026)', () => {
+    // Gender, date of birth and employment category: the Organization Admin is a set-up role and does NOT
+    // hold the permission (PO answer 1); the L&D Manager, Training Coordinator, Department Head and
+    // Employee do not either. A custom role may hold it (such a role is privileged).
+    const holders = SYSTEM_ROLES.filter((r) =>
+      r.grants.some((g) => g.permission.code === 'platform.person.hr_details'),
+    ).map((r) => [
+      r.code,
+      r.grants.find((g) => g.permission.code === 'platform.person.hr_details')?.scope,
+    ]);
+    expect(holders).toEqual([['hr_manager', 'tenant']]);
   });
 
   it('lets only the HR Manager maintain the organization structure (PO, 11 Oct 2026; T-M2-19)', () => {

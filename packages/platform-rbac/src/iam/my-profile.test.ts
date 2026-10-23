@@ -25,6 +25,12 @@ const db = vi.hoisted(() => ({
   getTenantDefaultLocale: vi.fn(),
   keepsUnsplitDisplayName: vi.fn(),
   listStructureLevelLabels: vi.fn(),
+  // WP-ADM-04: the grade, the HR-only fields and the photo (nothing set by default).
+  getPersonGrade: vi.fn((): Promise<unknown> => Promise.resolve(null)),
+  listGrades: vi.fn((): Promise<unknown[]> => Promise.resolve([])),
+  getHrDetails: vi.fn((): Promise<unknown> => Promise.resolve(null)),
+  getPersonPhotoFacts: vi.fn((): Promise<unknown> => Promise.resolve(null)),
+  photoVersionOf: vi.fn(() => null),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -149,6 +155,8 @@ describe('My profile query and save', () => {
         details: { displayNameAr: 'س' },
         profile: { personId: ME },
         levels: [{ ordinal: 1, nameEn: 'Sector', nameAr: 'قطاع' }],
+        // The member's own grade (none yet) and HR-only fields (not filled yet), read-only (WP-ADM-04).
+        record: { grade: { code: null }, hr: { details: null, own: true } },
       }),
     );
     expect(db.getPersonalDetails).toHaveBeenCalledWith(TX, ME);
@@ -163,7 +171,13 @@ describe('My profile query and save', () => {
     db.getMyPrimaryRole.mockResolvedValue('hr_manager');
     const identity = createDefineQuery(runtime().rt)(myIdentityQueryDefinition());
     expect(await identity({})).toEqual(
-      ok({ displayNameAr: 'سارة', displayNameEn: null, primaryRole: 'hr_manager' }),
+      ok({
+        displayNameAr: 'سارة',
+        displayNameEn: null,
+        primaryRole: 'hr_manager',
+        personId: ME,
+        photoVersion: null,
+      }),
     );
     expect(db.getMyPrimaryRole).toHaveBeenCalledWith(TX);
     const none = await createDefineQuery(runtime(null).rt)(myIdentityQueryDefinition())({});

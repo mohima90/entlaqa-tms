@@ -5,6 +5,7 @@ import { customRolesExist, roleScopeUnitsExist } from './custom-roles-present';
 import { ORG_TIME_ZONE } from './org-time-zone';
 import type { UserTx } from './with-user-tx';
 import { levelOrdinalOf } from './level-ordinal';
+import { personPhotosExist } from './person-record';
 
 /**
  * People directory reads for the users screens (T-M2-04, FR-IAM-01; screens 1 and 3 of
@@ -94,6 +95,8 @@ export interface UserListRow {
   /** The unit's level (ordinal): its name labels the field (guided-test feedback #3). */
   readonly departmentLevelOrdinal: number | null;
   readonly lastSignInAt: Date | null;
+  /** The version in the address of the person's photo (`/api/photo/<id>?v=`); null: initials (WP-ADM-04). */
+  readonly photoVersion: string | null;
   /** The caller may manage this person (only with `includeManageable`; else false). */
   readonly mayManage: boolean;
   /** The member holds a privileged role in force (only with `includeManageable`; else false). */
@@ -292,6 +295,11 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
            case when ${rolesVisible} then ${scopeUnit} end as role_scope_unit`;
   const tabWhere =
     filter.tab === 'all' ? where : sql`${where} and m.status = ${TAB_STATUS[filter.tab]}`;
+  // The photo's version (WP-ADM-04) once its table exists (deploy window); initials otherwise.
+  const photoVersion = (await personPhotosExist(tx))
+    ? sql`(select left(ph.sha256, 12) from platform.person_photos ph
+           where ph.tenant_id = p.tenant_id and ph.person_id = p.id)`
+    : sql`null::text`;
   const rows = await tx.execute<{
     person_id: string;
     membership_id: string;
@@ -310,6 +318,7 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
     department_name_en: string | null;
     department_level_ordinal: number | null;
     last_sign_in_at: Date | string | null;
+    photo_version: string | null;
     may_manage: boolean;
     privileged: boolean;
   }>(sql`
@@ -320,7 +329,8 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
            d.name_ar as department_name_ar, d.name_en as department_name_en,
            d.level_ordinal as department_level_ordinal,
            (select max(a.occurred_at) from platform.audit_events a
-             where a.actor_user_id = m.user_id and a.action = 'platform.auth.signed_in') as last_sign_in_at
+             where a.actor_user_id = m.user_id and a.action = 'platform.auth.signed_in') as last_sign_in_at,
+           ${photoVersion} as photo_version
     ${FROM_MEMBERS}
     left join platform.departments d on d.tenant_id = e.tenant_id and d.id = e.department_id
     where ${tabWhere}
@@ -348,6 +358,7 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
       departmentNameEn: r.department_name_en,
       departmentLevelOrdinal: levelOrdinalOf(r.department_level_ordinal),
       lastSignInAt: toDate(r.last_sign_in_at),
+      photoVersion: r.photo_version,
       mayManage: r.may_manage,
       privileged: r.privileged,
     })),
@@ -396,6 +407,8 @@ export interface UserProfile {
     readonly displayNameEn: string | null;
   } | null;
   readonly hireOn: string | null;
+  /** The version in the address of the person's photo (`/api/photo/<id>?v=`); null: initials (WP-ADM-04). */
+  readonly photoVersion: string | null;
   /** The organization's time zone for calendar days (role validity days, T-M2-14). */
   readonly timeZone: string;
   /** All assignments with their validity dates; null when the caller may not read roles. */
@@ -444,6 +457,7 @@ export async function getUserProfile(
     manager_name_ar: string | null;
     manager_name_en: string | null;
     hire_on: string | null;
+    photo_version: string | null;
     time_zone: string;
   }>(sql`
     select p.id as person_id, p.display_name_ar, p.display_name_en, p.email, p.mobile_e164,
@@ -455,6 +469,12 @@ export async function getUserProfile(
            b.name_ar as branch_name_ar, b.name_en as branch_name_en,
            mgr.id as manager_person_id, mgr.display_name_ar as manager_name_ar,
            mgr.display_name_en as manager_name_en, e.hire_on::text as hire_on,
+           ${
+             (await personPhotosExist(tx))
+               ? sql`(select left(ph.sha256, 12) from platform.person_photos ph
+                    where ph.tenant_id = p.tenant_id and ph.person_id = p.id)`
+               : sql`null::text`
+           } as photo_version,
            ${ORG_TIME_ZONE} as time_zone
     from platform.persons p
     left join platform.tenant_memberships m on m.tenant_id = p.tenant_id and m.person_id = p.id
@@ -546,6 +566,7 @@ export async function getUserProfile(
         }
       : null,
     hireOn: row.hire_on,
+    photoVersion: row.photo_version,
     roles:
       roles?.map((r) => ({
         roleCode: r.role_code,

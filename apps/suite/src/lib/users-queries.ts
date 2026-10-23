@@ -4,6 +4,7 @@ import {
   defineQuery,
   editRolesQueryDefinition,
   editUserQueryDefinition,
+  gradesPageQueryDefinition,
   invitationsListQueryDefinition,
   inviteFormQueryDefinition,
   roleDetailQueryDefinition,
@@ -14,6 +15,7 @@ import {
   myProfileQueryDefinition,
   mySecurityQueryDefinition,
   organizationProfileQueryDefinition,
+  personPhotoQueryDefinition,
   securityPageQueryDefinition,
   userProfileQueryDefinition,
   usersListQueryDefinition,
@@ -50,3 +52,9 @@ export const memberSecurityQuery = defineQuery(memberSecurityQueryDefinition());
 
 /** Organization profile (T-M2-22): the Organization Admin's page (platform.tenant.manage). */
 export const organizationProfileQuery = defineQuery(organizationProfileQueryDefinition());
+
+/** Organization → Grades (WP-ADM-04): the list with the people on each grade. */
+export const gradesPageQuery = defineQuery(gradesPageQueryDefinition());
+
+/** A person's photo for the /api/photo route (WP-ADM-04): a passive read for signed-in members. */
+export const personPhotoQuery = defineQuery(personPhotoQueryDefinition());

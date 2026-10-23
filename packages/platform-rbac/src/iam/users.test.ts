@@ -23,6 +23,12 @@ const db = vi.hoisted(() => ({
   // The unit picker of the edit-role dialog (EP-ORG, T-M3-09): none in these tests.
   listStructureUnitOptions: vi.fn(() => Promise.resolve([])),
   listStructureLevelLabels: vi.fn(() => Promise.resolve([])),
+  // WP-ADM-04: the grade, the HR-only fields and the photo (nothing set by default).
+  getPersonGrade: vi.fn((): Promise<unknown> => Promise.resolve(null)),
+  listGrades: vi.fn((): Promise<unknown[]> => Promise.resolve([])),
+  getHrDetails: vi.fn((): Promise<unknown> => Promise.resolve(null)),
+  getPersonPhotoFacts: vi.fn((): Promise<unknown> => Promise.resolve(null)),
+  photoVersionOf: vi.fn(() => null),
   hasUnitsBelowFirstLevel: vi.fn(() => Promise.resolve(false)),
 }));
 vi.mock('@jadarat/platform-db', () => db);
@@ -239,8 +245,11 @@ describe('user profile query', () => {
         canEditRoles: false,
         lifecycle: { canDeactivate: false, reactivate: null, privileged: false },
         signInLock: null,
+        // No grade row for this viewer and no HR-only card: nothing is rendered or sent (WP-ADM-04).
+        record: { grade: null, hr: null },
       }),
     );
+    expect(db.getHrDetails).not.toHaveBeenCalled();
     expect(db.getMemberLifecycleTarget).not.toHaveBeenCalled();
     expect(db.memberSignInLockForProfile).not.toHaveBeenCalled();
     expect(db.getUserProfile).toHaveBeenCalledWith(TX, REPORT, {

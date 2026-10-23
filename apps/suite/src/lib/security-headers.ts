@@ -57,6 +57,11 @@ export function isBrandImagePath(pathname: string): boolean {
   return /^\/api\/brand(\/|$)/.test(pathname);
 }
 
+/** The profile photo paths (/api/photo/<person>, WP-ADM-04): same-origin images for signed-in members only. */
+export function isPersonPhotoPath(pathname: string): boolean {
+  return /^\/api\/photo(\/|$)/.test(pathname);
+}
+
 /**
  * Published branding images (/api/brand/<id>, WP-ADM-02): e-mail clients and the organization's pages embed
  * them, so they may be loaded from another origin (overrides the same-origin entry above for these paths

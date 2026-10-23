@@ -28,6 +28,7 @@ import { ReturnedFocus } from '../../lib/focus-return';
 import { reactivateLabels } from '../../lib/deactivation-texts';
 import { canResend } from '../../lib/invite-form';
 import { inviteCopyTexts } from '../../lib/invite-copy-texts';
+import { personPhotoHref } from '../../lib/person-photo';
 import { expiryFrom, filterInvitations } from '../../lib/invitations-view';
 import { pageDates } from '../../lib/page-dates';
 import { profileErrorTexts } from '../../lib/profile-texts';
@@ -415,6 +416,7 @@ async function UsersList({
     return {
       personId: row.personId,
       name,
+      photoHref: personPhotoHref(row.personId, row.photoVersion),
       email: row.email,
       employeeNumber: row.employeeNumber,
       roleName:

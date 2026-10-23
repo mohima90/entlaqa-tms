@@ -43,6 +43,7 @@ const CATALOGUE_MIGRATIONS = [
   '_platform__add_planning_permissions.sql',
   '_platform__add_needs_form_permissions.sql',
   '_platform__who_can_give_what.sql',
+  '_platform__add_person_hr_permissions.sql',
 ];
 
 /** The one rewrite of the catalogue the parsers understand: a permission's custom_role_use. */

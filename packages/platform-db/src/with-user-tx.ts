@@ -70,8 +70,10 @@ export interface UserTxOptions {
  * must still be valid (the claims are checked as for any request); it is only not kept alive.
  *   platform.user_import.status — the import page's «is there anything new?» (platform-import
  *   userImportStatusQueryDefinition), every few seconds while the worker works.
+ *   platform.person.photo — a person's profile photo for the pages' avatars (WP-ADM-04, the /api/photo route):
+ *   many small requests per page that must not keep an idle session alive.
  */
-export const PASSIVE_READS = ['platform.user_import.status'] as const;
+export const PASSIVE_READS = ['platform.user_import.status', 'platform.person.photo'] as const;
 export type PassiveRead = (typeof PASSIVE_READS)[number];
 
 export function isPassiveRead(name: string): name is PassiveRead {

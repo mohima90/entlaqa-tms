@@ -1,3 +1,5 @@
+'use client';
+import { useState } from 'react';
 import { cn } from './cn';
 
 /** The first letter of the name (Arabic or Latin), or of each of its first two words in Latin script. */
@@ -19,16 +21,25 @@ export interface AvatarProps {
    * brand text colour on its tint (Kawadir list rows, e.g. «NI» in Candidates).
    */
   readonly tone?: 'brand' | 'soft' | undefined;
-  /** The person's photo (T-M2-15b); the initials show until it exists. Decorative like the initials. */
+  /** The person's photo (T-M2-15b); the initials show until it exists, and when it cannot be loaded. */
   readonly src?: string | undefined;
+  /**
+   * The picture's alternative text — the person's name — where no name is written next to it (the profile
+   * header, My profile; WP-ADM-04). Omitted (the default): decorative, the name is next to it in lists and
+   * in the top bar, so a screen reader does not read it twice.
+   */
+  readonly alt?: string | undefined;
   readonly className?: string | undefined;
 }
 
-/** A person's picture: their photo, or their initials (Kawadir). Decorative: the name is written next to it. */
-export function Avatar({ name, size = 'sm', tone = 'brand', src, className }: AvatarProps) {
+/** A person's picture: their photo, or their initials (Kawadir). */
+export function Avatar({ name, size = 'sm', tone = 'brand', src, alt, className }: AvatarProps) {
+  // A photo that fails to load (removed, offline) falls back to the initials; a new address tries again.
+  const [failed, setFailed] = useState<string | undefined>(undefined);
+  const showPhoto = src !== undefined && src !== '' && src !== failed;
   return (
     <span
-      aria-hidden="true"
+      {...(alt === undefined ? { 'aria-hidden': true } : { role: 'img', 'aria-label': alt })}
       className={cn(
         'grid shrink-0 place-items-center overflow-hidden font-semibold',
         size === 'xl' ? 'rounded-[22px]' : 'rounded-full',
@@ -39,7 +50,18 @@ export function Avatar({ name, size = 'sm', tone = 'brand', src, className }: Av
         className,
       )}
     >
-      {src ? <img src={src} alt="" className="size-full object-cover" /> : initialsOf(name)}
+      {showPhoto ? (
+        <img
+          src={src}
+          alt=""
+          className="size-full object-cover"
+          onError={() => {
+            setFailed(src);
+          }}
+        />
+      ) : (
+        <span aria-hidden="true">{initialsOf(name)}</span>
+      )}
     </span>
   );
 }

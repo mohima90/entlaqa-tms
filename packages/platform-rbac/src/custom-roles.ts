@@ -117,6 +117,9 @@ export const CUSTOM_ROLE_PERMISSIONS: readonly CustomRolePermission[] = [
   { permission: p['platform.user.deactivate'], group: 'people', use: 'organization_only' },
   { permission: p['platform.user.reset_mfa'], group: 'people', use: 'organization_only' },
   { permission: p['platform.user.unlock_sign_in'], group: 'people', use: 'organization_only' },
+  // HR-only fields (WP-ADM-04): gender, date of birth, employment category of every member; a role holding
+  // it is privileged (only the Organization Admin gives it).
+  { permission: p['platform.person.hr_details'], group: 'people', use: 'organization_only' },
   { permission: p['platform.role.read'], group: 'roles', use: 'scoped' },
   { permission: p['platform.role.assign'], group: 'roles', use: 'organization_only' },
   { permission: p['platform.org.read'], group: 'organization', use: 'organization' },
@@ -200,6 +203,8 @@ export const USER_MANAGEMENT_PERMISSIONS: readonly string[] = [
   'platform.user.deactivate',
   'platform.role.assign',
   'platform.org.manage',
+  // Personal data of every member (WP-ADM-04, PO 21 Oct 2026: "privileged permission").
+  'platform.person.hr_details',
 ];
 
 /** Does holding this permission make a custom role privileged? Unknown permissions do (fail closed). */

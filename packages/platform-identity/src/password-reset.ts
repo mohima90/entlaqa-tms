@@ -109,19 +109,23 @@ export type PasswordResetDelivery = 'auth' | 'worker' | 'hook';
  * PASSWORD_RESET_DELIVERY: `auth` (default, also when unset or empty) or `worker`. Any other value is a
  * configuration error (thrown at start-up by the app's instrumentation, and on use).
  *
- * With Auth's Send Email hook on (SEND_EMAIL_HOOK_SECRET, WP-ADM-05) Auth's own mailer is not used, and the
- * default is `hook`: Auth creates the recovery token and hands it to the hook, which e-mails the reset link at
- * once (PO 23 Oct 2026; auth-email-hook.ts) - no Auth admin key in the web tier. `worker` stays available
- * (explicitly set) for a deployment whose worker runs continuously and holds the Auth key. The "password
+ * With Auth's Send Email hook on (SEND_EMAIL_HOOK_SECRET, WP-ADM-05) Auth's own mailer is not used: set
+ * `auth` EXPLICITLY and it is `hook` - Auth creates the recovery token and hands it to the hook, which e-mails
+ * the reset link at once (PO 23 Oct 2026; auth-email-hook.ts), no Auth admin key in the web tier. Unset with the
+ * hook on stays `worker` (security review M1: the hook path needs the migration of the same release, so it is
+ * switched on on purpose, after the database deploy). The "password
  * changed" notice is ours in both (`auth`: Auth's own, when switched on in Auth).
  */
 export function readPasswordResetDelivery(
   env: Readonly<Record<string, string | undefined>>,
 ): PasswordResetDelivery {
   const raw = env[PASSWORD_RESET_DELIVERY_ENV]?.trim() ?? '';
-  if (raw === '' || raw === 'auth') {
-    return (env[SEND_EMAIL_HOOK_SECRET_ENV]?.trim() ?? '') === '' ? 'auth' : 'hook';
-  }
+  const hookOn = (env[SEND_EMAIL_HOOK_SECRET_ENV]?.trim() ?? '') !== '';
+  if (raw === 'auth') return hookOn ? 'hook' : 'auth';
+  // Unset: Auth's own mailer without the hook; with the hook on, the worker as before - the hook path (a newer
+  // database function) is chosen only by setting `auth` explicitly, so an app deployed before its migration
+  // cannot drop resets (security review M1).
+  if (raw === '') return hookOn ? 'worker' : 'auth';
   if (raw === 'worker') return 'worker';
   throw new Error(`${PASSWORD_RESET_DELIVERY_ENV} must be "auth" or "worker"`);
 }

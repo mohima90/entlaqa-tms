@@ -39,6 +39,7 @@ $$;
 comment on function private.request_password_changed_mail(uuid) is
   'SECURITY-RELEVANT (FR-IAM-13/16, T-M2-17). Queues the "password changed" notice of an account (the signed-in user''s own, or after a reset). app_server only.';
 
+revoke execute on function private.email_waiting_codes() from authenticated;
 drop function if exists private.recovery_target(uuid, text, text);
 drop function if exists private.account_mail_consume(bytea, uuid, text, bytea, bytea);
 drop function if exists private.inline_recovery_queue(uuid, text, integer, text, text, text, text, text, text, bytea);
@@ -184,6 +185,7 @@ revoke select (display_name_ar, display_name_en) on platform.persons from accoun
 drop index if exists private.account_mail_requests_inline_idx;
 alter table private.account_mail_requests
   drop constraint account_mail_requests_inline_hash_check,
+  drop column inline_claim_attempt,
   drop column resolved_person_id,
   drop column resolved_tenant_id,
   drop column resolved_email,

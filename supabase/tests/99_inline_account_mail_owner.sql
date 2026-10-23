@@ -269,6 +269,11 @@ insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, s
 insert into private.mfa_factor_confirmations (factor_id, user_id, session_id, setup_user_agent) values
   ('f3000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1', 'Mozilla/5.0 test'),
   ('f3000000-0000-4000-8000-0000000000ab', '00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab', 'Mozilla/5.0 test');
+-- A set-up e-mail of the platform-only variant sent to uAB a moment ago: it counts with the plain one (caps).
+insert into platform.message_deliveries (tenant_id, template, template_version, locale, recipient_person_id, destination,
+                                         destination_masked, subject, html_body, text_body)
+values ('a0000000-0000-4000-8000-000000000001', 'platform.mfa_factor_added_platform', 1, 'en',
+        'a1000000-0000-4000-8000-0000000000ab', 'uab@ab.test', 'u***@ab.test', 's', '<p>h</p>', 't');
 insert into private.account_mail_requests (id, kind, user_id, tenant_id, factor_id) values
   ('f5000000-0000-4000-8000-000000000021', 'mfa_factor_added', '00000000-0000-4000-8000-0000000000a1',
    'a0000000-0000-4000-8000-000000000001', 'f3000000-0000-4000-8000-0000000000a1'),
@@ -305,6 +310,7 @@ begin
   select * into r from private.inline_account_mail_claim(v_secret, 1440);
   perform tests.assert(r.outcome = 'send' and r.user_id = '00000000-0000-4000-8000-0000000000ab' and r.platform_sender = true,
     'an account of several organizations: platform sender');
+  perform tests.assert_eq(r.recent_count, 1, 'the platform-only set-up e-mail counts toward the person''s caps');
   perform tests.assert_fails(
     $q$select private.inline_account_mail_queue(decode(repeat('ee', 32), 'hex'), 'f5000000-0000-4000-8000-000000000022',
          'platform.mfa_factor_added', 1, 'en', 's', '<p>h</p>', 't', pg_catalog.sha256('c'::bytea), pg_catalog.sha256('r'::bytea))$q$,
@@ -434,5 +440,50 @@ begin
   perform tests.assert(not exists (select 1 from private.account_mail_requests
                                    where kind = 'password_changed' and user_id = '00000000-0000-4000-8000-0000000000a1'),
     'and still not for an account that got no reset e-mail of ours');
+end $$;
+rollback;
+
+-- ---------------------------------------------------------------------------------------------------
+-- A web runner whose lease ran out cannot queue or remove a request the worker leased again
+-- ---------------------------------------------------------------------------------------------------
+begin;
+insert into private.account_mail_requests (id, kind, user_id, tenant_id)
+values ('f5000000-0000-4000-8000-000000000031', 'password_changed', '00000000-0000-4000-8000-0000000000a1',
+        'a0000000-0000-4000-8000-000000000001');
+set local session authorization app_server;
+set local role authenticated;
+select tests.set_claims(null);
+do $$
+declare
+  r record;
+begin
+  perform tests.assert_eq(private.inline_account_mail_tag(pg_catalog.sha256(decode(repeat('ab', 32), 'hex'))), 1, 'tagged');
+  select * into r from private.inline_account_mail_claim(decode(repeat('ab', 32), 'hex'), 1440);
+  perform tests.assert_eq(r.outcome, 'send', 'claimed');
+end $$;
+reset role;
+reset session authorization;
+-- The two minutes passed and the worker leased the request again (attempts grew, a lease of its own).
+update private.account_mail_requests set attempts = attempts + 1, leased_until = now() + interval '5 minutes'
+where id = 'f5000000-0000-4000-8000-000000000031';
+set local session authorization app_server;
+set local role authenticated;
+select tests.set_claims(null);
+do $$
+begin
+  perform tests.assert(private.inline_account_mail_queue(decode(repeat('ab', 32), 'hex'), 'f5000000-0000-4000-8000-000000000031',
+         'platform.password_changed', 1, 'en', 's', '<p>h</p>', 't', null, null) is null,
+    'the stalled web runner cannot queue the request the worker holds now (no double send)');
+  perform tests.assert(not private.inline_account_mail_done(decode(repeat('ab', 32), 'hex'), 'f5000000-0000-4000-8000-000000000031'),
+    'nor remove it');
+end $$;
+reset role;
+reset session authorization;
+do $$
+begin
+  perform tests.assert(exists (select 1 from private.account_mail_requests where id = 'f5000000-0000-4000-8000-000000000031'),
+    'the request is the worker''s');
+  perform tests.assert(has_function_privilege('authenticated', 'private.email_waiting_codes()', 'execute'),
+    'the worker''s rescue reads the codes of messages that wait for a sender from the one place');
 end $$;
 rollback;

@@ -223,7 +223,7 @@ export async function takeInlineRescue(tx: ClaimsTx, limit: number): Promise<rea
     where d.id in (
       select x.id from platform.message_deliveries x
       where x.inline_claim_hash is not null and x.created_at < now() - interval '60 seconds'
-        and ((x.status = 'queued' and (x.error_code is null or x.error_code <> all (array['NO_SENDER', 'CREDENTIALS_UNAVAILABLE'])))
+        and ((x.status = 'queued' and (x.error_code is null or x.error_code <> all (private.email_waiting_codes())))
              or (x.status = 'sending' and x.updated_at < now() - make_interval(secs => ${CLAIM_LEASE_SECONDS})))
         and (x.rescued_at is null or x.rescued_at < now() - interval '1 hour')
       order by x.created_at

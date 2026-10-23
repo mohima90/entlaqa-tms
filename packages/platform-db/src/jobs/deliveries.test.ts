@@ -198,7 +198,7 @@ describe("immediate sending: the worker's side (WP-ADM-05 follow-up)", () => {
     expect(await takeInlineRescue(fake.tx, 200)).toEqual(['d1', 'd2']);
     const q = fake.executed[0];
     expect(q?.sql).toContain('inline_claim_hash is not null');
-    expect(q?.sql).toContain('NO_SENDER');
+    expect(q?.sql).toContain('email_waiting_codes()');
     expect(q?.sql).toContain("interval '1 hour'");
     expect(q?.params).toContain(200);
   });

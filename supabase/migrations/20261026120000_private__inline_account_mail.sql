@@ -49,6 +49,7 @@ alter table private.account_mail_requests
   add column resolved_email text,
   add column resolved_tenant_id uuid,
   add column resolved_person_id uuid,
+  add column inline_claim_attempt smallint,
   add constraint account_mail_requests_inline_hash_check
     check (inline_claim_hash is null or octet_length(inline_claim_hash) = 32);
 
@@ -56,6 +57,8 @@ comment on column private.account_mail_requests.inline_claim_hash is
   'SHA-256 of the secret only the web request that created the request holds: the key to claim it for an immediate e-mail (WP-ADM-05 follow-up).';
 comment on column private.account_mail_requests.created_txid is
   'The transaction that created the request: only that transaction may tag it for an immediate e-mail.';
+comment on column private.account_mail_requests.inline_claim_attempt is
+  'The attempt number the immediate claim leased the request under: a web runner whose lease ran out (the worker leased it again, attempts grew) can no longer queue or remove it.';
 comment on column private.account_mail_requests.resolved_email is
   'Set by the immediate claim: the account''s address, so the queue function cannot be told another one. Removed with the request.';
 
@@ -254,7 +257,8 @@ begin
             select 1 from platform.message_deliveries d
             join platform.tenant_memberships m on m.tenant_id = d.tenant_id and m.person_id = d.recipient_person_id
             where m.user_id = v_account.id and d.created_at > now() - interval '24 hours'
-              and d.template in ('platform.mfa_factor_added', 'platform.mfa_factor_removed',
+              and d.template in ('platform.mfa_factor_added', 'platform.mfa_factor_added_platform',
+                                 'platform.mfa_factor_removed',
                                  'platform.security_policy_changed', 'platform.password_changed',
                                  'platform.mfa_code_locked', 'platform.security_digest')
             limit private.security_notice_daily_ceiling()) n) >= private.security_notice_daily_ceiling() then
@@ -400,7 +404,9 @@ begin
          count(*) filter (where d.created_at > now() - interval '1 hour')
     into recent_count, quiet_count, tenant_recent_count
   from platform.message_deliveries d
-  where d.tenant_id = c.tenant_id and d.template = v_template and d.created_at > now() - interval '25 hours';
+  -- (the platform-only variant of the set-up e-mail counts with it, as do the other caps)
+  where d.tenant_id = c.tenant_id and d.template in (v_template, v_template || '_platform')
+    and d.created_at > now() - interval '25 hours';
   platform_sender := private.account_sender_is_platform(c.user_id);
   select r.action_color, r.link_color, r.logo_asset_id into action_color, link_color, logo_asset_id
   from private.auth_mail_route(c.tenant_id) r;
@@ -423,7 +429,8 @@ begin
   end if;
   -- What the queue function may send to: stored here, so the web app cannot name another address.
   update private.account_mail_requests r
-  set resolved_email = lower(c.email), resolved_tenant_id = c.tenant_id, resolved_person_id = c.person_id
+  set resolved_email = lower(c.email), resolved_tenant_id = c.tenant_id, resolved_person_id = c.person_id,
+      inline_claim_attempt = c.attempts
   where r.id = c.id;
   outcome := 'send';
   return next;
@@ -455,6 +462,8 @@ begin
   select * into r from private.account_mail_requests q
   where q.id = p_request_id and q.inline_claim_hash = pg_catalog.sha256(p_secret)
     and q.leased_until > now() and q.resolved_email is not null and q.resolved_tenant_id is not null
+    -- the lease is THIS claim's: the worker leasing the request again (after the two minutes) bumps `attempts`
+    and q.inline_claim_attempt = q.attempts
   for update;
   if not found then
     return;
@@ -534,7 +543,8 @@ begin
     return false;
   end if;
   delete from private.account_mail_requests q
-  where q.id = p_request_id and q.inline_claim_hash = pg_catalog.sha256(p_secret);
+  where q.id = p_request_id and q.inline_claim_hash = pg_catalog.sha256(p_secret)
+    and (q.inline_claim_attempt is null or q.inline_claim_attempt = q.attempts);
   get diagnostics v_done = row_count;
   return v_done = 1;
 end
@@ -731,3 +741,6 @@ grant execute on function private.inline_account_mail_queue(bytea, uuid, text, i
 grant execute on function private.inline_account_mail_done(bytea, uuid) to authenticated;
 grant execute on function private.inline_recovery_facts(uuid) to authenticated;
 grant execute on function private.inline_recovery_queue(uuid, text, integer, text, text, text, text, text, text, bytea) to authenticated;
+-- The worker's rescue (a direct statement under `authenticated`) reads the codes of messages that wait for a sender
+-- from the one function that names them, instead of repeating the list.
+grant execute on function private.email_waiting_codes() to authenticated;

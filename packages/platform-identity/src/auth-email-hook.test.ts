@@ -488,6 +488,32 @@ describe('the password reset (type recovery)', () => {
     expect(logged).toContain('ECONNRESET');
   });
 
+  it('a database that is not migrated yet (42883 / 42703, also wrapped) is not sent, answered with success, the code only logged', async () => {
+    for (const code of ['42883', '42703']) {
+      for (const wrapped of [false, true]) {
+        const { deps, factsFn, releaseWebhook, log, scheduled } = recoverySetup();
+        const failure = Object.assign(new Error(`function for ${EMAIL} ${TOKEN_HASH} missing`), {
+          code,
+        });
+        factsFn.mockRejectedValue(
+          wrapped ? new Error('query failed', { cause: failure }) : failure,
+        );
+        expect(await handleSendEmailHook(deps, request(payload('recovery')))).toEqual({
+          status: 200,
+          body: {},
+        });
+        expect(scheduled).toHaveLength(0);
+        expect(releaseWebhook).toHaveBeenCalledWith('msg_1');
+        expect(log).toHaveBeenCalledWith('error', expect.stringContaining('not migrated'), {
+          reason: code,
+        });
+        const logged = JSON.stringify(log.mock.calls);
+        expect(logged).not.toContain(EMAIL);
+        expect(logged).not.toContain(TOKEN_HASH);
+      }
+    }
+  });
+
   it('without the recovery dependency the type is refused as before', async () => {
     const { deps, send } = setup();
     expect((await handleSendEmailHook(deps, request(payload('recovery')))).status).toBe(400);

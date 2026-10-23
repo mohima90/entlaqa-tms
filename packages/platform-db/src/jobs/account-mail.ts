@@ -216,13 +216,15 @@ export async function loadAccountMailContext(
            -- A person may have an English name only (PO 17 Oct 2026): the Arabic e-mail then names them in English.
            coalesce(p.display_name_ar, p.display_name_en) as recipient_ar, p.display_name_en as recipient_en,
            (select count(*) from platform.message_deliveries d
-            where d.tenant_id = p.tenant_id and d.recipient_person_id = p.id and d.template = ${template}
+            where d.tenant_id = p.tenant_id and d.recipient_person_id = p.id
+              and d.template in (${template}, ${template} || '_platform')
               and d.created_at > now() - interval '1 hour') as recent,
            (select count(*) from platform.message_deliveries d
-            where d.tenant_id = p.tenant_id and d.recipient_person_id = p.id and d.template = ${template}
+            where d.tenant_id = p.tenant_id and d.recipient_person_id = p.id
+              and d.template in (${template}, ${template} || '_platform')
               and d.created_at > now() - make_interval(mins => ${quietMinutes}::integer)) as quiet,
            (select count(*) from platform.message_deliveries d
-            where d.tenant_id = p.tenant_id and d.template = ${template}
+            where d.tenant_id = p.tenant_id and d.template in (${template}, ${template} || '_platform')
               and d.created_at > now() - interval '1 hour') as tenant_recent
     from platform.persons p
     join platform.tenants t on t.id = p.tenant_id

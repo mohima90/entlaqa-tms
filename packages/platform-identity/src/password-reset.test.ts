@@ -32,7 +32,9 @@ describe('readPasswordResetDelivery (PASSWORD_RESET_DELIVERY)', () => {
 
   it("with Auth's Send Email hook on (SEND_EMAIL_HOOK_SECRET) the hook e-mails the reset link at once; `worker` stays possible", () => {
     const hook = { SEND_EMAIL_HOOK_SECRET: 'v1,whsec_abc' };
-    expect(readPasswordResetDelivery(hook)).toBe('hook');
+    // Only an explicit `auth` chooses the hook (after the database deploy); unset stays with the worker.
+    expect(readPasswordResetDelivery(hook)).toBe('worker');
+    expect(readPasswordResetDelivery({ ...hook, PASSWORD_RESET_DELIVERY: '' })).toBe('worker');
     expect(readPasswordResetDelivery({ ...hook, PASSWORD_RESET_DELIVERY: 'auth' })).toBe('hook');
     expect(readPasswordResetDelivery({ ...hook, PASSWORD_RESET_DELIVERY: 'worker' })).toBe(
       'worker',

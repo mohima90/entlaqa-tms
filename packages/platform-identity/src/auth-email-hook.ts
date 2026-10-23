@@ -300,6 +300,16 @@ const RECOVERY_TOKEN_HASH = /^[A-Za-z0-9_-]{16,128}$/;
 
 type RecoveryDeps = NonNullable<AuthEmailHookDeps['recovery']>;
 
+/** The PostgreSQL error code of a failure, also when the driver or the ORM wraps it (`cause`). */
+function pgCodeOf(error: unknown): string | null {
+  for (let e: unknown = error, depth = 0; e && depth < 3; depth += 1) {
+    const code = (e as { code?: unknown }).code;
+    if (typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code)) return code;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
 /**
  * Type recovery: queue the reset e-mail for the account Auth is e-mailing and send it once Auth has its answer.
  * Success for every outcome that is not a failure of ours (no usable account, over a limit, a repeat call).
@@ -393,6 +403,20 @@ async function handleRecovery(
     deps.log('info', 'send-email hook: reset e-mail queued');
     return ok();
   } catch (error) {
+    // An app deployed before its migration (security review M1): the function or a column is not there yet.
+    // Not sent, and Auth is answered with success (a 500 would tell which accounts exist); the code only is logged.
+    const missing = pgCodeOf(error);
+    if (missing === '42883' || missing === '42703') {
+      deps.log(
+        'error',
+        'send-email hook: reset e-mail not sent (the database is not migrated yet)',
+        {
+          reason: missing,
+        },
+      );
+      if (claimed) await deps.limiter.releaseWebhook(webhookId);
+      return ok();
+    }
     const reason = (error as { code?: unknown } | null)?.code;
     deps.log('error', 'send-email hook: reset e-mail not queued', {
       reason:

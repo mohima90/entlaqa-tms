@@ -30,7 +30,10 @@ export function applyTyping(
     const next = value.slice(0, at) + value.slice(at + 1);
     return { value: next, focus: Math.min(at, CODE_LENGTH - 1) };
   }
-  const next = (value.slice(0, at) + digits + value.slice(at + digits.length)).slice(0, CODE_LENGTH);
+  const next = (value.slice(0, at) + digits + value.slice(at + digits.length)).slice(
+    0,
+    CODE_LENGTH,
+  );
   return { value: next, focus: Math.min(at + digits.length, CODE_LENGTH - 1) };
 }
 

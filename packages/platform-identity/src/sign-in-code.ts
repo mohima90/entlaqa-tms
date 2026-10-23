@@ -63,13 +63,16 @@ export const REMEMBERED_BROWSER_COOKIE_SECONDS = 30 * 24 * 60 * 60;
 export interface SignInCodeDeps extends AuthFlowDeps {
   readonly limiter: SignInCodeLimiter;
   readonly codes: {
-    request(email: string, rememberHash: Uint8Array | null): Promise<SignInCodeRequest>;
-    verify(requestId: string, email: string, code: string): Promise<SignInCodeCheck>;
-    takeRemembered(
+    readonly request: (
+      email: string,
+      rememberHash: Uint8Array | null,
+    ) => Promise<SignInCodeRequest>;
+    readonly verify: (requestId: string, email: string, code: string) => Promise<SignInCodeCheck>;
+    readonly takeRemembered: (
       requestId: string,
       email: string,
       rememberHash: Uint8Array,
-    ): Promise<RememberedSignInTake>;
+    ) => Promise<RememberedSignInTake>;
   };
   readonly rememberBrowser: (
     tx: UserTx,
@@ -129,7 +132,10 @@ async function openSession(
 ): Promise<Result<PasswordSession, AppError>> {
   const { supabase } = deps;
   if (!supabase) return err(appError('NOT_CONFIGURED'));
-  const { data, error } = await supabase.auth.verifyOtp({ token_hash: linkToken, type: 'magiclink' });
+  const { data, error } = await supabase.auth.verifyOtp({
+    token_hash: linkToken,
+    type: 'magiclink',
+  });
   if (error) {
     if (error.status === 429) return err(appError('RATE_LIMITED'));
     if (error.status !== undefined && error.status >= 400 && error.status < 500) {
@@ -212,7 +218,12 @@ const REMEMBERED_POLL_MS = 700;
 export async function completeRememberedSignIn(
   deps: SignInCodeDeps,
   input: { readonly requestId: string; readonly email: string },
-): Promise<Result<{ readonly status: 'pending' } | { readonly status: 'done'; readonly outcome: SignInOutcome }, AppError>> {
+): Promise<
+  Result<
+    { readonly status: 'pending' } | { readonly status: 'done'; readonly outcome: SignInOutcome },
+    AppError
+  >
+> {
   const token = deps.cookie.read();
   if (!token) return err(appError(IdentityErrors.SIGN_IN_CODE_EXPIRED));
   const hash = rememberedBrowserHash(token);

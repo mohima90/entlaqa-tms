@@ -55,13 +55,17 @@ const context = (overrides = {}) => ({
   ...overrides,
 });
 
-function build(links: RecoveryLinks | null) {
-  const withPlatformTx = vi.fn((_actor: unknown, fn: (tx: SystemTx) => Promise<unknown>) => fn(platformTx));
-  const withSystemTx = vi.fn((_actor: unknown, fn: (tx: SystemTx) => Promise<unknown>) => fn(tenantTx));
+function build(links: { issue: ReturnType<typeof vi.fn> } | null) {
+  const withPlatformTx = vi.fn((_actor: unknown, fn: (tx: SystemTx) => Promise<unknown>) =>
+    fn(platformTx),
+  );
+  const withSystemTx = vi.fn((_actor: unknown, fn: (tx: SystemTx) => Promise<unknown>) =>
+    fn(tenantTx),
+  );
   const log = vi.fn();
   const task = createSignInCodeMailer({
     appBaseUrl: BASE,
-    signInLinks: links,
+    signInLinks: links as unknown as RecoveryLinks | null,
     withPlatformTx: withPlatformTx as never,
     withSystemTx: withSystemTx as never,
     log,
@@ -69,7 +73,7 @@ function build(links: RecoveryLinks | null) {
   return { task, withPlatformTx, withSystemTx, log };
 }
 
-const issuer = (): RecoveryLinks & { issue: ReturnType<typeof vi.fn> } => ({
+const issuer = (): { issue: ReturnType<typeof vi.fn> } => ({
   issue: vi.fn(() => Promise.resolve({ status: 'issued' as const, hashedToken: TOKEN })),
 });
 
@@ -105,7 +109,11 @@ describe('sign-in code mailer (WP-ADM-05)', () => {
     await task.run({ jobId: 'j' });
     expect(links.issue).toHaveBeenCalledWith(EMAIL);
     expect(db.issueSignInCode).toHaveBeenCalledTimes(1);
-    const issue = db.issueSignInCode.mock.calls[0]?.[1] as { code: string; linkToken: string; id: string };
+    const issue = db.issueSignInCode.mock.calls[0]?.[1] as {
+      code: string;
+      linkToken: string;
+      id: string;
+    };
     expect(issue).toMatchObject({ id: REQUEST, userId: USER, tenantId: TENANT, linkToken: TOKEN });
     expect(issue.code).toMatch(/^[0-9]{6}$/);
     // The same six digits go in the e-mail - and nowhere else.
@@ -117,12 +125,21 @@ describe('sign-in code mailer (WP-ADM-05)', () => {
         to: EMAIL,
         recipientPersonId: PERSON,
         appBaseUrl: BASE,
-        variables: expect.objectContaining({ code: issue.code, validMinutes: SIGN_IN_CODE_VALID_MINUTES, loginEmail: EMAIL }),
+        variables: expect.objectContaining({
+          code: issue.code,
+          validMinutes: SIGN_IN_CODE_VALID_MINUTES,
+          loginEmail: EMAIL,
+        }),
       }),
     );
-    expect(withSystemTx).toHaveBeenCalledWith({ tenantId: TENANT, jobId: 'j' }, expect.any(Function));
+    expect(withSystemTx).toHaveBeenCalledWith(
+      { tenantId: TENANT, jobId: 'j' },
+      expect.any(Function),
+    );
     // The token is requested from Auth after the checks and before the storing.
-    expect(links.issue.mock.invocationCallOrder[0]).toBeLessThan(db.issueSignInCode.mock.invocationCallOrder[0] ?? 0);
+    expect(links.issue.mock.invocationCallOrder[0]).toBeLessThan(
+      db.issueSignInCode.mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
   it('never logs a code, a token or an address', async () => {
@@ -141,7 +158,10 @@ describe('sign-in code mailer (WP-ADM-05)', () => {
     const { task } = build(links);
     queue(send({ mode: 'remembered' }));
     await task.run({ jobId: 'j' });
-    expect(db.issueSignInCode).toHaveBeenCalledWith(tenantTx, expect.objectContaining({ code: null, linkToken: TOKEN }));
+    expect(db.issueSignInCode).toHaveBeenCalledWith(
+      tenantTx,
+      expect.objectContaining({ code: null, linkToken: TOKEN }),
+    );
     expect(mail.queueEmail).not.toHaveBeenCalled();
   });
 
@@ -197,7 +217,9 @@ describe('sign-in code mailer (WP-ADM-05)', () => {
 
     db.retrySignInCodeRequest.mockClear();
     const flaky = issuer();
-    flaky.issue.mockRejectedValue(Object.assign(new Error('Auth down'), { code: 'AUTH_UNREACHABLE', temporary: true }));
+    flaky.issue.mockRejectedValue(
+      Object.assign(new Error('Auth down'), { code: 'AUTH_UNREACHABLE', temporary: true }),
+    );
     const b = build(flaky);
     queue(send());
     await b.task.run({ jobId: 'j' });
@@ -208,12 +230,17 @@ describe('sign-in code mailer (WP-ADM-05)', () => {
     const c = build(flaky);
     queue(send({ attempt: 5 }));
     await c.task.run({ jobId: 'j' });
-    expect(c.log).toHaveBeenCalledWith('error', expect.stringContaining('given up after 5 attempts'));
+    expect(c.log).toHaveBeenCalledWith(
+      'error',
+      expect.stringContaining('given up after 5 attempts'),
+    );
   });
 
   it('a refused (permanent) failure ends the request without a retry', async () => {
     const refusing = issuer();
-    refusing.issue.mockRejectedValue(Object.assign(new Error('x'), { code: 'email_address_invalid', temporary: false }));
+    refusing.issue.mockRejectedValue(
+      Object.assign(new Error('x'), { code: 'email_address_invalid', temporary: false }),
+    );
     const { task } = build(refusing);
     queue(send());
     await task.run({ jobId: 'j' });
@@ -225,9 +252,11 @@ describe('sign-in code mailer (WP-ADM-05)', () => {
     const links = issuer();
     const task = createSignInCodeMailer({
       appBaseUrl: undefined,
-      signInLinks: links,
-      withPlatformTx: ((_a: unknown, fn: (tx: SystemTx) => Promise<unknown>) => fn(platformTx)) as never,
-      withSystemTx: ((_a: unknown, fn: (tx: SystemTx) => Promise<unknown>) => fn(tenantTx)) as never,
+      signInLinks: links as unknown as RecoveryLinks,
+      withPlatformTx: ((_a: unknown, fn: (tx: SystemTx) => Promise<unknown>) =>
+        fn(platformTx)) as never,
+      withSystemTx: ((_a: unknown, fn: (tx: SystemTx) => Promise<unknown>) =>
+        fn(tenantTx)) as never,
       log: vi.fn(),
     });
     queue(send());

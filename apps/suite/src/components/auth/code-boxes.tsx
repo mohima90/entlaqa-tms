@@ -1,12 +1,13 @@
 'use client';
 import { cn } from '@jadarat/ui';
-import { type ClipboardEvent, type KeyboardEvent, type Ref, useImperativeHandle, useRef } from 'react';
 import {
-  CODE_LENGTH,
-  applyBackspace,
-  applyPaste,
-  applyTyping,
-} from '../../lib/sign-in-code-ui';
+  type ClipboardEvent,
+  type KeyboardEvent,
+  type Ref,
+  useImperativeHandle,
+  useRef,
+} from 'react';
+import { CODE_LENGTH, applyBackspace, applyPaste, applyTyping } from '../../lib/sign-in-code-ui';
 
 /**
  * The six boxes of an e-mailed sign-in code (WP-ADM-05, design adm05-signin, WCAG 2.2 AA): one digit per box,

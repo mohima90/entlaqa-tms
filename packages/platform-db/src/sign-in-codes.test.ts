@@ -22,7 +22,9 @@ function fakeDb(rows: Record<string, unknown>[]) {
     },
     transaction: (fn) => fn(tx),
   };
-  const db = { transaction: (fn: (t: typeof tx) => Promise<unknown>) => fn(tx) } as unknown as AppDatabase;
+  const db = {
+    transaction: (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
+  } as unknown as AppDatabase;
   return { db, executed };
 }
 
@@ -30,10 +32,15 @@ describe('sign-in codes on the request path (WP-ADM-05)', () => {
   it('requests a code without claims; a known and an unknown address are the same call', async () => {
     const { db, executed } = fakeDb([{ request_id: ID, outcome: 'queued', retry_after: 0 }]);
     const api = createSignInCodeApi(() => db);
-    await expect(api.request('Someone@Example.test')).resolves.toEqual({ outcome: 'queued', requestId: ID });
+    await expect(api.request('Someone@Example.test')).resolves.toEqual({
+      outcome: 'queued',
+      requestId: ID,
+    });
     expect(executed[0]?.sql).toBe('set local role authenticated');
     expect(executed[1]?.params).toEqual(['']);
-    expect(executed.at(-1)?.sql).toBe('select * from private.request_sign_in_code($1, null::bytea)');
+    expect(executed.at(-1)?.sql).toBe(
+      'select * from private.request_sign_in_code($1, null::bytea)',
+    );
     expect(executed.at(-1)?.params).toEqual(['Someone@Example.test']);
   });
 
@@ -51,13 +58,23 @@ describe('sign-in codes on the request path (WP-ADM-05)', () => {
   it('a second request within a minute answers the wait, bounded to a minute', async () => {
     const { db } = fakeDb([{ request_id: null, outcome: 'too_soon', retry_after: 42 }]);
     const api = createSignInCodeApi(() => db);
-    await expect(api.request('a@example.test')).resolves.toEqual({ outcome: 'too_soon', retryAfterSeconds: 42 });
-    const odd = createSignInCodeApi(() => fakeDb([{ request_id: null, outcome: 'too_soon', retry_after: 9999 }]).db);
-    await expect(odd.request('a@example.test')).resolves.toEqual({ outcome: 'too_soon', retryAfterSeconds: 60 });
+    await expect(api.request('a@example.test')).resolves.toEqual({
+      outcome: 'too_soon',
+      retryAfterSeconds: 42,
+    });
+    const odd = createSignInCodeApi(
+      () => fakeDb([{ request_id: null, outcome: 'too_soon', retry_after: 9999 }]).db,
+    );
+    await expect(odd.request('a@example.test')).resolves.toEqual({
+      outcome: 'too_soon',
+      retryAfterSeconds: 60,
+    });
   });
 
   it('refuses an answer it does not know (never guesses)', async () => {
-    const api = createSignInCodeApi(() => fakeDb([{ request_id: ID, outcome: 'mystery', retry_after: 0 }]).db);
+    const api = createSignInCodeApi(
+      () => fakeDb([{ request_id: ID, outcome: 'mystery', retry_after: 0 }]).db,
+    );
     await expect(api.request('a@example.test')).rejects.toThrow('unexpected answer');
   });
 
@@ -75,15 +92,21 @@ describe('sign-in codes on the request path (WP-ADM-05)', () => {
     }
     // Anything unexpected reads as an expired code - never as a success.
     const odd = createSignInCodeApi(() => fakeDb([{ outcome: 'ok', link_token: null }]).db);
-    await expect(odd.verify(ID, 'a@example.test', '482913')).resolves.toEqual({ outcome: 'expired' });
+    await expect(odd.verify(ID, 'a@example.test', '482913')).resolves.toEqual({
+      outcome: 'expired',
+    });
   });
 
   it('does not even ask the database about malformed input', async () => {
     const { db, executed } = fakeDb([]);
     const api = createSignInCodeApi(() => db);
-    await expect(api.verify('not-an-id', 'a@example.test', '482913')).resolves.toEqual({ outcome: 'expired' });
+    await expect(api.verify('not-an-id', 'a@example.test', '482913')).resolves.toEqual({
+      outcome: 'expired',
+    });
     await expect(api.verify(ID, 'a@example.test', '12345')).rejects.toThrow('six-digit');
-    await expect(api.takeRemembered('nope', 'a@example.test', new Uint8Array(32))).resolves.toEqual({ outcome: 'gone' });
+    await expect(api.takeRemembered('nope', 'a@example.test', new Uint8Array(32))).resolves.toEqual(
+      { outcome: 'gone' },
+    );
     expect(executed).toEqual([]);
   });
 
@@ -96,7 +119,9 @@ describe('sign-in codes on the request path (WP-ADM-05)', () => {
       const api = createSignInCodeApi(
         () => fakeDb([{ outcome, link_token: outcome === 'ok' ? 'tok-tok-tok-tok-tok' : null }]).db,
       );
-      await expect(api.takeRemembered(ID, 'a@example.test', new Uint8Array(32))).resolves.toEqual(expected);
+      await expect(api.takeRemembered(ID, 'a@example.test', new Uint8Array(32))).resolves.toEqual(
+        expected,
+      );
     }
   });
 });

@@ -67,7 +67,13 @@ export const SecuritySettingsInput = z
     sessionMaxHours: intIn(SECURITY_LIMITS.sessionMaxHours),
     sessionMaxDevices: intIn(SECURITY_LIMITS.sessionMaxDevices),
     // Off / 1 / 7 / 14 / 30 days (WP-ADM-05); default Off.
-    rememberedBrowserDays: z.union([z.literal(0), z.literal(1), z.literal(7), z.literal(14), z.literal(30)]),
+    rememberedBrowserDays: z.union([
+      z.literal(0),
+      z.literal(1),
+      z.literal(7),
+      z.literal(14),
+      z.literal(30),
+    ]),
   })
   .superRefine((value, ctx) => {
     if (value.mfaMode === 'required_roles' && value.mfaRequiredRoles.length === 0) {

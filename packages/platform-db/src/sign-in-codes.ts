@@ -67,7 +67,10 @@ export function createSignInCodeApi(getDb: () => AppDatabase): SignInCodeApi {
         ),
       );
       if (row?.outcome === 'too_soon') {
-        return { outcome: 'too_soon', retryAfterSeconds: Math.min(Math.max(Number(row.retry_after), 1), 60) };
+        return {
+          outcome: 'too_soon',
+          retryAfterSeconds: Math.min(Math.max(row.retry_after, 1), 60),
+        };
       }
       if (!row?.request_id || (row.outcome !== 'queued' && row.outcome !== 'remembered')) {
         throw new Error('requestSignInCode: unexpected answer');
@@ -82,7 +85,8 @@ export function createSignInCodeApi(getDb: () => AppDatabase): SignInCodeApi {
           sql`select * from private.verify_sign_in_code(${requestId}::uuid, ${email}, ${code})`,
         ),
       );
-      if (row?.outcome === 'ok' && row.link_token) return { outcome: 'ok', linkToken: row.link_token };
+      if (row?.outcome === 'ok' && row.link_token)
+        return { outcome: 'ok', linkToken: row.link_token };
       if (row?.outcome === 'wrong' || row?.outcome === 'locked') return { outcome: row.outcome };
       return { outcome: 'expired' };
     },
@@ -95,7 +99,8 @@ export function createSignInCodeApi(getDb: () => AppDatabase): SignInCodeApi {
           sql`select * from private.take_remembered_sign_in(${requestId}::uuid, ${email}, ${hex(rememberHash)}::bytea)`,
         ),
       );
-      if (row?.outcome === 'ok' && row.link_token) return { outcome: 'ok', linkToken: row.link_token };
+      if (row?.outcome === 'ok' && row.link_token)
+        return { outcome: 'ok', linkToken: row.link_token };
       return { outcome: row?.outcome === 'pending' ? 'pending' : 'gone' };
     },
   };
@@ -107,11 +112,8 @@ export const requestSignInCode = (email: string, rememberHash?: Uint8Array | nul
   defaultApi.request(email, rememberHash);
 export const verifySignInCode = (requestId: string, email: string, code: string) =>
   defaultApi.verify(requestId, email, code);
-export const takeRememberedSignIn = (
-  requestId: string,
-  email: string,
-  rememberHash: Uint8Array,
-) => defaultApi.takeRemembered(requestId, email, rememberHash);
+export const takeRememberedSignIn = (requestId: string, email: string, rememberHash: Uint8Array) =>
+  defaultApi.takeRemembered(requestId, email, rememberHash);
 
 // ---------------------------------------------------------------------------------------------------
 // Remembered browsers (migration 20261026100100): the signed-in user's own
@@ -143,7 +145,7 @@ export async function rememberBrowser(
   const [row] = await tx.execute<{ count: number }>(
     sql`select private.remember_browser(${hex(tokenHash)}::bytea, ${label}) as count`,
   );
-  return Number(row?.count ?? 0);
+  return row?.count ?? 0;
 }
 
 /** The member's own remembered browsers in the session's organization (RLS: own rows only). */
@@ -193,9 +195,12 @@ export async function forgetMyRememberedBrowsers(tx: UserTx): Promise<number> {
 }
 
 /** An Organization Admin / user manager forgets a member's remembered browsers (the permission of «End sessions»). */
-export async function forgetMemberRememberedBrowsers(tx: UserTx, personId: string): Promise<number> {
+export async function forgetMemberRememberedBrowsers(
+  tx: UserTx,
+  personId: string,
+): Promise<number> {
   const [row] = await tx.execute<{ count: number }>(
     sql`select private.forget_member_remembered_browsers(${personId}::uuid) as count`,
   );
-  return Number(row?.count ?? 0);
+  return row?.count ?? 0;
 }

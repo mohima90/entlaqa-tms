@@ -470,11 +470,7 @@ export function SignInView({
       title={onCodeScreen ? codeTitle : title}
       subtitle={
         <p>
-          {step === 'email'
-            ? subtitles.email
-            : onCodeScreen
-              ? subtitles.code
-              : subtitles.method}
+          {step === 'email' ? subtitles.email : onCodeScreen ? subtitles.code : subtitles.method}
         </p>
       }
       notices={notices}

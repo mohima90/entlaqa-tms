@@ -31,8 +31,12 @@ describe('sign-in code e-mail (WP-ADM-05)', () => {
   });
 
   it('refuses anything but six digits and escapes names', () => {
-    expect(() => renderEmail('platform.sign_in_code', 'en', { ...variables, code: '12345' })).toThrow();
-    expect(() => renderEmail('platform.sign_in_code', 'en', { ...variables, code: '12345a' })).toThrow();
+    expect(() =>
+      renderEmail('platform.sign_in_code', 'en', { ...variables, code: '12345' }),
+    ).toThrow();
+    expect(() =>
+      renderEmail('platform.sign_in_code', 'en', { ...variables, code: '12345a' }),
+    ).toThrow();
     const mail = renderEmail('platform.sign_in_code', 'en', {
       ...variables,
       organizationName: { ar: 'x', en: '<script>alert(1)</script>' },

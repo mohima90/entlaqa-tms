@@ -134,7 +134,10 @@ export function SessionsTable({ target, sessions, labels, errors }: SessionsTabl
           </Button>
           {/* Ending ALL of a member's sessions also forgets their remembered browsers (WP-ADM-05). */}
           {target.kind === 'member' ? (
-            <p className="m-0 mt-2 text-[13.5px] text-text-muted" data-testid="sessions-also-forgets">
+            <p
+              className="m-0 mt-2 text-[13.5px] text-text-muted"
+              data-testid="sessions-also-forgets"
+            >
               {t('alsoForgets')}
             </p>
           ) : null}

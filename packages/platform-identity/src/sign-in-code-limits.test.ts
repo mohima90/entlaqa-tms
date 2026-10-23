@@ -6,19 +6,22 @@ import { createSignInCodeLimiter, rememberedBrowserHash } from './sign-in-code-l
 /** An in-memory limiter store with the database's counting rules (fixed window, give back, clear). */
 function fakeStore() {
   const counters = new Map<string, number>();
-  const key = (bucket: string, subject: Uint8Array) => `${bucket}:${Buffer.from(subject).toString('hex')}`;
+  const key = (bucket: string, subject: Uint8Array) =>
+    `${bucket}:${Buffer.from(subject).toString('hex')}`;
   const store = {
-    hit: vi.fn((bucket: string, subject: Uint8Array, limit: RateLimit): Promise<RateLimitCounter> => {
-      const k = key(bucket, subject);
-      const hits = Math.min((counters.get(k) ?? 0) + 1, limit.max + 1);
-      counters.set(k, hits);
-      return Promise.resolve({
-        allowed: hits <= limit.max,
-        remaining: Math.max(0, limit.max - hits),
-        retryAfterSeconds: hits > limit.max || hits === limit.max ? limit.windowSeconds : 0,
-        ref: 'rk_test',
-      });
-    }),
+    hit: vi.fn(
+      (bucket: string, subject: Uint8Array, limit: RateLimit): Promise<RateLimitCounter> => {
+        const k = key(bucket, subject);
+        const hits = Math.min((counters.get(k) ?? 0) + 1, limit.max + 1);
+        counters.set(k, hits);
+        return Promise.resolve({
+          allowed: hits <= limit.max,
+          remaining: Math.max(0, limit.max - hits),
+          retryAfterSeconds: hits > limit.max || hits === limit.max ? limit.windowSeconds : 0,
+          ref: 'rk_test',
+        });
+      },
+    ),
     clear: vi.fn((bucket: string, subject: Uint8Array) => {
       counters.delete(key(bucket, subject));
       return Promise.resolve();
@@ -34,7 +37,10 @@ function fakeStore() {
   return store as unknown as RateLimitStore & typeof store;
 }
 
-function limiterFor(store: RateLimitStore, client: { key: string | null } = { key: '203.0.113.7' }) {
+function limiterFor(
+  store: RateLimitStore,
+  client: { key: string | null } = { key: '203.0.113.7' },
+) {
   const log = vi.fn();
   return {
     log,
@@ -66,16 +72,22 @@ describe('sign-in code requests', () => {
     const { limiter } = limiterFor(store);
     const max = PLATFORM_AUTH_LIMITS.signInCode.requestsPerClient.max;
     for (let i = 0; i < max; i += 1) await limiter.allowRequest(`user${String(i)}@example.test`);
-    const accountHits = store.hit.mock.calls.filter(([bucket]) => bucket === LIMIT_BUCKETS.signInCodeRequestAccount).length;
+    const accountHits = store.hit.mock.calls.filter(
+      ([bucket]) => bucket === LIMIT_BUCKETS.signInCodeRequestAccount,
+    ).length;
     expect(await limiter.allowRequest('late@example.test')).toBe(false);
-    expect(store.hit.mock.calls.filter(([bucket]) => bucket === LIMIT_BUCKETS.signInCodeRequestAccount)).toHaveLength(accountHits);
+    expect(
+      store.hit.mock.calls.filter(([bucket]) => bucket === LIMIT_BUCKETS.signInCodeRequestAccount),
+    ).toHaveLength(accountHits);
   });
 
   it('fail closed when the limiter cannot answer', async () => {
     const store = fakeStore();
     store.hit.mockRejectedValueOnce(new Error('db down'));
     const { limiter } = limiterFor(store);
-    await expect(limiter.allowRequest('a@example.test')).rejects.toBeInstanceOf(RateLimiterUnavailableError);
+    await expect(limiter.allowRequest('a@example.test')).rejects.toBeInstanceOf(
+      RateLimiterUnavailableError,
+    );
   });
 });
 
@@ -93,9 +105,17 @@ describe('sign-in code checks', () => {
     }
     expect(left).toEqual([4, 3, 2, 1, 0]);
     // The 5th used the budget up: a lockout event (codes and keyed references only).
-    expect(log).toHaveBeenCalledWith(expect.objectContaining({ event: 'auth.lockout', limit: LIMIT_BUCKETS.signInCodeCheckAccount }));
+    expect(log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'auth.lockout',
+        limit: LIMIT_BUCKETS.signInCodeCheckAccount,
+      }),
+    );
     const sixth = await limiter.checkCode('A@example.test');
-    expect(sixth).toEqual({ allowed: false, retryAfterSeconds: PLATFORM_AUTH_LIMITS.signInCode.checkAccountFailures.windowSeconds });
+    expect(sixth).toEqual({
+      allowed: false,
+      retryAfterSeconds: PLATFORM_AUTH_LIMITS.signInCode.checkAccountFailures.windowSeconds,
+    });
     // Another address is not affected.
     expect((await limiter.checkCode('b@example.test')).allowed).toBe(true);
   });

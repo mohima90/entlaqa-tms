@@ -74,7 +74,9 @@ export function createSignInCodeMailer(options: SignInCodeMailerOptions): Platfo
   let base = options.appBaseUrl;
   while (base?.endsWith('/')) base = base.slice(0, -1);
   if (base !== undefined && !isSafeLink(base)) {
-    throw new Error('sign-in code mailer: the app base URL must be https (http only for localhost)');
+    throw new Error(
+      'sign-in code mailer: the app base URL must be https (http only for localhost)',
+    );
   }
   const { log, signInLinks, withPlatformTx, withSystemTx } = options;
 
@@ -141,8 +143,17 @@ export function createSignInCodeMailer(options: SignInCodeMailerOptions): Platfo
       });
       if (!issued) return 'already_answered';
       if (code === null) return 'token_ready';
-      const context = await loadAccountMailContext(tx, request.personId, 'platform.sign_in_code', 0);
-      if (!context) throw Object.assign(new Error('person not visible'), { code: 'PERSON_GONE', temporary: false });
+      const context = await loadAccountMailContext(
+        tx,
+        request.personId,
+        'platform.sign_in_code',
+        0,
+      );
+      if (!context)
+        throw Object.assign(new Error('person not visible'), {
+          code: 'PERSON_GONE',
+          temporary: false,
+        });
       await queueEmail(tx, {
         template: 'platform.sign_in_code',
         locale: request.locale,
@@ -171,7 +182,10 @@ export function createSignInCodeMailer(options: SignInCodeMailerOptions): Platfo
     }
     try {
       const result = await send(jobId, request, base);
-      log('info', `sign-in code ${result === 'queued' || result === 'token_ready' ? result : `not sent (${result})`}`);
+      log(
+        'info',
+        `sign-in code ${result === 'queued' || result === 'token_ready' ? result : `not sent (${result})`}`,
+      );
     } catch (error) {
       const code = codeOf(error);
       if (!isTemporary(error)) {

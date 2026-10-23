@@ -105,3 +105,20 @@ Design approved (WP-ADM-05 screens, Mobbin-based, direction C), with this simpli
 | 2 | **It is kept completely apart from two-step sign-in (MFA).** MFA is available to all users; the **organization decides in its Security settings whether to turn it on** (as today). When MFA is on, the second step follows the first step whichever way the person signed in (password or e-mailed code). Tech-lead note: because the first step may already be an e-mailed code, the MFA second step is the authenticator app — never a second e-mailed code |
 | 3 | No «code first, then password» screen for any role (the earlier MFA-role rule of this flow is replaced by row 2) |
 | 4 | Both «Remember this browser» ticks stay: the password step's (lock-out protection) and the code screen's (skips the code for the organization's chosen period: Off / 1 / 7 / 14 / 30 days) |
+
+## Build notes (23 Oct 2026, WP-ADM-05 built)
+
+Built as agreed in the two «PO answers» sections (the 23 Oct one is final). How the build reads them, and where it differs from the approved design (`adm05-*.html`):
+
+| Topic | Built |
+|---|---|
+| «Email me a code instead» | A second way to sign in, instead of the password, on the password step, for every user. No switch, no setting. Same screen for any address. Details: `docs/engineering/sign-in-protection.md` §12 |
+| Removed from the design | The «Code by e-mail» switch on Security settings (and its sender line / mail-down states) and the «code then password» screen for MFA roles are **not built** (23 Oct answers 1 and 3) |
+| MFA | Unchanged and apart. After either first step the organization's policy decides; the second step is the **authenticator app**, never a second e-mailed code. The only «e-mailed code» in the MFA code is the set-up confirmation of a new app (re-review N1) — not a sign-in step — and stays |
+| «Remember this browser» (code screen) | Always shown (its label cannot state the days: that would tell who has which organization). With the organization's period Off it does nothing. On a remembered browser «Email me a code» signs in **without a code** (the worker still mints the sign-in token, so the page waits a few seconds, or sends a code). Strictest organization of the person wins |
+| «Remember this browser» (password step) | Unchanged (lock-out protection) |
+| Security settings | «Remember a trusted device»: Off / 1 / 7 / 14 / 30 days, default Off. «Code by text message» and «Block reuse of earlier passwords» stay «Coming soon» |
+| My profile › Security | New «Remembered browsers» section (this browser marked, when remembered, until when, «Forget all» with a confirmation). The Organization Admin's «End sessions» of a member also forgets that member's browsers |
+| Frame | The code screen stays in the sign-in split frame (the design had the focus frame) so the form keeps its state when going back to the password |
+| Code e-mail | Bilingual, organization look, no greeting by name, code not in the subject |
+| Parked | A real-mailbox journey (Mailpit) in the smoke test; checking the magic-link token exchange against hosted GoTrue; a separate setting for the code's sender (the organization's own sender, else the platform's, as the WP-ADM-01 rule) |

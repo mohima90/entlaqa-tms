@@ -139,7 +139,7 @@ export function createSignInCodeLimiter(
       }
       const attempt: SignInCodeAttempt = {
         triesIfWrong: byAccount.remaining,
-        async failed() {
+        failed() {
           deps.log({ event: 'auth.sign_in_code.failed', action, reason: 'invalid_code', ...refs });
           for (const [bucket, counter] of [
             [B.signInCodeCheckAccount, byAccount],
@@ -156,6 +156,7 @@ export function createSignInCodeLimiter(
               });
             }
           }
+          return Promise.resolve();
         },
         async succeeded() {
           try {

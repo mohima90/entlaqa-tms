@@ -594,7 +594,11 @@ export function SecuritySettingsForm(props: SecurityFormProps) {
             {/* «Remember a trusted device» (WP-ADM-05, PO 23 Oct 2026): how long a browser the person chose to
                 remember skips the e-mailed sign-in code. Shortening it applies at once to browsers already
                 remembered. */}
-            <Row title={t('mfa.trusted')} hint={t('mfa.trustedHint')} titleId="security-trusted-label">
+            <Row
+              title={t('mfa.trusted')}
+              hint={t('mfa.trustedHint')}
+              titleId="security-trusted-label"
+            >
               <div
                 role="radiogroup"
                 aria-labelledby="security-trusted-label"

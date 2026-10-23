@@ -100,7 +100,7 @@ as select u.id, pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(coales
    from auth.users u;
 comment on view private.auth_password_marker is
   'SECURITY-RELEVANT (WP-ADM-05): auth.users (id, SHA-256 of the stored password hash) for account_mail_guard only - changes with every password change or reset; never the hash.';
-revoke all on view private.auth_password_marker from public;
+revoke all on private.auth_password_marker from public;
 grant select on private.auth_password_marker to account_mail_guard;
 
 -- ---------------------------------------------------------------------------------------------------

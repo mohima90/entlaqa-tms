@@ -177,7 +177,12 @@ export function SignInCodeStep({
   const errorId = fieldError ? 'sign-in-code-error' : undefined;
   const describedBy = [errorId, 'sign-in-code-hint'].filter(Boolean).join(' ');
   return (
-    <form className="flex flex-col gap-5" onSubmit={onSubmit} noValidate data-testid="sign-in-code-form">
+    <form
+      className="flex flex-col gap-5"
+      onSubmit={onSubmit}
+      noValidate
+      data-testid="sign-in-code-form"
+    >
       <p className="m-0 text-text-muted" data-testid="sign-in-code-intro">
         {labels.intro.replace('{email}', email)}
       </p>
@@ -193,7 +198,9 @@ export function SignInCodeStep({
             setCode(next);
             if (fieldError) setFieldError(undefined);
           }}
-          boxLabel={(n, total) => labels.digit.replace('{n}', String(n)).replace('{total}', String(total))}
+          boxLabel={(n, total) =>
+            labels.digit.replace('{n}', String(n)).replace('{total}', String(total))
+          }
           legend={labels.label}
           disabled={busy || locked}
           invalid={fieldError !== undefined}
@@ -243,7 +250,11 @@ export function SignInCodeStep({
         </Alert>
       ) : null}
       {status ? (
-        <p role="status" className="m-0 text-center text-[13.5px] font-semibold text-success" data-testid="sign-in-code-resent">
+        <p
+          role="status"
+          className="m-0 text-center text-[13.5px] font-semibold text-success"
+          data-testid="sign-in-code-resent"
+        >
           {status}
         </p>
       ) : null}
@@ -339,7 +350,8 @@ export function RememberedSignIn({
       }
       const sent = await requestSignInCodeAction({ email, forceCode: true });
       if (sent.ok && sent.value.kind === 'code') onFallback({ requestId: sent.value.requestId });
-      else onFallback({ message: sent.ok ? labels.rememberedFailed : errorText(sent.error, errors) });
+      else
+        onFallback({ message: sent.ok ? labels.rememberedFailed : errorText(sent.error, errors) });
     })();
   }, [requestId, email, locale, router, onFallback, labels.rememberedFailed, errors]);
   return (

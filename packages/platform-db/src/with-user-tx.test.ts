@@ -110,7 +110,7 @@ describe('withUserTx (ADR 0002 §5)', () => {
       "select set_config('request.jwt.claims', $1, true)",
       "select set_config('request.jwt.claim', '', true), set_config('request.jwt.claim.sub', '', true)",
     ]);
-    expect(PASSIVE_READS).toEqual(['platform.user_import.status']);
+    expect(PASSIVE_READS).toEqual(['platform.user_import.status', 'platform.person.photo']);
     expect(isPassiveRead('platform.user_import.status')).toBe(true);
     expect(isPassiveRead('platform.users.list')).toBe(false);
     await expect(

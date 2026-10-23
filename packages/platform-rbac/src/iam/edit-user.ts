@@ -19,6 +19,7 @@ import type { ActionDefinition } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import { platformPermissions } from '../platform-permissions';
 import { mobile, namePart, nameRuleError } from './my-profile';
+import { type PersonRecordEdit, loadPersonRecordEdit } from './person-record';
 
 /**
  * HR / Organization Admin edits of a person's details and placement (T-M2-13, FR-IAM-01, BR-IAM-3;
@@ -107,6 +108,13 @@ export interface EditUserView {
    * «Department» (guided-test feedback #3, PO 17 Oct 2026). One read per page.
    */
   readonly levels: readonly StructureLevelLabel[];
+  /**
+   * The record is a privileged member's and the viewer is not an Organization Admin (WP-ADM-04, BR-PPL-f):
+   * the account details stay locked, but HR still fills the grade and the HR-only fields.
+   */
+  readonly locked: boolean;
+  /** The grade list and grade of the person, and the HR-only fields for who may edit them. */
+  readonly record: PersonRecordEdit;
 }
 
 export const EditUserQueryInput = z.strictObject({ personId: z.uuid() });
@@ -123,8 +131,10 @@ export function editUserQueryDefinition(): QueryDefinition<
     handler: async ({ ctx, input }) => {
       const user = await getEditableUser(ctx.tx, input.personId);
       if (!user) return err(appError('NOT_FOUND'));
-      // A privileged member's record: Organization Admin only (same rule as the database guard).
-      if (!user.mayManage) return err(appError('FORBIDDEN'));
+      const record = await loadPersonRecordEdit(ctx, input.personId);
+      // A privileged member's account details: Organization Admin only (same rule as the database guard).
+      // HR may still open the record to fill the HR-only fields and the grade (WP-ADM-04, BR-PPL-f).
+      if (!user.mayManage && !record.canEditHr) return err(appError('FORBIDDEN'));
       const managers = await listManagerOptions(ctx.tx, user.managerPersonId);
       const orgUnits = await listOrgUnitOptions(ctx.tx);
       return ok({
@@ -132,6 +142,8 @@ export function editUserQueryDefinition(): QueryDefinition<
         managers: managers.filter((m) => m.personId !== user.personId),
         orgUnits,
         levels: await listStructureLevelLabels(ctx.tx),
+        locked: !user.mayManage,
+        record,
       });
     },
   };

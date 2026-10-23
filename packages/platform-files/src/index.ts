@@ -89,6 +89,17 @@ export {
   prepareBrandUpload,
   readBrandUpload,
 } from './brand-uploads';
+export {
+  PROFILE_PHOTO_MAX_BYTES,
+  PROFILE_PHOTO_MAX_SIDE,
+  PROFILE_PHOTO_PURPOSE,
+  type PreparedProfilePhotoResult,
+  type ProfilePhotoRefusal,
+  checkProfilePhotoUpload,
+  prepareProfilePhoto,
+  profilePhotoObject,
+  readProfilePhotoUpload,
+} from './profile-photo';
 export { DETECTION_HEAD_BYTES, detectType, sniffText } from './detect';
 export { FileErrors, fileAppError, fileResult } from './errors';
 export type { FileErrorCode, FileOwner, FileStatus, FileStatusView } from '@jadarat/platform-db';

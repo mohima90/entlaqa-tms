@@ -22,6 +22,7 @@ import {
   buildContentSecurityPolicy,
   createNonce,
   isBrandImagePath,
+  isPersonPhotoPath,
 } from './lib/security-headers';
 import { applySessionCookies, refreshSessionCookies } from './lib/session-refresh';
 
@@ -113,8 +114,9 @@ export function routeRequest(request: NextRequest): NextResponse {
   } else {
     response = NextResponse.next({ request: { headers } });
   }
-  if (isBrandImagePath(request.nextUrl.pathname)) {
-    // Public branding images (WP-ADM-02): the image policy, not the page's (security review L4).
+  if (isBrandImagePath(request.nextUrl.pathname) || isPersonPhotoPath(request.nextUrl.pathname)) {
+    // Public branding images (WP-ADM-02) and profile photos (WP-ADM-04): the image policy, not the page's
+    // (security review L4).
     response.headers.set('content-security-policy', BRAND_IMAGE_CSP);
     response.headers.set('x-content-type-options', 'nosniff');
   } else {

@@ -54,6 +54,15 @@ insert into platform.files (id, tenant_id, bucket, object_key, purpose, owner_mo
    'platform.profile_photo', 'platform', 'person', 'a1000000-0000-4000-8000-0000000000a1', 'me.png', 'image/png',
    octet_length(tests.brand_png()), octet_length(tests.brand_png()), 'uploaded', 'owner_lifetime',
    '00000000-0000-4000-8000-0000000000a1', now() + interval '15 minutes', now());
+-- A PURPOSE THAT IS STILL SCANNED, waiting for its scan: an import upload (profile photos stopped being
+-- scanned with WP-ADM-04, PO 21 Oct 2026, so f0a2…08 above is no longer a scanned purpose's upload).
+insert into platform.files (id, tenant_id, bucket, object_key, purpose, owner_module, owner_entity_type, owner_entity_id,
+    original_name, declared_mime, declared_size, size_bytes, status, retention_class, created_by_user, upload_expires_at,
+    uploaded_at) values
+  ('f0a20000-0000-4000-8000-00000000000e', 'a0000000-0000-4000-8000-000000000001', 'imports',
+   'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000001/f0a20000-0000-4000-8000-00000000000e',
+   'platform.user_import', 'platform', 'user_import', 'a5000000-0000-4000-8000-000000000001', 'staff.csv', 'text/csv',
+   16, 16, 'uploaded', 'import', '00000000-0000-4000-8000-0000000000a1', now() + interval '15 minutes', now());
 alter table platform.files enable trigger files_transition;
 
 alter table platform.tenant_branding disable trigger tenant_branding_stamp;

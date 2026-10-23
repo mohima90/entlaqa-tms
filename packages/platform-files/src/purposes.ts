@@ -57,16 +57,22 @@ export const FILE_PURPOSES = {
     downloadTtlSeconds: 60,
     scanRequired: true,
   },
-  /** Profile photo (T-M2-15b, FR-IAM-16): PNG, JPEG or WebP — never SVG or GIF. */
+  /**
+   * Profile photo (T-M2-15b, WP-ADM-04, FR-IAM-16): PNG, JPEG or WebP — never SVG or GIF — at most 2 MB
+   * after the browser shrank it (PO, 21 Oct 2026). Not virus-scanned (PO answer 6, like the branding images,
+   * migration 20261025100300): the person's own upload is read back, checked by content, size and pixels,
+   * stripped of its metadata and published as a copy shown to signed-in members of the organization only
+   * (profile-photo.ts).
+   */
   'platform.profile_photo': {
     bucket: 'images',
-    maxBytes: 10 * MB,
+    maxBytes: 2 * MB,
     types: ['image/png', 'image/jpeg', 'image/webp'],
     retention: 'owner_lifetime',
     uploadBy: 'user',
     auditDownloads: false,
     downloadTtlSeconds: 300,
-    scanRequired: true,
+    scanRequired: false,
   },
   /**
    * Branding images (WP-ADM-02, FR-ADM-07, BR-BRD-b; migration 20261023100000): PNG, JPEG or WebP — never SVG

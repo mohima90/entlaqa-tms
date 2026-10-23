@@ -94,3 +94,14 @@ People who do not want an authenticator app can still use a second step at sign-
 | 6 | **No — keep «Code by text message» and «Block reuse of earlier passwords» on the Security page** («Coming soon») |
 | 7 | Approved — an e-mail code is the second step after the password for roles with MFA required (never both factors at once) — confirmed |
 | 8 | Approved — e-mail codes stay off in production until delivery is fast |
+
+## PO answers on the design (23 Oct 2026)
+
+Design approved (WP-ADM-05 screens, Mobbin-based, direction C), with this simplification:
+
+| # | Decision |
+|---|---|
+| 1 | **«Email me a code» is simply a second way to sign in, instead of the password, for every user.** It is not a setting: no switch, always offered on the sign-in page |
+| 2 | **It is kept completely apart from two-step sign-in (MFA).** MFA is available to all users; the **organization decides in its Security settings whether to turn it on** (as today). When MFA is on, the second step follows the first step whichever way the person signed in (password or e-mailed code). Tech-lead note: because the first step may already be an e-mailed code, the MFA second step is the authenticator app — never a second e-mailed code |
+| 3 | No «code first, then password» screen for any role (the earlier MFA-role rule of this flow is replaced by row 2) |
+| 4 | Both «Remember this browser» ticks stay: the password step's (lock-out protection) and the code screen's (skips the code for the organization's chosen period: Off / 1 / 7 / 14 / 30 days) |

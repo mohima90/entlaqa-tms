@@ -9,6 +9,7 @@ const NONE: SuiteNavigationAccess = {
   security: false,
   organizationProfile: false,
   structure: false,
+  grades: false,
   organizationSetup: false,
   training: false,
   courses: false,
@@ -34,6 +35,7 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
         security: true,
         organizationProfile: true,
         structure: false,
+        grades: false,
         organizationSetup: true,
         training: false,
         courses: false,
@@ -79,6 +81,7 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
         security: true,
         organizationProfile: true,
         structure: false,
+        grades: false,
         training: true,
         courses: false,
         planning: false,
@@ -122,6 +125,19 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
     ]);
   });
 
+  it('lists Grades under Organization for members who keep the list (HR Manager, Organization Admin; WP-ADM-04)', () => {
+    expect(outline({ ...NONE, users: true, grades: true, training: true })).toEqual([
+      'main: home→/suite calendar(soon) sessions(soon) courses(soon)',
+      'groupOrganization: teamMembers→/suite/admin/users grades→/suite/admin/grades',
+    ]);
+    // Nobody else sees the entry, however much else they may do.
+    expect(
+      outline({ ...NONE, users: true, roles: true, structure: true, training: true })
+        .join(' ')
+        .includes('grades'),
+    ).toBe(false);
+  });
+
   it('gives every entry one of the shell icons', () => {
     const all = suiteNavigation({
       users: true,
@@ -129,13 +145,14 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
       security: true,
       organizationProfile: true,
       structure: true,
+      grades: true,
       organizationSetup: true,
       training: true,
       courses: false,
       planning: false,
       needsForms: false,
     }).flatMap((group) => group.entries);
-    expect(all.length).toBe(15);
+    expect(all.length).toBe(16);
     expect(all.filter((entry) => !ICON_NAMES.includes(entry.icon))).toEqual([]);
   });
 });
@@ -160,6 +177,7 @@ describe('suiteHome (T-M2-21)', () => {
       security: true,
       organizationProfile: true,
       structure: false,
+      grades: false,
       organizationSetup: true,
       training: false,
       courses: false,
@@ -205,6 +223,7 @@ describe('commandPaletteItems (⌘K / Ctrl K, T-M2-43)', () => {
         security: true,
         organizationProfile: true,
         structure: false,
+        grades: false,
         organizationSetup: true,
         training: false,
         courses: false,

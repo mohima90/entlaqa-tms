@@ -11,6 +11,8 @@ export type SuitePage =
   | 'emailIntegration'
   // Organization → Branding (WP-ADM-02).
   | 'branding'
+  // Organization → Grades (WP-ADM-04).
+  | 'grades'
   | 'users'
   | 'structure'
   | 'branches'
@@ -30,6 +32,7 @@ export type NavLabelKey =
   | 'structure'
   | 'branches'
   | 'branding'
+  | 'grades'
   | 'roles'
   | 'subscription'
   | 'general'
@@ -68,6 +71,7 @@ export const SUITE_PATHS = {
   general: '/suite/admin/settings',
   emailIntegration: '/suite/admin/settings/email',
   branding: '/suite/admin/branding',
+  grades: '/suite/admin/grades',
   security: '/suite/admin/security',
   profile: '/suite/profile',
   planningCycles: '/suite/planning/cycles',
@@ -142,6 +146,8 @@ export function suiteNavigation(access: SuiteNavigationAccess): NavGroupModel[] 
         // the Auditor) reads it.
         ...when(access.organizationProfile || setup, page('branding', 'palette', 'branding')),
         ...when(access.roles, page('roles', 'key', 'roles')),
+        // Organization → Grades (WP-ADM-04): HR Manager and Organization Admin keep the list of grade codes.
+        ...when(access.grades, page('grades', 'star', 'grades')),
       ],
     },
     { key: 'groupBilling', entries: when(setup, soon('subscription', 'billing')) },

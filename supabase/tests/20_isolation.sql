@@ -37,7 +37,10 @@ begin
     -- Needs forms (T-M3-10): insert/FK tests below; rules in 99_needs_forms_1_app_server.sql.
     'tms.needs_forms', 'tms.needs_form_sections', 'tms.needs_form_fields',
     -- Branding (WP-ADM-02): insert/FK tests below; images, publishing and the public path in 99_branding_*.sql.
-    'platform.tenant_branding', 'platform.brand_assets', 'platform.brand_asset_attempts')
+    'platform.tenant_branding', 'platform.brand_assets', 'platform.brand_asset_attempts',
+    -- Profile photo, HR-only fields, grades (WP-ADM-04): cross-tenant, FK, privilege and permission tests in
+    -- 99_people_*.sql.
+    'platform.grades', 'platform.person_grades', 'platform.person_hr_details', 'platform.person_photos')
     and t.table_name not in (select table_name from tests.job_only_tables());
   perform tests.assert(v_missing is null, format('isolation tests missing for: %s', v_missing));
   perform tests.assert(session_user = 'app_server', 'this file must run connected as app_server');
@@ -76,6 +79,12 @@ begin
       -- Read only with tms.plan_cycle.read / .manage (S-L3), which the Organization Admin does not hold: the
       -- same generic check as an L&D Manager of tenant A is in 99_planning_b_app_server.sql.
       perform tests.assert_eq(v_total, 0::bigint, format('%s: read with the planning permissions only', r.table_name));
+    elsif r.table_name::text in ('platform.person_hr_details', 'platform.person_grades') then
+      -- HR details: read by the person themself and by members holding platform.person.hr_details, which the
+      -- Organization Admin does not (PO, 21 Oct 2026). Grades: read by the person, HR / Organization Admin,
+      -- their managers and unit heads (PO, 23 Oct 2026). Both need a PERSON claim, which this connection does
+      -- not carry, so it sees none. The same generic check as the people allowed is in 99_people_2_app_server.sql.
+      perform tests.assert_eq(v_total, 0::bigint, format('%s: read by the people allowed only', r.table_name));
     else
       perform tests.assert(v_total > 0, format('%s: tenant A must see its own rows', r.table_name));
     end if;

@@ -20,6 +20,12 @@ const db = vi.hoisted(() => ({
   getTenantDefaultLocale: vi.fn(),
   keepsUnsplitDisplayName: vi.fn(),
   listStructureLevelLabels: vi.fn(() => Promise.resolve([])),
+  // WP-ADM-04: the grade, the HR-only fields and the photo (nothing set by default).
+  getPersonGrade: vi.fn((): Promise<unknown> => Promise.resolve(null)),
+  listGrades: vi.fn((): Promise<unknown[]> => Promise.resolve([])),
+  getHrDetails: vi.fn((): Promise<unknown> => Promise.resolve(null)),
+  getPersonPhotoFacts: vi.fn((): Promise<unknown> => Promise.resolve(null)),
+  photoVersionOf: vi.fn(() => null),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -127,12 +133,20 @@ describe('edit user query', () => {
     expect(result.ok && result.value.managers.map((m) => m.personId)).toEqual([ME]);
   });
 
-  it('a record the member may not manage → FORBIDDEN; no user.update → FORBIDDEN', async () => {
+  it('a privileged record the member may not manage → the HR Manager opens it locked; others FORBIDDEN', async () => {
     db.getEditableUser.mockResolvedValue({ personId: SARA, mayManage: false });
+    // HR holds the HR-only permission: the account details stay locked, grade and HR details can be filled
+    // (WP-ADM-04, BR-PPL-f).
     const hr = await createDefineQuery(runtime(['hr_manager']).rt)(editUserQueryDefinition())({
       personId: SARA,
     });
-    expect(!hr.ok && hr.error.code).toBe('FORBIDDEN');
+    expect(hr.ok && hr.value.locked).toBe(true);
+    expect(hr.ok && hr.value.record.canEditHr).toBe(true);
+    // The Organization Admin does not hold it (and manages the record anyway): without manage rights → no way in.
+    const admin = await createDefineQuery(runtime(['tenant_admin']).rt)(editUserQueryDefinition())({
+      personId: SARA,
+    });
+    expect(!admin.ok && admin.error.code).toBe('FORBIDDEN');
     const learner = await createDefineQuery(runtime(['learner']).rt)(editUserQueryDefinition())({
       personId: SARA,
     });
@@ -142,6 +156,36 @@ describe('edit user query', () => {
       personId: SARA,
     });
     expect(!gone.ok && gone.error.code).toBe('NOT_FOUND');
+  });
+
+  it('offers the grade list and the HR-only fields only to a member who may edit them', async () => {
+    db.getEditableUser.mockResolvedValue({ personId: SARA, mayManage: true });
+    db.getPersonGrade.mockResolvedValue({ id: 'g1', code: 'G7' });
+    db.listGrades.mockResolvedValue([{ id: 'g1', code: 'G7' }]);
+    db.getHrDetails.mockResolvedValue({
+      gender: 'female',
+      birthDate: '1992-05-14',
+      employmentCategory: 'technical',
+    });
+    const hr = await createDefineQuery(runtime(['hr_manager']).rt)(editUserQueryDefinition())({
+      personId: SARA,
+    });
+    expect(hr.ok && hr.value.locked).toBe(false);
+    expect(hr.ok && hr.value.record).toEqual({
+      gradeId: 'g1',
+      grades: [{ id: 'g1', code: 'G7' }],
+      hr: { gender: 'female', birthDate: '1992-05-14', employmentCategory: 'technical' },
+      canEditHr: true,
+    });
+    // The Organization Admin edits the grade, and receives NO HR value at all: nothing is even read.
+    db.getHrDetails.mockClear();
+    const admin = await createDefineQuery(runtime(['tenant_admin']).rt)(editUserQueryDefinition())({
+      personId: SARA,
+    });
+    expect(admin.ok && admin.value.record.canEditHr).toBe(false);
+    expect(admin.ok && admin.value.record.hr).toBeNull();
+    expect(admin.ok && admin.value.record.gradeId).toBe('g1');
+    expect(db.getHrDetails).not.toHaveBeenCalled();
   });
 });
 

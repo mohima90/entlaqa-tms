@@ -14,6 +14,8 @@ import {
   unlockSignInActionDefinition,
   updateMemberPrivilegedRolesActionDefinition,
   updateMemberRolesActionDefinition,
+  updatePersonHrDetailsActionDefinition,
+  updatePersonRecordActionDefinition,
   updateUserDetailsActionDefinition,
 } from '@jadarat/platform-rbac';
 import { RESPONSIBILITY_KINDS } from '../lib/responsibilities';
@@ -48,3 +50,13 @@ export const reactivatePrivilegedMemberAction = defineAction(
 
 /** «إلغاء إيقاف تسجيل الدخول» on a member's profile: Organization Admin only (T-M2-11). */
 export const unlockSignInAction = defineAction(unlockSignInActionDefinition());
+
+/**
+ * A person's grade and HR-only fields (WP-ADM-04): HR and the Organization Admin set the grade — also for a
+ * privileged member —; only members holding «View and edit HR-only fields» (never the Organization Admin)
+ * save the HR-only fields.
+ */
+export const updatePersonRecordAction = defineAction(updatePersonRecordActionDefinition());
+
+/** Only the HR-only fields: for a member holding «View and edit HR-only fields» without the right to edit users. */
+export const updatePersonHrDetailsAction = defineAction(updatePersonHrDetailsActionDefinition());

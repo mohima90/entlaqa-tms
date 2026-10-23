@@ -98,3 +98,14 @@ Everyone can put a face to a name: each person adds their own photo, seen wherev
 | 7 | Approved — up to 2 MB, large phone photos shrunk |
 | 8 | **No — nobody can remove another person's photo** (only the person changes or removes their own) |
 | 9 | Approved — HR may fill HR-only fields for privileged members |
+
+## PO answers on the design (23 Oct 2026)
+
+Design approved (WP-ADM-04 screens, Mobbin-based, direction C).
+
+| # | Decision |
+|---|---|
+| 1 | **Own photo only** (confirms BR-PPL-a): each person adds, replaces or removes their own photo on My profile; nobody uploads or removes a photo for someone else |
+| 2 | **Who sees the grade:** HR, the Organization Admin, the person **and their managers / Department Heads** (yes). Only HR and the Organization Admin edit it |
+| 3 | **Grade codes may contain punctuation** (e.g. `#7`, `G-7`, `G7`, `7`); still unique in the organization's list |
+| 4 | Grades are kept on a small **«Grades» page** under Organization in the menu (HR and Organization Admin) |

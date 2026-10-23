@@ -6,12 +6,14 @@ import {
   type UserTx,
   type MyRole,
   getMyPrimaryRole,
+  getPersonPhotoFacts,
   getPersonalDetails,
   getTenantDefaultLocale,
   keepsUnsplitDisplayName,
   listStructureLevelLabels,
   getUserProfile,
   passwordMinLengthForCaller,
+  photoVersionOf,
   updatePersonalDetails,
 } from '@jadarat/platform-db';
 import {
@@ -24,6 +26,7 @@ import { z } from 'zod';
 import type { ActionDefinition } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import { memberPermissions } from '../member-permissions';
+import { type PersonRecordView, loadPersonRecordView } from './person-record';
 
 /**
  * My profile (FR-IAM-16, PO decision 5 Oct 2026): every member reads their own profile and changes
@@ -174,6 +177,8 @@ export interface MyProfileView {
   readonly profile: UserProfile;
   /** The organization's own level names: the unit field says its level (guided-test feedback #3). */
   readonly levels: readonly StructureLevelLabel[];
+  /** The member's own grade and HR-only fields, read-only (WP-ADM-04, PO answer 5). */
+  readonly record: PersonRecordView;
 }
 
 export function myProfileQueryDefinition(): QueryDefinition<
@@ -194,7 +199,12 @@ export function myProfileQueryDefinition(): QueryDefinition<
         includeActivity: false,
       });
       if (!details || !profile) return err(appError('NOT_FOUND'));
-      return ok({ details, profile, levels: await listStructureLevelLabels(ctx.tx) });
+      return ok({
+        details,
+        profile,
+        levels: await listStructureLevelLabels(ctx.tx),
+        record: await loadPersonRecordView(ctx, personId),
+      });
     },
   };
 }
@@ -206,6 +216,9 @@ export interface MyIdentity {
   /** The primary role's code, for the account menu's "Organization · Role" (display only). */
   /** The member's role (one per person since EP-ROLES), with a custom role's names; null without one. */
   readonly primaryRole: MyRole | null;
+  /** The person's id and the version in the address of their photo (null: initials); WP-ADM-04. */
+  readonly personId: string;
+  readonly photoVersion: string | null;
 }
 
 export function myIdentityQueryDefinition(): QueryDefinition<
@@ -225,6 +238,10 @@ export function myIdentityQueryDefinition(): QueryDefinition<
         displayNameAr: details.displayNameAr,
         displayNameEn: details.displayNameEn,
         primaryRole: await getMyPrimaryRole(ctx.tx),
+        personId: personId ?? '',
+        photoVersion: personId
+          ? photoVersionOf((await getPersonPhotoFacts(ctx.tx, personId))?.sha256)
+          : null,
       });
     },
   };

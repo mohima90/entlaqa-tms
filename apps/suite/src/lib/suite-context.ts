@@ -15,6 +15,7 @@ import {
 } from '@jadarat/platform-rbac';
 import { redirect } from 'next/navigation';
 import { getConfigStatus } from './config-status';
+import { personPhotoHref } from './person-photo';
 import { myIdentityQuery } from './users-queries';
 import { requestSessionState } from './request-session';
 import { redirectFor } from './session-state';
@@ -39,6 +40,8 @@ export interface SuiteContext {
       readonly code: string;
       readonly customName: { readonly ar: string; readonly en: string } | null;
     } | null;
+    /** The address of the member's photo (`/api/photo/<id>?v=…`, WP-ADM-04); null: initials. */
+    readonly photoHref: string | null;
   } | null;
   /** The organization's inactivity limit in minutes (T-M2-10): the page warns before it ends. */
   readonly idleMinutes: number | null;
@@ -87,6 +90,11 @@ export interface SuiteNavigationAccess {
   readonly planning: boolean;
   /** Planning → Needs forms (T-M3-10): members who read the needs forms organization-wide. */
   readonly needsForms: boolean;
+  /**
+   * Organization → Grades (WP-ADM-04): members who manage the grade list — `platform.user.update`
+   * organization-wide, i.e. the HR Manager and the Organization Admin.
+   */
+  readonly grades: boolean;
 }
 
 /**
@@ -111,6 +119,7 @@ export function navigationFor(grants: readonly Grant[] | null): SuiteNavigationA
       courses: true,
       planning: true,
       needsForms: true,
+      grades: true,
     };
   }
   const tenantWide = (code: string) =>
@@ -130,6 +139,7 @@ export function navigationFor(grants: readonly Grant[] | null): SuiteNavigationA
     courses: tenantWide(coursePermissions['tms.course.read'].code),
     planning: tenantWide(tmsPlanningPermissions['tms.plan_cycle.read'].code),
     needsForms: !organizationSetup && tenantWide(tmsPermissions['tms.needs_form.read'].code),
+    grades: tenantWide(platformPermissions['platform.user.update'].code),
   };
 }
 
@@ -181,6 +191,7 @@ export async function getSuiteContext(locale: AppLocale): Promise<SuiteContext> 
           nameAr: identity.value.displayNameAr,
           nameEn: identity.value.displayNameEn,
           primaryRole: identity.value.primaryRole,
+          photoHref: personPhotoHref(identity.value.personId, identity.value.photoVersion),
         }
       : null,
     idleMinutes: tenant?.sessionIdleMinutes ?? null,

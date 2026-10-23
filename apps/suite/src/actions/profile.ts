@@ -10,9 +10,14 @@ import {
 } from '@jadarat/platform-identity/auth';
 import {
   changeMyPasswordActionDefinition,
+  confirmProfilePhotoUploadActionDefinition,
   defineAction,
+  removeProfilePhotoActionDefinition,
+  saveProfilePhotoActionDefinition,
+  startProfilePhotoUploadActionDefinition,
   updateMyProfileActionDefinition,
 } from '@jadarat/platform-rbac';
+import { profilePhotoFiles, readProfilePhoto } from '../lib/profile-photo-files';
 
 export const updateMyProfileAction = defineAction(updateMyProfileActionDefinition());
 
@@ -25,3 +30,17 @@ export const changeMyPasswordAction = defineAction(
     afterChange: queueOwnPasswordChangedNoticeForRequest,
   }),
 );
+
+// My profile → Photo (WP-ADM-04): the member's OWN photo only. Reserve + signed URL → the browser's PUT →
+// confirm → save (read back, checked, stripped of hidden details and published at once: no virus scan) or
+// remove. Audited with the file name only.
+export const startProfilePhotoUploadAction = defineAction(
+  startProfilePhotoUploadActionDefinition(profilePhotoFiles),
+);
+export const confirmProfilePhotoUploadAction = defineAction(
+  confirmProfilePhotoUploadActionDefinition(profilePhotoFiles),
+);
+export const saveProfilePhotoAction = defineAction(
+  saveProfilePhotoActionDefinition(readProfilePhoto),
+);
+export const removeProfilePhotoAction = defineAction(removeProfilePhotoActionDefinition());

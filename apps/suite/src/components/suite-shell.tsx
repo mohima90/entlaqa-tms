@@ -189,6 +189,7 @@ export async function SuiteShell({
           <AccountMenu
             locale={locale}
             name={name}
+            photo={context.me?.photoHref ?? undefined}
             subtitle={subtitle}
             profileHref={`/${locale}${SUITE_PATHS.profile}`}
             profileCurrent={current === 'profile'}

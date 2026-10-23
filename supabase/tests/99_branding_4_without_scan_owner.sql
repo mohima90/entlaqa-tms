@@ -13,11 +13,11 @@ declare
   r record;
 begin
   perform tests.assert_eq((select string_agg(purpose, ',' order by purpose) from platform.file_purposes where not scan_required),
-    'platform.brand_favicon,platform.brand_logo,platform.brand_sign_in_image',
-    'only the three branding images are not scanned');
+    'platform.brand_favicon,platform.brand_logo,platform.brand_sign_in_image,platform.profile_photo',
+    'only the three branding images and the profile photo (WP-ADM-04, PO 21 Oct 2026) are not scanned');
   perform tests.assert((select bool_and(scan_required) from platform.file_purposes
-                        where purpose in ('platform.user_import', 'platform.user_import_report', 'platform.profile_photo')),
-    'imports, generated reports and profile photos are still scanned');
+                        where purpose in ('platform.user_import', 'platform.user_import_report')),
+    'imports and generated reports are still scanned');
   -- publish_brand_image: SECURITY DEFINER owned by file_guard, callable inside user / job transactions only.
   perform tests.assert((select p.prosecdef and pg_get_userbyid(p.proowner) = 'file_guard'
                         from pg_proc p where p.oid = 'private.publish_brand_image(uuid,text,text,bigint,text,bytea)'::regprocedure),
@@ -55,11 +55,11 @@ begin;
 do $$
 declare
   v_brand constant uuid := 'f0a20000-0000-4000-8000-000000000005';
-  v_photo constant uuid := 'f0a20000-0000-4000-8000-000000000008';
+  v_import constant uuid := 'f0a20000-0000-4000-8000-00000000000e';
   v_sha constant text := encode(sha256(tests.brand_png()), 'hex');
 begin
-  perform tests.assert_fails(format($q$update platform.files set status = 'accepted', detected_mime = 'image/png', size_bytes = 16, sha256 = %L where id = %L$q$, v_sha, v_photo),
-    array['42501'], 'a profile photo (scanned purpose) is never accepted without its scan');
+  perform tests.assert_fails(format($q$update platform.files set status = 'accepted', detected_mime = 'image/png', size_bytes = 16, sha256 = %L where id = %L$q$, v_sha, v_import),
+    array['42501'], 'an import (scanned purpose) is never accepted without its scan');
   perform tests.assert_fails(format($q$update platform.files set status = 'accepted', detected_mime = 'image/png', size_bytes = 16, sha256 = %L where id = 'f0a20000-0000-4000-8000-000000000002'$q$, v_sha),
     array['42501'], 'a clean file does not become accepted');
   perform tests.assert_check_constraint(format($q$update platform.files set status = 'accepted' where id = %L$q$, v_brand),

@@ -10,7 +10,7 @@
 
 do $$ begin perform tests.assert(session_user = 'app_worker', 'must run connected as app_worker'); end $$;
 
--- The scan: the profile photo (scanned purpose) is leased; the branding uploads never are.
+-- The scan: an import upload (scanned purpose) is leased; the branding uploads and profile photos never are.
 begin;
 set local role authenticated;
 do $$
@@ -24,11 +24,12 @@ begin
     exit when v_id is null;
     v_claimed := v_claimed || v_id;
   end loop;
-  perform tests.assert('f0a20000-0000-4000-8000-000000000008' = any (v_claimed),
+  perform tests.assert('f0a20000-0000-4000-8000-00000000000e' = any (v_claimed),
     'an upload of a scanned purpose is leased for the scan');
   perform tests.assert(not ('f0a20000-0000-4000-8000-000000000005' = any (v_claimed))
-                       and not ('f0a20000-0000-4000-8000-000000000007' = any (v_claimed)),
-    'branding uploads are never leased (no malware scan)');
+                       and not ('f0a20000-0000-4000-8000-000000000007' = any (v_claimed))
+                       and not ('f0a20000-0000-4000-8000-000000000008' = any (v_claimed)),
+    'branding uploads and profile photos are never leased (no malware scan)');
 end $$;
 rollback;
 
@@ -110,8 +111,8 @@ begin
                            where w.file_id = 'f0a20000-0000-4000-8000-000000000007'), 0::bigint,
     'an image whose object is gone is no longer due for publishing');
   perform tests.assert(private.finish_file_housekeeping('f0a20000-0000-4000-8000-00000000000b', 'purge'), 'purged');
-  -- A scanned purpose's upload is never touched by the rule for purposes without a scan.
-  perform tests.assert(not private.finish_file_housekeeping('f0a20000-0000-4000-8000-000000000008', 'remove_object'),
+  -- A scanned purpose's upload (an import) is never touched by the rule for purposes without a scan.
+  perform tests.assert(not private.finish_file_housekeeping('f0a20000-0000-4000-8000-00000000000e', 'remove_object'),
     'a scanned purpose''s waiting upload is never touched by the unscanned rule');
   -- What was recorded, read as a job of A (RLS: the file's tenant).
   perform tests.set_claims(tests.system_claims('a0000000-0000-4000-8000-000000000001'));

@@ -10,6 +10,7 @@ vi.mock('@jadarat/platform-rbac', () => ({
   coursePermissions: { 'tms.course.read': { code: 'tms.course.read' } },
   platformPermissions: {
     'platform.user.read': { code: 'platform.user.read' },
+    'platform.user.update': { code: 'platform.user.update' },
     'platform.role.read': { code: 'platform.role.read' },
     'platform.tenant.read': { code: 'platform.tenant.read' },
     'platform.tenant.manage': { code: 'platform.tenant.manage' },
@@ -32,6 +33,7 @@ describe('navigationFor', () => {
       security: false,
       organizationProfile: false,
       structure: false,
+      grades: false,
       organizationSetup: false,
       training: true,
       courses: false,
@@ -46,12 +48,26 @@ describe('navigationFor', () => {
       security: false,
       organizationProfile: false,
       structure: false,
+      grades: false,
       organizationSetup: false,
       training: true,
       courses: false,
       planning: false,
       needsForms: false,
     });
+  });
+
+  it('shows Grades to members who change people organization-wide (HR Manager, Organization Admin; WP-ADM-04)', () => {
+    const update = (scope: Grant['scope']): Grant[] => [
+      { permission: 'platform.user.update', scope },
+    ];
+    expect(navigationFor(update({ type: 'tenant' })).grades).toBe(true);
+    expect(navigationFor(update({ type: 'direct_reports' })).grades).toBe(false);
+    expect(
+      navigationFor([{ permission: 'platform.user.read', scope: { type: 'tenant' } }]).grades,
+    ).toBe(false);
+    expect(navigationFor([]).grades).toBe(false);
+    expect(navigationFor(null).grades).toBe(true);
   });
 
   it('hides Users from learners (own record only) and members without the permission', () => {
@@ -61,6 +77,7 @@ describe('navigationFor', () => {
       security: false,
       organizationProfile: false,
       structure: false,
+      grades: false,
       organizationSetup: false,
       training: true,
       courses: false,
@@ -74,6 +91,7 @@ describe('navigationFor', () => {
         security: false,
         organizationProfile: false,
         structure: false,
+        grades: false,
         organizationSetup: false,
         training: true,
         courses: false,
@@ -87,6 +105,7 @@ describe('navigationFor', () => {
       security: false,
       organizationProfile: false,
       structure: false,
+      grades: false,
       organizationSetup: false,
       training: true,
       courses: false,
@@ -107,6 +126,7 @@ describe('navigationFor', () => {
       security: false,
       organizationProfile: false,
       structure: false,
+      grades: false,
       organizationSetup: false,
       training: true,
       courses: false,
@@ -121,6 +141,7 @@ describe('navigationFor', () => {
       security: false,
       organizationProfile: false,
       structure: false,
+      grades: false,
       organizationSetup: false,
       training: true,
       courses: false,
@@ -138,6 +159,7 @@ describe('navigationFor', () => {
       security: true,
       organizationProfile: true,
       structure: false,
+      grades: false,
       organizationSetup: false,
       training: true,
       courses: false,
@@ -151,6 +173,7 @@ describe('navigationFor', () => {
         security: false,
         organizationProfile: false,
         structure: false,
+        grades: false,
         organizationSetup: false,
         training: true,
         courses: false,
@@ -203,6 +226,7 @@ describe('navigationFor', () => {
       security: true,
       organizationProfile: true,
       structure: true,
+      grades: true,
       organizationSetup: true,
       training: true,
       courses: true,
@@ -241,6 +265,7 @@ describe('navigationFor', () => {
       security: false,
       organizationProfile: false,
       structure: false,
+      grades: false,
       organizationSetup: true,
       training: false,
       courses: false,

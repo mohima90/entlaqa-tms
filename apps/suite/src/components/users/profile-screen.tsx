@@ -12,6 +12,7 @@ import {
   type DeactivationView,
   type EditRolesView,
   type EditUserView,
+  type PersonRecordView,
   invitationGivesPrivilegedRole,
 } from '@jadarat/platform-rbac';
 import {
@@ -40,6 +41,7 @@ import { itemNames } from '../../lib/deactivate-form';
 import { reactivateLabels } from '../../lib/deactivation-texts';
 import { inviteCopyTexts } from '../../lib/invite-copy-texts';
 import { pageDates } from '../../lib/page-dates';
+import { personPhotoHref } from '../../lib/person-photo';
 import { formStateFrom } from '../../lib/profile-form';
 import { memberSecurityErrorTexts, profileErrorTexts } from '../../lib/profile-texts';
 import { roleOptions } from '../../lib/role-choice';
@@ -66,6 +68,8 @@ import { localizedName, roleName } from '../../lib/users-view';
 import { NotSet } from '../not-set';
 import { SessionsTable } from '../sessions/sessions-table';
 import { SuiteShell } from '../suite-shell';
+import type { EditRecordProps } from './edit-user-form';
+import { HrDetailsCard } from './hr-details-card';
 import { InviteCodeCopy } from './invite-code-copy';
 import { DeactivateDialog, EditUserPanel, type PanelReturn, RolePanelRoute } from './person-panels';
 import { ProfileActions, type ProfileActionLink } from './profile-actions';
@@ -103,6 +107,12 @@ const KNOWN_ACTIONS = new Set([
   'platform.user.mfa_reset',
   // T-M2-11: the Organization Admin ended a member's sign-in lock.
   'platform.user.sign_in_unlocked',
+  // WP-ADM-04: the person's own photo (file name only) and HR changes (field names only, never values).
+  'platform.profile.photo_added',
+  'platform.profile.photo_replaced',
+  'platform.profile.photo_removed',
+  'platform.person.hr_details_changed',
+  'platform.person.grade_changed',
 ]);
 const ACTION_ICONS: Record<string, IconName> = {
   'platform.user.updated': 'pencil',
@@ -112,6 +122,11 @@ const ACTION_ICONS: Record<string, IconName> = {
   'platform.user.sessions_ended': 'sign-out',
   'platform.user.mfa_reset': 'shield',
   'platform.user.sign_in_unlocked': 'lock',
+  'platform.profile.photo_added': 'image',
+  'platform.profile.photo_replaced': 'image',
+  'platform.profile.photo_removed': 'image',
+  'platform.person.hr_details_changed': 'lock',
+  'platform.person.grade_changed': 'star',
 };
 
 /** Text keys of the edit form (namespace `editUser`). */
@@ -310,6 +325,7 @@ async function profilePage(
   const { profile, levels, canOpenManager, canEdit, canEditRoles, lifecycle, signInLock } = input;
   const { security, tab } = input;
   const t = await getTranslations({ locale, namespace: 'userProfile' });
+  const people = await getTranslations({ locale, namespace: 'peopleRecord' });
   const name = localizedName(locale, profile.displayNameAr, profile.displayNameEn);
   const base = `/${locale}${profilePath(profile.personId)}`;
   const tabQuery = tab === 'overview' ? '' : `?tab=${tab}`;
@@ -369,7 +385,15 @@ async function profilePage(
         { label: name },
       ]}
       breadcrumbsLabel={t('breadcrumbLabel')}
-      leading={<Avatar name={name} size="xl" className="shadow-brand-glow" />}
+      leading={
+        <Avatar
+          name={name}
+          size="xl"
+          className="shadow-brand-glow"
+          src={personPhotoHref(profile.personId, profile.photoVersion) ?? undefined}
+          alt={people('photo.alt', { name })}
+        />
+      }
       title={name}
       description={
         <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -652,7 +676,21 @@ async function profilePage(
       </Card>
     );
   } else {
-    main = await basicInformation(locale, profile, levels, canOpenManager);
+    main = (
+      <>
+        {await basicInformation(locale, profile, levels, canOpenManager, input.record)}
+        {/* The HR-only card: only for the person and members holding the permission (WP-ADM-04). */}
+        {input.record.hr ? (
+          <HrDetailsCard
+            locale={locale}
+            details={input.record.hr.details}
+            own={input.record.hr.own}
+            headingLevel={2}
+            className="flex flex-col gap-4 rounded-xl border border-border bg-surface p-5.5"
+          />
+        ) : null}
+      </>
+    );
     side = (
       <>
         {roleCard}
@@ -702,8 +740,10 @@ async function basicInformation(
   profile: UserProfile,
   levels: readonly LevelLabel[],
   canOpenManager: boolean,
+  record: PersonRecordView,
 ): Promise<ReactNode> {
   const t = await getTranslations({ locale, namespace: 'userProfile' });
+  const people = await getTranslations({ locale, namespace: 'peopleRecord' });
   const users = await getTranslations({ locale, namespace: 'users' });
   const copyTexts = await inviteCopyTexts(locale);
   const format = await getFormatter({ locale });
@@ -745,6 +785,22 @@ async function basicInformation(
       value: copyable(t('fields.employeeNumber'), profile.employeeNumber),
     },
     { key: 'jobTitle', label: t('fields.jobTitle'), value: jobTitle ?? none },
+    // The grade, for HR, the Organization Admin, the person, their managers and unit heads (WP-ADM-04).
+    ...(record.grade
+      ? [
+          {
+            key: 'grade',
+            label: people('grade.label'),
+            value: record.grade.code ? (
+              <Badge tone="brand" data-testid="profile-grade">
+                <bdi dir="ltr">{record.grade.code}</bdi>
+              </Badge>
+            ) : (
+              none
+            ),
+          },
+        ]
+      : []),
     {
       key: 'department',
       label: unitFieldLabel(levels, profile.departmentLevelOrdinal, locale, t('fields.department')),
@@ -1014,6 +1070,62 @@ async function editFormProps(
     hireOnHijri: user.hireOn
       ? t('hireDateHijri', { date: formatHijriDate(user.hireOn, locale) })
       : undefined,
+    record: await editRecordProps(locale, view, user.displayNameAr, user.displayNameEn),
+  };
+}
+
+/** The grade and HR-only parts of the edit panel (WP-ADM-04): texts and the values loaded for this viewer. */
+async function editRecordProps(
+  locale: AppLocale,
+  view: EditUserView,
+  nameAr: string | null,
+  nameEn: string | null,
+): Promise<EditRecordProps> {
+  const people = await getTranslations({ locale, namespace: 'peopleRecord' });
+  const name = localizedName(locale, nameAr, nameEn);
+  const labels: Record<string, string> = {
+    'grade.label': people('grade.label'),
+    'grade.hint': people('grade.hint'),
+    'grade.none': people('grade.none'),
+    'grade.manage': people('grade.manage'),
+    'grade.emptyHint': people('grade.emptyHint'),
+    'grade.addSome': people('grade.addSome'),
+    'grade.errInvalid': people('grade.errInvalid'),
+    'hr.title': people('hr.title'),
+    'hr.lock': people('hr.lock'),
+    'hr.sectionHint': people('hr.sectionHint'),
+    'hr.gender': people('hr.gender'),
+    'hr.male': people('hr.male'),
+    'hr.female': people('hr.female'),
+    'hr.dob': people('hr.dob'),
+    'hr.dobHijri': people('hr.dobHijri', { date: '{date}' }),
+    'hr.category': people('hr.category'),
+    'hr.cat.management': people('hr.cat.management'),
+    'hr.cat.professional': people('hr.cat.professional'),
+    'hr.cat.technical': people('hr.cat.technical'),
+    'hr.cat.operational': people('hr.cat.operational'),
+    'hr.notSet': people('hr.notSet'),
+    'hr.dobError': people('hr.dobError'),
+    'hr.audit': people('hr.audit'),
+    'edit.lockedNote': view.locked ? people('hr.privNote', { name }) : '',
+    'edit.partialSaved': people('edit.partialSaved'),
+  };
+  const hr = view.record.hr;
+  return {
+    locked: view.locked,
+    gradeId: view.record.gradeId ?? '',
+    grades: view.record.grades.map((grade) => ({ id: grade.id, code: grade.code })),
+    gradesHref: `/${locale}/suite/admin/grades`,
+    canEditHr: view.record.canEditHr,
+    hr: {
+      gender: hr?.gender ?? '',
+      birthDate: hr?.birthDate ?? '',
+      employmentCategory: hr?.employmentCategory ?? '',
+    },
+    birthDateHijri: hr?.birthDate
+      ? people('hr.dobHijri', { date: formatHijriDate(hr.birthDate, locale) })
+      : undefined,
+    labels,
   };
 }
 

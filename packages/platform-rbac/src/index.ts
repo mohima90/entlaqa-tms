@@ -70,6 +70,9 @@ export * from './iam/email-integration';
 export * from './iam/structure';
 export * from './iam/branches';
 export * from './iam/scope-units';
+export * from './iam/profile-photo';
+export * from './iam/grades';
+export * from './iam/person-record';
 
 /** Authorized reads for server components and routes (same checks as defineAction, no audit). */
 export const defineQuery = createDefineQuery(defaultActionRuntime);

@@ -743,7 +743,9 @@ begin
     'private.note_brand_asset_failure(uuid,text), '
     'private.public_brand_asset(uuid), private.public_brand_asset_meta(uuid), private.public_tenant_brand(text), '
     'private.publish_brand_asset(uuid,text,text,bytea), '
-    'private.publish_brand_image(uuid,text,text,bigint,text,bytea), private.release_branding_file(uuid,uuid) (INVOKER), '
+    'private.publish_brand_image(uuid,text,text,bigint,text,bytea), '
+    'private.publish_profile_photo(uuid,text,bigint,text,bytea), private.release_branding_file(uuid,uuid) (INVOKER), '
+    'private.remove_profile_photo(), '
     'private.retry_file_scan(uuid,text), private.tenant_branding_files()',
     'file_guard owns the file functions only');
   perform tests.assert((select prosecdef and pg_get_userbyid(proowner) = 'tenant_guard' from pg_proc

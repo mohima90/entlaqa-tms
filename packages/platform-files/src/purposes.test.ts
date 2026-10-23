@@ -59,7 +59,10 @@ describe('file purposes', () => {
   it('only raster images users upload may skip the malware scan (migration 20261023100400)', () => {
     for (const [purpose, definition] of Object.entries(FILE_PURPOSES)) {
       if (definition.scanRequired) continue;
-      expect(purpose.startsWith('platform.brand_')).toBe(true);
+      // The branding images (PO 20 Oct 2026) and the profile photo (WP-ADM-04, PO 21 Oct 2026).
+      expect(purpose.startsWith('platform.brand_') || purpose === 'platform.profile_photo').toBe(
+        true,
+      );
       expect(definition.uploadBy).toBe('user');
       expect(definition.bucket).toBe('images');
       for (const type of definition.types) {
@@ -67,7 +70,8 @@ describe('file purposes', () => {
       }
     }
     expect(FILE_PURPOSES['platform.user_import'].scanRequired).toBe(true);
-    expect(FILE_PURPOSES['platform.profile_photo'].scanRequired).toBe(true);
+    expect(FILE_PURPOSES['platform.profile_photo'].scanRequired).toBe(false);
+    expect(FILE_PURPOSES['platform.profile_photo'].maxBytes).toBe(2 * 1024 * 1024);
   });
 
   it('download links live at most 5 minutes (ADR 0006 §4)', () => {

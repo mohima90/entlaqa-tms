@@ -125,6 +125,22 @@ describe('Avatar', () => {
     expect(photo).toMatch(/<img src="\/p.png" alt=""/);
     expect(photo).not.toContain('>M<');
   });
+
+  it('is decorative by default; with `alt` it is a labelled image whose initials are not read twice (WP-ADM-04)', () => {
+    const decorative = renderToStaticMarkup(<Avatar name="Mona" src="/p.png" />);
+    expect(decorative).toContain('aria-hidden="true"');
+    expect(decorative).not.toContain('role="img"');
+    const named = renderToStaticMarkup(
+      <Avatar name="Mona Saeed" src="/p.png" alt="Photo of Mona Saeed" />,
+    );
+    expect(named).toContain('role="img"');
+    expect(named).toContain('aria-label="Photo of Mona Saeed"');
+    expect(named).not.toMatch(/^<span[^>]*aria-hidden/);
+    // No photo: the initials are inside, hidden from readers, the label says whose picture it is.
+    const initials = renderToStaticMarkup(<Avatar name="Mona Saeed" alt="Photo of Mona Saeed" />);
+    expect(initials).toContain('<span aria-hidden="true">MS</span>');
+    expect(initials).toContain('aria-label="Photo of Mona Saeed"');
+  });
 });
 
 describe('page patterns (Kawadir)', () => {

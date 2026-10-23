@@ -612,7 +612,7 @@ begin
         'private.forget_member_remembered_browsers(uuid)', 'private.forget_remembered_browsers_of_inactive_member()',
         'private.sign_in_code_hmac(uuid,text)', 'private.request_sign_in_code(text,bytea)',
         'private.verify_sign_in_code(uuid,text,text)', 'private.take_remembered_sign_in(uuid,text,bytea,bytea)',
-        'private.claim_sign_in_code_request()', 'private.issue_sign_in_code(uuid,uuid,uuid,text,text)',
+        'private.claim_sign_in_code_request()', 'private.account_needs_platform_sender(uuid)', 'private.issue_sign_in_code(uuid,uuid,uuid,text,text)',
         'private.sign_in_code_dead_end(uuid)', 'private.retry_sign_in_code_request(uuid)')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);

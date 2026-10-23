@@ -129,6 +129,8 @@ describe('e-mail settings form (WP-ADM-01)', () => {
     expect(templateKey('platform.invitation')).toBe('invitation');
     expect(templateKey('tms.something')).toBe('other');
     expect(templateKey('platform.sign_in_code_platform')).toBe('sign_in_code');
+    expect(templateKey('platform.password_reset_platform')).toBe('password_reset');
+    expect(templateKey('platform.mfa_factor_added_platform')).toBe('mfa_factor_added');
     const texts = {
       'reasons.PROVIDER_AUTH': 'refused',
       'reasons.other': 'failed ({code})',

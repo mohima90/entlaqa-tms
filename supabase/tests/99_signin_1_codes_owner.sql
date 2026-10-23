@@ -280,6 +280,31 @@ begin
 end $$;
 rollback;
 
+-- Account-opening e-mails (sign-in code, password reset, authenticator set-up): whose sender may carry them.
+begin;
+set local session authorization app_worker;
+set local role authenticated;
+select tests.set_claims(tests.system_claims('a0000000-0000-4000-8000-000000000001', 'tests.sic'));
+do $$
+begin
+  perform tests.assert(not private.account_needs_platform_sender('00000000-0000-4000-8000-0000000000a1'), 'one organization, no platform role: the organization may send');
+  perform tests.assert(private.account_needs_platform_sender('00000000-0000-4000-8000-0000000000ab'), 'two organizations: the platform sender only');
+  perform tests.assert(private.account_needs_platform_sender(null), 'unknown: the safe answer');
+end $$;
+select tests.set_claims(null);
+do $$
+begin
+  perform tests.assert_fails($q$select private.account_needs_platform_sender('00000000-0000-4000-8000-0000000000ab')$q$, array['42501'], 'no claims: refused');
+end $$;
+set local session authorization app_server;
+set local role authenticated;
+select tests.set_claims(null);
+do $$
+begin
+  perform tests.assert_fails($q$select private.account_needs_platform_sender('00000000-0000-4000-8000-0000000000ab')$q$, array['42501'], 'the web app does not ask');
+end $$;
+rollback;
+
 -- A full queue: the same answer, nothing stored, the outcome tells the caller (logged, never shown).
 begin;
 delete from private.sign_in_codes;

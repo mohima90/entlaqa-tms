@@ -63,6 +63,7 @@ export {
   type MfaRemovalReason,
   type PolicyChange,
   accountHasApp,
+  accountNeedsPlatformSender,
   claimAccountMailRequest,
   finishAccountMailRequest,
   issueMfaFactorTokens,

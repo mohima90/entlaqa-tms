@@ -325,6 +325,20 @@ export async function issueMfaFactorTokens(
   };
 }
 
+/**
+ * Must an e-mail that opens the account (sign-in code, password reset, authenticator set-up) go through the
+ * platform sender only? True when the person has several active memberships or a platform role: an
+ * organization's own mail relay must not see what opens an account that belongs to others (WP-ADM-05 security
+ * review). Worker only (system claims).
+ */
+export async function accountNeedsPlatformSender(tx: ClaimsTx, userId: string): Promise<boolean> {
+  const [row] = await tx.execute<{ platform: boolean }>(
+    sql`select private.account_needs_platform_sender(${userId}::uuid) as platform`,
+  );
+  // Anything but a clear "no" is the safe answer.
+  return row?.platform !== false;
+}
+
 /** Does the account have a verified authenticator app? The reset e-mail then says a code will be asked. */
 export async function accountHasApp(tx: ClaimsTx, userId: string): Promise<boolean> {
   const [row] = await tx.execute<{ has_app: boolean }>(

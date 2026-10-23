@@ -329,6 +329,32 @@ comment on function private.remembered_browser_for_email(text, bytea) is
 --            banned          the account is banned in Auth
 --            no_membership   no active membership in an active or trial organization
 -- ---------------------------------------------------------------------------------------------------
+-- Whose sender may carry an e-mail that opens an account (security review, 23 Oct 2026): the sign-in code, the
+-- password-reset link and the authenticator set-up code. The organization's own sender only when the person
+-- belongs to exactly one organization and holds no platform role; otherwise the platform sender only, so one
+-- organization's mail relay never sees what opens an account that belongs to others. Worker only.
+create or replace function private.account_needs_platform_sender(p_user_id uuid)
+returns boolean
+language plpgsql stable security definer
+set search_path = ''
+as $$
+declare
+  v_claims jsonb := private.request_claims();
+begin
+  if session_user <> 'app_worker' or coalesce(v_claims ->> 'role', '') <> 'system' then
+    raise exception 'reserved to the worker' using errcode = 'insufficient_privilege';
+  end if;
+  if p_user_id is null then
+    return true;
+  end if;
+  return (select count(*) from platform.tenant_memberships m
+          where m.user_id = p_user_id and m.status = 'active') > 1
+         or private.platform_admin_is_active(p_user_id);
+end
+$$;
+comment on function private.account_needs_platform_sender(uuid) is
+  'SECURITY-RELEVANT (WP-ADM-05 review). True when an account-opening e-mail (sign-in code, password reset, authenticator set-up) must go through the platform sender only: several active memberships or a platform role. app_worker, system claims.';
+
 create or replace function private.claim_sign_in_code_request()
 returns table (id uuid, mode text, outcome text, email text, user_id uuid, tenant_id uuid, person_id uuid,
                locale text, attempts integer, platform_sender boolean)
@@ -399,9 +425,7 @@ begin
   -- Whose sender may carry the code (security review M1): the organization's own only when the person belongs to
   -- exactly this one organization and holds no platform role; otherwise the platform sender, so one organization's
   -- mail server never sees the codes of an account that signs in to others.
-  v_platform := (select count(*) from platform.tenant_memberships m2 join platform.tenants t2 on t2.id = m2.tenant_id
-                 where m2.user_id = v_account.id and m2.status = 'active' and t2.status in ('active', 'trial')) > 1
-                or private.platform_admin_is_active(v_account.id);
+  v_platform := private.account_needs_platform_sender(v_account.id);
   return query select v_request.id, v_request.mode, 'send'::text, v_account.email::text, v_account.id,
                       v_member.tenant_id, v_member.person_id,
                       case when v_member.preferred_locale = 'en' then 'en' else 'ar' end,
@@ -528,6 +552,7 @@ alter function private.verify_sign_in_code(uuid, text, text) owner to account_ma
 alter function private.take_remembered_sign_in(uuid, text, bytea, bytea) owner to account_mail_guard;
 alter function private.remembered_browser_for_email(text, bytea) owner to account_mail_guard;
 alter function private.claim_sign_in_code_request() owner to account_mail_guard;
+alter function private.account_needs_platform_sender(uuid) owner to account_mail_guard;
 alter function private.issue_sign_in_code(uuid, uuid, uuid, text, text) owner to account_mail_guard;
 alter function private.sign_in_code_dead_end(uuid) owner to account_mail_guard;
 alter function private.retry_sign_in_code_request(uuid) owner to account_mail_guard;
@@ -539,6 +564,7 @@ revoke all on function private.verify_sign_in_code(uuid, text, text) from public
 revoke all on function private.take_remembered_sign_in(uuid, text, bytea, bytea) from public;
 revoke all on function private.remembered_browser_for_email(text, bytea) from public;
 revoke all on function private.claim_sign_in_code_request() from public;
+revoke all on function private.account_needs_platform_sender(uuid) from public;
 revoke all on function private.issue_sign_in_code(uuid, uuid, uuid, text, text) from public;
 revoke all on function private.sign_in_code_dead_end(uuid) from public;
 revoke all on function private.retry_sign_in_code_request(uuid) from public;
@@ -551,6 +577,7 @@ grant execute on function private.remembered_browser_for_email(text, bytea) to a
 -- The claim asks whether the account is a Platform Super Admin (the sender rule).
 grant execute on function private.platform_admin_is_active(uuid) to account_mail_guard;
 grant execute on function private.claim_sign_in_code_request() to authenticated;
+grant execute on function private.account_needs_platform_sender(uuid) to authenticated;
 grant execute on function private.issue_sign_in_code(uuid, uuid, uuid, text, text) to authenticated;
 grant execute on function private.sign_in_code_dead_end(uuid) to authenticated;
 grant execute on function private.retry_sign_in_code_request(uuid) to authenticated;

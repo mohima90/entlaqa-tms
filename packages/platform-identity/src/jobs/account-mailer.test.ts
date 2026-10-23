@@ -28,6 +28,7 @@ const db = vi.hoisted(() => ({
   loadAccountMailContext: vi.fn(),
   tenantIsServed: vi.fn(),
   accountHasApp: vi.fn(),
+  accountNeedsPlatformSender: vi.fn(),
   issueMfaFactorTokens: vi.fn(),
   loadPersonName: vi.fn(),
 }));
@@ -121,6 +122,7 @@ const queued = () =>
   };
 
 beforeEach(() => {
+  db.accountNeedsPlatformSender.mockResolvedValue(false);
   db.tenantIsServed.mockResolvedValue(true);
   db.finishAccountMailRequest.mockResolvedValue(true);
   db.retryAccountMailRequest.mockResolvedValue(true);
@@ -954,5 +956,51 @@ describe('account mailer (T-M2-10): authenticator app and security settings noti
       codeNeeded: true,
     });
     expect(() => PasswordResetVariables.parse(email.variables)).not.toThrow();
+  });
+
+  describe('the sender of e-mails that open the account (security review)', () => {
+    it("a reset link of a person in one organization goes out with the organization's sender rule as before", async () => {
+      queue(send());
+      const { task } = setup();
+      await task.run({ jobId: 'j' });
+      expect(db.accountNeedsPlatformSender).toHaveBeenCalledWith(tenantTx, USER);
+      expect(queued().template).toBe('platform.password_reset');
+    });
+
+    it('a reset link of a person in several organizations (or with a platform role) goes through the platform sender only', async () => {
+      db.accountNeedsPlatformSender.mockResolvedValue(true);
+      queue(send());
+      const { task } = setup();
+      await task.run({ jobId: 'j' });
+      const email = queued();
+      expect(email.template).toBe('platform.password_reset_platform');
+      // The same content: the link is the same.
+      expect(() => PasswordResetVariables.parse(email.variables)).not.toThrow();
+      expect(email.variables).toMatchObject({
+        resetUrl: { en: `${BASE}/en/reset-password#token_hash=${HASH}&type=recovery` },
+      });
+    });
+
+    it('the authenticator set-up code follows the same rule', async () => {
+      db.accountNeedsPlatformSender.mockResolvedValue(true);
+      queue(send({ kind: 'mfa_factor_added', factorId: FACTOR }));
+      const { task } = setup({ recoveryLinks: null });
+      await task.run({ jobId: 'j' });
+      expect(queued().template).toBe('platform.mfa_factor_added_platform');
+      mail.queueEmail.mockClear();
+      db.accountNeedsPlatformSender.mockResolvedValue(false);
+      queue(send({ kind: 'mfa_factor_added', factorId: FACTOR }));
+      await task.run({ jobId: 'j' });
+      expect(queued().template).toBe('platform.mfa_factor_added');
+    });
+
+    it('notices without a secret are not affected', async () => {
+      db.accountNeedsPlatformSender.mockResolvedValue(true);
+      queue(send({ kind: 'password_changed' }));
+      const { task } = setup({ recoveryLinks: null });
+      await task.run({ jobId: 'j' });
+      expect(queued().template).toBe('platform.password_changed');
+      expect(db.accountNeedsPlatformSender).not.toHaveBeenCalled();
+    });
   });
 });

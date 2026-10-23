@@ -520,7 +520,8 @@ begin
                     order by p.oid::regprocedure::text collate "C") into v_list
   from pg_proc p where p.proowner = 'account_mail_guard'::regrole;
   perform tests.assert_eq(v_list,
-    'private.claim_account_mail_request(), private.claim_sign_in_code_request(), '
+    'private.account_needs_platform_sender(uuid), private.claim_account_mail_request(), '
+    'private.claim_sign_in_code_request(), '
     'private.finish_account_mail_request(uuid), private.issue_sign_in_code(uuid,uuid,uuid,text,text), '
     'private.my_remembered_browsers(bytea), '
     'private.remember_browser(bytea,text), private.remembered_browser_for_email(text,bytea), '

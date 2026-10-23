@@ -14,9 +14,13 @@
 --                                    (PO answer 7; it was 10 MB while nothing used it).
 --   platform.person_photos           the published copy of a person's photo (one row per person): the file
 --                                    WITHOUT its metadata (EXIF/GPS, XMP, comments), kept in PostgreSQL so it
---                                    serves self-hosted and hosted alike (no vendor feature). Members read the
---                                    facts (type, size, SHA-256: the cache key); the bytes only through
---                                    private.person_photo_content. Written by file_guard's functions only.
+--                                    serves self-hosted and hosted alike (no vendor feature). A member reads a
+--                                    row, bytes included, only for a person they may see (BR-PPL-d, security
+--                                    review M1): the row policy asks private.actor_sees_person - the person
+--                                    themself, a member holding platform.user.read organization-wide, or one
+--                                    whose scoped user.read (direct reports, reporting tree, a department,
+--                                    the units they head) covers the person - the same answer as the profile
+--                                    page. Written by file_guard's functions only.
 --
 -- Functions (owned by file_guard, SECURITY DEFINER, no BYPASSRLS; each checks the LOGIN role and the claims):
 --   publish_profile_photo(file, source sha256, source size, type, bytes)
@@ -27,8 +31,10 @@
 --        the type's signature and that the copy is no larger than the file (JB002 / JB003 as for branding).
 --        Returns the file name (for the audit event) and whether a photo was replaced.
 --   remove_profile_photo()        the caller's photo: copy removed, file marked deleted; returns the file name.
---   person_photo_content(person)  the bytes of a person's photo to a signed-in member of the same organization
---                                 (app_server, user claims).
+--   person_photo_content(person)  the bytes of a person's photo to a signed-in member who may see that person
+--                                 (SECURITY INVOKER: the row policy decides; app_server, user claims). Nothing
+--                                 visible: no row (the route answers 404, as for a person without a photo).
+--   actor_sees_person(tenant, person)  "may the signed-in member see this person?" (platform.user.read, scoped).
 --   file_housekeeping_action(f)   as 20261023100600, plus: an `accepted` profile photo whose copy exists has its
 --                                 raw object removed (the copy in PostgreSQL is what is served).
 -- Domain SQLSTATE: JP001 the photo is not the caller's usable upload.
@@ -75,12 +81,112 @@ create policy tenant_isolation on platform.person_photos
   as restrictive for all to authenticated
   using (tenant_id = (select private.current_tenant_id()))
   with check (tenant_id = (select private.current_tenant_id()));
--- Members read WHICH people have a photo and its version (the lists show it); the bytes stay out of reach.
-create policy person_photos_read on platform.person_photos for select to authenticated using (true);
+-- Who may see a person (BR-PPL-d: a photo follows the person's own visibility). The profile page and the Team
+-- members list ask the application's authorize() for platform.user.read against the person; this is the same
+-- answer in SQL, so the photo cannot reach anyone the page would refuse:
+--   * the person themself (always);
+--   * a member holding platform.user.read organization-wide (Organization Admin, HR Manager, Training roles,
+--     a custom role whose data scope is the organization);
+--   * a member whose scoped grant of platform.user.read covers the person: direct reports ("team" data scope,
+--     standard scope direct_reports), the whole reporting tree (reports_tree), the units they head and
+--     everything under them (Department Head), or the ONE unit picked for a department-limited custom role and
+--     everything under it (live, active unit only; a role without a unit grants nothing).
+-- Role assignments count while in force and the membership is active (as private.member_permissions).
+-- SECURITY INVOKER: it reads the caller's own assignments and the structure every member may read. The cheap
+-- answers come first, each as an init-plan subselect (once per statement, not per row); the walks only after.
+create or replace function private.actor_sees_person(p_tenant_id uuid, p_person_id uuid)
+returns boolean
+language sql stable
+set search_path = ''
+as $$
+  select (select private.request_claims() ->> 'role') = 'authenticated'
+         and (select private.request_user_id()) is not null
+         and p_tenant_id = (select private.current_tenant_id())
+         and (
+           p_person_id = (select private.request_person_id())
+           or (select private.member_has_permission((select private.current_tenant_id()),
+                                                    (select private.request_user_id()), 'platform.user.read'))
+           or (
+             (select private.request_person_id()) is not null
+             and exists (
+               with recursive
+               held (scope, unit_id) as (
+                 select rp.scope, null::uuid
+                 from platform.role_assignments ra
+                 join platform.tenant_memberships m on m.tenant_id = ra.tenant_id and m.id = ra.membership_id
+                 join platform.ref_role_permissions rp
+                   on rp.role_code = ra.role_code and rp.permission_code = 'platform.user.read'
+                 where ra.tenant_id = p_tenant_id and m.user_id = (select private.request_user_id())
+                   and m.status = 'active'
+                   and (ra.valid_from is null or ra.valid_from <= now())
+                   and (ra.valid_until is null or ra.valid_until > now())
+                 union all
+                 select case cr.data_scope when 'team' then 'direct_reports'
+                                           when 'departments' then 'assigned_unit'
+                                           else cr.data_scope end,
+                        ra.scope_unit_id
+                 from platform.role_assignments ra
+                 join platform.tenant_memberships m on m.tenant_id = ra.tenant_id and m.id = ra.membership_id
+                 join platform.custom_roles cr on cr.tenant_id = ra.tenant_id and cr.code = ra.role_code
+                 join platform.custom_role_permissions crp
+                   on crp.tenant_id = cr.tenant_id and crp.custom_role_id = cr.id
+                  and crp.permission_code = 'platform.user.read'
+                 where ra.tenant_id = p_tenant_id and m.user_id = (select private.request_user_id())
+                   and m.status = 'active'
+                   and (ra.valid_from is null or ra.valid_from <= now())
+                   and (ra.valid_until is null or ra.valid_until > now())
+               ),
+               chain (manager_id, depth) as (
+                 select e.manager_person_id, 1 from platform.person_employment e
+                 where e.tenant_id = p_tenant_id and e.person_id = p_person_id and e.manager_person_id is not null
+                 union all
+                 select e.manager_person_id, c.depth + 1 from chain c
+                 join platform.person_employment e on e.tenant_id = p_tenant_id and e.person_id = c.manager_id
+                 where e.manager_person_id is not null and c.depth < 60
+               ),
+               up (unit_id, depth) as (
+                 -- Up through EVERY unit above the person's, deleted or inactive ones included (a deleted unit in
+                 -- the middle does not cut the chain); the unit that is asked about must itself be live. Unknown
+                 -- rows end the walk: it fails closed.
+                 select e.department_id, 1 from platform.person_employment e
+                 where e.tenant_id = p_tenant_id and e.person_id = p_person_id and e.department_id is not null
+                 union all
+                 select d.parent_id, u.depth + 1 from up u
+                 join platform.departments d on d.tenant_id = p_tenant_id and d.id = u.unit_id
+                 where d.parent_id is not null and u.depth < 20
+               )
+               select 1 from held h
+               where (h.scope = 'direct_reports'
+                      and exists (select 1 from chain c where c.depth = 1
+                                  and c.manager_id = (select private.request_person_id())))
+                  or (h.scope = 'reports_tree'
+                      and exists (select 1 from chain c where c.manager_id = (select private.request_person_id())))
+                  or (h.scope = 'headed_departments'
+                      and exists (select 1 from up
+                                  join platform.departments d on d.tenant_id = p_tenant_id and d.id = up.unit_id
+                                  where d.head_person_id = (select private.request_person_id())
+                                    and d.deleted_at is null))
+                  or (h.scope = 'assigned_unit' and h.unit_id is not null
+                      and exists (select 1 from up
+                                  join platform.departments d on d.tenant_id = p_tenant_id and d.id = up.unit_id
+                                  where d.id = h.unit_id and d.deleted_at is null and d.status = 'active'))
+             )
+           )
+         );
+$$;
+comment on function private.actor_sees_person(uuid, uuid) is
+  'SECURITY-RELEVANT (WP-ADM-04, BR-PPL-d). May the signed-in member see this person (platform.user.read: the person, organization-wide holders, scoped holders)? The same answer as the profile page; gates the profile-photo rows.';
+revoke all on function private.actor_sees_person(uuid, uuid) from public;
+grant execute on function private.actor_sees_person(uuid, uuid) to authenticated;
+
+-- A member reads a photo row (facts and bytes) only for a person they may see.
+create policy person_photos_read on platform.person_photos for select to authenticated
+  using (private.actor_sees_person(tenant_id, person_id));
 create policy person_photos_guard on platform.person_photos for all to file_guard using (true) with check (true);
 
 revoke all on platform.person_photos from public, anon;
-grant select (tenant_id, person_id, file_id, content_type, byte_size, sha256, created_at)
+-- The bytes are granted too: the row policy above is what keeps them to people the member may see.
+grant select (tenant_id, person_id, file_id, content_type, byte_size, sha256, content, created_at)
   on platform.person_photos to authenticated;
 grant select, insert, update, delete on platform.person_photos to file_guard;
 
@@ -205,7 +311,7 @@ comment on function private.remove_profile_photo() is
 -- ---------------------------------------------------------------------------------------------------
 create or replace function private.person_photo_content(p_person_id uuid)
 returns table (content_type text, content bytea, sha256 text)
-language plpgsql stable security definer
+language plpgsql stable
 set search_path = ''
 as $$
 declare
@@ -216,14 +322,17 @@ begin
      or private.request_user_id() is null then
     return;
   end if;
+  -- Row security (person_photos_read) keeps this to people the member may see; the condition is repeated
+  -- so the function alone is also safe when run by a role that bypasses it.
   return query
   select ph.content_type, ph.content, ph.sha256
   from platform.person_photos ph
-  where ph.tenant_id = v_tenant and ph.person_id = p_person_id;
+  where ph.tenant_id = v_tenant and ph.person_id = p_person_id
+    and private.actor_sees_person(ph.tenant_id, ph.person_id);
 end
 $$;
 comment on function private.person_photo_content(uuid) is
-  'SECURITY-RELEVANT (WP-ADM-04). The bytes and type of a person''s photo for a signed-in member of the same organization. app_server, user claims only.';
+  'SECURITY-RELEVANT (WP-ADM-04, BR-PPL-d). The bytes and type of a person''s photo for a signed-in member who may see that person (private.actor_sees_person); nothing otherwise. SECURITY INVOKER, app_server with user claims only.';
 
 -- ---------------------------------------------------------------------------------------------------
 -- Housekeeping: the raw object of an accepted profile photo goes once its copy exists
@@ -276,7 +385,6 @@ revoke all on function private.file_housekeeping_action(platform.files) from pub
 grant create on schema private to file_guard;
 alter function private.publish_profile_photo(uuid, text, bigint, text, bytea) owner to file_guard;
 alter function private.remove_profile_photo() owner to file_guard;
-alter function private.person_photo_content(uuid) owner to file_guard;
 revoke create on schema private from file_guard;
 
 revoke all on function private.publish_profile_photo(uuid, text, bigint, text, bytea) from public;

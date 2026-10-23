@@ -4,8 +4,8 @@
 --   uS1 …c01 Employee   (person a1…c01): reports to uM2, holds grade 7, has two photo uploads (…p1, …p2)
 --   uS2 …c02 Employee   (person a1…c02): sits in OPS, holds grade G7, has a photo upload (…p3)
 --   uS3 …c03 «HR assistant» (custom role holding platform.person.hr_details, organization-wide)
---   uM1 …c04 Employee   no relation to anyone: sees nobody's grade
---   uM2 …c05 Employee   the manager of uS1
+--   uM1 …c04 «Unit viewer» (custom role, data scope «A department» = OPS, platform.user.read): sees nobody's grade
+--   uM2 …c05 «Team viewer» (custom role, data scope «My team», platform.user.read): the manager of uS1
 --   uM4 …c08 Employee   head of the unit OPS (department a3…03)
 --   uM3 …c06 L&D Manager, uA2 …c09 second Organization Admin, uAB HR Manager, uA Organization Admin (00)
 -- Photo uploads are written as `uploaded` (the write guard starts files as pending_upload: off for the insert),
@@ -41,6 +41,26 @@ update platform.role_assignments ra set role_code = 'custom_a0000000b001'
 from platform.tenant_memberships m
 where m.id = ra.membership_id and m.tenant_id = 'a0000000-0000-4000-8000-000000000001'
   and m.user_id = '00000000-0000-4000-8000-000000000c03';
+
+-- Limited viewers (security review M1, photo visibility follows platform.user.read): uM1 holds a custom role whose
+-- data scope is «A department» for the unit OPS; uM2 (the manager of uS1) one whose data scope is «My team».
+insert into platform.custom_roles (id, tenant_id, code, name_en, name_ar, description, data_scope) values
+  ('a6000000-0000-4000-8000-0000000000b2', 'a0000000-0000-4000-8000-000000000001', 'custom_a0000000b002',
+   'Unit viewer', 'مشاهد الوحدة', null, 'departments'),
+  ('a6000000-0000-4000-8000-0000000000b3', 'a0000000-0000-4000-8000-000000000001', 'custom_a0000000b003',
+   'Team viewer', 'مشاهد الفريق', null, 'team');
+insert into platform.custom_role_permissions (tenant_id, custom_role_id, permission_code) values
+  ('a0000000-0000-4000-8000-000000000001', 'a6000000-0000-4000-8000-0000000000b2', 'platform.user.read'),
+  ('a0000000-0000-4000-8000-000000000001', 'a6000000-0000-4000-8000-0000000000b3', 'platform.user.read');
+update platform.role_assignments ra set role_code = 'custom_a0000000b002',
+  scope_unit_id = 'a3000000-0000-4000-8000-000000000003'
+from platform.tenant_memberships m
+where m.id = ra.membership_id and m.tenant_id = 'a0000000-0000-4000-8000-000000000001'
+  and m.user_id = '00000000-0000-4000-8000-000000000c04';
+update platform.role_assignments ra set role_code = 'custom_a0000000b003'
+from platform.tenant_memberships m
+where m.id = ra.membership_id and m.tenant_id = 'a0000000-0000-4000-8000-000000000001'
+  and m.user_id = '00000000-0000-4000-8000-000000000c05';
 
 -- Placement: uS1 reports to uM2; uS2 sits in OPS, whose head is uM4.
 insert into platform.person_employment (tenant_id, person_id, department_id, manager_person_id) values

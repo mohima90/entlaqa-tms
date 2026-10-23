@@ -740,7 +740,7 @@ begin
     'private.finish_file_scan(uuid,text,text,bigint,text,text,text,text,text), '
     'private.finish_generated_file(uuid,bigint,text), private.grant_file_download(uuid,text,text,text,uuid), '
     'private.lock_file_housekeeping(uuid,text), private.mark_file_used(uuid), '
-    'private.note_brand_asset_failure(uuid,text), private.person_photo_content(uuid), '
+    'private.note_brand_asset_failure(uuid,text), '
     'private.public_brand_asset(uuid), private.public_brand_asset_meta(uuid), private.public_tenant_brand(text), '
     'private.publish_brand_asset(uuid,text,text,bytea), '
     'private.publish_brand_image(uuid,text,text,bigint,text,bytea), '

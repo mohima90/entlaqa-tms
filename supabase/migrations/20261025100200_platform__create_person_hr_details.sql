@@ -102,12 +102,18 @@ create policy tenant_isolation on platform.person_hr_details
   using (tenant_id = (select private.current_tenant_id()))
   with check (tenant_id = (select private.current_tenant_id()));
 create policy person_hr_details_read on platform.person_hr_details for select to authenticated
-  using (person_id = (select private.request_person_id()) or private.actor_holds_hr_details(tenant_id));
+  -- Cheap answers first, as init-plan subselects (evaluated once per statement, not per row): the person's own
+  -- row, then the permission held in the current organization (tenant_isolation already pins every row to it).
+  using (person_id = (select private.request_person_id())
+         or (select private.actor_holds_hr_details((select private.current_tenant_id()))));
 create policy person_hr_details_insert on platform.person_hr_details for insert to authenticated
-  with check (private.actor_holds_hr_details(tenant_id));
+  with check (tenant_id = (select private.current_tenant_id())
+              and (select private.actor_holds_hr_details((select private.current_tenant_id()))));
 create policy person_hr_details_update on platform.person_hr_details for update to authenticated
-  using (private.actor_holds_hr_details(tenant_id))
-  with check (private.actor_holds_hr_details(tenant_id));
+  using (tenant_id = (select private.current_tenant_id())
+         and (select private.actor_holds_hr_details((select private.current_tenant_id()))))
+  with check (tenant_id = (select private.current_tenant_id())
+              and (select private.actor_holds_hr_details((select private.current_tenant_id()))));
 
 -- No DELETE: clearing a field sets it to null; the row goes with the person's record.
 revoke all on platform.person_hr_details from public, anon;

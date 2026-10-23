@@ -179,15 +179,49 @@ export function updatePersonRecordActionDefinition(): ActionDefinition<
       }
       return ok({ personId: input.personId, grade, hrChanged });
     },
-    // HR-only changes: the field names and «hidden» — never a value (BR-PPL-i, EP-AUD BR-AUD-f).
-    audit: (_input, output) =>
-      output.hrChanged.length === 0
-        ? null
-        : {
-            action: 'platform.person.hr_details_changed',
-            entityType: 'person',
-            entityId: output.personId,
-            data: { changed: output.hrChanged, value: 'hidden' },
-          },
+    audit: auditHrChanges,
+  };
+}
+
+// HR-only changes: the field names and «hidden» — never a value (BR-PPL-i, EP-AUD BR-AUD-f).
+function auditHrChanges(_input: unknown, output: PersonRecordSaved) {
+  return output.hrChanged.length === 0
+    ? null
+    : {
+        action: 'platform.person.hr_details_changed',
+        entityType: 'person',
+        entityId: output.personId,
+        data: { changed: output.hrChanged, value: 'hidden' },
+      };
+}
+
+export const UpdatePersonHrDetailsInput = z.strictObject({
+  personId: z.uuid(),
+  hr: HrDetailsInput,
+});
+
+/**
+ * Saves ONLY the HR-only fields, for a member who holds `platform.person.hr_details` alone (a custom role
+ * without `platform.user.update`; security review L3). The grade and the account details stay behind
+ * `platform.user.update` (updatePersonRecordActionDefinition). The database policy is the same check.
+ */
+export function updatePersonHrDetailsActionDefinition(): ActionDefinition<
+  typeof UpdatePersonHrDetailsInput,
+  PersonRecordSaved,
+  UserTx
+> {
+  return {
+    permission: p['platform.person.hr_details'],
+    input: UpdatePersonHrDetailsInput,
+    resource: (input) => ({ type: 'person', id: input.personId }),
+    handler: async ({ ctx, input }) => {
+      const saved = await saveHrDetails(ctx.tx, input.personId, input.hr);
+      if (!saved.ok) {
+        if (saved.refusal === 'birth_date_invalid') return err(field('birthDate', 'INVALID'));
+        return err(appError(saved.refusal === 'not_found' ? 'NOT_FOUND' : 'FORBIDDEN'));
+      }
+      return ok({ personId: input.personId, grade: null, hrChanged: saved.changed });
+    },
+    audit: auditHrChanges,
   };
 }

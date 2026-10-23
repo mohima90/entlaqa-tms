@@ -1,10 +1,15 @@
 -- Rollback of 20261025100300_platform__create_person_photos.sql.
--- Files of profile photos already uploaded stay records of purpose platform.profile_photo; their copies go
--- with the table.
+-- Copies go with the table; files of purpose platform.profile_photo stay records (accepted ones are marked
+-- deleted below).
+-- Files of photos accepted without a scan are marked deleted first: once the purpose is scanned again,
+-- `accepted` is not a state a scanned purpose may hold (housekeeping removes their objects as deleted files).
+update platform.files set status = 'deleted', deleted_at = now(), scan_leased_until = null
+where purpose = 'platform.profile_photo' and status = 'accepted' and deleted_at is null;
 drop function private.person_photo_content(uuid);
 drop function private.remove_profile_photo();
 drop function private.publish_profile_photo(uuid, text, bigint, text, bytea);
 drop table platform.person_photos;
+drop function private.actor_sees_person(uuid, uuid);
 update platform.file_purposes set scan_required = true, max_bytes = 10485760
 where purpose = 'platform.profile_photo';
 

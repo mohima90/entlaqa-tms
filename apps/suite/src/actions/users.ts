@@ -14,6 +14,7 @@ import {
   unlockSignInActionDefinition,
   updateMemberPrivilegedRolesActionDefinition,
   updateMemberRolesActionDefinition,
+  updatePersonHrDetailsActionDefinition,
   updatePersonRecordActionDefinition,
   updateUserDetailsActionDefinition,
 } from '@jadarat/platform-rbac';
@@ -56,3 +57,6 @@ export const unlockSignInAction = defineAction(unlockSignInActionDefinition());
  * save the HR-only fields.
  */
 export const updatePersonRecordAction = defineAction(updatePersonRecordActionDefinition());
+
+/** Only the HR-only fields: for a member holding «View and edit HR-only fields» without the right to edit users. */
+export const updatePersonHrDetailsAction = defineAction(updatePersonHrDetailsActionDefinition());

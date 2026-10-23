@@ -54,8 +54,20 @@ begin
   end loop;
   -- Photos: members read the facts, never the bytes; nobody writes directly (file_guard's functions only).
   perform tests.assert(has_column_privilege('authenticated', 'platform.person_photos', 'sha256', 'select')
-                       and not has_column_privilege('authenticated', 'platform.person_photos', 'content', 'select'),
-    'person_photos: facts yes, bytes no');
+                       and has_column_privilege('authenticated', 'platform.person_photos', 'content', 'select'),
+    'person_photos: facts and bytes are granted - the row policy (private.actor_sees_person) gates both');
+  perform tests.assert((select count(*) from pg_policies where schemaname = 'platform' and tablename = 'person_photos'
+                          and policyname = 'person_photos_read'
+                          and qual like '%actor_sees_person%') = 1,
+    'person_photos: the read policy asks who may see the person (BR-PPL-d)');
+  perform tests.assert(not (select p.prosecdef from pg_proc p where p.oid = 'private.person_photo_content(uuid)'::regprocedure)
+                       and not (select p.prosecdef from pg_proc p where p.oid = 'private.actor_sees_person(uuid,uuid)'::regprocedure),
+    'photo reading is SECURITY INVOKER (row security applies to the caller)');
+  perform tests.assert(not has_function_privilege('anon', 'private.actor_sees_person(uuid,uuid)', 'execute')
+                       and not has_function_privilege('public', 'private.actor_sees_person(uuid,uuid)', 'execute')
+                       and not has_function_privilege('anon', 'private.person_photo_content(uuid)', 'execute')
+                       and not has_function_privilege('public', 'private.person_photo_content(uuid)', 'execute'),
+    'photo reading: not callable by anon or PUBLIC');
   perform tests.assert(not has_table_privilege('authenticated', 'platform.person_photos', 'insert, update, delete')
                        and not has_any_column_privilege('authenticated', 'platform.person_photos', 'insert, update'),
     'person_photos: no direct writes');
@@ -67,8 +79,7 @@ begin
   perform tests.assert(not has_column_privilege('authenticated', 'platform.grades', 'tenant_id', 'insert')
                        and not has_column_privilege('authenticated', 'platform.grades', 'tenant_id', 'update'),
     'grades: the organization is never named by the caller');
-  for v_t in select unnest(array['private.publish_profile_photo(uuid,text,bigint,text,bytea)', 'private.remove_profile_photo()',
-                                 'private.person_photo_content(uuid)']) loop
+  for v_t in select unnest(array['private.publish_profile_photo(uuid,text,bigint,text,bytea)', 'private.remove_profile_photo()']) loop
     perform tests.assert((select p.prosecdef and pg_get_userbyid(p.proowner) = 'file_guard' from pg_proc p where p.oid = v_t::regprocedure),
       v_t || ': SECURITY DEFINER owned by file_guard');
     perform tests.assert(not has_function_privilege('anon', v_t, 'execute') and not has_function_privilege('public', v_t, 'execute'),

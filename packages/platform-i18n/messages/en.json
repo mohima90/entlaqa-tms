@@ -3306,6 +3306,7 @@
       "cropTitle": "Adjust your photo",
       "cropHelp": "Drag the picture to move it and use the slider to zoom. The circle is what people will see.",
       "cropArea": "Photo area. Use the arrow keys to move the picture.",
+      "cropKeys": "Each arrow key moves the picture a little in the direction it points; hold Shift to move it further. Use the zoom slider to make it larger or smaller.",
       "zoom": "Zoom",
       "shrunk": "{file} · shrunk from {from} to {to}",
       "save": "Save photo",

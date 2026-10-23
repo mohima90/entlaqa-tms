@@ -249,8 +249,9 @@ export function matchesPhotoEtag(ifNoneMatch: string | null, sha256: string): bo
 }
 
 /**
- * A person's photo for a signed-in member of the same organization (the database answers nothing to anyone
- * else). A PASSIVE read (platform-db PASSIVE_READS): many small requests per page that must not keep an idle
+ * A person's photo for a signed-in member who may see that person (BR-PPL-d: the person, a reader of users
+ * organization-wide, or a scoped reader whose team / department covers them). The DATABASE decides (row policy
+ * of platform.person_photos): anything not visible is a plain NOT_FOUND, as is a person without a photo. A PASSIVE read (platform-db PASSIVE_READS): many small requests per page that must not keep an idle
  * session alive. A browser that holds the copy gets «not modified» without the bytes being read.
  */
 export function personPhotoQueryDefinition(): QueryDefinition<

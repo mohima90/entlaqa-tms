@@ -205,7 +205,11 @@ export async function setPersonGrade(
   try {
     let to: string | null = null;
     if (gradeId === null) {
-      await tx.execute(sql`delete from platform.person_grades where person_id = ${personId}::uuid`);
+      // Nothing removed (RLS filtered the row: the member does not manage grades) is not a change to report.
+      const removed = await tx.execute(
+        sql`delete from platform.person_grades where person_id = ${personId}::uuid returning person_id`,
+      );
+      if (removed.length === 0) return { ok: false, refusal: 'not_allowed' };
     } else {
       const [grade] = await tx.execute<{ code: string }>(
         sql`select g.code from platform.grades g where g.id = ${gradeId}::uuid`,
@@ -217,8 +221,11 @@ export async function setPersonGrade(
           set grade_id = ${gradeId}::uuid where person_id = ${personId}::uuid returning person_id`);
         if (updated.length === 0) return { ok: false, refusal: 'not_allowed' };
       } else {
+        // A first assignment that races another save of the same person does not fail on the key: the later
+        // save wins, as an update would.
         await tx.execute(sql`insert into platform.person_grades (person_id, grade_id)
-          values (${personId}::uuid, ${gradeId}::uuid)`);
+          values (${personId}::uuid, ${gradeId}::uuid)
+          on conflict (tenant_id, person_id) do update set grade_id = excluded.grade_id`);
       }
     }
     return { ok: true, change: { changed: true, from: current?.code ?? null, to } };
@@ -312,7 +319,10 @@ export async function saveHrDetails(
     if (before === null) {
       await tx.execute(sql`insert into platform.person_hr_details
           (person_id, gender, birth_date, employment_category)
-        values (${personId}::uuid, ${next.gender}, ${next.birthDate}::date, ${next.employmentCategory})`);
+        values (${personId}::uuid, ${next.gender}, ${next.birthDate}::date, ${next.employmentCategory})
+        on conflict (tenant_id, person_id) do update
+          set gender = excluded.gender, birth_date = excluded.birth_date,
+              employment_category = excluded.employment_category`);
     } else {
       const updated = await tx.execute(sql`update platform.person_hr_details
         set gender = ${next.gender}, birth_date = ${next.birthDate}::date,

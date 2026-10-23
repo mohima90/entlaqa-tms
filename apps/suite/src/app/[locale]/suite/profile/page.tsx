@@ -326,6 +326,7 @@ async function MyProfile({
           title: people('photo.cropTitle'),
           help: people('photo.cropHelp'),
           area: people('photo.cropArea'),
+          keys: people('photo.cropKeys'),
           zoom: people('photo.zoom'),
           shrunk: people('photo.shrunk'),
           save: people('photo.save'),

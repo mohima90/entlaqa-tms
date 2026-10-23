@@ -97,11 +97,14 @@ returns boolean
 language sql stable
 set search_path = ''
 as $$
-  select private.request_claims() ->> 'role' = 'authenticated'
-         and private.request_person_id() is not null
+  -- Cheap answers first, each as an init-plan subselect (once per statement, not per row): signed in, the
+  -- caller's own organization, the person themselves, the grade-managing permission. Only then the walks.
+  select (select private.request_claims() ->> 'role') = 'authenticated'
+         and (select private.request_person_id()) is not null
+         and p_tenant_id = (select private.current_tenant_id())
          and (
-           p_person_id = private.request_person_id()
-           or private.actor_may_manage_grades(p_tenant_id)
+           p_person_id = (select private.request_person_id())
+           or (select private.actor_may_manage_grades((select private.current_tenant_id())))
            or exists (
              with recursive chain (manager_id, depth) as (
                select e.manager_person_id, 1 from platform.person_employment e
@@ -111,8 +114,11 @@ as $$
                join platform.person_employment e on e.tenant_id = p_tenant_id and e.person_id = c.manager_id
                where e.manager_person_id is not null and c.depth < 60
              )
-             select 1 from chain where manager_id = private.request_person_id())
+             select 1 from chain where manager_id = (select private.request_person_id()))
            or exists (
+             -- The walk goes up through EVERY unit above the person's, deleted or inactive ones included (a
+             -- deleted unit in the middle does not cut the chain); only the head who is asked about must be
+             -- the head of a live unit. Unknown or unreadable rows end the walk: it fails closed.
              with recursive up (unit_id, depth) as (
                select e.department_id, 1 from platform.person_employment e
                where e.tenant_id = p_tenant_id and e.person_id = p_person_id and e.department_id is not null
@@ -123,7 +129,7 @@ as $$
              )
              select 1 from up
              join platform.departments h on h.tenant_id = p_tenant_id and h.id = up.unit_id
-             where h.head_person_id = private.request_person_id() and h.deleted_at is null)
+             where h.head_person_id = (select private.request_person_id()) and h.deleted_at is null)
          );
 $$;
 comment on function private.actor_sees_grade_of(uuid, uuid) is

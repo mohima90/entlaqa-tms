@@ -2,9 +2,11 @@ import { ok } from '@jadarat/platform-core';
 import { brandVerifiedClaims } from '@jadarat/platform-core/internal/verified-claims';
 import type { UserTx } from '@jadarat/platform-db';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Grant } from '../authorize';
 import type { ActionRuntime } from '../define-action';
 import { createDefineAction } from '../define-action';
 import { createDefineQuery } from '../define-query';
+import { grantsForAssignments } from '../role-grants';
 import { platformPermissions } from '../platform-permissions';
 import { type TestRoleCode, testRoleGrants } from '../testing/former-roles';
 import {
@@ -14,6 +16,7 @@ import {
   UpdatePersonRecordInput,
   loadPersonRecordEdit,
   loadPersonRecordView,
+  updatePersonHrDetailsActionDefinition,
   updatePersonRecordActionDefinition,
 } from './person-record';
 
@@ -33,7 +36,7 @@ const ME = '33333333-3333-4333-8333-333333333333';
 const SARA = '44444444-4444-4444-8444-444444444444';
 const GRADE = '55555555-5555-4555-8555-555555555555';
 
-function runtime(roles: TestRoleCode[], personId = ME) {
+function runtime(roles: TestRoleCode[], personId = ME, grants?: Grant[]) {
   const writeAudit = vi.fn(() => Promise.resolve());
   const rt: ActionRuntime<UserTx> = {
     getClaims: () => {
@@ -49,7 +52,7 @@ function runtime(roles: TestRoleCode[], personId = ME) {
     },
     withUserTx: (_c, fn) => fn(TX),
     loadSessionFacts: () => Promise.resolve({ active: true, aal2: true }),
-    loadGrants: () => Promise.resolve(testRoleGrants(roles, [])),
+    loadGrants: () => Promise.resolve(grants ?? testRoleGrants(roles, [])),
     resolveResource: (_tx, ref) =>
       Promise.resolve(
         ref.id === SARA
@@ -284,5 +287,63 @@ describe('saving a person’s grade and HR-only fields', () => {
     db.saveHrDetails.mockResolvedValue({ ok: false, refusal: 'not_found' });
     const gone = await save(['hr_manager'], { personId: SARA, hr: HR }).run();
     expect(!gone.ok && gone.error.code).toBe('NOT_FOUND');
+  });
+});
+
+describe('saving only the HR-only fields (security review L3)', () => {
+  // A custom role holding «View and edit HR-only fields» alone: no platform.user.update.
+  const hrOnlyGrants = grantsForAssignments([{ roleCode: 'custom_aaaaaaaaaaaa' }], {
+    headedDepartmentIds: [],
+    customRoles: [
+      {
+        code: 'custom_aaaaaaaaaaaa',
+        dataScope: 'organization',
+        permissions: ['platform.person.hr_details'],
+      },
+    ],
+  });
+  const saveHr = (roles: TestRoleCode[], grants: Grant[] | undefined, input: unknown) => {
+    const { rt, writeAudit } = runtime(roles, ME, grants);
+    return {
+      writeAudit,
+      run: () => createDefineAction(rt)(updatePersonHrDetailsActionDefinition())(input as never),
+    };
+  };
+
+  it('a member holding only platform.person.hr_details saves the HR fields; the audit names fields only', async () => {
+    db.saveHrDetails.mockResolvedValue({ ok: true, changed: ['gender'] });
+    const { run, writeAudit } = saveHr([], hrOnlyGrants, { personId: SARA, hr: HR });
+    expect(await run()).toEqual(ok({ personId: SARA, grade: null, hrChanged: ['gender'] }));
+    expect(db.saveHrDetails).toHaveBeenCalledWith(TX, SARA, HR);
+    expect(writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {
+      action: 'platform.person.hr_details_changed',
+      entityType: 'person',
+      entityId: SARA,
+      data: { changed: ['gender'], value: 'hidden' },
+    });
+    // …but the same member still cannot set a grade or reach the full record action.
+    const { rt } = runtime([], ME, hrOnlyGrants);
+    const full = await createDefineAction(rt)(updatePersonRecordActionDefinition())({
+      personId: SARA,
+      gradeId: GRADE,
+    });
+    expect(!full.ok && full.error.code).toBe('FORBIDDEN');
+    expect(db.setPersonGrade).not.toHaveBeenCalled();
+  });
+
+  it('refuses the Organization Admin, the L&D Manager and an employee (nothing saved)', async () => {
+    for (const roles of [['tenant_admin'], ['training_manager'], ['learner']] as TestRoleCode[][]) {
+      const result = await saveHr(roles, undefined, { personId: SARA, hr: HR }).run();
+      expect(!result.ok && result.error.code, roles.join()).toBe('FORBIDDEN');
+    }
+    expect(db.saveHrDetails).not.toHaveBeenCalled();
+  });
+
+  it('requires the HR fields and refuses extra fields', async () => {
+    for (const input of [{ personId: SARA }, { personId: SARA, hr: HR, gradeId: GRADE }]) {
+      const result = await saveHr(['hr_manager'], undefined, input).run();
+      expect(result.ok).toBe(false);
+    }
+    expect(db.saveHrDetails).not.toHaveBeenCalled();
   });
 });

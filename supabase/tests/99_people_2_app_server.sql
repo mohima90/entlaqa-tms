@@ -31,6 +31,10 @@ begin
   perform tests.assert_eq(tests.rows_affected(format($q$update platform.person_hr_details set employment_category = 'management' where person_id = %L$q$, v_ua)),
     1::bigint, 'HR Manager changes the Organization Admin''s HR details (they give no access)');
   perform tests.assert_eq((select version from platform.person_hr_details where person_id = v_ua), 2, 'version increments');
+  -- A first save that races another one (the row now exists) updates instead of failing on the key.
+  perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.person_hr_details (person_id, gender) values (%L, 'male') on conflict (tenant_id, person_id) do update set gender = excluded.gender$q$, v_ua)),
+    1::bigint, 'insert ... on conflict updates the existing row');
+  perform tests.assert_eq((select gender from platform.person_hr_details where person_id = v_ua), 'male', 'and keeps one row per person');
   -- A person of tenant B or a tenant named by the caller: refused.
   perform tests.assert_fails($q$insert into platform.person_hr_details (person_id, gender) values ('b1000000-0000-4000-8000-0000000000b9', 'male')$q$,
     array['23503'], 'a person of another organization (composite foreign key)');
@@ -139,6 +143,9 @@ begin
   perform tests.set_claims(tests.people_claims('uab'));
   perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.person_grades (person_id, grade_id) values (%L, 'a8100000-0000-4000-8000-000000000002')$q$, v_ua)),
     1::bigint, 'HR sets the grade of the Organization Admin (a privileged member)');
+  perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.person_grades (person_id, grade_id) values (%L, 'a8100000-0000-4000-8000-000000000001') on conflict (tenant_id, person_id) do update set grade_id = excluded.grade_id$q$, v_ua)),
+    1::bigint, 'a first assignment that races another one updates instead of failing');
+  perform tests.assert_eq((select count(*) from platform.person_grades where person_id = v_ua), 1::bigint, 'one grade per person');
   perform tests.assert_eq(tests.rows_affected(format($q$update platform.person_grades set grade_id = 'a8100000-0000-4000-8000-000000000001' where person_id = %L$q$, v_s2)),
     1::bigint, 'HR changes an employee''s grade');
   perform tests.assert_eq(tests.rows_affected(format($q$delete from platform.person_grades where person_id = %L$q$, v_s2)), 1::bigint, 'and clears it');
@@ -216,9 +223,10 @@ begin
   -- Idempotent: the same file again changes nothing.
   perform tests.assert_eq((select replaced from private.publish_profile_photo('f0a30000-0000-4000-8000-0000000000a1', v_sha, v_size, 'image/png', v_png)),
     false, 'publishing the same file again replaces nothing');
-  -- Members read the facts, never the bytes.
+  -- A member reads a photo only for a person they may see (BR-PPL-d); the person always their own.
   perform tests.assert_eq((select sha256 from platform.person_photos where person_id = 'a1000000-0000-4000-8000-000000000c01'), v_sha, 'the SHA-256 is readable (cache key)');
-  perform tests.assert_privilege_denied($q$select content from platform.person_photos$q$, 'the bytes are not readable through the table');
+  perform tests.assert_eq((select content from platform.person_photos where person_id = 'a1000000-0000-4000-8000-000000000c01'), v_png,
+    'the person reads their own bytes through the table');
   perform tests.assert_privilege_denied($q$insert into platform.person_photos (person_id, file_id, content_type, content, byte_size, sha256) values ('a1000000-0000-4000-8000-000000000c01', 'f0a30000-0000-4000-8000-0000000000a2', 'image/png', '\x89504e47', 4, repeat('a', 64))$q$,
     'no direct insert');
   perform tests.assert_privilege_denied($q$delete from platform.person_photos$q$, 'no direct delete');
@@ -255,11 +263,36 @@ begin
     'f0a30000-0000-4000-8000-0000000000a2'::uuid, 'the copy is the new one');
   perform tests.assert_eq((select count(*) from platform.person_photos where person_id = 'a1000000-0000-4000-8000-000000000c01'), 1::bigint, 'one photo per person');
 
-  -- Delivery: another member of the organization reads the bytes; another organization and the claim-less path do not.
-  perform tests.set_claims(tests.people_claims('m1'));
-  perform tests.assert_eq((select count(*) from private.person_photo_content('a1000000-0000-4000-8000-000000000c01')), 1::bigint, 'a colleague gets the bytes');
+  -- Delivery follows who may see the person (BR-PPL-d, security review M1): the person, a member with
+  -- platform.user.read for the whole organization, one whose scoped read covers the person; nobody else.
+  perform tests.assert_eq((select count(*) from private.person_photo_content('a1000000-0000-4000-8000-000000000c01')), 1::bigint, 'the person gets their own photo');
+  perform tests.set_claims(tests.people_claims('m3'));
+  perform tests.assert_eq((select count(*) from private.person_photo_content('a1000000-0000-4000-8000-000000000c01')), 1::bigint, 'an organization-wide reader gets the bytes');
   perform tests.assert_eq((select content from private.person_photo_content('a1000000-0000-4000-8000-000000000c01')), v_png, 'the bytes of the copy');
+  perform tests.assert_eq((select count(*) from platform.person_photos where person_id = 'a1000000-0000-4000-8000-000000000c01'), 1::bigint, 'and the row');
   perform tests.assert_eq((select count(*) from private.person_photo_content('a1000000-0000-4000-8000-000000000c02')), 0::bigint, 'nothing for a person without a photo');
+  -- uS2 has a photo too (inside OPS).
+  perform tests.set_claims(tests.people_claims('s2'));
+  perform tests.assert_eq((select replaced from private.publish_profile_photo('f0a30000-0000-4000-8000-0000000000a3', v_sha, v_size, 'image/png', v_png)),
+    false, 'uS2 publishes a photo');
+  -- uM1 (custom role, data scope «A department» = OPS): uS2 sits in OPS, uS1 in no unit.
+  perform tests.set_claims(tests.people_claims('m1'));
+  perform tests.assert_eq((select count(*) from private.person_photo_content('a1000000-0000-4000-8000-000000000c02')), 1::bigint, 'a department-limited member gets a photo inside the unit');
+  perform tests.assert_eq((select count(*) from platform.person_photos where person_id = 'a1000000-0000-4000-8000-000000000c02'), 1::bigint, 'and sees its row');
+  perform tests.assert_eq((select count(*) from private.person_photo_content('a1000000-0000-4000-8000-000000000c01')), 0::bigint, 'a department-limited member is refused a photo outside the unit');
+  perform tests.assert_eq((select count(*) from platform.person_photos where person_id = 'a1000000-0000-4000-8000-000000000c01'), 0::bigint, 'and does not even see its row (version, size, hash)');
+  perform tests.assert_eq((select count(*) from platform.person_photos), 1::bigint, 'only the photos inside the unit are visible');
+  -- uM2 (custom role, data scope «My team»): uS1 reports to uM2, uS2 does not.
+  perform tests.set_claims(tests.people_claims('m2'));
+  perform tests.assert_eq((select count(*) from private.person_photo_content('a1000000-0000-4000-8000-000000000c01')), 1::bigint, 'a team-limited member gets a direct report''s photo');
+  perform tests.assert_eq((select count(*) from private.person_photo_content('a1000000-0000-4000-8000-000000000c02')), 0::bigint, 'and not that of someone outside the team');
+  -- uM4 (an Employee: own data only) sees nobody else's photo, not even in the unit they head.
+  perform tests.set_claims(tests.people_claims('m4'));
+  perform tests.assert_eq((select count(*) from private.person_photo_content('a1000000-0000-4000-8000-000000000c02')), 0::bigint, 'an Employee does not get a colleague''s photo');
+  perform tests.assert_eq((select count(*) from platform.person_photos), 0::bigint, 'nor their rows');
+  -- uS2 removes theirs again (the remaining checks start from uS1's photo alone).
+  perform tests.set_claims(tests.people_claims('s2'));
+  perform tests.assert_eq((select file_name from private.remove_profile_photo()), 'other.png', 'uS2 removes their photo');
   perform tests.set_claims(tests.people_claims('ub'));
   perform tests.assert_eq((select count(*) from private.person_photo_content('a1000000-0000-4000-8000-000000000c01')), 0::bigint, 'never to another organization');
   perform tests.assert_eq((select count(*) from private.person_photo_content('b1000000-0000-4000-8000-0000000000b1')), 1::bigint, 'B reads B''s own photo (fixture)');
@@ -271,6 +304,7 @@ begin
   -- uS2 cannot remove uS1's photo (remove works on the caller's own only); uS2 has none: nothing happens.
   perform tests.set_claims(tests.people_claims('s2'));
   perform tests.assert_eq((select count(*) from private.remove_profile_photo()), 0::bigint, 'removing when there is no photo changes nothing');
+  perform tests.set_claims(tests.people_claims('m3'));
   perform tests.assert_eq((select count(*) from platform.person_photos where person_id = 'a1000000-0000-4000-8000-000000000c01'), 1::bigint, 'uS1''s photo is untouched');
   -- Remove: own photo, file deleted, name returned.
   perform tests.set_claims(tests.people_claims('s1'));

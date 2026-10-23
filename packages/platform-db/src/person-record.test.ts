@@ -201,12 +201,18 @@ describe("a person's grade", () => {
       change: { changed: true, from: '3', to: '7' },
     });
     expect(update.executed.at(-1)?.sql).toMatch(/update platform\.person_grades/);
-    const clear = fakeTx([[{ grade_id: GRADE, code: '7' }], []]);
+    const clear = fakeTx([[{ grade_id: GRADE, code: '7' }], [{ person_id: PERSON }]]);
     expect(await setPersonGrade(clear.tx, PERSON, null)).toEqual({
       ok: true,
       change: { changed: true, from: '7', to: null },
     });
     expect(clear.executed.at(-1)?.sql).toMatch(/delete from platform\.person_grades/);
+    // Nothing removed (RLS filtered the row: the member does not manage grades): not a change to report.
+    const filtered = fakeTx([[{ grade_id: GRADE, code: '7' }], []]);
+    expect(await setPersonGrade(filtered.tx, PERSON, null)).toEqual({
+      ok: false,
+      refusal: 'not_allowed',
+    });
   });
 
   it('refuses an unknown grade, a foreign key violation and a member who may not set grades', async () => {

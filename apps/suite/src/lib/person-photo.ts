@@ -1,6 +1,6 @@
 /**
  * The address of a person's profile photo (WP-ADM-04): `/api/photo/<person id>?v=<version>` — a same-origin
- * route that answers signed-in members of the organization only. The version (the first characters of the
+ * route that answers only signed-in members who may see that person. The version (the first characters of the
  * photo's SHA-256) changes with every new photo, so a replaced photo is fetched again and an unchanged one
  * stays in the browser's cache. Null when the person has no photo (initials are shown).
  */

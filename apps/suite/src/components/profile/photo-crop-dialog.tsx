@@ -5,6 +5,7 @@ import {
   type PointerEvent,
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
 } from 'react';
@@ -31,6 +32,8 @@ export interface PhotoCropLabels {
   readonly title: string;
   readonly help: string;
   readonly area: string;
+  /** How to use the keyboard on the area (read after its name; aria-describedby). */
+  readonly keys: string;
   readonly zoom: string;
   /** «{file} · shrunk from {from} to {to}». */
   readonly shrunk: string;
@@ -149,6 +152,7 @@ function CropBody({
   onSave,
 }: Omit<PhotoCropDialogProps, 'file'> & { readonly file: File }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const keysId = useId();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [framing, setFraming] = useState<Framing>(CENTERED);
@@ -240,11 +244,14 @@ function CropBody({
   }
   function onKeyDown(event: KeyboardEvent<HTMLCanvasElement>) {
     const step = event.shiftKey ? 32 : 8;
+    // The picture moves the way the key points ON SCREEN, in Arabic (right-to-left) as in English: the canvas
+    // is a picture, not text, and is never mirrored, so ArrowLeft always moves the picture to the user's left
+    // (the same direction as dragging it) - security review L5.
     const keys: Record<string, readonly [number, number]> = {
-      ArrowLeft: [step, 0],
-      ArrowRight: [-step, 0],
-      ArrowUp: [0, step],
-      ArrowDown: [0, -step],
+      ArrowLeft: [-step, 0],
+      ArrowRight: [step, 0],
+      ArrowUp: [0, -step],
+      ArrowDown: [0, step],
     };
     const delta = keys[event.key];
     if (!delta) return;
@@ -283,6 +290,7 @@ function CropBody({
         // eslint-disable-next-line jsx-a11y/no-interactive-element-to-noninteractive-role
         role="application"
         aria-label={labels.area}
+        aria-describedby={keysId}
         className="size-72 max-w-full touch-none rounded-lg border border-border bg-surface-sunken outline-offset-2"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -291,6 +299,9 @@ function CropBody({
         onKeyDown={onKeyDown}
         data-testid="photo-crop-area"
       />
+      <span id={keysId} className="sr-only">
+        {labels.keys}
+      </span>
       <label className="flex w-full max-w-72 flex-col gap-1.5 text-sm font-semibold">
         {labels.zoom}
         <input

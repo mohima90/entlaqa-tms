@@ -93,7 +93,7 @@ describe("the web tier's router from its environment", () => {
       {
         EMAIL_PROVIDER: 'resend',
         EMAIL_FROM_ADDRESS: 'no-reply@jadarat.example',
-        RESEND_API_KEY: 're_abcdefgh1234',
+        RESEND_API_KEY: 're_xxxxxxxxxxxx',
       },
       vi.fn(),
     );

@@ -1,16 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { cn } from './cn';
-
-/** The first letter of the name (Arabic or Latin), or of each of its first two words in Latin script. */
-export function initialsOf(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  const first = Array.from(words[0] ?? '')[0] ?? '?';
-  // Arabic names: one letter reads better than two joined letters.
-  if (/[؀-ۿ]/.test(first)) return first;
-  const second = words.length > 1 ? (Array.from(words[1] ?? '')[0] ?? '') : '';
-  return (first + second).toUpperCase();
-}
+import { initialsOf } from './initials';
 
 export interface AvatarProps {
   readonly name: string;

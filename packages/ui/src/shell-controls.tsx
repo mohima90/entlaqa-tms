@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useId, useRef, useState, useTransition } from 'react';
-import { Avatar, initialsOf } from './avatar';
+import { Avatar } from './avatar';
+import { initialsOf } from './initials';
 import {
   DropdownMenu,
   DropdownMenuContent,

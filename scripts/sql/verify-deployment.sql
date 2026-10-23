@@ -641,6 +641,15 @@ begin
         'private.inline_email_test_claim(text,bytea)', 'private.inline_email_test_finish(bytea,integer,boolean,text)',
         'private.inline_mail_claim(uuid,bytea)', 'private.inline_mail_finish(uuid,bytea,text,text,text,text,text)',
         'private.inline_mail_tenants_to_rescue()',
+        -- Account e-mails sent at once (WP-ADM-05 follow-up)
+        'private.account_mail_claim_core(bytea)', 'private.account_mail_consume(bytea,uuid,text,bytea,bytea)',
+        'private.inline_account_mail_tag(bytea)', 'private.inline_account_mail_claim(bytea,integer)',
+        'private.inline_account_mail_queue(bytea,uuid,text,integer,text,text,text,text,bytea,bytea)',
+        'private.inline_account_mail_done(bytea,uuid)', 'private.inline_recovery_facts(uuid)',
+        'private.recovery_target(uuid,text,text)',
+        'private.inline_recovery_queue(uuid,text,integer,text,text,text,text,text,text,bytea)',
+        'private.mfa_setup_peek(uuid,uuid)', 'private.mfa_setup_issue(uuid,uuid,bytea,bytea)',
+        'private.user_has_totp_app(uuid)',
         'private.sign_in_code_hmac(uuid,text)', 'private.verify_sign_in_code(text,text)', 'private.kept_until_effective(uuid,timestamp with time zone,timestamp with time zone)',
         'private.audit_sign_in_code_sent(uuid,uuid)', 'private.audit_sign_in_code_refused(text,boolean)')
   loop

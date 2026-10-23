@@ -32,11 +32,13 @@ begin
                     order by p.oid::regprocedure::text collate "C") into v_list
   from pg_proc p where p.proowner = 'inline_mail_guard'::regrole;
   perform tests.assert_eq(v_list,
+    'private.inline_account_mail_queue(bytea,uuid,text,integer,text,text,text,text,bytea,bytea) (definer), '
     'private.inline_invitation_prepare(uuid) (definer), private.inline_mail_caller(), '
     'private.inline_mail_claim(uuid,bytea) (definer), '
     'private.inline_mail_finish(uuid,bytea,text,text,text,text,text) (definer), '
     'private.inline_mail_queue(text,uuid,text,integer,text,text,text,text,text,text,bytea) (definer), '
-    'private.inline_mail_tenants_to_rescue() (definer)',
+    'private.inline_mail_tenants_to_rescue() (definer), '
+    'private.inline_recovery_queue(uuid,text,integer,text,text,text,text,text,text,bytea) (definer)',
     'inline_mail_guard owns the inline e-mail functions only');
   perform tests.assert((select bool_and(exists (select 1 from unnest(p.proconfig) c where c in ('search_path=""', 'search_path=')))
                         from pg_proc p where p.proowner = 'inline_mail_guard'::regrole),

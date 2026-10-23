@@ -103,6 +103,21 @@ comment on view private.auth_password_marker is
 revoke all on private.auth_password_marker from public;
 grant select on private.auth_password_marker to account_mail_guard;
 
+-- The view's owner (the migration role) must be able to read the column, and the guard the view; otherwise every
+-- remembered-browser check would fail at run time (plpgsql does not check this at CREATE time).
+do $$
+declare
+  v_owner name := (select pg_get_userbyid(relowner) from pg_class where oid = 'private.auth_password_marker'::regclass);
+begin
+  if not (has_schema_privilege(v_owner, 'auth', 'usage') and has_column_privilege(v_owner, 'auth.users', 'encrypted_password', 'select')) then
+    raise exception 'role % (owner of private.auth_password_marker) cannot read auth.users (encrypted_password)', v_owner;
+  end if;
+  if not has_table_privilege('account_mail_guard', 'private.auth_password_marker', 'select') then
+    raise exception 'account_mail_guard cannot read private.auth_password_marker';
+  end if;
+end
+$$;
+
 -- ---------------------------------------------------------------------------------------------------
 -- May this browser skip the code for this account now?
 -- ---------------------------------------------------------------------------------------------------

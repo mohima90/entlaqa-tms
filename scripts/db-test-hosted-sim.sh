@@ -119,6 +119,9 @@ grant select (id, email) on auth.users to $MIGRATOR;
 -- private.auth_account (account e-mails, T-M2-17). The observed ACL (postgres=ar*… below) gives postgres
 -- SELECT on every column of auth.users; only the columns the view reads are simulated.
 grant select (banned_until, recovery_sent_at, recovery_token, is_sso_user, deleted_at) on auth.users to $MIGRATOR;
+-- private.auth_password_marker (WP-ADM-05): a hash of the stored password hash, so a password change or reset
+-- forgets remembered browsers. Same observed ACL (SELECT on every column); the migration checks it.
+grant select (encrypted_password) on auth.users to $MIGRATOR;
 grant references on auth.sessions, auth.users to $MIGRATOR;
 -- private.auth_mfa_factor (MFA policy, T-M2-10). Assumption: auth.mfa_factors carries the same ACL as
 -- auth.users (postgres=ar*wdDxtm/supabase_auth_admin — Supabase grants postgres its privileges on every Auth

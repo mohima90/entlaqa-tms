@@ -198,6 +198,8 @@ export function fieldOfPath(path: string, provider: EmailProviderId): string {
 
 /** The e-mail kinds of the delivery errors list (message key under `emailSettings.templates`). */
 export function templateKey(template: string): string {
+  // An e-mail that goes out with the platform sender only is the same kind of e-mail for the list.
+  if (template.endsWith('_platform')) return templateKey(template.slice(0, -'_platform'.length));
   const known = [
     'platform.invitation',
     'platform.password_reset',
@@ -209,6 +211,7 @@ export function templateKey(template: string): string {
     'platform.account_locked',
     'platform.sign_in_unlocked',
     'platform.mfa_code_locked',
+    'platform.sign_in_code',
   ];
   return known.includes(template) ? template.replace('platform.', '') : 'other';
 }

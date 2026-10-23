@@ -17,6 +17,7 @@ const policy: SecurityFormValues = {
   sessionIdleMinutes: 30,
   sessionMaxHours: 12,
   sessionMaxDevices: 3,
+  rememberedBrowserDays: 0,
 };
 
 describe('security form (redesign package 2)', () => {

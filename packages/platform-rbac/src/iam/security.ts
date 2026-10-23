@@ -3,6 +3,7 @@ import {
   MFA_MODES,
   type MyMfaApp,
   type MySignInSession,
+  type KeptSession,
   SECURITY_LIMITS,
   type SecurityPolicy,
   type SecuritySettings,
@@ -11,10 +12,12 @@ import {
   changedSettings,
   endMemberSessions,
   endMySessions,
+  forgetKeptSessions,
   getMemberMfa,
   getSecurityPolicy,
   listMemberSessions,
   listMyMfaApps,
+  listMyKeptSessions,
   listMySessions,
   mayManagePerson,
   passwordMinLengthForCaller,
@@ -62,6 +65,14 @@ export const SecuritySettingsInput = z
     sessionIdleMinutes: intIn(SECURITY_LIMITS.sessionIdleMinutes),
     sessionMaxHours: intIn(SECURITY_LIMITS.sessionMaxHours),
     sessionMaxDevices: intIn(SECURITY_LIMITS.sessionMaxDevices),
+    // Off / 1 / 7 / 14 / 30 days (WP-ADM-05); default Off.
+    rememberedBrowserDays: z.union([
+      z.literal(0),
+      z.literal(1),
+      z.literal(7),
+      z.literal(14),
+      z.literal(30),
+    ]),
   })
   .superRefine((value, ctx) => {
     if (value.mfaMode === 'required_roles' && value.mfaRequiredRoles.length === 0) {
@@ -168,6 +179,14 @@ export interface MySecurityView {
    * waiting for the e-mailed code in THIS window, or added from another sign-in (when, which browser).
    */
   readonly apps: readonly MyMfaApp[];
+  /**
+   * «Remember this browser» = «keep me signed in» (WP-ADM-05): the organization's current period (0: off) and
+   * the member's own sessions kept signed in (the one asking is marked `current`).
+   */
+  readonly kept: {
+    readonly days: number;
+    readonly sessions: readonly KeptSession[];
+  };
 }
 
 export function mySecurityQueryDefinition(): QueryDefinition<
@@ -182,12 +201,42 @@ export function mySecurityQueryDefinition(): QueryDefinition<
     handler: async ({ ctx }) => {
       const minLength = await passwordMinLengthForCaller(ctx.tx);
       if (minLength === null) return err(appError('UNAUTHENTICATED'));
+      const policy = await getSecurityPolicy(ctx.tx);
       return ok({
         sessions: await listMySessions(ctx.tx),
         passwordMinLength: minLength,
         apps: await listMyMfaApps(ctx.tx),
+        kept: {
+          days: policy?.rememberedBrowserDays ?? 0,
+          sessions: await listMyKeptSessions(ctx.tx),
+        },
       });
     },
+  };
+}
+
+/**
+ * «Forget all» (WP-ADM-05, BR-AUTH-g): the member's sessions stop being kept signed in - they follow the
+ * organization's normal rules from now on (idle, maximum length). Does not sign anyone out by itself.
+ */
+export function forgetKeptSessionsActionDefinition(): ActionDefinition<
+  z.ZodObject<Record<string, never>>,
+  { readonly forgotten: number },
+  UserTx
+> {
+  return {
+    permission: manageOwn,
+    input: z.strictObject({}),
+    scoped: true,
+    handler: async ({ ctx }) => ok({ forgotten: await forgetKeptSessions(ctx.tx) }),
+    audit: (_input, output) =>
+      output.forgotten === 0
+        ? null
+        : {
+            action: 'platform.auth.browsers_forgotten',
+            entityType: 'user',
+            data: { scope: 'own', count: output.forgotten },
+          },
   };
 }
 

@@ -21,10 +21,12 @@ import {
   getLockoutPolicy,
   getSessionAccess,
   hashInvitationToken,
+  authMailApi,
   insertAuditEvent,
   invitationByToken,
   invitationPasswordMinLength,
   isPlatformAdmin,
+  keepSession,
   getEmailCredentialsPublicKey,
   getPlatformEmailSettings,
   savePlatformEmailSettings as savePlatformEmailSettingsInDatabase,
@@ -52,10 +54,17 @@ import {
   withUserTx,
 } from '@jadarat/platform-db';
 import {
+  KEEP_SIGNED_IN_COOKIE,
+  KEPT_SESSION_COOKIE_SECONDS,
+  SESSION_COOKIE_OPTIONS,
   createSupabaseServerClient,
   createSupabaseStatelessClient,
   createSupabaseVerifierClient,
 } from '@jadarat/platform-db/supabase-server';
+import {
+  createInlineEmailRouter,
+  createInlineEmailSender,
+} from '@jadarat/platform-notifications/inline';
 import { kicksWorker } from '@jadarat/platform-jobs/kick/next';
 import { log } from '@jadarat/platform-observability';
 import { cookies, headers } from 'next/headers';
@@ -110,6 +119,15 @@ import {
   startTotpSetup,
   verifyTotpCode,
 } from './mfa';
+import { handleSendEmailHook } from './auth-email-hook';
+import {
+  type SignInCodeDeps,
+  keepThisSession,
+  requestSignInCode,
+  signInWithEmailedCode,
+} from './sign-in-code';
+import { createSendEmailHookLimiter, createSignInCodeLimiter } from './sign-in-code-limits';
+import { openTokenHash } from './sign-in-code-seal';
 import { type SupabaseAuthLike, verifyClaims } from './verify-claims';
 import { getVerifiedClaims, getVerifiedClaimsStrict } from './next';
 import {
@@ -290,6 +308,7 @@ function authClientOptions(client: RequestClient | null) {
 async function requestDeps(
   signInGuard: SignInGuard = NO_SIGN_IN_GUARD,
   client: RequestClient | null = null,
+  keptSession?: () => boolean,
 ): Promise<AuthFlowDeps> {
   const store = await cookies();
   // The browser's User-Agent goes to Auth with our calls, so a session created at sign-in records the real
@@ -307,7 +326,7 @@ async function requestDeps(
       },
     },
     undefined,
-    { ...authClientOptions(client), userAgent },
+    { ...authClientOptions(client), userAgent, ...(keptSession ? { keptSession } : {}) },
   );
   return {
     supabase: supabase as AuthClientLike | null,
@@ -334,11 +353,272 @@ export async function signInWithPasswordForRequest(
   credentials: PasswordCredentials,
   client: RequestClient,
 ) {
-  return signInWithPassword(await requestDeps(await signInGuardFor(client), client), credentials);
+  // A new session replaces whoever was signed in on this browser: its cookies end with the browser and never
+  // inherit the previous account's «keep me signed in» marker (security re-review L2).
+  const result = await signInWithPassword(
+    await requestDeps(await signInGuardFor(client), client, () => false),
+    credentials,
+  );
+  if (result.ok) forgetKeep(await cookies());
+  return result;
+}
+
+// Sign in with an e-mailed code (WP-ADM-05): the code is Supabase Auth's own e-mail OTP, e-mailed at once by the
+// Send Email hook (handleSendEmailHookForRequest); limits on the shared limiter run before Auth is asked or
+// answered. Public actions: the person is not signed in yet. No Auth secret key anywhere in the web app.
+
+const SIGN_IN_CODE_REQUEST_ACTION = 'platform.auth.sign_in_code_request';
+const SIGN_IN_CODE_VERIFY_ACTION = 'platform.auth.sign_in_code_verify';
+
+async function signInCodeDeps(client: RequestClient): Promise<SignInCodeDeps> {
+  // Whether THIS request's session cookies last (kept) or end with the browser: flipped by the flow.
+  let kept = false;
+  const auth = await requestDeps(undefined, client, () => kept);
+  const store = await cookies();
+  const limiterBase = limiterDeps();
+  const otpClient = createSupabaseStatelessClient(undefined, authClientOptions(client));
+  return {
+    ...auth,
+    limiter: createSignInCodeLimiter({
+      ...limiterBase,
+      client,
+      requestAction: SIGN_IN_CODE_REQUEST_ACTION,
+      checkAction: SIGN_IN_CODE_VERIFY_ACTION,
+      // The organization's lock-out policy sets the typed address's budget of wrong codes, as at the password
+      // step (security review L2).
+      accountBudget: organizationAccountLockout(
+        {
+          hostTenantId: hostTenantIdForRequest(),
+          lockoutPolicyFor: getLockoutPolicy,
+          accountInTenant: signInAccountInTenant,
+        },
+        limiterBase.limits.signInCode.checkAccountFailures,
+      ),
+    }),
+    requestOtp: async (email) => {
+      if (!otpClient) return { status: undefined };
+      try {
+        const { error } = await otpClient.auth.signInWithOtp({
+          email,
+          options: { shouldCreateUser: false },
+        });
+        return { status: error ? (error.status ?? undefined) : 200 };
+      } catch {
+        return { status: undefined };
+      }
+    },
+    verifyCode: (email, code) => authMailApi.verifyCode(email, code),
+    openTokenHash: (userId, sealed) => {
+      const secret = process.env.SEND_EMAIL_HOOK_SECRET;
+      return secret ? openTokenHash(secret, userId, sealed) : null;
+    },
+    keepSession,
+    setSessionCookieLifetime: (value) => {
+      kept = value;
+    },
+    setKeepMarker: (value) => {
+      kept = value;
+      writeKeepMarker(store, value);
+    },
+    setKeepPending: (pending) => {
+      try {
+        if (pending) store.set(KEEP_PENDING_COOKIE, '1', keepPendingOptions());
+        else store.delete(KEEP_PENDING_COOKIE);
+      } catch {
+        // Not in a server action: nothing is pending.
+      }
+    },
+    auditRefused: (email, killed) => authMailApi.auditRefused(email, killed),
+    keepAlive: (work) => {
+      after(work);
+    },
+  };
+}
+
+/**
+ * «Remember this browser» was ticked but the sign-in is not finished (the organization chooser, the second
+ * step): this short-lived HttpOnly marker carries the wish to the end of it (security re-review L3). It decides
+ * nothing by itself - the database keeps a session only when the sign-in is complete.
+ */
+const KEEP_PENDING_COOKIE = SECURE_COOKIES ? '__Host-jadarat-keep-pending' : 'jadarat-keep-pending';
+
+function keepPendingOptions() {
+  return {
+    httpOnly: true,
+    secure: SECURE_COOKIES,
+    sameSite: 'lax' as const,
+    path: '/',
+    maxAge: 30 * 60,
+  };
+}
+
+type CookieJar = Awaited<ReturnType<typeof cookies>>;
+
+/**
+ * Marks (or unmarks) this browser as keeping its session. Marking also makes the Auth session cookies already
+ * written in this request persistent: they were set to end with the browser while the policy was unknown.
+ */
+function writeKeepMarker(store: CookieJar, kept: boolean): void {
+  try {
+    if (kept) {
+      store.set(KEEP_SIGNED_IN_COOKIE, '1', keepMarkerOptions());
+      for (const cookie of store.getAll()) {
+        if (cookie.name.startsWith('sb-')) {
+          store.set(cookie.name, cookie.value, {
+            ...SESSION_COOKIE_OPTIONS,
+            maxAge: KEPT_SESSION_COOKIE_SECONDS,
+          });
+        }
+      }
+    } else {
+      store.delete(KEEP_SIGNED_IN_COOKIE);
+    }
+  } catch {
+    // Not in a server action: the marker is written by the next sign-in.
+  }
+}
+
+/** A new session replaces the old one on this browser: neither the marker nor a pending keep carries over. */
+function forgetKeep(store: CookieJar): void {
+  try {
+    store.delete(KEEP_SIGNED_IN_COOKIE);
+    store.delete(KEEP_PENDING_COOKIE);
+  } catch {
+    // Not in a server action.
+  }
+}
+
+/**
+ * The end of a sign-in that had to wait for the organization chooser or the second step: if «Remember this
+ * browser» was ticked at the code screen, the session is kept now (the database decides; it refuses while the
+ * sign-in is not finished). Best effort - never blocks the sign-in.
+ */
+async function completePendingKeep(): Promise<void> {
+  const store = await cookies();
+  if (store.get(KEEP_PENDING_COOKIE)?.value !== '1') return;
+  try {
+    store.delete(KEEP_PENDING_COOKIE);
+  } catch {
+    // Not in a server action.
+  }
+  try {
+    const deps = await requestDeps();
+    const claims = await verifyClaims(deps.supabase);
+    if (!claims.ok) return;
+    await keepThisSession(
+      {
+        withUserTx,
+        keepSession,
+        setKeepMarker: (kept) => {
+          writeKeepMarker(store, kept);
+        },
+        logWarning: deps.logWarning,
+      },
+      claims.value,
+    );
+  } catch {
+    log.warn('could not keep the session', { action: 'platform.auth.sign_in_code' });
+  }
+}
+
+/** The marker's cookie options: HttpOnly, Secure (`__Host-` prefix), SameSite=Lax, as long as the longest kept session. */
+function keepMarkerOptions() {
+  return {
+    httpOnly: true,
+    secure: SECURE_COOKIES,
+    sameSite: 'lax' as const,
+    path: '/',
+    maxAge: KEPT_SESSION_COOKIE_SECONDS,
+  };
+}
+
+/**
+ * Is «Email me a code» offered? Only where Auth's Send Email hook is set up (SEND_EMAIL_HOOK_SECRET, the
+ * runbook's one PO step): without the hook no code could ever arrive, so the app does not pretend to send one.
+ * Nothing else switches code sign-in off - not the speed of delivery, not a setting (PO 23 Oct 2026).
+ */
+export function isCodeSignInOffered(): boolean {
+  if ((process.env.SEND_EMAIL_HOOK_SECRET?.trim() ?? '') !== '') return true;
+  // The self-hosted SMOKE TEST shows the code screen without a hook (its journeys need no mailbox): only with
+  // the test flag AND the smoke-only limit window, never on a Vercel production deployment (security
+  // re-review L4 - no placeholder hook secret stands in for it).
+  return (
+    process.env.SIGN_IN_CODE_SCREEN_SMOKE_ONLY === '1' &&
+    process.env.AUTH_RATE_LIMIT_WINDOW_SMOKE_ONLY === '1' &&
+    process.env.VERCEL_ENV !== 'production'
+  );
+}
+
+/** «Email me a code»: asks Auth for a code for the typed address (the same answer for every address). */
+export async function requestSignInCodeForRequest(
+  input: { readonly email: string },
+  client: RequestClient,
+) {
+  if (!isCodeSignInOffered()) return err(appError('NOT_CONFIGURED'));
+  return requestSignInCode(await signInCodeDeps(client), input);
+}
+
+/** The six digits (and «Remember this browser» = keep me signed in): opens the session like a password sign-in would. */
+export async function signInWithEmailedCodeForRequest(
+  input: {
+    readonly email: string;
+    readonly code: string;
+    readonly remember: boolean;
+  },
+  client: RequestClient,
+) {
+  return signInWithEmailedCode(await signInCodeDeps(client), input);
+}
+
+// Supabase Auth's Send Email hook (WP-ADM-05): Auth hands the e-mail to the app, which sends the code at once.
+// The route (apps/suite app/api/auth/send-email) only passes the request here.
+let hookSender: ReturnType<typeof createInlineEmailSender> | null = null;
+
+function hookLog(
+  level: 'info' | 'warn' | 'error',
+  message: string,
+  fields?: Record<string, string | number>,
+) {
+  log[level](message, { action: 'platform.auth.send_email_hook', ...fields });
+}
+
+/** Verifies the signature, then sends the sign-in code (any other e-mail type is refused). Never throws. */
+export async function handleSendEmailHookForRequest(request: Request): Promise<{
+  readonly status: number;
+  readonly body: Record<string, unknown>;
+}> {
+  hookSender ??= createInlineEmailSender(
+    createInlineEmailRouter(process.env, (level, message) => {
+      hookLog(level === 'warning' ? 'warn' : level === 'error' ? 'error' : 'info', message);
+    }),
+  );
+  const appBaseUrl = process.env.APP_BASE_URL?.trim();
+  return handleSendEmailHook(
+    {
+      secret: process.env.SEND_EMAIL_HOOK_SECRET,
+      appBaseUrl: appBaseUrl === '' ? undefined : appBaseUrl,
+      api: authMailApi,
+      sender: hookSender,
+      limiter: createSendEmailHookLimiter({
+        ...limiterDeps(),
+        action: 'platform.auth.send_email_hook',
+      }),
+      now: () => Date.now(),
+      log: hookLog,
+    },
+    {
+      body: await request.text(),
+      webhookId: request.headers.get('webhook-id'),
+      webhookTimestamp: request.headers.get('webhook-timestamp'),
+      webhookSignature: request.headers.get('webhook-signature'),
+    },
+  );
 }
 
 export async function selectOrganizationForRequest(tenantId: string) {
-  return selectOrganization(await requestDeps(), tenantId);
+  const result = await selectOrganization(await requestDeps(), tenantId);
+  if (result.ok && result.value.next === 'home') await completePendingKeep();
+  return result;
 }
 
 export async function getSessionOrganizationsForRequest() {
@@ -346,7 +626,14 @@ export async function getSessionOrganizationsForRequest() {
 }
 
 export async function signOutForRequest() {
-  return signOut(await requestDeps());
+  const result = await signOut(await requestDeps());
+  // Signing out ends a kept session too (the Auth session is gone): the marker goes with it.
+  try {
+    (await cookies()).delete(KEEP_SIGNED_IN_COOKIE);
+  } catch {
+    // Not in a server action: the marker is harmless without a session.
+  }
+  return result;
 }
 
 /** The sign-in page signs out a session its organization's rules ended (T-M2-10). */
@@ -422,7 +709,7 @@ export async function verifyTotpCodeForRequest(
 ) {
   const deps = await mfaDeps(codeCheckLimitFor(client, MFA_VERIFY_ACTION), client);
   const device = trustedDeviceCookie(await cookies());
-  return verifyTotpCode(
+  const result = await verifyTotpCode(
     {
       ...deps,
       rememberBrowser: (session) =>
@@ -436,6 +723,9 @@ export async function verifyTotpCodeForRequest(
     },
     input,
   );
+  // The second step is done: a «Remember this browser» ticked at the code screen is kept now (L3).
+  if (result.ok) await completePendingKeep();
+  return result;
 }
 
 /**
@@ -446,10 +736,12 @@ export async function confirmMfaSetupForRequest(
   input: { readonly code: string },
   client: RequestClient,
 ) {
-  return confirmMfaSetup(
+  const result = await confirmMfaSetup(
     await mfaDeps(codeCheckLimitFor(client, MFA_CONFIRM_ACTION), client),
     input,
   );
+  if (result.ok) await completePendingKeep();
+  return result;
 }
 
 /** "Send the e-mail again" from the window that set the app up (re-review N1). */

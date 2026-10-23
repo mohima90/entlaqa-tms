@@ -24,7 +24,7 @@ import type {
   WithUserTx,
 } from '@jadarat/platform-db';
 import type { LogFields } from '@jadarat/platform-observability';
-import { AuthServiceError, recordAudit, sessionTokens } from './auth-flow';
+import { AuthServiceError, firstFactorOf, recordAudit, sessionTokens } from './auth-flow';
 import type { CodeCheckLimit } from './auth-limits';
 import { type SupabaseAuthLike, verifyClaims, verifyClaimsStrict } from './verify-claims';
 
@@ -309,7 +309,7 @@ async function completeSignIn(
   if (options.auditCode) await recordMfaAudit(deps, session, 'platform.auth.mfa_verified');
   if (wasRefused) {
     await bestEffort(deps, 'platform.auth.signed_in', () =>
-      recordAudit(deps, session, 'platform.auth.signed_in', 'password+totp'),
+      recordAudit(deps, session, 'platform.auth.signed_in', `${firstFactorOf(session)}+totp`),
     );
     await bestEffort(deps, 'platform.auth.sessions_evicted', () =>
       deps.withUserTx(session, (tx) => deps.applyDeviceLimit(tx)),

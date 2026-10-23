@@ -66,7 +66,7 @@ export interface RequestClient {
 const SUBJECT_DOMAIN = 'jadarat.rate-limit.v1';
 
 function subject(
-  kind: 'account' | 'client' | 'user' | 'device' | 'session' | 'invitation',
+  kind: 'account' | 'client' | 'user' | 'device' | 'session' | 'invitation' | 'webhook',
   value: string,
 ): Buffer {
   return createHash('sha256').update(`${SUBJECT_DOMAIN}\n${kind}\n${value}`).digest();
@@ -129,7 +129,12 @@ export function codeMissesClientKey(client: RequestClient): RequestClient {
 }
 
 /** The one subject of the all-clients budget of unknown invitation codes. */
-const ALL_CLIENTS_SUBJECT = subject('client', '\nall-clients');
+export const ALL_CLIENTS_SUBJECT = subject('client', '\nall-clients');
+
+/** A webhook call's id (Auth's Send Email hook, standard-webhooks `webhook-id`): replays within the window. */
+export function webhookSubject(webhookId: string): Buffer {
+  return subject('webhook', webhookId);
+}
 
 export function userSubject(userId: string): Buffer {
   return subject('user', userId.trim().toLowerCase());
@@ -199,6 +204,16 @@ export const LIMIT_BUCKETS = {
   mfaCodeAccount: 'mfa_code.account_failures',
   mfaCodeReset: 'mfa_code.reset_failures',
   mfaCodeClient: 'mfa_code.client_failures',
+  signInCodeRequestClient: 'sign_in_code.request_client',
+  signInCodeRequestAccount: 'sign_in_code.request_account',
+  signInCodeCheckAccount: 'sign_in_code.check_account',
+  signInCodeCheckClient: 'sign_in_code.check_client',
+  signInCodeRequestAccountDaily: 'sign_in_code.request_account_daily',
+  signInCodeCheckAllClients: 'sign_in_code.check_all_clients',
+  signInCodeRequestMinute: 'sign_in_code.request_minute',
+  signInCodeHookSend: 'sign_in_code.hook_send',
+  signInCodeHookSendDaily: 'sign_in_code.hook_send_daily',
+  signInCodeHookReplay: 'sign_in_code.hook_replay',
 } as const;
 
 /**
@@ -271,6 +286,7 @@ export function limitsFor(
     passwordReset: withWindow(PLATFORM_AUTH_LIMITS.passwordReset, window),
     invitation: withWindow(PLATFORM_AUTH_LIMITS.invitation, window),
     mfaCode: withWindow(PLATFORM_AUTH_LIMITS.mfaCode, window),
+    signInCode: withWindow(PLATFORM_AUTH_LIMITS.signInCode, window),
   };
 }
 
@@ -456,7 +472,9 @@ export type SecurityEventName =
   | 'auth.limiter.unavailable'
   | 'auth.password_change.failed'
   | 'auth.mfa_code.failed'
-  | 'auth.invitation_codes.global_limit';
+  | 'auth.sign_in_code.failed'
+  | 'auth.invitation_codes.global_limit'
+  | 'auth.sign_in_codes.global_limit';
 
 export interface SecurityEvent {
   readonly event: SecurityEventName;
@@ -484,8 +502,11 @@ const EVENT_MESSAGES: Readonly<Record<SecurityEventName, string>> = {
   'auth.limiter.unavailable': 'rate limiter unavailable',
   'auth.password_change.failed': 'password change refused: current password',
   'auth.mfa_code.failed': 'authenticator code refused',
+  'auth.sign_in_code.failed': 'sign-in code refused',
   'auth.invitation_codes.global_limit':
     'unknown invitation codes: the all-clients limit is reached; code lookups are refused for a while',
+  'auth.sign_in_codes.global_limit':
+    'wrong sign-in codes: the all-clients limit is reached; code checks are refused for a while',
 };
 
 /** The log line of a security event: its message, level and the closed logger fields. */
@@ -528,7 +549,7 @@ export class RateLimiterUnavailableError extends Error {
   }
 }
 
-function errorNameOf(error: unknown): string {
+export function errorNameOf(error: unknown): string {
   return error instanceof Error ? error.name : 'unknown';
 }
 
@@ -544,7 +565,7 @@ export interface LimiterDeps {
   readonly log: SecurityLog;
 }
 
-async function failClosed<T>(
+export async function failClosed<T>(
   deps: LimiterDeps,
   action: string,
   work: () => Promise<T>,

@@ -10,6 +10,7 @@ import type { ReactNode } from 'react';
 import { SuiteShell } from '../../../../../components/suite-shell';
 import { SecuritySettingsForm } from '../../../../../components/security/security-settings-form';
 import { profileErrorTexts } from '../../../../../lib/profile-texts';
+import { REMEMBERED_BROWSER_CHOICES } from '../../../../../lib/security-form';
 import { type SuiteContext, getSuiteContext } from '../../../../../lib/suite-context';
 import { securityPageQuery } from '../../../../../lib/users-queries';
 import { localizedName } from '../../../../../lib/users-view';
@@ -139,6 +140,7 @@ async function Settings({
           sessionIdleMinutes: policy.sessionIdleMinutes,
           sessionMaxHours: policy.sessionMaxHours,
           sessionMaxDevices: policy.sessionMaxDevices,
+          rememberedBrowserDays: policy.rememberedBrowserDays,
         }}
         version={policy.version}
         editable={editAccess === 'allowed'}
@@ -146,6 +148,9 @@ async function Settings({
         texts={flattenTexts(getMessages(locale).security)}
         common={await settingsCommonTexts(locale)}
         graceTexts={Array.from({ length: 31 }, (_, days) => t('confirm.grace', { days }))}
+        rememberedTexts={REMEMBERED_BROWSER_CHOICES.map((days) =>
+          days === 0 ? t('mfa.trustedOff') : t('mfa.trustedDays', { days }),
+        )}
         organization={organization}
         locale={locale}
         lastChanged={lastChanged}

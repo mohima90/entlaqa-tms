@@ -106,7 +106,7 @@ test.describe('request a reset link', () => {
     await expect(sent).toBeVisible();
     await expect(sent.getByRole('heading', { level: 2 })).toHaveText('الرسالة في الطريق');
     await expect(sent).toContainText(resetEmail ?? '');
-    await expect(sent).toContainText('60 دقيقة');
+    await expect(sent).toContainText('10 دقائق');
     // Send again only after a minute.
     await expect(page.getByTestId('forgot-resend')).toBeDisabled();
     await expect(page.getByTestId('forgot-resend')).toContainText('إعادة الإرسال (بعد');

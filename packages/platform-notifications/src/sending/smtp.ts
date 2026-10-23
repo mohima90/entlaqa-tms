@@ -1,3 +1,4 @@
+import 'server-only';
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { BlockList, type Socket, connect as netConnect, isIP } from 'node:net';
 import nodemailer from 'nodemailer';

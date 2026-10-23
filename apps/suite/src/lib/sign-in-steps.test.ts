@@ -4,6 +4,7 @@ import {
   looksLikeEmail,
   readPreferredMethod,
   rememberMethod,
+  signInDestination,
 } from './sign-in-steps';
 
 describe('sign-in steps (Kawadir two-step sign-in)', () => {
@@ -44,5 +45,14 @@ describe('sign-in steps (Kawadir two-step sign-in)', () => {
       rememberMethod('password', failing);
     }).not.toThrow();
     expect(readPreferredMethod(null)).toBe('password');
+  });
+});
+
+describe('signInDestination (after a password or an e-mailed code alike)', () => {
+  it('opens the page each outcome leads to, in the visitor language', () => {
+    expect(signInDestination('en', 'home')).toBe('/en/suite');
+    expect(signInDestination('ar', 'mfa')).toBe('/ar/mfa');
+    expect(signInDestination('en', 'choose-organization')).toBe('/en/select-organization');
+    expect(signInDestination('ar', 'platform')).toBe('/ar/platform');
   });
 });

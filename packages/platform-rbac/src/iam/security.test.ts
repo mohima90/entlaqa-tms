@@ -14,6 +14,7 @@ import {
   SecuritySettingsInput,
   endMemberSessionsActionDefinition,
   endMySessionsActionDefinition,
+  forgetKeptSessionsActionDefinition,
   memberSecurityQueryDefinition,
   mySecurityQueryDefinition,
   resetMemberMfaActionDefinition,
@@ -41,6 +42,8 @@ const db = vi.hoisted(() => ({
   listMyMfaApps: vi.fn(),
   listMySessions: vi.fn(),
   endMySessions: vi.fn(),
+  listMyKeptSessions: vi.fn(),
+  forgetKeptSessions: vi.fn(),
   listMemberSessions: vi.fn(),
   endMemberSessions: vi.fn(),
   mayManagePerson: vi.fn(),
@@ -116,6 +119,7 @@ const settings = {
   sessionIdleMinutes: 30,
   sessionMaxHours: 12,
   sessionMaxDevices: 3,
+  rememberedBrowserDays: 0 as const,
 };
 const policy = {
   ...settings,
@@ -134,6 +138,8 @@ beforeEach(() => {
   db.listMySessions.mockResolvedValue([]);
   db.listMemberSessions.mockResolvedValue([]);
   db.endMySessions.mockResolvedValue(1);
+  db.listMyKeptSessions.mockResolvedValue([]);
+  db.forgetKeptSessions.mockResolvedValue(2);
   db.endMemberSessions.mockResolvedValue(2);
   db.mayManagePerson.mockResolvedValue(true);
   db.resetMemberMfa.mockResolvedValue('reset');
@@ -290,13 +296,53 @@ describe('changing the policy (high risk, Organization Admin)', () => {
 describe('own sign-in sessions (My profile)', () => {
   it('every member lists their own sessions and password rule', async () => {
     const query = createDefineQuery(runtime([]).rt)(mySecurityQueryDefinition());
-    expect(await query({})).toEqual(ok({ sessions: [], passwordMinLength: 16, apps: [APP] }));
+    expect(await query({})).toEqual(
+      ok({
+        sessions: [],
+        passwordMinLength: 16,
+        apps: [APP],
+        kept: { days: 0, sessions: [] },
+      }),
+    );
     // The apps as this session sees them (re-review N1), never another person's.
     expect(db.listMyMfaApps).toHaveBeenCalledWith(TX);
     expect(db.getMemberMfa).not.toHaveBeenCalled();
     db.passwordMinLengthForCaller.mockResolvedValue(null);
     const gone = await query({});
     expect(!gone.ok && gone.error.code).toBe('UNAUTHENTICATED');
+  });
+
+  it("lists the member's own kept sessions and the organization's period", async () => {
+    const kept = [
+      {
+        sessionId: SESSION,
+        keptUntil: new Date('2026-11-06T10:00:00Z'),
+        startedAt: new Date('2026-10-23T10:00:00Z'),
+        userAgent: 'Mozilla/5.0',
+        current: true,
+      },
+    ];
+    db.listMyKeptSessions.mockResolvedValue(kept);
+    db.getSecurityPolicy.mockResolvedValue({ ...policy, rememberedBrowserDays: 14 });
+    const query = createDefineQuery(runtime([]).rt)(mySecurityQueryDefinition());
+    const result = await query({});
+    expect(result.ok && result.value.kept).toEqual({ days: 14, sessions: kept });
+    expect(db.listMyKeptSessions).toHaveBeenCalledWith(TX);
+  });
+
+  it("forgets the member's own kept sessions; audited with the count only", async () => {
+    const { rt, writeAudit } = runtime([]);
+    const action = createDefineAction(rt)(forgetKeptSessionsActionDefinition());
+    expect(await action({})).toEqual(ok({ forgotten: 2 }));
+    expect(writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {
+      action: 'platform.auth.browsers_forgotten',
+      entityType: 'user',
+      data: { scope: 'own', count: 2 },
+    });
+    writeAudit.mockClear();
+    db.forgetKeptSessions.mockResolvedValue(0);
+    await action({});
+    expect(writeAudit).not.toHaveBeenCalled();
   });
 
   it('ends one other session or all others; audited without personal data', async () => {

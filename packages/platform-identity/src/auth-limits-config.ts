@@ -103,6 +103,38 @@ export interface AuthLimits {
     readonly clientFailures: RateLimit;
     readonly sharedClientFailures: RateLimit;
   };
+  /**
+   * «Email me a code» (WP-ADM-05, PO 23 Oct 2026). Requests: the database allows one code a minute per
+   * address; these are the ceilings per client and per typed address on top. Checks: wrong codes only, per
+   * typed address (consecutive; a right code ends the run) and per client — the 5th wrong code pauses code
+   * checks for the window (15 minutes), and the database removes the code itself after 5 wrong tries.
+   * The Send Email hook has limits of its own (`hook*`): Auth's public /otp can be called without passing the
+   * request limits above, so the hook counts what it e-mails per account.
+   */
+  readonly signInCode: {
+    readonly requestsPerClient: RateLimit;
+    readonly sharedClientRequests: RateLimit;
+    readonly requestsPerAccount: RateLimit;
+    /** One code a minute per typed address. */
+    readonly requestsPerMinute: RateLimit;
+    /** Codes the hook e-mails to one account (security re-review M-A): per 15 minutes... */
+    readonly hookSendsPerAccount: RateLimit;
+    /** ...and per day. Over the limit nothing is sent (and the skip is logged). */
+    readonly hookSendsPerAccountDaily: RateLimit;
+    /** The same webhook id within 5 minutes is a replay: nothing is done (security re-review L1). */
+    readonly hookReplay: RateLimit;
+    readonly checkAccountFailures: RateLimit;
+    readonly checkClientFailures: RateLimit;
+    readonly sharedClientCheckFailures: RateLimit;
+    /** On top of `requestsPerAccount`: the most code requests per typed address in a day. */
+    readonly requestsPerAccountDaily: RateLimit;
+    /**
+     * Wrong codes from ALL clients together (security review M2, as the unknown invitation codes): the defence
+     * against guessing spread over many addresses. When it is used up, code checks are refused for everybody
+     * until the window ends (`auth.sign_in_codes.global_limit` is logged). Right codes give their hit back.
+     */
+    readonly checkWrongAllClients: RateLimit;
+  };
 }
 
 const WINDOW = 15 * 60;
@@ -149,5 +181,19 @@ export const PLATFORM_AUTH_LIMITS: AuthLimits = {
     resetFailures: { max: 5, windowSeconds: WINDOW },
     clientFailures: { max: 100, windowSeconds: WINDOW },
     sharedClientFailures: { max: 1000, windowSeconds: WINDOW },
+  },
+  signInCode: {
+    requestsPerClient: { max: 20, windowSeconds: WINDOW },
+    sharedClientRequests: { max: 200, windowSeconds: WINDOW },
+    requestsPerAccount: { max: 10, windowSeconds: WINDOW },
+    requestsPerMinute: { max: 1, windowSeconds: 60 },
+    hookSendsPerAccount: { max: 10, windowSeconds: WINDOW },
+    hookSendsPerAccountDaily: { max: 40, windowSeconds: 24 * 60 * 60 },
+    hookReplay: { max: 1, windowSeconds: 5 * 60 },
+    checkAccountFailures: { max: 5, windowSeconds: WINDOW },
+    checkClientFailures: { max: 100, windowSeconds: WINDOW },
+    sharedClientCheckFailures: { max: 1000, windowSeconds: WINDOW },
+    requestsPerAccountDaily: { max: 40, windowSeconds: 24 * 60 * 60 },
+    checkWrongAllClients: { max: 2000, windowSeconds: WINDOW },
   },
 };

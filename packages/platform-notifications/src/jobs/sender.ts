@@ -2,15 +2,17 @@ import {
   claimEmailDelivery,
   discardInactiveTenantDelivery,
   finishEmailDelivery,
+  getEmailDeliveryTemplate,
 } from '@jadarat/platform-db/jobs';
 import type { EffectSubscriber, InTenant, WorkerLogLevel } from '@jadarat/platform-jobs/jobs';
+import { PLATFORM_SENDER_TEMPLATES } from '../templates/index';
 import type { EmailRouter } from './router';
 import {
   type EmailRoute,
   EmailSendError,
   type EmailTransport,
   type OutgoingEmail,
-} from './transport';
+} from '../sending/transport';
 
 /** Emitted with each queued e-mail (subject = delivery id); data carries the template key only. */
 export const EMAIL_QUEUED_EVENT = 'com.entlaqa.platform.email.queued';
@@ -23,8 +25,15 @@ export const EMAIL_MAX_ATTEMPTS = 10;
 
 type Log = (level: WorkerLogLevel, message: string) => void;
 
-/** The sender rule per organization (router.ts), or one fixed route for every organization. */
-type RouteFor = (tenantId: string, inTenant: InTenant) => Promise<EmailRoute>;
+/**
+ * The sender rule per organization (router.ts), or one fixed route for every organization. `platformOnly`: the
+ * message must not go through an organization's own provider.
+ */
+type RouteFor = (
+  tenantId: string,
+  inTenant: InTenant,
+  platformOnly: boolean,
+) => Promise<EmailRoute>;
 
 /**
  * Sends one queued e-mail (ADR 0008 §1, ADR 0004 §5): resolves the organization's sender (the sender rule,
@@ -52,8 +61,23 @@ export function createEmailSender(options: {
       ? { kind: 'send', transport: options.transport, from: options.from, sender: 'installation' }
       : { kind: 'wait', code: 'NO_SENDER' };
   const routeFor: RouteFor = router
-    ? (tenantId, inTenant) => inTenant((tx) => router.resolve(tx, tenantId))
+    ? (tenantId, inTenant, platformOnly) =>
+        inTenant((tx) =>
+          platformOnly
+            ? router.resolve(tx, tenantId, { platformOnly: true })
+            : router.resolve(tx, tenantId),
+        )
     : () => Promise.resolve(fixed);
+  /** The template key: carried by the event; an event queued again by the resume task carries none. */
+  async function templateOf(
+    event: { readonly data: unknown; readonly subject: string | null },
+    id: string,
+    inTenant: InTenant,
+  ): Promise<string | null> {
+    const data = event.data as { readonly template?: unknown } | null;
+    if (typeof data?.template === 'string') return data.template;
+    return inTenant((tx) => getEmailDeliveryTemplate(tx, id));
+  }
   return {
     kind: 'effect',
     name: EMAIL_SENDER_NAME,
@@ -68,7 +92,10 @@ export function createEmailSender(options: {
       }
       const last = attempt >= maxAttempts;
       try {
-        await send(await routeFor(event.tenantId, inTenant), log, id, inTenant, last);
+        const template = await templateOf(event, id, inTenant);
+        if (template === null) return; // already final: a repeated job
+        const platformOnly = PLATFORM_SENDER_TEMPLATES.has(template);
+        await send(await routeFor(event.tenantId, inTenant, platformOnly), log, id, inTenant, last);
       } catch (error) {
         if (last) {
           // The last attempt failed outside the provider call (e.g. the database): the content and

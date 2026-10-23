@@ -54,3 +54,20 @@ function safeStorage(): Storage | null {
     return null;
   }
 }
+
+/** What the sign-in outcome (`next`) opens: the page for each. Shared by the password and the e-mailed-code ways. */
+const DESTINATIONS = {
+  home: '/suite',
+  // The organization asks for an authenticator code or app first (T-M2-10) - after BOTH ways in alike.
+  mfa: '/mfa',
+  'choose-organization': '/select-organization',
+  // A Platform Super Admin without organizations (FR-ADM-17).
+  platform: '/platform',
+} as const;
+
+export function signInDestination(
+  locale: string,
+  next: 'home' | 'mfa' | 'choose-organization' | 'platform',
+): string {
+  return `/${locale}${DESTINATIONS[next]}`;
+}

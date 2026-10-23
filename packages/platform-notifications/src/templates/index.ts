@@ -11,6 +11,7 @@ import { passwordChangedTemplate } from './password-changed';
 import { passwordResetTemplate } from './password-reset';
 import { securityDigestTemplate } from './security-digest';
 import { securityPolicyChangedTemplate } from './security-policy-changed';
+import { signInCodeTemplate } from './sign-in-code';
 import { signInUnlockedTemplate } from './sign-in-unlocked';
 import type { EmailTemplate, RenderedEmail } from './types';
 
@@ -30,8 +31,21 @@ export const EMAIL_TEMPLATES = {
   'platform.account_locked': accountLockedTemplate,
   'platform.sign_in_unlocked': signInUnlockedTemplate,
   'platform.mfa_code_locked': mfaCodeLockedTemplate,
+  'platform.sign_in_code': signInCodeTemplate,
+  // The same e-mails for an account that belongs to several organizations or holds a platform role: they go out
+  // with the platform sender only (WP-ADM-05 security review M1) - the password reset link and the
+  // authenticator set-up code. (The sign-in code is sent at once by the Send Email hook, which picks the sender
+  // itself.)
+  'platform.password_reset_platform': passwordResetTemplate,
+  'platform.mfa_factor_added_platform': mfaFactorAddedTemplate,
   'platform.email_test': emailTestTemplate,
 } as const;
+
+/** Templates whose messages never go through an organization's own provider (the platform sender only). */
+export const PLATFORM_SENDER_TEMPLATES: ReadonlySet<string> = new Set([
+  'platform.password_reset_platform',
+  'platform.mfa_factor_added_platform',
+]);
 
 export type EmailTemplateKey = keyof typeof EMAIL_TEMPLATES;
 export type EmailVariables<K extends EmailTemplateKey> = z.input<

@@ -101,6 +101,8 @@ function codeLimited(minutes: number): AppError {
 
 /** Server setting: who sends the reset e-mail and the "password changed" notice (T-M2-17). */
 export const PASSWORD_RESET_DELIVERY_ENV = 'PASSWORD_RESET_DELIVERY';
+/** Auth's Send Email hook secret (WP-ADM-05): set means the hook is on. */
+const SEND_EMAIL_HOOK_SECRET_ENV = 'SEND_EMAIL_HOOK_SECRET';
 export type PasswordResetDelivery = 'auth' | 'worker';
 
 /**
@@ -111,7 +113,11 @@ export function readPasswordResetDelivery(
   env: Readonly<Record<string, string | undefined>>,
 ): PasswordResetDelivery {
   const raw = env[PASSWORD_RESET_DELIVERY_ENV]?.trim() ?? '';
-  if (raw === '' || raw === 'auth') return 'auth';
+  if (raw === '' || raw === 'auth') {
+    // With Auth's Send Email hook on (SEND_EMAIL_HOOK_SECRET, WP-ADM-05) Auth's own mailer is not used: the hook
+    // sends the sign-in code only and refuses a recovery e-mail, so our worker sends the reset e-mail.
+    return (env[SEND_EMAIL_HOOK_SECRET_ENV]?.trim() ?? '') === '' ? 'auth' : 'worker';
+  }
   if (raw === 'worker') return 'worker';
   throw new Error(`${PASSWORD_RESET_DELIVERY_ENV} must be "auth" or "worker"`);
 }

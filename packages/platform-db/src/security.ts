@@ -26,7 +26,12 @@ export interface SecuritySettings {
   readonly sessionIdleMinutes: number;
   readonly sessionMaxHours: number;
   readonly sessionMaxDevices: number;
+  /** How many days a remembered browser skips the e-mailed sign-in code: 0 (off), 1, 7, 14 or 30 (WP-ADM-05). */
+  readonly rememberedBrowserDays: number;
 }
+
+/** The periods an organization may choose for remembered browsers (0 = off, the default). */
+export const REMEMBERED_BROWSER_DAYS = [0, 1, 7, 14, 30] as const;
 
 /** Limits of every setting (the database's CHECK constraints, 20261012090000). */
 export const SECURITY_LIMITS = {
@@ -64,6 +69,7 @@ function settingsOf(row: Row): SecuritySettings {
     sessionIdleMinutes: Number(row.session_idle_minutes),
     sessionMaxHours: Number(row.session_max_hours),
     sessionMaxDevices: Number(row.session_max_devices),
+    rememberedBrowserDays: Number(row.remembered_browser_days ?? 0),
   };
 }
 
@@ -75,7 +81,7 @@ export async function getSecurityPolicy(tx: UserTx): Promise<SecurityPolicy | nu
   const [row] = await tx.execute(sql`
     select p.mfa_mode, p.mfa_required_roles, p.mfa_grace_days, p.mfa_prompt_admins, p.mfa_required_since,
            p.password_min_length, p.lockout_threshold, p.lockout_minutes, p.session_idle_minutes,
-           p.session_max_hours, p.session_max_devices, p.updated_at, p.version,
+           p.session_max_hours, p.session_max_devices, p.remembered_browser_days, p.updated_at, p.version,
            coalesce(e.display_name_ar, e.display_name_en) as editor_name_ar, e.display_name_en as editor_name_en
     from platform.security_policies p
     left join platform.persons e on e.tenant_id = p.tenant_id and e.id = p.updated_by
@@ -114,7 +120,7 @@ export async function updateSecurityPolicy(
   const [current] = await tx.execute(sql`
     select mfa_mode, mfa_required_roles, mfa_grace_days, mfa_prompt_admins, password_min_length,
            lockout_threshold, lockout_minutes, session_idle_minutes, session_max_hours,
-           session_max_devices, version
+           session_max_devices, remembered_browser_days, version
     from platform.security_policies
     where tenant_id = (select private.current_tenant_id())
     for update`);
@@ -129,11 +135,12 @@ export async function updateSecurityPolicy(
         lockout_threshold = ${settings.lockoutThreshold}, lockout_minutes = ${settings.lockoutMinutes},
         session_idle_minutes = ${settings.sessionIdleMinutes},
         session_max_hours = ${settings.sessionMaxHours},
-        session_max_devices = ${settings.sessionMaxDevices}
+        session_max_devices = ${settings.sessionMaxDevices},
+        remembered_browser_days = ${settings.rememberedBrowserDays}
     where tenant_id = (select private.current_tenant_id()) and version = ${version}
     returning mfa_mode, mfa_required_roles, mfa_grace_days, mfa_prompt_admins, password_min_length,
               lockout_threshold, lockout_minutes, session_idle_minutes, session_max_hours,
-              session_max_devices`);
+              session_max_devices, remembered_browser_days`);
   if (!row) return { outcome: 'refused' };
   return { outcome: 'updated', before: settingsOf(current), after: settingsOf(row) };
 }

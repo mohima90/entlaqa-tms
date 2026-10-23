@@ -17,7 +17,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { queueEmail } from './queue';
 import { createEmailSender } from './sender';
-import { EmailSendError, type EmailTransport, type OutgoingEmail } from './transport';
+import { EmailSendError, type EmailTransport, type OutgoingEmail } from '../sending/transport';
 
 const ownerUrl = process.env.TEST_DATABASE_URL;
 const appWorkerUrl = process.env.TEST_APP_WORKER_URL;

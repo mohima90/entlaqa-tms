@@ -6,9 +6,11 @@
  * @jadarat/platform-identity (auth-flow.ts); these actions only validate input.
  */
 import {
+  requestSignInCodeForRequest,
   selectOrganizationForRequest,
   signInWithPasswordForRequest,
   signOutEndedSessionForRequest,
+  signInWithEmailedCodeForRequest,
   signOutForRequest,
 } from '@jadarat/platform-identity/auth';
 import { definePublicAction } from '@jadarat/platform-rbac';
@@ -31,6 +33,32 @@ export const signInAction = definePublicAction({
     remember: z.boolean().default(false),
   }),
   handler: async ({ input }) => signInWithPasswordForRequest(input, await requestClient()),
+});
+
+/**
+ * «Email me a code instead» (WP-ADM-05, PO 23 Oct 2026): a second way to sign in, offered to everybody on the
+ * password step. Limited per client and per address (one a minute) before Auth is asked; the answer is the same
+ * for every address (no account enumeration). The code is Supabase Auth's e-mail OTP, e-mailed at once by the
+ * Send Email hook.
+ */
+export const requestSignInCodeAction = definePublicAction({
+  name: 'platform.auth.sign_in_code_request',
+  input: z.strictObject({ email: z.email().max(254) }),
+  handler: async ({ input }) => requestSignInCodeForRequest(input, await requestClient()),
+});
+
+/**
+ * The six digits (and «Remember this browser» = keep me signed in): opens the session like a password sign-in
+ * would. Wrong codes are counted per address and per client (5 pause code checks for 15 minutes).
+ */
+export const signInWithCodeAction = definePublicAction({
+  name: 'platform.auth.sign_in_code_verify',
+  input: z.strictObject({
+    email: z.email().max(254),
+    code: z.string().regex(/^[0-9]{6}$/),
+    remember: z.boolean().default(false),
+  }),
+  handler: async ({ input }) => signInWithEmailedCodeForRequest(input, await requestClient()),
 });
 
 export const selectOrganizationAction = definePublicAction({

@@ -33,6 +33,8 @@ export const PUBLIC_ACTION_FILES = /^apps\/suite\/src\/auth\/[^/]+\.(ts|tsx)$/;
 export const PUBLIC_ROUTE_FILES = new Set([
   // Browser error reports → scrubbed, rate-limited tunnel to the error tracker (ADR 0009 §4, T-M1-D06).
   'apps/suite/src/app/api/monitoring/errors/route.ts',
+  // Supabase Auth's Send Email hook: no session; the standard-webhooks signature is the credential (WP-ADM-05).
+  'apps/suite/src/app/api/auth/send-email/route.ts',
 ]);
 
 const PUBLIC_ROUTE_NAMES = new Set(['definePublicRoute', 'createDefinePublicRoute']);

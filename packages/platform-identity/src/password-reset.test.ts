@@ -30,6 +30,17 @@ describe('readPasswordResetDelivery (PASSWORD_RESET_DELIVERY)', () => {
     expect(readPasswordResetDelivery({ PASSWORD_RESET_DELIVERY: 'auth' })).toBe('auth');
   });
 
+  it("with Auth's Send Email hook on (SEND_EMAIL_HOOK_SECRET) the hook refuses recovery e-mails, so the worker sends them", () => {
+    const hook = { SEND_EMAIL_HOOK_SECRET: 'v1,whsec_abc' };
+    expect(readPasswordResetDelivery(hook)).toBe('worker');
+    expect(readPasswordResetDelivery({ ...hook, PASSWORD_RESET_DELIVERY: 'auth' })).toBe('worker');
+    expect(readPasswordResetDelivery({ ...hook, PASSWORD_RESET_DELIVERY: 'worker' })).toBe(
+      'worker',
+    );
+    // A blank secret means the hook is off.
+    expect(readPasswordResetDelivery({ SEND_EMAIL_HOOK_SECRET: '  ' })).toBe('auth');
+  });
+
   it('worker: our notification service', () => {
     expect(readPasswordResetDelivery({ PASSWORD_RESET_DELIVERY: ' worker ' })).toBe('worker');
   });

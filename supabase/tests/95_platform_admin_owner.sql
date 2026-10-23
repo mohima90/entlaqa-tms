@@ -109,6 +109,7 @@ begin
            -- The Super Admin's e-mail settings functions (WP-ADM-01) use the console's caller check.
            'private.platform_admin_caller() → email_guard, '
            'private.platform_admin_invitation_code(uuid) → authenticated, '
+           'private.platform_admin_is_active(uuid) → account_mail_guard, '
            'private.platform_admin_is_active(uuid) → email_guard, '
            'private.platform_admin_is_active(uuid) → invitation_guard, '
            'private.platform_create_tenant(text,text,text,text,text,text,text,text,text) → authenticated, '

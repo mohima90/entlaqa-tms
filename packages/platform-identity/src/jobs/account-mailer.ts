@@ -6,6 +6,7 @@ import {
   type WithPlatformTx,
   type WithSystemTx,
   accountHasApp,
+  accountNeedsPlatformSender,
   claimAccountMailRequest,
   finishAccountMailRequest,
   issueMfaFactorTokens,
@@ -116,7 +117,9 @@ type AccountTemplate =
   | 'platform.security_digest'
   | 'platform.account_locked'
   | 'platform.sign_in_unlocked'
-  | 'platform.mfa_code_locked';
+  | 'platform.mfa_code_locked'
+  | 'platform.password_reset_platform'
+  | 'platform.mfa_factor_added_platform';
 type AccountEmail = EmailRequest<AccountTemplate>;
 
 const TEMPLATE_OF: Readonly<Record<AccountMailRequest['kind'], AccountTemplate>> = {
@@ -129,6 +132,16 @@ const TEMPLATE_OF: Readonly<Record<AccountMailRequest['kind'], AccountTemplate>>
   account_locked: 'platform.account_locked',
   sign_in_unlocked: 'platform.sign_in_unlocked',
   mfa_code_locked: 'platform.mfa_code_locked',
+};
+
+/**
+ * The e-mails that open the account carry a secret (the reset link, the set-up code): for a person who belongs
+ * to several organizations or holds a platform role they go out as the `_platform` variant, which the sender
+ * sends through the platform sender ONLY - never an organization's own mail relay (WP-ADM-05 security review).
+ */
+const PLATFORM_VARIANT: Readonly<Partial<Record<AccountTemplate, AccountTemplate>>> = {
+  'platform.password_reset': 'platform.password_reset_platform',
+  'platform.mfa_factor_added': 'platform.mfa_factor_added_platform',
 };
 
 /** A new link token: 32 random bytes, base64url (43 characters) — only its SHA-256 is stored. */
@@ -262,7 +275,14 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
       const checked = await admissible(tx, request);
       if ('reason' in checked) return checked.reason;
       // The organization's logo is linked from the app's origin (WP-ADM-02, FR-NTF-02).
-      await queueEmail(tx, { ...(await email(checked.organizationName, tx)), appBaseUrl: base });
+      const built = await email(checked.organizationName, tx);
+      const variant = PLATFORM_VARIANT[built.template];
+      const platform = variant && (await accountNeedsPlatformSender(tx, request.userId));
+      await queueEmail(tx, {
+        ...built,
+        ...(variant && platform ? { template: variant } : {}),
+        appBaseUrl: base,
+      });
       await finishAccountMailRequest(tx, request.id);
       return 'queued';
     });
@@ -303,8 +323,9 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
       const device = describeUserAgent(issued.setupUserAgent);
       // The link's token in the URL FRAGMENT: never sent to the server with the page request; the page
       // asks for a click.
+      const platformOnly = await accountNeedsPlatformSender(tx, request.userId);
       await queueEmail(tx, {
-        template: 'platform.mfa_factor_added',
+        template: platformOnly ? 'platform.mfa_factor_added_platform' : 'platform.mfa_factor_added',
         locale: request.locale,
         to: request.email,
         recipientPersonId: request.personId,

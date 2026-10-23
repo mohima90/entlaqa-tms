@@ -1,3 +1,4 @@
+import 'server-only';
 import { type HttpProviderOptions, postToProvider } from './http-provider';
 import { EmailSendError, type EmailTransport } from './transport';
 

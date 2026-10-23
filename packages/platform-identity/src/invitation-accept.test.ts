@@ -79,6 +79,8 @@ interface Options {
 function setup(options: Options = {}) {
   const calls: string[] = [];
   const auth = {
+    // Not used here: the e-mailed sign-in code's token exchange (sign-in-code.test.ts).
+    verifyOtp: vi.fn(() => Promise.resolve({ data: { session: null }, error: { status: 400 } })),
     signInWithPassword: vi.fn(() => {
       calls.push('signIn');
       if (options.signInThrows) return Promise.reject(new AuthServiceError(503));

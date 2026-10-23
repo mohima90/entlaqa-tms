@@ -33,9 +33,9 @@ begin
     'not an accepted upload (its copy is what is served)');
   perform tests.assert(not private.can_read_object('images', v_key || 'f0a20000-0000-4000-8000-00000000000c'),
     'not a deleted upload');
-  perform tests.assert(not private.can_read_object('images',
-      'a0000000-0000-4000-8000-000000000001/platform/person/a1000000-0000-4000-8000-0000000000a1/f0a20000-0000-4000-8000-000000000008'),
-    'never a scanned purpose''s upload before its scan (a profile photo)');
+  perform tests.assert(not private.can_read_object('imports',
+      'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000001/f0a20000-0000-4000-8000-00000000000e'),
+    'never a scanned purpose''s upload before its scan (an import)');
   -- uA2, the other Organization Admin of A: not their upload.
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a));
   perform tests.assert(not private.can_read_object('images', v_key || 'f0a20000-0000-4000-8000-000000000005'),

@@ -36,7 +36,7 @@ begin
   perform tests.assert(private.publish_brand_image('f0b20000-0000-4000-8000-000000000001', 'logo', v_sha, 16, 'image/png', v_png) is null,
     'never another tenant''s image');
   perform tests.assert(private.publish_brand_image('f0a20000-0000-4000-8000-000000000008', 'logo', v_sha, 16, 'image/png', v_png) is null,
-    'never a file of a scanned purpose (a profile photo)');
+    'never a file of another purpose (a profile photo)');
   perform tests.assert(private.publish_brand_image('f0a00000-0000-4000-8000-000000000001', 'logo', v_sha, 16, 'image/png', v_png) is null,
     'never an import file');
   perform tests.assert(private.publish_brand_image('f0a20000-0000-4000-8000-000000000001', 'logo', v_sha, 16, 'image/png', v_png) is null,

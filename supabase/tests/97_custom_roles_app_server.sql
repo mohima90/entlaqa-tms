@@ -440,7 +440,7 @@ begin
   -- The permissions that make a role privileged (only the Organization Admin gives such a role): exactly these.
   perform tests.assert_eq((select string_agg(code, ',' order by code collate "C") from platform.ref_permissions
                            where privileged),
-    'platform.audit.read,platform.org.manage,platform.role.assign,platform.role.assign_privileged,platform.role.manage,'
+    'platform.audit.read,platform.org.manage,platform.person.hr_details,platform.role.assign,platform.role.assign_privileged,platform.role.manage,'
     'platform.security.manage,platform.tenant.manage,platform.user.deactivate,platform.user.invite,'
     'platform.user.reset_mfa,platform.user.update', 'privileged permissions of the catalogue');
   perform tests.assert_eq((select string_agg(code || ':' || custom_role_use, ',' order by code collate "C") from platform.ref_permissions

@@ -565,3 +565,25 @@ insert into platform.brand_asset_attempts (tenant_id, file_id, attempts, next_tr
   ('a0000000-0000-4000-8000-000000000001', 'f0a00000-0000-4000-8000-000000000001', 1, now(), 'TYPE_NOT_ALLOWED'),
   ('b0000000-0000-4000-8000-000000000001', 'f0b00000-0000-4000-8000-000000000001', 1, now(), 'TYPE_NOT_ALLOWED');
 commit;
+
+-- People record completion (WP-ADM-04): grades (A: 7 and G7, B: 7), HR-only fields (A: uA's own row and uAB's;
+-- B: uB's) and one published profile photo per tenant (pointing at the import files above: nothing serves
+-- them). uAB holds grade G7 (uB grade 7). Rules and permissions: 99_people_*.sql.
+begin;
+insert into platform.grades (id, tenant_id, code) values
+  ('a8100000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', '7'),
+  ('a8100000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'G7'),
+  ('b8100000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', '7');
+insert into platform.person_grades (tenant_id, person_id, grade_id) values
+  ('a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab', 'a8100000-0000-4000-8000-000000000002'),
+  ('b0000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-0000000000b1', 'b8100000-0000-4000-8000-000000000001');
+insert into platform.person_hr_details (tenant_id, person_id, gender, birth_date, employment_category) values
+  ('a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1', 'male', date '1980-01-15', 'management'),
+  ('a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab', 'female', date '1992-05-14', 'technical'),
+  ('b0000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-0000000000b1', 'female', date '1985-03-03', 'professional');
+insert into platform.person_photos (tenant_id, person_id, file_id, content_type, content, byte_size, sha256) values
+  ('a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1', 'f0a00000-0000-4000-8000-000000000001',
+   'image/png', '\x89504e47'::bytea, 4, repeat('e', 64)),
+  ('b0000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-0000000000b1', 'f0b00000-0000-4000-8000-000000000001',
+   'image/png', '\x89504e47'::bytea, 4, repeat('f', 64));
+commit;

@@ -493,7 +493,12 @@ begin
       ('private.public_brand_asset(uuid)', 'file_guard', array['file_guard', 'authenticated'], true),
       ('private.public_brand_asset_meta(uuid)', 'file_guard', array['file_guard', 'authenticated'], true),
       ('private.public_tenant_brand(text)', 'file_guard', array['file_guard', 'authenticated'], true),
-      ('private.branding_image_names(uuid[])', 'file_guard', array['file_guard', 'authenticated'], true)
+      ('private.branding_image_names(uuid[])', 'file_guard', array['file_guard', 'authenticated'], true),
+      -- Profile photos (WP-ADM-04, 20261025100300): the web app (app_server, the caller's own photo, checked
+      -- inside) publishes and removes; signed-in members of the organization read the bytes.
+      ('private.publish_profile_photo(uuid, text, bigint, text, bytea)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.remove_profile_photo()', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.person_photo_content(uuid)', 'file_guard', array['file_guard', 'authenticated'], true)
     ) as h(fn, owner, allowed, definer)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop
@@ -599,7 +604,10 @@ begin
         'private.publish_brand_asset(uuid,text,text,bytea)', 'private.note_brand_asset_failure(uuid,text)',
         'private.publish_brand_image(uuid,text,text,bigint,text,bytea)',
         'private.public_brand_asset(uuid)', 'private.public_brand_asset_meta(uuid)',
-        'private.public_tenant_brand(text)', 'private.branding_image_names(uuid[])')
+        'private.public_tenant_brand(text)', 'private.branding_image_names(uuid[])',
+        -- Profile photos (WP-ADM-04)
+        'private.publish_profile_photo(uuid,text,bigint,text,bytea)', 'private.remove_profile_photo()',
+        'private.person_photo_content(uuid)')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;

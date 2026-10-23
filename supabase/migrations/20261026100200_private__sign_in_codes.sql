@@ -249,7 +249,7 @@ begin
     return query select 'gone'::text, null::text;
     return;
   end if;
-  if v_row.created_at < now() - interval '5 minutes' or coalesce(v_row.expires_at, now()) <= now() then
+  if v_row.created_at < now() - interval '5 minutes' or (v_row.expires_at is not null and v_row.expires_at <= now()) then
     delete from private.sign_in_codes c where c.id = p_id;
     return query select 'gone'::text, null::text;
     return;
@@ -383,7 +383,9 @@ begin
     if p_code is null or p_code !~ '^[0-9]{6}$' then
       raise exception 'invalid sign-in code' using errcode = 'invalid_parameter_value';
     end if;
-    delete from private.sign_in_codes c where c.email = v_row.email and c.mode = 'code' and c.id <> p_id;
+    -- Only the newest code works: every older request of the address goes (a newer one still waiting stays).
+    delete from private.sign_in_codes c
+    where c.email = v_row.email and c.mode = 'code' and (c.created_at, c.id) < (v_row.created_at, v_row.id);
     update private.sign_in_codes c
     set state = 'issued', code_hash = private.sign_in_code_hmac(p_id, p_code), link_token = p_link_token,
         user_id = p_user_id, tenant_id = p_tenant_id, issued_at = now(), expires_at = now() + interval '10 minutes',

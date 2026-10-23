@@ -25,7 +25,9 @@ const mail: ClaimedInlineMail = {
   },
 };
 
-function setup(over: { claim?: InlineClaim; route?: EmailRoute; send?: EmailTransport['send'] } = {}) {
+function setup(
+  over: { claim?: InlineClaim; route?: EmailRoute; send?: EmailTransport['send'] } = {},
+) {
   const send = vi.fn(
     over.send ?? (() => Promise.resolve({ providerMessageId: 'msg-1' as string | null })),
   );
@@ -51,7 +53,7 @@ function setup(over: { claim?: InlineClaim; route?: EmailRoute; send?: EmailTran
 }
 
 describe('immediate sending of a message the web app queued', () => {
-  it('claims with the request\'s secret, sends with the delivery id as idempotency key and records it as sent', async () => {
+  it("claims with the request's secret, sends with the delivery id as idempotency key and records it as sent", async () => {
     const { deps, claim, finish, send, fromRow } = setup();
     expect(await sendInlineDelivery(deps, ID, SECRET)).toBe('sent');
     expect(claim).toHaveBeenCalledWith(ID, SECRET);
@@ -75,7 +77,10 @@ describe('immediate sending of a message the web app queued', () => {
 
   it('an account-opening template goes through the platform sender only', async () => {
     const { deps, fromRow } = setup({
-      claim: { outcome: 'claimed', mail: { ...mail, template: 'platform.password_reset_platform' } },
+      claim: {
+        outcome: 'claimed',
+        mail: { ...mail, template: 'platform.password_reset_platform' },
+      },
     });
     await sendInlineDelivery(deps, ID, SECRET);
     expect(fromRow).toHaveBeenCalledWith(mail.route, TENANT, { platformOnly: true });
@@ -125,11 +130,17 @@ describe('immediate sending of a message the web app queued', () => {
       send: () => Promise.reject(new EmailSendError('PROVIDER_DOWN', false)),
     });
     expect(await sendInlineDelivery(deps, ID, SECRET)).toBe('retry');
-    expect(finish).toHaveBeenCalledWith(ID, SECRET, { status: 'retry', errorCode: 'PROVIDER_DOWN' });
+    expect(finish).toHaveBeenCalledWith(ID, SECRET, {
+      status: 'retry',
+      errorCode: 'PROVIDER_DOWN',
+    });
     // Anything else thrown by a transport is a temporary SEND_FAILED.
     const odd = setup({ send: () => Promise.reject(new Error('boom to sara@example.test')) });
     expect(await sendInlineDelivery(odd.deps, ID, SECRET)).toBe('retry');
-    expect(odd.finish).toHaveBeenCalledWith(ID, SECRET, { status: 'retry', errorCode: 'SEND_FAILED' });
+    expect(odd.finish).toHaveBeenCalledWith(ID, SECRET, {
+      status: 'retry',
+      errorCode: 'SEND_FAILED',
+    });
     expect(JSON.stringify(odd.log.mock.calls)).not.toContain('sara');
   });
 

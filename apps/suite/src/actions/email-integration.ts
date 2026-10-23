@@ -4,6 +4,7 @@
  * (iam/email-integration.ts); the database enforces the rules. Provider secrets are sealed on the server for
  * the worker and never come back to any page.
  */
+import { startInlineEmailTest } from '@jadarat/platform-identity/inline-mail';
 import {
   defineAction,
   requestTenantEmailTestActionDefinition,
@@ -17,7 +18,12 @@ export const saveTenantEmailSettingsAction = defineAction(
 );
 
 /** «إرسال رسالة تجريبية» / Send test e-mail through the organization's provider. */
-export const requestTenantEmailTestAction = defineAction(requestTenantEmailTestActionDefinition());
+export const requestTenantEmailTestAction = defineAction(
+  requestTenantEmailTestActionDefinition({
+    // Sent the moment the action commits; the worker's test task is the safety net (WP-ADM-05 follow-up).
+    startTest: (tx) => startInlineEmailTest(tx, 'tenant'),
+  }),
+);
 
 /** Switch the organization's provider on (once verified) or back to the platform sender. */
 export const setTenantEmailEnabledAction = defineAction(setTenantEmailEnabledActionDefinition());

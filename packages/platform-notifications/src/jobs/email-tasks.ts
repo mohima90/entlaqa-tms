@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { emitEvent } from '@jadarat/platform-db';
 import {
   type EmailTestClaim,
@@ -15,15 +14,12 @@ import {
   takeWaitingDeliveries,
 } from '@jadarat/platform-db/jobs';
 import type { PlatformTask, WorkerLogLevel } from '@jadarat/platform-jobs/jobs';
-import { credentialsContext } from '../credentials-seal';
-import { isEmailProvider } from '../providers';
-import { renderEmail } from '../templates/index';
-import { CredentialsError, type CredentialsKeyPair } from '../sending/credentials';
+import type { CredentialsKeyPair } from '../sending/credentials';
 import { createProviderTransport } from '../sending/factory';
 import type { EmailRouter } from './router';
 import { EMAIL_QUEUED_EVENT } from './sender';
 import type { HostLookup } from '../sending/smtp';
-import { EmailSendError } from '../sending/transport';
+import { emailTestErrorCode, sendEmailTest } from '../sending/test-send';
 
 type Log = (level: WorkerLogLevel, message: string) => void;
 
@@ -44,14 +40,6 @@ const RESUME_PER_TENANT = 200;
 const RESCUE_PER_TENANT = 200;
 /** Rows of each kind per housekeeping pass. */
 const SWEEP_BATCH = 500;
-
-/** The platform's name in a test e-mail of the platform sender. */
-const PLATFORM_NAME = { ar: 'جدارات', en: 'Jadarat' } as const;
-
-function codeOf(error: unknown): string {
-  if (error instanceof CredentialsError || error instanceof EmailSendError) return error.code;
-  return 'SEND_FAILED';
-}
 
 /**
  * Test e-mails of the sender settings (WP-ADM-01; Kawadir's «Save & send test», «Send test e-mail»): at
@@ -77,44 +65,14 @@ export function createEmailTestTask(options: {
   const now = options.now ?? Date.now;
   let published = false;
 
-  async function sendTest(test: EmailTestClaim): Promise<void> {
-    if (!keys) throw new CredentialsError('CREDENTIALS_KEY_MISSING');
-    if (!isEmailProvider(test.provider))
-      throw new EmailSendError('PROVIDER_SETTINGS_INVALID', false);
-    const scope =
-      test.tenantId === null
-        ? ({ kind: 'platform' } as const)
-        : ({ kind: 'tenant', tenantId: test.tenantId } as const);
-    const secrets = keys.open(
-      test.credentialsSealed,
-      credentialsContext(scope, test.provider, test.options),
-    );
-    const transport = transportFor(test.provider, test.options, secrets, {
-      organization: test.tenantId !== null,
+  const sendTest = (test: EmailTestClaim) =>
+    sendEmailTest(test, {
+      keys,
       allowPrivatePlatformSmtp: options.allowPrivatePlatformSmtp === true,
       smtpCaPem: options.smtpCaPem,
-      ...(options.lookup ? { lookup: options.lookup } : {}),
+      lookup: options.lookup,
+      transportFor,
     });
-    try {
-      const email = renderEmail('platform.email_test', 'en', {
-        senderOwner:
-          test.tenantId === null ? PLATFORM_NAME : { ar: test.fromName, en: test.fromName },
-        provider: test.provider,
-        fromAddress: test.fromAddress,
-      });
-      await transport.send({
-        from: { name: test.fromName, address: test.fromAddress },
-        replyTo: test.replyTo ?? undefined,
-        to: test.recipient,
-        subject: email.subject,
-        html: email.html,
-        text: email.text,
-        idempotencyKey: randomUUID(),
-      });
-    } finally {
-      await transport.close?.();
-    }
-  }
 
   async function runTest(jobId: string, test: EmailTestClaim): Promise<void> {
     let outcome: { readonly sent: true } | { readonly sent: false; readonly errorCode: string };
@@ -122,7 +80,7 @@ export function createEmailTestTask(options: {
       await sendTest(test);
       outcome = { sent: true };
     } catch (error) {
-      outcome = { sent: false, errorCode: codeOf(error) };
+      outcome = { sent: false, errorCode: emailTestErrorCode(error) };
     }
     const verified = await withPlatformTx({ jobId }, (tx) => finishEmailTest(tx, test, outcome));
     const whose = test.tenantId === null ? 'platform sender' : "organization's provider";
@@ -238,7 +196,8 @@ export function createEmailInlineRescueTask(options: {
           }
           return ids.length;
         });
-        if (taken > 0) log('warning', `${String(taken)} immediate e-mails unfinished; queued for the worker`);
+        if (taken > 0)
+          log('warning', `${String(taken)} immediate e-mails unfinished; queued for the worker`);
         if (taken === RESCUE_PER_TENANT) more = true;
       }
       return more;

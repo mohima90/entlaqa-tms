@@ -91,7 +91,7 @@ afterEach(() => {
 });
 
 describe('invitation mailer', () => {
-  it('adds nothing when the web app already queued this code\'s e-mail (immediate sending)', async () => {
+  it("adds nothing when the web app already queued this code's e-mail (immediate sending)", async () => {
     db.loadInvitationForMail.mockResolvedValue({ ...invitation, sendCount: 2 });
     db.invitationCodeForMail.mockResolvedValue(CODE);
     db.inlineDeliveryExists.mockResolvedValue(true);

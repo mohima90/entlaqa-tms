@@ -323,7 +323,7 @@ describe('delivery log housekeeping (T-M2-48)', () => {
 });
 
 describe('the safety net of immediate sending (WP-ADM-05 follow-up)', () => {
-  it('queues the web app\'s unfinished messages for the worker\'s sender, as the resume task does', async () => {
+  it("queues the web app's unfinished messages for the worker's sender, as the resume task does", async () => {
     db.listTenantsToRescueInline.mockResolvedValue([TENANT]);
     db.takeInlineRescue.mockResolvedValue(['d1', 'd2']);
     const log = vi.fn();

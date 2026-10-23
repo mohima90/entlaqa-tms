@@ -323,11 +323,15 @@ describe('invite user action', () => {
     expect(getClaims).toHaveBeenCalledWith({ strict: false });
   });
 
-  it('queues the e-mail in the action\'s own transaction, right after the invitation and its code exist', async () => {
+  it("queues the e-mail in the action's own transaction, right after the invitation and its code exist", async () => {
     const order: string[] = [];
     db.createInvitation.mockImplementationOnce(() => {
       order.push('created');
-      return Promise.resolve({ invitationId: INVITATION, personId: PERSON, inviteCode: 'K7M2PQ9XHT4W' });
+      return Promise.resolve({
+        invitationId: INVITATION,
+        personId: PERSON,
+        inviteCode: 'K7M2PQ9XHT4W',
+      });
     });
     const queueEmail = vi.fn(() => {
       order.push('queued');

@@ -33,6 +33,16 @@ export {
 } from './auth-mail';
 export type { EmailRouteRow } from './email-route';
 export {
+  type InlineEmailTest,
+  type InlineEmailTestApi,
+  type InlineEmailTestOutcome,
+  type InlineEmailTestScope,
+  type InlineEmailTestTicket,
+  claimInlineEmailTest,
+  createInlineEmailTestApi,
+  inlineEmailTestApi,
+} from './inline-email-test';
+export {
   type ClaimedInlineMail,
   type InlineClaim,
   type InlineInvitationFacts,

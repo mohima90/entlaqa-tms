@@ -156,19 +156,16 @@ describe('message delivery helpers', () => {
   });
 });
 
-describe('immediate sending: the worker\'s side (WP-ADM-05 follow-up)', () => {
+describe("immediate sending: the worker's side (WP-ADM-05 follow-up)", () => {
   it('a message the web app already queued for a source is found by its key', async () => {
     const fake = fakeTx([{ found: true }]);
-    const tx = {
-      ...fake.tx,
-      transaction: (fn: (t: unknown) => Promise<unknown>) => fn(fake.tx),
-    } as never;
+    const tx = { transaction: (fn: (t: unknown) => Promise<unknown>) => fn(fake.tx) } as never;
     expect(await inlineDeliveryExists(tx, 'invitation:i1:1')).toBe(true);
     expect(fake.executed[0]?.params).toEqual(['invitation:i1:1']);
     const none = fakeTx([{ found: false }]);
     expect(
       await inlineDeliveryExists(
-        { ...none.tx, transaction: (fn: (t: unknown) => Promise<unknown>) => fn(none.tx) } as never,
+        { transaction: (fn: (t: unknown) => Promise<unknown>) => fn(none.tx) } as never,
         'k',
       ),
     ).toBe(false);

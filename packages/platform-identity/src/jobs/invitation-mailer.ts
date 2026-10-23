@@ -117,7 +117,12 @@ export function createInvitationMailer(options: InvitationMailerOptions): Transa
       }
       // The web app already queued this code's e-mail when the member acted (immediate sending, WP-ADM-05
       // follow-up): nothing to add - and the delivery is its safety net too (the worker's rescue).
-      if (await inlineDeliveryExists(tx, `invitation:${invitation.id}:${String(invitation.sendCount)}`)) {
+      if (
+        await inlineDeliveryExists(
+          tx,
+          `invitation:${invitation.id}:${String(invitation.sendCount)}`,
+        )
+      ) {
         log('info', 'invitation e-mail already queued by the web app');
         return;
       }

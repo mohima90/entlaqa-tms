@@ -3,11 +3,7 @@ import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
 import type { AppDatabase } from './client';
-import {
-  createInlineMailApi,
-  prepareInlineInvitation,
-  queueInlineEmail,
-} from './inline-mail';
+import { createInlineMailApi, prepareInlineInvitation, queueInlineEmail } from './inline-mail';
 
 const dialect = new PgDialect();
 const ID = '5b0e7c39-6d4c-4d36-9d0a-1f0d1d6c0f11';
@@ -29,7 +25,9 @@ function fakeDb(rows: Record<string, unknown>[]) {
     },
     transaction: (fn) => fn(tx),
   };
-  const db = { transaction: (fn: (t: typeof tx) => Promise<unknown>) => fn(tx) } as unknown as AppDatabase;
+  const db = {
+    transaction: (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
+  } as unknown as AppDatabase;
   return { db, tx: tx as never, executed };
 }
 
@@ -57,7 +55,7 @@ const routeRow = {
   logo_asset_id: null,
 };
 
-describe('the invitation e-mail\'s facts', () => {
+describe("the invitation e-mail's facts", () => {
   const prepared = {
     invitation_id: INVITATION,
     send_count: 2,
@@ -81,7 +79,7 @@ describe('the invitation e-mail\'s facts', () => {
     logo_asset_id: null,
   };
 
-  it('are read through the one function that checks the member\'s authority; an unknown language is Arabic', async () => {
+  it("are read through the one function that checks the member's authority; an unknown language is Arabic", async () => {
     const { tx, executed } = fakeDb([prepared]);
     const facts = await prepareInlineInvitation(tx, INVITATION);
     expect(executed[0]?.sql).toBe('select * from private.inline_invitation_prepare($1::uuid)');
@@ -105,7 +103,7 @@ describe('the invitation e-mail\'s facts', () => {
   });
 });
 
-describe('queueing in the action\'s transaction', () => {
+describe("queueing in the action's transaction", () => {
   const mail = {
     kind: 'invitation',
     ref: INVITATION,
@@ -119,14 +117,21 @@ describe('queueing in the action\'s transaction', () => {
     sourceKey: `invitation:${INVITATION}:1`,
   } as const;
 
-  it('keeps only the secret\'s SHA-256 in the database and returns the secret to the caller', async () => {
+  it("keeps only the secret's SHA-256 in the database and returns the secret to the caller", async () => {
     const { tx, executed } = fakeDb([{ id: ID }]);
     const ticket = await queueInlineEmail(tx, mail);
     expect(ticket?.id).toBe(ID);
     expect(ticket?.secret).toHaveLength(32);
     const params = executed[0]?.params ?? [];
-    const hash = params.find((p) => Buffer.isBuffer(p) || p instanceof Uint8Array) as Uint8Array | undefined;
-    expect(Buffer.from(hash ?? []).equals(createHash('sha256').update(ticket?.secret ?? Buffer.alloc(0)).digest())).toBe(true);
+    const hash = params.find((p) => Buffer.isBuffer(p) || p instanceof Uint8Array) as
+      Uint8Array | undefined;
+    expect(
+      Buffer.from(hash ?? []).equals(
+        createHash('sha256')
+          .update(ticket?.secret ?? Buffer.alloc(0))
+          .digest(),
+      ),
+    ).toBe(true);
     // The secret itself is never sent to the database here.
     expect(JSON.stringify(params)).not.toContain(ticket?.secret.toString('hex') ?? 'x');
     expect(executed[0]?.sql).toContain('private.inline_mail_queue');
@@ -176,7 +181,9 @@ describe('claiming and finishing', () => {
     });
     expect(executed[0]?.sql).toBe('set local role authenticated');
     expect(executed[1]?.params).toEqual(['']);
-    expect(executed.at(-1)?.sql).toBe('select * from private.inline_mail_claim($1::uuid, $2::bytea)');
+    expect(executed.at(-1)?.sql).toBe(
+      'select * from private.inline_mail_claim($1::uuid, $2::bytea)',
+    );
   });
 
   it('busy and gone are answers, not errors; anything incomplete is gone', async () => {
@@ -185,7 +192,9 @@ describe('claiming and finishing', () => {
       expect(await createInlineMailApi(() => db).claim(ID, SECRET)).toEqual({ outcome });
     }
     const empty = fakeDb([]);
-    expect(await createInlineMailApi(() => empty.db).claim(ID, SECRET)).toEqual({ outcome: 'gone' });
+    expect(await createInlineMailApi(() => empty.db).claim(ID, SECRET)).toEqual({
+      outcome: 'gone',
+    });
     const incomplete = fakeDb([{ ...claimed, destination: null }]);
     expect(await createInlineMailApi(() => incomplete.db).claim(ID, SECRET)).toEqual({
       outcome: 'gone',
@@ -219,12 +228,23 @@ describe('claiming and finishing', () => {
       provider: 'resend',
       sender: null,
     });
-    expect(executed.at(-1)?.params).toEqual([ID, SECRET, 'failed', 'INVALID_ADDRESS', 'resend', null, null]);
+    expect(executed.at(-1)?.params).toEqual([
+      ID,
+      SECRET,
+      'failed',
+      'INVALID_ADDRESS',
+      'resend',
+      null,
+      null,
+    ]);
     await api.finish(ID, SECRET, { status: 'retry', errorCode: 'NO_SENDER' });
     expect(executed.at(-1)?.params).toEqual([ID, SECRET, 'retry', 'NO_SENDER', null, null, null]);
     const lost = fakeDb([{ done: false }]);
     expect(
-      await createInlineMailApi(() => lost.db).finish(ID, SECRET, { status: 'retry', errorCode: 'X1' }),
+      await createInlineMailApi(() => lost.db).finish(ID, SECRET, {
+        status: 'retry',
+        errorCode: 'X1',
+      }),
     ).toBe(false);
   });
 });

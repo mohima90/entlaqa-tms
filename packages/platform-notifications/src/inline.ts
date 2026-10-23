@@ -11,6 +11,8 @@ export {
   createInlineEmailSender,
 } from './sending/inline';
 export type { InlineEmailRouter } from './sending/router';
+export { sendInlineEmailTest } from './sending/test-send';
+export { CredentialsError, deriveCredentialsKeyPair } from './sending/credentials';
 export { type InlineSendResult, sendInlineDelivery } from './sending/inline-delivery';
 export { EmailSendError } from './sending/transport';
 export { brandAssetUrl } from './brand-asset';

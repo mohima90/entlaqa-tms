@@ -1,10 +1,14 @@
 import 'server-only';
 import {
   type ClaimsTx,
-  type InlineMailApi,
+  type InlineEmailTestScope,
+  type InlineEmailTestTicket,
   type InlineInvitationFacts,
+  type InlineMailApi,
   type InlineMailTicket,
   type InlineMailToQueue,
+  claimInlineEmailTest,
+  inlineEmailTestApi,
   inlineMailApi,
   prepareInlineInvitation,
   queueInlineEmail,
@@ -14,7 +18,9 @@ import {
   type InlineEmailRouter,
   brandAssetUrl,
   createInlineEmailRouter,
+  deriveCredentialsKeyPair,
   sendInlineDelivery,
+  sendInlineEmailTest,
 } from '@jadarat/platform-notifications/inline';
 import { log } from '@jadarat/platform-observability';
 import { after } from 'next/server';
@@ -43,7 +49,8 @@ type Env = Readonly<Record<string, string | undefined>>;
 /** Does this deployment's web app hold what it needs to send (the key that opens saved provider secrets, or an installation sender)? */
 export function inlineMailConfigured(env: Env = process.env): boolean {
   const key = env.EMAIL_CREDENTIALS_KEY?.trim() ?? '';
-  const installation = (env.EMAIL_PROVIDER?.trim() ?? '') !== '' && env.EMAIL_PROVIDER?.trim() !== 'none';
+  const installation =
+    (env.EMAIL_PROVIDER?.trim() ?? '') !== '' && env.EMAIL_PROVIDER?.trim() !== 'none';
   return key.length >= 32 || installation;
 }
 
@@ -159,5 +166,66 @@ export const queueInvitationEmailInline = createInlineInvitationMailer({
     ),
   warn: (message, fields) => {
     log.warn(message, { action: 'platform.email.inline', ...fields });
+  },
+});
+
+// ---------------------------------------------------------------------------------------------------------
+// The test e-mail of the two e-mail settings pages (the platform sender's «Save and send test», the
+// organization's «Send test e-mail»): the action claims its own waiting test in its transaction, the test is
+// sent through the settings being tested once the response has gone. The worker's test task is the safety net
+// (it claims a test whose lease ran out).
+// ---------------------------------------------------------------------------------------------------------
+
+export interface InlineEmailTesterDeps {
+  readonly configured: () => boolean;
+  readonly claim: (
+    tx: ClaimsTx,
+    scope: InlineEmailTestScope,
+  ) => Promise<InlineEmailTestTicket | null>;
+  readonly schedule: (work: () => Promise<unknown>) => void;
+  readonly send: (ticket: InlineEmailTestTicket) => Promise<unknown>;
+  readonly warn: (message: string, fields?: Record<string, string>) => void;
+}
+
+export function createInlineEmailTester(deps: InlineEmailTesterDeps) {
+  return async function startEmailTest(tx: ClaimsTx, scope: InlineEmailTestScope): Promise<void> {
+    if (!deps.configured()) return;
+    try {
+      // A savepoint: nothing here may spoil the action's own transaction.
+      const ticket = await tx.transaction((savepoint) => deps.claim(savepoint, scope));
+      if (ticket) deps.schedule(() => deps.send(ticket));
+    } catch (error) {
+      deps.warn('immediate test e-mail not started; the worker will send it', {
+        reason: error instanceof Error ? error.name : 'unknown',
+      });
+    }
+  };
+}
+
+/** The key pair the worker derives from EMAIL_CREDENTIALS_KEY (it opens the saved provider secrets). */
+function credentialsKeys() {
+  const secret = process.env.EMAIL_CREDENTIALS_KEY?.trim() ?? '';
+  return secret.length >= 32 ? deriveCredentialsKeyPair(secret) : null;
+}
+
+/** Called by the actions that queue a test e-mail, in their transaction, after the test was queued. */
+export const startInlineEmailTest = createInlineEmailTester({
+  configured: () => credentialsKeys() !== null,
+  claim: claimInlineEmailTest,
+  schedule: afterResponse,
+  send: (ticket) =>
+    sendInlineEmailTest(
+      {
+        api: inlineEmailTestApi,
+        keys: credentialsKeys(),
+        allowPrivatePlatformSmtp: process.env.EMAIL_PLATFORM_SMTP_ALLOW_PRIVATE === 'true',
+        log: (level, message, fields) => {
+          log[level](message, { action: 'platform.email.inline_test', ...fields });
+        },
+      },
+      ticket,
+    ),
+  warn: (message, fields) => {
+    log.warn(message, { action: 'platform.email.inline_test', ...fields });
   },
 });

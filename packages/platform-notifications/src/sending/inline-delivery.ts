@@ -23,7 +23,11 @@ import { EmailSendError } from './transport';
 
 export type InlineSendResult = 'sent' | 'failed' | 'waiting' | 'retry' | 'busy' | 'gone' | 'error';
 
-type Log = (level: 'info' | 'warn' | 'error', message: string, fields?: Record<string, string>) => void;
+type Log = (
+  level: 'info' | 'warn' | 'error',
+  message: string,
+  fields?: Record<string, string>,
+) => void;
 
 export interface InlineDeliveryDeps {
   readonly api: InlineMailApi;
@@ -47,7 +51,9 @@ export async function sendInlineDelivery(
   try {
     claim = await api.claim(id, secret);
   } catch (error) {
-    log('warn', 'inline e-mail: could not claim; the worker will send it', { reason: codeOf(error) });
+    log('warn', 'inline e-mail: could not claim; the worker will send it', {
+      reason: codeOf(error),
+    });
     return 'error';
   }
   if (claim.outcome !== 'claimed') return claim.outcome;

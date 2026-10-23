@@ -84,6 +84,30 @@ describe('Platform settings → Email (Super Admin console, WP-ADM-01)', () => {
     );
   });
 
+  it('after saving, in the same transaction, the immediate send of the test is started (and not when the save was refused)', async () => {
+    const { deps } = setup();
+    const order: string[] = [];
+    (
+      deps.savePlatformEmailSettings as unknown as {
+        mockImplementation: (f: () => Promise<number>) => void;
+      }
+    ).mockImplementation(() => {
+      order.push('saved');
+      return Promise.resolve(1);
+    });
+    const afterSave = vi.fn(() => {
+      order.push('after');
+      return Promise.resolve();
+    });
+    await savePlatformEmailSettingsFromConsole({ ...deps, afterSave }, INPUT, parse);
+    expect(afterSave).toHaveBeenCalledWith('tx');
+    expect(order).toEqual(['saved', 'after']);
+    const refused = setup({ refuse: new EmailSettingsError('EMAIL_SETTINGS_FORBIDDEN') });
+    const never = vi.fn(() => Promise.resolve());
+    await savePlatformEmailSettingsFromConsole({ ...refused.deps, afterSave: never }, INPUT, parse);
+    expect(never).not.toHaveBeenCalled();
+  });
+
   it('the input is parsed only after the access check (review L6)', async () => {
     const parser = vi.fn(() => err(appError('VALIDATION_FAILED')));
     await savePlatformEmailSettingsFromConsole(

@@ -290,11 +290,7 @@ function invitationRoleNotAllowed(): AppError {
  */
 export function resendInvitationActionDefinition(
   options: InvitationActionOptions = {},
-): ActionDefinition<
-  typeof InvitationIdInput,
-  InvitationResent,
-  UserTx
-> {
+): ActionDefinition<typeof InvitationIdInput, InvitationResent, UserTx> {
   return {
     permission: p['platform.user.invite'],
     input: InvitationIdInput,

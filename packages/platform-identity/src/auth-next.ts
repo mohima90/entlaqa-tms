@@ -48,6 +48,7 @@ import {
   requestPasswordChangedMail as requestPasswordChangedMailInDatabase,
   requestPasswordResetMail as requestPasswordResetMailInDatabase,
   type SessionAccess,
+  type UserTx,
   trustDeviceAfterCode,
   signInAccountInTenant,
   switchActiveTenant,
@@ -126,6 +127,7 @@ import {
   requestSignInCode,
   signInWithEmailedCode,
 } from './sign-in-code';
+import { startInlineEmailTest } from './inline-mail';
 import { createSendEmailHookLimiter, createSignInCodeLimiter } from './sign-in-code-limits';
 import { openTokenHash } from './sign-in-code-seal';
 import { type SupabaseAuthLike, verifyClaims } from './verify-claims';
@@ -1175,6 +1177,8 @@ function platformEmailConsoleDeps() {
     getPlatformEmailSettings,
     savePlatformEmailSettings,
     getEmailCredentialsPublicKey,
+    // The test e-mail goes out the moment the save has committed; the worker's task is the safety net.
+    afterSave: (tx: UserTx) => startInlineEmailTest(tx, 'platform'),
   };
 }
 

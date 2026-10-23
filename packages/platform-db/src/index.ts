@@ -33,6 +33,20 @@ export {
 } from './auth-mail';
 export type { EmailRouteRow } from './email-route';
 export {
+  type ClaimedInlineMail,
+  type InlineClaim,
+  type InlineInvitationFacts,
+  type InlineMailApi,
+  type InlineMailKind,
+  type InlineMailTicket,
+  type InlineMailToQueue,
+  type InlineOutcome,
+  createInlineMailApi,
+  inlineMailApi,
+  prepareInlineInvitation,
+  queueInlineEmail,
+} from './inline-mail';
+export {
   type KeptSession,
   forgetKeptSessions,
   keepSession,
@@ -482,4 +496,5 @@ export {
   withUserTx,
 } from './with-user-tx';
 export { assertNoDatabaseTransaction, inDatabaseTransaction } from './claims-tx';
+export type { ClaimsTx } from './claims-tx';
 export * as schema from './schema';

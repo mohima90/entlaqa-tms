@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   invitationActorMayManage,
+  inlineDeliveryExists,
   invitationCodeForMail,
   loadInvitationForMail,
   noteInvitationMailSkipped,
@@ -8,6 +9,7 @@ import {
 import type { TransactionalSubscriber, WorkerLogLevel } from '@jadarat/platform-jobs/jobs';
 import { isSafeLink } from '@jadarat/platform-notifications';
 import { queueEmail } from '@jadarat/platform-notifications/jobs';
+import { type RoleNameLookup, invitationEmailVariables } from '../invitation-email';
 
 export const INVITATION_MAILER_NAME = 'platform.invitations.mailer';
 export const INVITATION_CREATED_EVENT = 'com.entlaqa.platform.invitation.created';
@@ -26,11 +28,7 @@ export const INVITATION_MAX_SENDS = 4;
  * outage, as for the e-mail sender.
  */
 export const INVITATION_MAILER_MAX_ATTEMPTS = 10;
-/** Shown in the e-mail's expiry date until organizations have their own time-zone setting. */
-const TIME_ZONE = 'Asia/Riyadh';
-
-/** Arabic and English name of a system role (`getSystemRole(code).name`, platform-rbac). */
-export type RoleNameLookup = (code: string) => { readonly ar: string; readonly en: string };
+export type { RoleNameLookup };
 
 export interface InvitationMailerOptions {
   /** Public origin of the web app, e.g. `https://tms.example.com` (worker setting APP_BASE_URL). */
@@ -112,11 +110,15 @@ export function createInvitationMailer(options: InvitationMailerOptions): Transa
         log('info', 'invitation not sent yet (held); no e-mail');
         return;
       }
-      // A custom role is named by the organization (EP-ROLES); a standard role by the catalogue.
-      const role = invitation.primaryRoleName ?? roleName(invitation.primaryRole);
       const code = await invitationCodeForMail(tx, invitation.id);
       if (!code) {
         log('info', 'invitation has no code; no e-mail');
+        return;
+      }
+      // The web app already queued this code's e-mail when the member acted (immediate sending, WP-ADM-05
+      // follow-up): nothing to add - and the delivery is its safety net too (the worker's rescue).
+      if (await inlineDeliveryExists(tx, `invitation:${invitation.id}:${String(invitation.sendCount)}`)) {
+        log('info', 'invitation e-mail already queued by the web app');
         return;
       }
       const { locale } = invitation;
@@ -128,19 +130,7 @@ export function createInvitationMailer(options: InvitationMailerOptions): Transa
         sourceEventId: event.id,
         // The organization's logo is linked from the app's origin (WP-ADM-02, FR-NTF-02).
         appBaseUrl: base,
-        variables: {
-          recipientName: invitation.recipientName,
-          inviterName: invitation.inviterName,
-          organizationName: invitation.organizationName,
-          roleName: role,
-          // The Kawadir sign-up link with the code in the fragment: browsers never send it to the server,
-          // so the code stays out of access logs, proxies and Referer headers; the page reads it in the
-          // browser (review M3). The same link the inviter can copy.
-          acceptUrl: `${base}/${locale}/sign-up#code=${code}`,
-          expiresAt: invitation.expiresAt.toISOString(),
-          timeZone: TIME_ZONE,
-          loginEmail: invitation.email,
-        },
+        variables: invitationEmailVariables(invitation, code, base, roleName),
       });
       log('info', 'invitation e-mail queued');
     },

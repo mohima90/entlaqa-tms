@@ -15,6 +15,7 @@ const db = vi.hoisted(() => ({
   invitationCodeForMail: vi.fn(),
   invitationActorMayManage: vi.fn(),
   noteInvitationMailSkipped: vi.fn(),
+  inlineDeliveryExists: vi.fn(),
 }));
 const mail = vi.hoisted(() => ({ queueEmail: vi.fn() }));
 vi.mock('@jadarat/platform-db/jobs', () => db);
@@ -82,6 +83,7 @@ const queued = (call = 0): Queued => mail.queueEmail.mock.calls[call]?.[1] as Qu
 
 beforeEach(() => {
   db.invitationActorMayManage.mockResolvedValue(true);
+  db.inlineDeliveryExists.mockResolvedValue(false);
 });
 
 afterEach(() => {
@@ -89,6 +91,16 @@ afterEach(() => {
 });
 
 describe('invitation mailer', () => {
+  it('adds nothing when the web app already queued this code\'s e-mail (immediate sending)', async () => {
+    db.loadInvitationForMail.mockResolvedValue({ ...invitation, sendCount: 2 });
+    db.invitationCodeForMail.mockResolvedValue(CODE);
+    db.inlineDeliveryExists.mockResolvedValue(true);
+    const { subscriber } = mailer();
+    await subscriber.handle({ tx, event: event() });
+    expect(db.inlineDeliveryExists).toHaveBeenCalledWith(tx, `invitation:${ID}:2`);
+    expect(mail.queueEmail).not.toHaveBeenCalled();
+  });
+
   it('is a transactional subscriber of invitation created / resend requested / released', () => {
     const { subscriber } = mailer();
     expect(subscriber).toMatchObject({

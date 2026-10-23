@@ -174,3 +174,61 @@ export async function discardInactiveTenantDelivery(tx: ClaimsTx, id: string): P
   );
   return row?.discarded === true;
 }
+
+/**
+ * Has the web app already queued a message for this source (`invitation:<id>:<code number>`)? The worker's
+ * mailers skip it then (WP-ADM-05 follow-up: e-mail sent the moment the action commits). Always false before
+ * migration 20261026110000 (the worker may run ahead of the database): in a savepoint, so the caller's
+ * transaction stays usable.
+ */
+export async function inlineDeliveryExists(tx: ClaimsTx, sourceKey: string): Promise<boolean> {
+  try {
+    return await tx.transaction(async (savepoint) => {
+      const [row] = await savepoint.execute<{ found: boolean }>(sql`
+        select exists (select 1 from platform.message_deliveries where source_key = ${sourceKey}) as found`);
+      return row?.found === true;
+    });
+  } catch (error) {
+    if (pgError(error)?.code === '42703') return false;
+    throw error;
+  }
+}
+
+/**
+ * Served organizations with web-queued messages nobody finished within a minute (the safety net of immediate
+ * sending). Platform transaction. Empty before the migration.
+ */
+export async function listTenantsToRescueInline(tx: ClaimsTx): Promise<readonly string[]> {
+  try {
+    const rows = await tx.transaction((savepoint) =>
+      savepoint.execute<{ tenant_id: string }>(
+        sql`select tenant_id from private.inline_mail_tenants_to_rescue()`,
+      ),
+    );
+    return rows.map((row) => row.tenant_id);
+  } catch (error) {
+    if (pgError(error)?.code === '42883') return [];
+    throw error;
+  }
+}
+
+/**
+ * In the organization's job transaction: marks up to `limit` unfinished web-queued messages as taken over
+ * and returns their ids, so the caller queues them for the worker's own sender. A message is taken over once
+ * an hour at most.
+ */
+export async function takeInlineRescue(tx: ClaimsTx, limit: number): Promise<readonly string[]> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    update platform.message_deliveries d set rescued_at = now()
+    where d.id in (
+      select x.id from platform.message_deliveries x
+      where x.inline_claim_hash is not null and x.created_at < now() - interval '60 seconds'
+        and ((x.status = 'queued' and (x.error_code is null or x.error_code <> all (array['NO_SENDER', 'CREDENTIALS_UNAVAILABLE'])))
+             or (x.status = 'sending' and x.updated_at < now() - make_interval(secs => ${CLAIM_LEASE_SECONDS})))
+        and (x.rescued_at is null or x.rescued_at < now() - interval '1 hour')
+      order by x.created_at
+      limit ${limit}
+      for update skip locked)
+    returning d.id`);
+  return rows.map((row) => row.id);
+}

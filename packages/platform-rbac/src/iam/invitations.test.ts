@@ -323,6 +323,31 @@ describe('invite user action', () => {
     expect(getClaims).toHaveBeenCalledWith({ strict: false });
   });
 
+  it('queues the e-mail in the action\'s own transaction, right after the invitation and its code exist', async () => {
+    const order: string[] = [];
+    db.createInvitation.mockImplementationOnce(() => {
+      order.push('created');
+      return Promise.resolve({ invitationId: INVITATION, personId: PERSON, inviteCode: 'K7M2PQ9XHT4W' });
+    });
+    const queueEmail = vi.fn(() => {
+      order.push('queued');
+      return Promise.resolve();
+    });
+    const { rt } = runtime(['hr_manager']);
+    const result = await createDefineAction(rt)(inviteUserActionDefinition({ queueEmail }))(form);
+    expect(result.ok).toBe(true);
+    expect(queueEmail).toHaveBeenCalledWith(TX, INVITATION);
+    expect(order).toEqual(['created', 'queued']);
+    // Not for a refused invitation.
+    queueEmail.mockClear();
+    const refused = await createDefineAction(rt)(inviteUserActionDefinition({ queueEmail }))({
+      ...form,
+      email: 'not an address',
+    });
+    expect(refused.ok).toBe(false);
+    expect(queueEmail).not.toHaveBeenCalled();
+  });
+
   it('a department-limited role is invited with one active unit; any other role with none (EP-ORG, T-M3-09)', async () => {
     const { rt, writeAudit } = runtime(['hr_manager']);
     const invite = createDefineAction(rt)(inviteUserActionDefinition());
@@ -497,6 +522,19 @@ describe('resend and revoke', () => {
       expect(!result.ok && result.error.fieldErrors).toEqual([{ path: 'invitationId', code }]);
     }
     expect(writeAudit).not.toHaveBeenCalled();
+  });
+
+  it('resend queues the e-mail of the new code in its own transaction; a refused resend queues nothing', async () => {
+    const queueEmail = vi.fn(() => Promise.resolve());
+    db.requestInvitationResend.mockResolvedValueOnce({ status: 'queued' });
+    const { rt } = runtime(['hr_manager']);
+    const resend = createDefineAction(rt)(resendInvitationActionDefinition({ queueEmail }));
+    expect(await resend({ invitationId: INVITATION })).toEqual(ok({ invitationId: INVITATION }));
+    expect(queueEmail).toHaveBeenCalledWith(TX, INVITATION);
+    queueEmail.mockClear();
+    db.requestInvitationResend.mockResolvedValueOnce({ status: 'limit_reached' });
+    await resend({ invitationId: INVITATION });
+    expect(queueEmail).not.toHaveBeenCalled();
   });
 
   it('resend of a privileged invitation: role.assign_privileged only (as inviting with it)', async () => {

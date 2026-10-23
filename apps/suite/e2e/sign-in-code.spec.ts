@@ -4,13 +4,19 @@ import { afterSignIn } from './sign-in';
 
 /**
  * «Email me a code instead» (WP-ADM-05, FR-IAM-12; PO 23 Oct 2026): a second way to sign in, instead of the
- * password, offered to everybody. Runs against the self-hosted stack (infra/docker/smoke.sh). What this checks
- * needs no mailbox and no account: the button is on the password step for any address, the screen that follows is
- * the same for an address without an account (no enumeration), the six boxes are labelled and take a pasted code,
- * a wrong code is said ON the field with the tries left and focus returns to the boxes, five wrong codes kill the
- * code and pause code checks, "Use my password instead" goes back, and axe finds nothing in Arabic or English.
- * The whole journey with a real code needs the Send Email hook and a mailbox (docs/engineering/production-setup.md).
+ * password, offered to everybody. Runs only against the self-hosted stack (infra/docker/smoke.sh, nightly
+ * gate 15) with SIGN_IN_CODE_E2E=1: the per-PR E2E job has no configured Auth, so its password step is disabled
+ * and the button can never be clicked there. On every change the code screen is checked without Auth by the
+ * component tests (src/components/auth/sign-in-code-step.test.tsx). What this checks needs no mailbox and no
+ * account (the stack shows the screen with its test flag SIGN_IN_CODE_SCREEN_SMOKE_ONLY): the button is on the
+ * password step for any address, the screen that follows is the same for an address without an account (no
+ * enumeration), the six boxes are labelled and take a pasted code, a wrong code is said ON the field with the
+ * tries left and focus returns to the boxes, five wrong codes kill the code and pause code checks, "Use my
+ * password instead" goes back, and axe finds nothing in Arabic or English. The whole journey with a real code
+ * needs the Send Email hook and a mailbox (docs/engineering/production-setup.md).
  */
+const enabled = process.env.SIGN_IN_CODE_E2E === '1';
+
 const TEXTS = {
   ar: {
     continue: 'متابعة',
@@ -53,6 +59,7 @@ async function toCodeScreen(page: Page, locale: 'ar' | 'en', address: string) {
 
 for (const locale of ['ar', 'en'] as const) {
   test.describe(`sign in with an e-mailed code (${locale})`, () => {
+    test.skip(!enabled, 'SIGN_IN_CODE_E2E not set');
     const t = TEXTS[locale];
     // An address nobody has: the screen must be exactly the one a real address gets.
     const address = `nobody.${locale}.${String(Date.now())}@example.test`;

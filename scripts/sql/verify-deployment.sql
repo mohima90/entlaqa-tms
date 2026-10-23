@@ -605,7 +605,14 @@ begin
         'private.public_brand_asset(uuid)', 'private.public_brand_asset_meta(uuid)',
         'private.public_tenant_brand(text)', 'private.branding_image_names(uuid[])',
         -- Profile photos (WP-ADM-04)
-        'private.publish_profile_photo(uuid,text,bigint,text,bytea)', 'private.remove_profile_photo()')
+        'private.publish_profile_photo(uuid,text,bigint,text,bytea)', 'private.remove_profile_photo()',
+        -- Sign-in extras (WP-ADM-05)
+        'private.remembered_browser_ok(uuid,bytea)', 'private.remember_browser(bytea,text)',
+        'private.forget_member_remembered_browsers(uuid)', 'private.forget_remembered_browsers_of_inactive_member()',
+        'private.sign_in_code_hmac(uuid,text)', 'private.request_sign_in_code(text,bytea)',
+        'private.verify_sign_in_code(uuid,text,text)', 'private.take_remembered_sign_in(uuid,text,bytea)',
+        'private.claim_sign_in_code_request()', 'private.issue_sign_in_code(uuid,uuid,uuid,text,text)',
+        'private.sign_in_code_dead_end(uuid)', 'private.retry_sign_in_code_request(uuid)')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;

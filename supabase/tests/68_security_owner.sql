@@ -149,7 +149,7 @@ begin
                            where a.attrelid = 'platform.security_policies'::regclass and a.attnum > 0 and not a.attisdropped
                              and has_column_privilege('authenticated', a.attrelid, a.attnum, 'update')),
     'lockout_minutes, lockout_threshold, mfa_grace_days, mfa_mode, mfa_prompt_admins, mfa_required_roles, '
-    'password_min_length, session_idle_minutes, session_max_devices, session_max_hours',
+    'password_min_length, remembered_browser_days, session_idle_minutes, session_max_devices, session_max_hours',
     'security_policies: the settings are the only updatable columns');
   perform tests.assert(not has_table_privilege('authenticated', 'platform.security_policies', 'insert, delete, truncate'),
     'security_policies: no insert / delete for the request path');

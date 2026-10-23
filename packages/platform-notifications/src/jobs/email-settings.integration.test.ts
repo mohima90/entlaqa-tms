@@ -24,11 +24,11 @@ import { createWithPlatformTx, createWithSystemTx } from '@jadarat/platform-db/j
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { sealProviderInput } from '../credentials-seal';
-import { deriveCredentialsKeyPair } from './credentials';
+import { deriveCredentialsKeyPair } from '../sending/credentials';
 import { createEmailResumeTask, createEmailTestTask } from './email-tasks';
-import type { createProviderTransport } from './factory';
+import type { createProviderTransport } from '../sending/factory';
 import { createEmailRouter } from './router';
-import type { EmailTransport, OutgoingEmail } from './transport';
+import type { EmailTransport, OutgoingEmail } from '../sending/transport';
 
 const ownerUrl = process.env.TEST_DATABASE_URL;
 const appServerUrl = process.env.TEST_APP_SERVER_URL;

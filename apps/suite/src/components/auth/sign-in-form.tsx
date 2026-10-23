@@ -27,7 +27,7 @@ import {
 import { AuthIcon } from './auth-icons';
 import { type AuthBrand, AuthShell, type AuthPanelTexts, type AuthShellTexts } from './auth-shell';
 import { type ErrorTexts, errorText } from './error-text';
-import { RememberedSignIn, type SignInCodeLabels, SignInCodeStep } from './sign-in-code-step';
+import { type SignInCodeLabels, SignInCodeStep } from './sign-in-code-step';
 
 /** The generic answer for a wrong e-mail or password (never says which: no account enumeration). */
 const INVALID_CREDENTIALS = 'auth.errors.invalidCredentials';
@@ -60,7 +60,7 @@ export interface SignInFormLabels {
 }
 
 /** The steps of the sign-in form; the page's title and subtitle follow them. */
-export type SignInStep = 'email' | 'method' | 'code' | 'remembered';
+export type SignInStep = 'email' | 'method' | 'code';
 
 export interface SignInFormProps {
   readonly locale: string;
@@ -68,15 +68,16 @@ export interface SignInFormProps {
   readonly disabled: boolean;
   readonly labels: SignInFormLabels;
   readonly errors: ErrorTexts;
+  /** «Email me a code instead» is offered (Auth's Send Email hook is set up); otherwise only the password. */
+  readonly codeSignIn: boolean;
   /** Called when the step changes (the page's subtitle follows the step, Kawadir). */
   readonly onStep?: (step: SignInStep) => void;
 }
 
 /**
- * Sign-in in two steps, as Kawadir ATS (PO, 16 Oct 2026): the work e-mail first, then the way in. Today
- * the only way in is the password (the e-mailed code comes with the platform sender — a second entry of
- * `SignInMethod` then, with the fork between them); the browser remembers the last method used and opens
- * it directly. The e-mail step asks nothing of the server (no account enumeration): every check — the
+ * Sign-in in two steps, as Kawadir ATS (PO, 16 Oct 2026): the work e-mail first, then the way in: the
+ * password, or «Email me a code instead» (WP-ADM-05) for everybody; the browser remembers the last method
+ * used and opens it directly. The e-mail step asks nothing of the server (no account enumeration): every check — the
  * sign-in protection (T-M2-11), the organization's MFA step (T-M2-10) and the same answer for a wrong
  * e-mail or password — stays in `signInAction` (ADR 0003 §2). «تذكّر هذا المتصفح» / "Remember this
  * browser": a native check box, unticked by default, its explanation tied to it (aria-describedby).
@@ -87,16 +88,21 @@ export interface SignInFormProps {
  * on the password field. «Too many attempts» and any other refusal (e.g. an outage with its reference)
  * stay a banner. Only "sign-in not configured" disables the password step.
  */
-export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInFormProps) {
+export function SignInForm({
+  locale,
+  disabled,
+  labels,
+  errors,
+  codeSignIn,
+  onStep,
+}: SignInFormProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [step, setStep] = useState<SignInStep>('email');
-  // «Email me a code instead»: the request being answered (its id, address and seconds before a new code).
+  // «Email me a code instead»: the address the code was asked for and the seconds before a new code.
   const [codeRequest, setCodeRequest] = useState<{
-    readonly id: string;
     readonly email: string;
     readonly resendSeconds: number;
-    readonly notice?: string;
   } | null>(null);
   const [sendingCode, setSendingCode] = useState(false);
   const [method, setMethod] = useState<SignInMethod>('password');
@@ -146,17 +152,12 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
     const typed = email.trim();
     setSendingCode(true);
     startTransition(async () => {
-      const result = await requestSignInCodeAction({ email: typed, forceCode: false });
+      const result = await requestSignInCodeAction({ email: typed });
       setSendingCode(false);
       if (result.ok) {
-        const { value } = result;
         moved.current = true;
-        setCodeRequest({
-          id: value.requestId,
-          email: typed,
-          resendSeconds: value.kind === 'code' ? value.resendAfterSeconds : 0,
-        });
-        setStep(value.kind === 'remembered' ? 'remembered' : 'code');
+        setCodeRequest({ email: typed, resendSeconds: result.value.resendAfterSeconds });
+        setStep('code');
       } else if (result.error.code === 'SIGN_IN_CODE_TOO_SOON' && codeRequest?.email === typed) {
         // A code was just sent for this address: back to its screen, with the seconds left.
         moved.current = true;
@@ -206,43 +207,13 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
       <SignInCodeStep
         locale={locale}
         email={codeRequest.email}
-        requestId={codeRequest.id}
         resendSeconds={codeRequest.resendSeconds}
-        notice={codeRequest.notice}
         labels={labels.code}
         errors={errors}
-        onNewRequest={(id) => {
-          setCodeRequest((current) => (current ? { ...current, id } : current));
-        }}
         onUsePassword={() => {
           moved.current = true;
           setMessage(null);
           setStep('method');
-        }}
-      />
-    );
-  }
-  if (step === 'remembered' && codeRequest) {
-    return (
-      <RememberedSignIn
-        locale={locale}
-        email={codeRequest.email}
-        requestId={codeRequest.id}
-        labels={labels.code}
-        errors={errors}
-        onFallback={(fallback) => {
-          if ('requestId' in fallback) {
-            setCodeRequest({
-              id: fallback.requestId,
-              email: codeRequest.email,
-              resendSeconds: 60,
-              notice: labels.code.rememberedFailed,
-            });
-            setStep('code');
-          } else {
-            setMessage(fallback.message);
-            setStep('method');
-          }
         }}
       />
     );
@@ -403,21 +374,25 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
           </button>
           {/* A second way in, instead of the password, for everybody (PO 23 Oct 2026): nothing about the
               account or its roles shows here or on the screen that follows. */}
-          <p
-            aria-hidden="true"
-            className="m-0 flex items-center gap-3 text-sm text-text-muted before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border"
-          >
-            {labels.or}
-          </p>
-          <button
-            type="button"
-            className={authSecondaryButton}
-            disabled={disabled || pending}
-            onClick={emailMeACode}
-            data-testid="sign-in-email-code"
-          >
-            {pending && sendingCode ? labels.sendingCode : labels.codeInstead}
-          </button>
+          {codeSignIn ? (
+            <>
+              <p
+                aria-hidden="true"
+                className="m-0 flex items-center gap-3 text-sm text-text-muted before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border"
+              >
+                {labels.or}
+              </p>
+              <button
+                type="button"
+                className={authSecondaryButton}
+                disabled={disabled || pending}
+                onClick={emailMeACode}
+                data-testid="sign-in-email-code"
+              >
+                {pending && sendingCode ? labels.sendingCode : labels.codeInstead}
+              </button>
+            </>
+          ) : null}
         </>
       )}
     </form>
@@ -461,7 +436,7 @@ export function SignInView({
   ...form
 }: SignInViewProps) {
   const [step, setStep] = useState<SignInStep>('email');
-  const onCodeScreen = step === 'code' || step === 'remembered';
+  const onCodeScreen = step === 'code';
   return (
     <AuthShell
       variant="split"

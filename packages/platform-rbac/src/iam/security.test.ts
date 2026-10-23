@@ -14,7 +14,7 @@ import {
   SecuritySettingsInput,
   endMemberSessionsActionDefinition,
   endMySessionsActionDefinition,
-  forgetMyRememberedBrowsersActionDefinition,
+  forgetKeptSessionsActionDefinition,
   memberSecurityQueryDefinition,
   mySecurityQueryDefinition,
   resetMemberMfaActionDefinition,
@@ -42,9 +42,8 @@ const db = vi.hoisted(() => ({
   listMyMfaApps: vi.fn(),
   listMySessions: vi.fn(),
   endMySessions: vi.fn(),
-  listMyRememberedBrowsers: vi.fn(),
-  forgetMyRememberedBrowsers: vi.fn(),
-  forgetMemberRememberedBrowsers: vi.fn(),
+  listMyKeptSessions: vi.fn(),
+  forgetKeptSessions: vi.fn(),
   listMemberSessions: vi.fn(),
   endMemberSessions: vi.fn(),
   mayManagePerson: vi.fn(),
@@ -139,9 +138,8 @@ beforeEach(() => {
   db.listMySessions.mockResolvedValue([]);
   db.listMemberSessions.mockResolvedValue([]);
   db.endMySessions.mockResolvedValue(1);
-  db.listMyRememberedBrowsers.mockResolvedValue([]);
-  db.forgetMyRememberedBrowsers.mockResolvedValue(2);
-  db.forgetMemberRememberedBrowsers.mockResolvedValue(1);
+  db.listMyKeptSessions.mockResolvedValue([]);
+  db.forgetKeptSessions.mockResolvedValue(2);
   db.endMemberSessions.mockResolvedValue(2);
   db.mayManagePerson.mockResolvedValue(true);
   db.resetMemberMfa.mockResolvedValue('reset');
@@ -303,7 +301,7 @@ describe('own sign-in sessions (My profile)', () => {
         sessions: [],
         passwordMinLength: 16,
         apps: [APP],
-        remembered: { days: 0, browsers: [] },
+        kept: { days: 0, sessions: [] },
       }),
     );
     // The apps as this session sees them (re-review N1), never another person's.
@@ -314,23 +312,27 @@ describe('own sign-in sessions (My profile)', () => {
     expect(!gone.ok && gone.error.code).toBe('UNAUTHENTICATED');
   });
 
-  it("lists the member's own remembered browsers; this browser is told by the hash of its token", async () => {
+  it("lists the member's own kept sessions and the organization's period", async () => {
+    const kept = [
+      {
+        sessionId: SESSION,
+        keptUntil: new Date('2026-11-06T10:00:00Z'),
+        startedAt: new Date('2026-10-23T10:00:00Z'),
+        userAgent: 'Mozilla/5.0',
+        current: true,
+      },
+    ];
+    db.listMyKeptSessions.mockResolvedValue(kept);
+    db.getSecurityPolicy.mockResolvedValue({ ...policy, rememberedBrowserDays: 14 });
     const query = createDefineQuery(runtime([]).rt)(mySecurityQueryDefinition());
-    const hash = 'ab'.repeat(32);
-    await query({ currentBrowser: hash });
-    expect(db.listMyRememberedBrowsers).toHaveBeenLastCalledWith(
-      TX,
-      Uint8Array.from(Buffer.from(hash, 'hex')),
-    );
-    await query({});
-    expect(db.listMyRememberedBrowsers).toHaveBeenLastCalledWith(TX, null);
-    const bad = await query({ currentBrowser: 'not-a-hash' });
-    expect(!bad.ok && bad.error.code).toBe('VALIDATION_FAILED');
+    const result = await query({});
+    expect(result.ok && result.value.kept).toEqual({ days: 14, sessions: kept });
+    expect(db.listMyKeptSessions).toHaveBeenCalledWith(TX);
   });
 
-  it("forgets the member's own remembered browsers; audited with the count only", async () => {
+  it("forgets the member's own kept sessions; audited with the count only", async () => {
     const { rt, writeAudit } = runtime([]);
-    const action = createDefineAction(rt)(forgetMyRememberedBrowsersActionDefinition());
+    const action = createDefineAction(rt)(forgetKeptSessionsActionDefinition());
     expect(await action({})).toEqual(ok({ forgotten: 2 }));
     expect(writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {
       action: 'platform.auth.browsers_forgotten',
@@ -338,7 +340,7 @@ describe('own sign-in sessions (My profile)', () => {
       data: { scope: 'own', count: 2 },
     });
     writeAudit.mockClear();
-    db.forgetMyRememberedBrowsers.mockResolvedValue(0);
+    db.forgetKeptSessions.mockResolvedValue(0);
     await action({});
     expect(writeAudit).not.toHaveBeenCalled();
   });
@@ -388,16 +390,6 @@ describe("a member's sessions (screen 3: user managers)", () => {
         data: { scope: 'all', count: 2 },
       });
     }
-  });
-
-  it("ending ALL of a member's sessions also forgets their remembered browsers; ending one does not", async () => {
-    const { rt } = runtime(forRoles('tenant_admin'));
-    const end = createDefineAction(rt)(endMemberSessionsActionDefinition());
-    await end({ personId: SARA, sessionId: null });
-    expect(db.forgetMemberRememberedBrowsers).toHaveBeenCalledWith(TX, SARA);
-    db.forgetMemberRememberedBrowsers.mockClear();
-    await end({ personId: SARA, sessionId: SESSION });
-    expect(db.forgetMemberRememberedBrowsers).not.toHaveBeenCalled();
   });
 
   it('roles without user management are FORBIDDEN; out of scope 404; the manage rule FORBIDDEN', async () => {

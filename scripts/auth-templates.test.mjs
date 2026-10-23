@@ -61,9 +61,12 @@ describe('Auth e-mail templates (T-M2-08)', () => {
     expect(config).toContain('content_path = "./supabase/templates/recovery.html"');
     expect(config).toContain('content_path = "./supabase/templates/password-changed.html"');
     expect(config).toMatch(/\[auth\.email\.notification\.password_changed\]\nenabled = false\n/);
-    expect(config).toMatch(/otp_expiry = 3600/);
-    // The token hash is sha224(e-mail + code): the code must have GoTrue's maximum length (review H).
-    expect(config).toMatch(/^otp_length = 10$/m);
+    // WP-ADM-05 (PO 23 Oct 2026): the sign-in code is a typed 6-digit Auth OTP living 10 minutes, and the same
+    // settings govern the reset link (its token hash is sha224(e-mail + code)): the short life is what keeps
+    // a 6-digit code from being guessed (sign-in-protection.md §12, password-reset.md).
+    expect(config).toMatch(/^otp_expiry = 600$/m);
+    expect(config).toMatch(/^otp_length = 6$/m);
+    expect(config).toMatch(/^max_frequency = "60s"$/m);
   });
 
   it('the self-hosted stack: tokens as before, but Auth sends nothing — the worker does (T-M2-17)', () => {

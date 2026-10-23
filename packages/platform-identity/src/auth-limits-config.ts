@@ -113,6 +113,8 @@ export interface AuthLimits {
     readonly requestsPerClient: RateLimit;
     readonly sharedClientRequests: RateLimit;
     readonly requestsPerAccount: RateLimit;
+    /** One code a minute per typed address (Auth's own OTP frequency is the second line of defence). */
+    readonly requestsPerMinute: RateLimit;
     readonly checkAccountFailures: RateLimit;
     readonly checkClientFailures: RateLimit;
     readonly sharedClientCheckFailures: RateLimit;
@@ -124,8 +126,6 @@ export interface AuthLimits {
      * until the window ends (`auth.sign_in_codes.global_limit` is logged). Right codes give their hit back.
      */
     readonly checkWrongAllClients: RateLimit;
-    /** A remembered browser's own budget of wrong codes - it is not stopped by the typed address's pause. */
-    readonly checkRememberedBrowserFailures: RateLimit;
   };
 }
 
@@ -178,11 +178,11 @@ export const PLATFORM_AUTH_LIMITS: AuthLimits = {
     requestsPerClient: { max: 20, windowSeconds: WINDOW },
     sharedClientRequests: { max: 200, windowSeconds: WINDOW },
     requestsPerAccount: { max: 10, windowSeconds: WINDOW },
+    requestsPerMinute: { max: 1, windowSeconds: 60 },
     checkAccountFailures: { max: 5, windowSeconds: WINDOW },
     checkClientFailures: { max: 100, windowSeconds: WINDOW },
     sharedClientCheckFailures: { max: 1000, windowSeconds: WINDOW },
     requestsPerAccountDaily: { max: 40, windowSeconds: 24 * 60 * 60 },
     checkWrongAllClients: { max: 2000, windowSeconds: WINDOW },
-    checkRememberedBrowserFailures: { max: 10, windowSeconds: WINDOW },
   },
 };

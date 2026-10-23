@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { isEmailAddress } from '../address';
 import { renderEmail } from '../templates/index';
-import type { EmailTransport, OutgoingEmail } from './transport';
+import type { EmailTransport, OutgoingEmail } from '../sending/transport';
 
 /**
  * Operators' check of the e-mail settings (worker `test-email` mode): sends a sample invitation with

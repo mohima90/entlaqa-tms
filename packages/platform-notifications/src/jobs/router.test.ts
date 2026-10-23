@@ -1,11 +1,11 @@
 import type { EmailRouteRow, SystemTx } from '@jadarat/platform-db/jobs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { credentialsContext, sealCredentials } from '../credentials-seal';
-import { deriveCredentialsKeyPair } from './credentials';
-import { createProviderTransport } from './factory';
+import { deriveCredentialsKeyPair } from '../sending/credentials';
+import { createProviderTransport } from '../sending/factory';
 import { brandName, createEmailRouter } from './router';
-import { isPublicAddress } from './smtp';
-import type { EmailTransport } from './transport';
+import { isPublicAddress } from '../sending/smtp';
+import type { EmailTransport } from '../sending/transport';
 
 const db = vi.hoisted(() => ({ loadEmailRoute: vi.fn() }));
 vi.mock('@jadarat/platform-db/jobs', () => db);

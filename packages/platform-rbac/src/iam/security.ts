@@ -3,7 +3,7 @@ import {
   MFA_MODES,
   type MyMfaApp,
   type MySignInSession,
-  type RememberedBrowser,
+  type KeptSession,
   SECURITY_LIMITS,
   type SecurityPolicy,
   type SecuritySettings,
@@ -12,13 +12,12 @@ import {
   changedSettings,
   endMemberSessions,
   endMySessions,
-  forgetMemberRememberedBrowsers,
-  forgetMyRememberedBrowsers,
+  forgetKeptSessions,
   getMemberMfa,
   getSecurityPolicy,
   listMemberSessions,
   listMyMfaApps,
-  listMyRememberedBrowsers,
+  listMyKeptSessions,
   listMySessions,
   mayManagePerson,
   passwordMinLengthForCaller,
@@ -181,33 +180,25 @@ export interface MySecurityView {
    */
   readonly apps: readonly MyMfaApp[];
   /**
-   * Remembered browsers (WP-ADM-05): the organization's current period (0: off) and the member's own browsers
-   * where they ticked «Remember this browser» (the one asking is marked `current`).
+   * «Remember this browser» = «keep me signed in» (WP-ADM-05): the organization's current period (0: off) and
+   * the member's own sessions kept signed in (the one asking is marked `current`).
    */
-  readonly remembered: {
+  readonly kept: {
     readonly days: number;
-    readonly browsers: readonly RememberedBrowser[];
+    readonly sessions: readonly KeptSession[];
   };
 }
 
-/** `currentBrowser`: SHA-256 of this browser's remembered-browser token (hex), when it has one. */
-export const MySecurityInput = z.strictObject({
-  currentBrowser: z
-    .string()
-    .regex(/^[0-9a-f]{64}$/)
-    .optional(),
-});
-
 export function mySecurityQueryDefinition(): QueryDefinition<
-  typeof MySecurityInput,
+  z.ZodObject<Record<string, never>>,
   MySecurityView,
   UserTx
 > {
   return {
     permission: manageOwn,
-    input: MySecurityInput,
+    input: z.strictObject({}),
     scoped: true, // the member's own account and sessions only
-    handler: async ({ ctx, input }) => {
+    handler: async ({ ctx }) => {
       const minLength = await passwordMinLengthForCaller(ctx.tx);
       if (minLength === null) return err(appError('UNAUTHENTICATED'));
       const policy = await getSecurityPolicy(ctx.tx);
@@ -215,12 +206,9 @@ export function mySecurityQueryDefinition(): QueryDefinition<
         sessions: await listMySessions(ctx.tx),
         passwordMinLength: minLength,
         apps: await listMyMfaApps(ctx.tx),
-        remembered: {
+        kept: {
           days: policy?.rememberedBrowserDays ?? 0,
-          browsers: await listMyRememberedBrowsers(
-            ctx.tx,
-            input.currentBrowser ? Uint8Array.from(Buffer.from(input.currentBrowser, 'hex')) : null,
-          ),
+          sessions: await listMyKeptSessions(ctx.tx),
         },
       });
     },
@@ -228,10 +216,10 @@ export function mySecurityQueryDefinition(): QueryDefinition<
 }
 
 /**
- * «Forget all» remembered browsers (WP-ADM-05, BR-AUTH-g): the member's own rows in the session's
- * organization; the next sign-in on any of them asks for a code again. Does not sign anyone out.
+ * «Forget all» (WP-ADM-05, BR-AUTH-g): the member's sessions stop being kept signed in - they follow the
+ * organization's normal rules from now on (idle, maximum length). Does not sign anyone out by itself.
  */
-export function forgetMyRememberedBrowsersActionDefinition(): ActionDefinition<
+export function forgetKeptSessionsActionDefinition(): ActionDefinition<
   z.ZodObject<Record<string, never>>,
   { readonly forgotten: number },
   UserTx
@@ -240,7 +228,7 @@ export function forgetMyRememberedBrowsersActionDefinition(): ActionDefinition<
     permission: manageOwn,
     input: z.strictObject({}),
     scoped: true,
-    handler: async ({ ctx }) => ok({ forgotten: await forgetMyRememberedBrowsers(ctx.tx) }),
+    handler: async ({ ctx }) => ok({ forgotten: await forgetKeptSessions(ctx.tx) }),
     audit: (_input, output) =>
       output.forgotten === 0
         ? null
@@ -383,9 +371,6 @@ export function endMemberSessionsActionDefinition(): ActionDefinition<
       let ended: number;
       try {
         ended = await endMemberSessions(ctx.tx, input.personId, input.sessionId);
-        // Ending ALL of a member's sessions also forgets the browsers they asked to remember (WP-ADM-05,
-        // BR-AUTH-g): their next sign-in on any of them is checked again.
-        if (input.sessionId === null) await forgetMemberRememberedBrowsers(ctx.tx, input.personId);
       } catch (error) {
         if (databaseCode(error) === INSUFFICIENT_PRIVILEGE) return err(appError('FORBIDDEN'));
         throw error;

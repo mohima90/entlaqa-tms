@@ -1,3 +1,4 @@
+import { isCodeSignInOffered } from '@jadarat/platform-identity/auth';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { Alert } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
@@ -33,8 +34,8 @@ export async function generateMetadata({
 
 /**
  * Sign-in (T-M1-D03; Kawadir ATS's flow, PO 16 Oct 2026; direction C look, redesign package 1): the split
- * frame with the brand panel, «مرحبًا بعودتك» / "Welcome back", the work e-mail first and then the password (the e-mailed code
- * comes later with the platform sender). Links to "forgot password" (screen 10, T-M2-08) and to joining
+ * frame with the brand panel, «مرحبًا بعودتك» / "Welcome back", the work e-mail first and then the password or «Email me a code instead»
+ * (WP-ADM-05, offered where Auth's Send Email hook is set up). Links to "forgot password" (screen 10, T-M2-08) and to joining
  * with an invitation code (/sign-up); shows the notice after a password reset or an ended session.
  */
 export default async function SignInPage({
@@ -69,6 +70,7 @@ export default async function SignInPage({
         locale={locale}
         brand={authBrandOf(brand)}
         disabled={!status.auth}
+        codeSignIn={isCodeSignInOffered()}
         shell={await authShellTexts(locale)}
         panel={await signInPanelTexts(locale)}
         languageSwitch={<AuthLanguageSwitch {...await authLanguageSwitch(locale, '/sign-in')} />}
@@ -153,9 +155,6 @@ export default async function SignInPage({
             triesLeft: t.raw('signInCode.triesLeft') as Record<string, string>,
             lockedHelp: t('signInCode.lockedHelp'),
             usePassword: t('signInCode.usePassword'),
-            rememberedTitle: t('signInCode.rememberedTitle'),
-            rememberedText: t('signInCode.rememberedText'),
-            rememberedFailed: t('signInCode.rememberedFailed'),
           },
         }}
         errors={await authErrorTexts(locale)}

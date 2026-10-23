@@ -37,7 +37,5 @@ begin
 end
 $$;
 revoke all on function private.security_policy_changed_mail() from public;
-drop policy security_policies_account_mail_guard_read on platform.security_policies;
-revoke select (tenant_id, remembered_browser_days) on platform.security_policies from account_mail_guard;
 revoke update (remembered_browser_days) on platform.security_policies from authenticated;
 alter table platform.security_policies drop column remembered_browser_days;

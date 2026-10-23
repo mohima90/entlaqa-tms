@@ -2,11 +2,7 @@
 import { Alert } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { type SyntheticEvent, useEffect, useRef, useState, useTransition } from 'react';
-import {
-  completeRememberedSignInAction,
-  requestSignInCodeAction,
-  signInWithCodeAction,
-} from '../../auth/actions';
+import { requestSignInCodeAction, signInWithCodeAction } from '../../auth/actions';
 import { CODE_LENGTH, formatCountdown, triesLeftText } from '../../lib/sign-in-code-ui';
 import { signInDestination } from '../../lib/sign-in-steps';
 import { AuthSpinner, authPrimaryButton } from './auth-field';
@@ -15,8 +11,9 @@ import { CodeBoxes, type CodeBoxesHandle } from './code-boxes';
 import { type ErrorTexts, errorText } from './error-text';
 
 /**
- * «Email me a code» (WP-ADM-05, PO 23 Oct 2026): the screen after the code was asked for, and the screen of a
- * remembered browser. Same for every address - it never says whether the account exists. The code is typed in six
+ * «Email me a code» (WP-ADM-05, PO 23 Oct 2026): the screen after the code was asked for. Same for every
+ * address - it never says whether the account exists. «Remember this browser» keeps the person signed in on
+ * this browser for the organization's period (like "keep me signed in"). The code is typed in six
  * boxes (one-time-code autofill, paste, a label per box); the check happens when the button is pressed and the
  * message goes ON the field (never a disabled button); after the server's answer focus returns to the boxes. A new
  * code can be asked for once a minute (the countdown is announced once, when it ends, not every second). Five
@@ -41,41 +38,29 @@ export interface SignInCodeLabels {
   readonly triesLeft: Readonly<Record<string, string>>;
   readonly lockedHelp: string;
   readonly usePassword: string;
-  readonly rememberedTitle: string;
-  readonly rememberedText: string;
-  readonly rememberedFailed: string;
 }
 
 const WRONG = 'SIGN_IN_CODE_INVALID';
-const EXPIRED = 'SIGN_IN_CODE_EXPIRED';
 const LOCKED = 'SIGN_IN_CODE_LOCKED';
 const TOO_SOON = 'SIGN_IN_CODE_TOO_SOON';
 
 export interface SignInCodeStepProps {
   readonly locale: string;
   readonly email: string;
-  readonly requestId: string;
   /** Seconds until a new code may be asked for (60 after sending). */
   readonly resendSeconds: number;
   readonly labels: SignInCodeLabels;
   readonly errors: ErrorTexts;
-  /** A new code was sent: the form keeps the new request. */
-  readonly onNewRequest: (requestId: string) => void;
   readonly onUsePassword: () => void;
-  /** A line shown at first (a remembered sign-in that fell back to a code). */
-  readonly notice?: string | undefined;
 }
 
 export function SignInCodeStep({
   locale,
   email,
-  requestId,
   resendSeconds,
   labels,
   errors,
-  onNewRequest,
   onUsePassword,
-  notice,
 }: SignInCodeStepProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -84,7 +69,7 @@ export function SignInCodeStep({
   const [remember, setRemember] = useState(false);
   const [fieldError, setFieldError] = useState<string | undefined>(undefined);
   const [banner, setBanner] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(notice ?? null);
+  const [status, setStatus] = useState<string | null>(null);
   const [locked, setLocked] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(resendSeconds);
   const boxes = useRef<CodeBoxesHandle>(null);
@@ -124,7 +109,7 @@ export function SignInCodeStep({
     }
     focusBoxes.current = true;
     startTransition(async () => {
-      const result = await signInWithCodeAction({ requestId, email, code, remember });
+      const result = await signInWithCodeAction({ email, code, remember });
       if (result.ok) {
         router.replace(signInDestination(locale, result.value.next));
         router.refresh();
@@ -136,9 +121,6 @@ export function SignInCodeStep({
         setFieldError(
           `${errorText(error, errors)} ${triesLeftText(locale, tries, labels.triesLeft)}.`,
         );
-        setCode('');
-      } else if (error.code === EXPIRED) {
-        setFieldError(errorText(error, errors));
         setCode('');
       } else if (error.code === LOCKED) {
         setLocked(true);
@@ -157,17 +139,16 @@ export function SignInCodeStep({
     setStatus(null);
     focusBoxes.current = true;
     startResend(async () => {
-      const result = await requestSignInCodeAction({ email, forceCode: true });
-      if (result.ok && result.value.kind === 'code') {
-        onNewRequest(result.value.requestId);
+      const result = await requestSignInCodeAction({ email });
+      if (result.ok) {
         setCode('');
         setLocked(false);
         setSecondsLeft(result.value.resendAfterSeconds);
         setStatus(labels.resent);
-      } else if (!result.ok && result.error.code === TOO_SOON) {
+      } else if (result.error.code === TOO_SOON) {
         setSecondsLeft(Number(result.error.params?.seconds ?? 60));
         setBanner(errorText(result.error, errors));
-      } else if (!result.ok) {
+      } else {
         setBanner(errorText(result.error, errors));
       }
     });
@@ -305,64 +286,5 @@ export function SignInCodeStep({
         {labels.usePassword}
       </button>
     </form>
-  );
-}
-
-export interface RememberedSignInProps {
-  readonly locale: string;
-  readonly email: string;
-  readonly requestId: string;
-  readonly labels: SignInCodeLabels;
-  readonly errors: ErrorTexts;
-  /** The remembered sign-in could not finish: a code was sent instead (or the refusal text). */
-  readonly onFallback: (
-    result: { readonly requestId: string } | { readonly message: string },
-  ) => void;
-}
-
-/**
- * A remembered browser signs in without a code: the worker is minting the one-time token (no e-mail), so the page
- * asks a few times (each ask waits several seconds on the server) and then opens the suite. When it cannot - the
- * browser was forgotten, the organization shortened the period, the worker is slow - a code is sent instead.
- */
-export function RememberedSignIn({
-  locale,
-  email,
-  requestId,
-  labels,
-  errors,
-  onFallback,
-}: RememberedSignInProps) {
-  const router = useRouter();
-  const started = useRef(false);
-  useEffect(() => {
-    if (started.current) return;
-    started.current = true;
-    void (async () => {
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        const result = await completeRememberedSignInAction({ requestId, email });
-        if (!result.ok) break;
-        if (result.value.status === 'done') {
-          router.replace(signInDestination(locale, result.value.outcome.next));
-          router.refresh();
-          return;
-        }
-      }
-      const sent = await requestSignInCodeAction({ email, forceCode: true });
-      if (sent.ok && sent.value.kind === 'code') onFallback({ requestId: sent.value.requestId });
-      else
-        onFallback({ message: sent.ok ? labels.rememberedFailed : errorText(sent.error, errors) });
-    })();
-  }, [requestId, email, locale, router, onFallback, labels.rememberedFailed, errors]);
-  return (
-    <div
-      className="flex flex-col items-center gap-3 py-6 text-center"
-      role="status"
-      data-testid="sign-in-remembered"
-    >
-      <AuthSpinner />
-      <p className="m-0 text-lg font-semibold">{labels.rememberedTitle}</p>
-      <p className="m-0 text-text-muted">{labels.rememberedText}</p>
-    </div>
   );
 }

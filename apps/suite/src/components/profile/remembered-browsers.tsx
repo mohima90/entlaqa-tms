@@ -2,22 +2,23 @@
 import { Alert, Badge, Button, Dialog, Icon, toast } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import { forgetMyRememberedBrowsersAction } from '../../actions/security';
+import { forgetKeptSessionsAction } from '../../actions/security';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 
 /**
- * My profile › Security › Remembered browsers (WP-ADM-05, FR-IAM-12; business flow EP-AUTH-signin-extras
- * screen 3, PO 23 Oct 2026): the browsers where the member ticked «Remember this browser» on the e-mailed-code
- * screen, with when each was remembered and until when it skips the code, and «Forget all» (a confirmation
- * first; it does not sign anyone out). When the organization does not remember browsers the section says so.
- * Dates come formatted from the server; a browser is described by name and system, never shown raw.
+ * My profile › Security › Browsers kept signed in (WP-ADM-05, FR-IAM-12; business flow EP-AUTH-signin-extras
+ * screen 3, PO 23 Oct 2026): «Remember this browser» = «keep me signed in». The sessions the member chose to keep,
+ * with when each signed in and until when it stays signed in, and «Forget all» (a confirmation first; the
+ * sessions then follow the organization's normal rules). When the organization does not keep people signed in
+ * the section says so. Dates come formatted from the server; a browser is described by name and system, never
+ * shown raw. Signing out, «End sessions», deactivation and a password change end a kept session too.
  */
 export interface RememberedBrowserRow {
   readonly id: string;
   readonly device: string;
   readonly remembered: string;
-  /** Until when it skips the code, formatted; null: no longer valid (shown as expired). */
+  /** Until when it stays signed in, formatted; null: no longer valid (shown as expired). */
   readonly until: string | null;
   readonly isCurrent: boolean;
 }
@@ -41,7 +42,7 @@ export function RememberedBrowsers({ days, rows, labels, errors }: RememberedBro
   function forgetAll() {
     setMessage(null);
     startTransition(async () => {
-      const result = await forgetMyRememberedBrowsersAction({});
+      const result = await forgetKeptSessionsAction({});
       setConfirming(false);
       if (result.ok) {
         toast.success(t('forgotten'));

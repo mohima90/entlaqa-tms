@@ -9,7 +9,7 @@ import { afterSignIn } from './sign-in';
  * the same for an address without an account (no enumeration), the six boxes are labelled and take a pasted code,
  * a wrong code is said ON the field with the tries left and focus returns to the boxes, five wrong codes kill the
  * code and pause code checks, "Use my password instead" goes back, and axe finds nothing in Arabic or English.
- * The whole journey with a real code (and a remembered browser) is read from Mailpit by smoke.sh.
+ * The whole journey with a real code needs the Send Email hook and a mailbox (docs/engineering/production-setup.md).
  */
 const TEXTS = {
   ar: {
@@ -20,7 +20,7 @@ const TEXTS = {
     digit: (n: number) => `الرقم ${String(n)} من 6`,
     submit: 'تحقق وسجّل الدخول',
     format: 'أدخل الأرقام الستة كاملة.',
-    wrong: 'هذا الرمز غير صحيح.',
+    wrong: 'هذا الرمز غير صحيح',
     locked: 'لم يعد هذا الرمز صالحًا',
     usePassword: 'استخدام كلمة المرور بدلًا من ذلك',
     remember: 'تذكّر هذا المتصفح',
@@ -34,7 +34,7 @@ const TEXTS = {
     digit: (n: number) => `Digit ${String(n)} of 6`,
     submit: 'Verify and sign in',
     format: 'Enter all 6 digits.',
-    wrong: 'That code isn’t right.',
+    wrong: 'That code isn’t right',
     locked: 'This code no longer works',
     usePassword: 'Use my password instead',
     remember: 'Remember this browser',

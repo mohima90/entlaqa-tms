@@ -69,6 +69,7 @@ begin
                     order by p.oid::regprocedure::text collate "C") into v_list
   from pg_proc p where p.proowner = 'email_guard'::regrole;
   perform tests.assert_eq(v_list,
+    'private.auth_mail_route(uuid) (definer), '
     'private.claim_email_tests(integer) (definer), private.email_credentials_public_key() (definer), '
     'private.email_route() (definer), private.email_tenants_waiting() (definer), '
     'private.finish_email_test(uuid,integer,boolean,text) (definer), private.invitation_mail_skipped_ids() (definer), '

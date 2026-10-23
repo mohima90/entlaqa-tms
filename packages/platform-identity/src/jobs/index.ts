@@ -28,15 +28,6 @@ export {
   hashMfaSetupCode,
 } from './account-mailer';
 export {
-  SIGN_IN_CODE_BATCH,
-  SIGN_IN_CODE_HOURLY_CAP,
-  SIGN_IN_CODE_TASK,
-  SIGN_IN_CODE_VALID_MINUTES,
-  type SignInCodeMailerOptions,
-  createSignInCodeMailer,
-  newSignInCode,
-} from './sign-in-code-mailer';
-export {
   MFA_APP_PURGE_BATCH,
   SESSION_PURGE_BATCH,
   SESSION_PURGE_INTERVAL_MS,

@@ -93,7 +93,7 @@ People who do not want an authenticator app can still use a second step at sign-
 | 5 | Approved — remember this device: Off / 1 / 7 / 14 / 30 days, default Off |
 | 6 | **No — keep «Code by text message» and «Block reuse of earlier passwords» on the Security page** («Coming soon») |
 | 7 | Approved — an e-mail code is the second step after the password for roles with MFA required (never both factors at once) — confirmed |
-| 8 | Approved — e-mail codes stay off in production until delivery is fast |
+| 8 | Approved — e-mail codes stay off in production until delivery is fast. **Superseded on 23 Oct 2026 (see «PO answers on launch, delivery and the browser» below): code sign-in launches now, and the e-mail arrives immediately** |
 
 ## PO answers on the design (23 Oct 2026)
 
@@ -106,6 +106,18 @@ Design approved (WP-ADM-05 screens, Mobbin-based, direction C), with this simpli
 | 3 | No «code first, then password» screen for any role (the earlier MFA-role rule of this flow is replaced by row 2) |
 | 4 | Both «Remember this browser» ticks stay: the password step's (lock-out protection) and the code screen's (skips the code for the organization's chosen period: Off / 1 / 7 / 14 / 30 days) |
 
+## PO answers on launch, delivery and the browser (23 Oct 2026)
+
+Answers to the two points that were on hold after the security review, and the decision on how the code is sent. These are final and replace the earlier ones where they differ.
+
+| # | Decision |
+|---|---|
+| 1 | **«Remember this browser» on the code screen works like «keep me signed in» (answer A).** Ticked: the session on this browser stays signed in for the organization's period (Off / 1 / 7 / 14 / 30 days, default Off; the strictest organization of the account wins). Not ticked: the session ends when the browser closes. Explicit sign-out, a password change, «End sessions», deactivation and «Forget all» end it. It applies only to the account signed in on that browser — signing in with another account replaces it. There is **no sign-in without a code**: the earlier idea of a remembered browser that skips the code is dropped. The organization's MFA second step still follows |
+| 2 | **Launch now: «Email me a code» is visible and works in production today.** Flow answer 8 of 21 Oct («codes stay off until delivery is fast») no longer applies, and nothing hides or switches off code sign-in because of delivery speed. (The button appears wherever Auth's Send Email hook is set up — the runbook step; it is not a setting.) |
+| 3 | **E-mails arrive immediately, "the way Kawadir sends them straight from Vercel".** The code is Supabase Auth's own e-mail OTP (6 digits, 10 minutes), sent at once by the app through the organization's sender — or the platform sender for a person of several organizations or with a platform role — via Auth's Send Email hook. The worker queue is not used for it. The earlier line «The e-mail can take a minute or two to arrive» is **not shown** |
+| 4 | Our own protections stay in front of Auth: 5 wrong tries per address then a pause, a ceiling for all clients, one code a minute and a daily cap per address, the organization's lock-out policy, no account enumeration, every refusal audited, nothing sensitive logged |
+| 5 | **Side effect accepted:** the Auth settings (OTP length 6, expiry 600 s) are global, so a **password-reset link now lives 10 minutes** (it was 60). The reset e-mail and page say so |
+
 ## Build notes (23 Oct 2026, WP-ADM-05 built)
 
 Built as agreed in the two «PO answers» sections (the 23 Oct one is final). How the build reads them, and where it differs from the approved design (`adm05-*.html`):
@@ -115,10 +127,10 @@ Built as agreed in the two «PO answers» sections (the 23 Oct one is final). Ho
 | «Email me a code instead» | A second way to sign in, instead of the password, on the password step, for every user. No switch, no setting. Same screen for any address. Details: `docs/engineering/sign-in-protection.md` §12 |
 | Removed from the design | The «Code by e-mail» switch on Security settings (and its sender line / mail-down states) and the «code then password» screen for MFA roles are **not built** (23 Oct answers 1 and 3) |
 | MFA | Unchanged and apart. After either first step the organization's policy decides; the second step is the **authenticator app**, never a second e-mailed code. The only «e-mailed code» in the MFA code is the set-up confirmation of a new app (re-review N1) — not a sign-in step — and stays |
-| «Remember this browser» (code screen) | Always shown (its label cannot state the days: that would tell who has which organization). With the organization's period Off it does nothing. On a remembered browser «Email me a code» signs in **without a code** (the worker still mints the sign-in token, so the page waits a few seconds, or sends a code). Strictest organization of the person wins |
+| «Remember this browser» (code screen) | Always shown (its label cannot state the days: that would tell who has which organization). It means «keep me signed in» (23 Oct answer 1 above): with the organization's period Off it does nothing |
 | «Remember this browser» (password step) | Unchanged (lock-out protection) |
 | Security settings | «Remember a trusted device»: Off / 1 / 7 / 14 / 30 days, default Off. «Code by text message» and «Block reuse of earlier passwords» stay «Coming soon» |
-| My profile › Security | New «Remembered browsers» section (this browser marked, when remembered, until when, «Forget all» with a confirmation). The Organization Admin's «End sessions» of a member also forgets that member's browsers |
+| My profile › Security | New «Browsers kept signed in» section (the sessions kept, since when, until when, «Forget all» with a confirmation). Sign-out, «End sessions» and deactivation end a kept session like any other |
 | Frame | The code screen stays in the sign-in split frame (the design had the focus frame) so the form keeps its state when going back to the password |
 | Code e-mail | Bilingual, organization look, no greeting by name, code not in the subject |
-| Parked | A real-mailbox journey (Mailpit) in the smoke test; checking the magic-link token exchange against hosted GoTrue; a separate setting for the code's sender (the organization's own sender, else the platform's, as the WP-ADM-01 rule) |
+| Parked | A real-mailbox journey in the smoke test; the self-hosted stack's Send Email hook (compose still closes `/auth/v1/otp`; the button is not offered there); a separate setting for the code's sender |

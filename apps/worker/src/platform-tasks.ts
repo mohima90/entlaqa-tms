@@ -1,8 +1,4 @@
-import {
-  createRecoveryLinkIssuer,
-  createSignInLinkIssuer,
-  createStorageAdmin,
-} from '@jadarat/platform-db/admin';
+import { createRecoveryLinkIssuer, createStorageAdmin } from '@jadarat/platform-db/admin';
 import type { InvitationSending, WithPlatformTx, WithSystemTx } from '@jadarat/platform-db/jobs';
 import {
   type FileObjectStore,
@@ -18,7 +14,6 @@ import {
   type RecoveryLinks,
   createAccountMailer,
   createSessionPurger,
-  createSignInCodeMailer,
 } from '@jadarat/platform-identity/jobs';
 import { createUserImportTask } from '@jadarat/platform-import/jobs';
 import type { PlatformTask, WorkerLogLevel } from '@jadarat/platform-jobs/jobs';
@@ -54,8 +49,6 @@ export interface PlatformTaskDependencies {
   readonly importSending?: InvitationSending | undefined;
   /** Injectable for tests: the Auth admin API's recovery links. */
   readonly recoveryLinksFor?: (settings: { url: string; secretKey: string }) => RecoveryLinks;
-  /** Injectable for tests: the Auth admin API's one-time sign-in tokens (e-mailed sign-in codes). */
-  readonly signInLinksFor?: (settings: { url: string; secretKey: string }) => RecoveryLinks;
   /** Injectable for tests: Storage with the worker's key. */
   readonly storeFor?: (settings: { url: string; secretKey: string }) => FileObjectStore;
   /** Injectable for tests: the malware scanner. */
@@ -87,17 +80,6 @@ function authAdminRecoveryLinks(settings: { url: string; secretKey: string }): R
   return createRecoveryLinkIssuer(settings, {
     reason: 'Recovery links for password-reset e-mails (T-M2-17)',
     actor: 'job:platform.account_mail',
-  });
-}
-
-/**
- * The third use of the same key (WP-ADM-05, ADR 0002 §7 note): one-time sign-in tokens for the e-mailed sign-in
- * codes. The web app only ever exchanges a token the worker minted AFTER the database confirmed the account.
- */
-function authAdminSignInLinks(settings: { url: string; secretKey: string }): RecoveryLinks {
-  return createSignInLinkIssuer(settings, {
-    reason: 'One-time sign-in tokens for e-mailed sign-in codes (WP-ADM-05)',
-    actor: 'job:platform.sign_in_code',
   });
 }
 
@@ -162,14 +144,6 @@ export function platformTasks(deps: PlatformTaskDependencies): readonly Platform
   if (deps.authAdmin) {
     const store = (deps.storeFor ?? workerStore)(deps.authAdmin);
     tasks.push(
-      // E-mailed sign-in codes (WP-ADM-05): the one-time sign-in token and the code e-mail.
-      createSignInCodeMailer({
-        appBaseUrl: deps.appBaseUrl,
-        signInLinks: (deps.signInLinksFor ?? authAdminSignInLinks)(deps.authAdmin),
-        withPlatformTx: deps.withPlatformTx,
-        withSystemTx: deps.withSystemTx,
-        log: deps.log,
-      }),
       createFileHousekeepingTask({
         withPlatformTx: deps.withPlatformTx,
         store,

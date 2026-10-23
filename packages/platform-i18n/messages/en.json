@@ -167,8 +167,7 @@
       "reauthenticationNeeded": "For your account's security, sign out and sign in again, then change the password.",
       "passwordRejected": "The new password was not accepted. Choose a different one.",
       "tooManyAttempts": "Sign-in is paused for now after too many unsuccessful attempts. Try again later, or reset your password with “Forgot password?”.",
-      "signInCodeInvalid": "That code isn’t right.",
-      "signInCodeExpired": "This code has expired or was already used. Send a new code.",
+      "signInCodeInvalid": "That code isn’t right, or it has expired.",
       "signInCodeLocked": "Too many incorrect codes. This code no longer works, and code checks are paused for 15 minutes.",
       "signInCodeTooSoon": "We just sent a code. You can ask for another in {seconds} seconds."
     },
@@ -216,7 +215,7 @@
       "digit": "Digit {n} of {total}",
       "spam": "Not there? Check your spam folder.",
       "remember": "Remember this browser",
-      "rememberHint": "If your organization allows it, you won’t be asked for a code on this browser for the period it chose. It also keeps you able to sign in if your account is paused after attempts from elsewhere. Don’t tick this on a shared computer.",
+      "rememberHint": "Keeps you signed in on this browser for the period your organization chose, if it allows it. Signing out, ending sessions or changing your password signs you out. Don’t tick this on a shared computer.",
       "submit": "Verify and sign in",
       "submitting": "Checking…",
       "resendIn": "Didn’t get it? You can ask for a new code in {time}.",
@@ -235,10 +234,7 @@
         "other": "{n} tries left"
       },
       "lockedHelp": "Try again in 15 minutes, or sign in with your password.",
-      "usePassword": "Use my password instead",
-      "rememberedTitle": "Signing you in",
-      "rememberedText": "This browser is remembered, so no code is needed. One moment…",
-      "rememberedFailed": "We couldn’t sign you in on this browser. We’re sending a code instead."
+      "usePassword": "Use my password instead"
     }
   },
   "invite": {
@@ -334,7 +330,7 @@
     "sent": {
       "title": "Check your email",
       "text": "If {email} has an account with us, you'll get an email within a few minutes.",
-      "validity": "The link is valid for <b>60 minutes</b> and works once.",
+      "validity": "The link is valid for <b>10 minutes</b> and works once.",
       "spam": "No email? It may be in your spam folder. You can send it again after a minute.",
       "resend": "Send again",
       "resendIn": "Send again ({time})",
@@ -362,7 +358,7 @@
       "sessionsNotice": "After saving, we end every sign-in session on all devices and send a confirmation to your email. You then sign in with the new password.",
       "submit": "Save password",
       "submitting": "Saving…",
-      "validity": "The link is valid for 60 minutes from when it was requested and works once. If it has expired, request a new one on the <link>Forgot password</link> page.",
+      "validity": "The link is valid for 10 minutes from when it was requested and works once. If it has expired, request a new one on the <link>Forgot password</link> page.",
       "codeIntro": "Your account uses an authenticator app: enter the code it shows now. The link works once, so check the code before saving.",
       "codeOptionalIntro": "Does your account use an authenticator app? Then also enter the code it shows now: without it the password can't be changed, and the link is used up.",
       "codeLabel": "Verification code",
@@ -378,7 +374,7 @@
     },
     "invalidLink": {
       "title": "This link has expired or was already used",
-      "text": "Password reset links are valid for 60 minutes and work once. Request a new link.",
+      "text": "Password reset links are valid for 10 minutes and work once. Request a new link.",
       "requestNew": "Request a new link",
       "signIn": "Back to sign in"
     },
@@ -659,20 +655,20 @@
     "addArabicName": "Add the name in Arabic (optional)",
     "addEnglishName": "Add the name in English (optional)",
     "remembered": {
-      "title": "Remembered browsers",
-      "intro": "Browsers where you chose “Remember this browser”. They skip the code for up to {days, plural, one {# day} other {# days}}, as your organization allows.",
-      "introOff": "Your organization doesn’t remember browsers, so you’re asked for a code every time.",
-      "off": "Your organization doesn’t remember browsers, so you’re asked for a code every time.",
-      "count": "{count, plural, =0 {No remembered browsers} one {# remembered browser} other {# remembered browsers}}",
+      "title": "Browsers kept signed in",
+      "intro": "Browsers where you chose “Remember this browser”. They keep you signed in for up to {days, plural, one {# day} other {# days}}, as your organization allows. Signing out, ending a session or changing your password ends it.",
+      "introOff": "Your organization doesn’t keep people signed in, so a browser asks you to sign in again after you close it.",
+      "off": "Your organization doesn’t keep people signed in, so a browser asks you to sign in again after you close it.",
+      "count": "{count, plural, =0 {No browsers kept signed in} one {# browser kept signed in} other {# browsers kept signed in}}",
       "forgetAll": "Forget all",
-      "rememberedOn": "Remembered {date}",
-      "until": "skips the code until {date}",
-      "expired": "no longer remembered",
-      "none": "No browser is remembered. Tick “Remember this browser” next time you enter a code.",
-      "forgetTitle": "Forget all remembered browsers?",
-      "forgetText": "Next time you sign in on any of them you’ll be asked for a code again. You stay signed in on this one.",
-      "forgetConfirm": "Forget all",
-      "forgotten": "All remembered browsers were forgotten.",
+      "rememberedOn": "Signed in {date}",
+      "until": "stays signed in until {date}",
+      "expired": "no longer kept",
+      "none": "No browser is kept signed in. Tick “Remember this browser” next time you enter a code.",
+      "forgetTitle": "Stop keeping you signed in?",
+      "forgetText": "Your sessions follow your organization’s normal rules again, so they end after a short time without activity.",
+      "forgetConfirm": "Stop keeping",
+      "forgotten": "Your sessions are no longer kept signed in.",
       "current": "This browser",
       "unknownBrowser": "A browser",
       "close": "Close",
@@ -1471,8 +1467,8 @@
       "grace": "Set-up grace period",
       "graceHint": "Time allowed before setting it up becomes a condition for signing in (0 to 30 days).",
       "graceUnit": "days",
-      "trusted": "Remember a trusted device",
-      "trustedHint": "A browser that someone chose to remember skips the e-mailed sign-in code for this long. Shortening it, or switching it off, applies at once to browsers already remembered. Off is the default.",
+      "trusted": "Keep people signed in",
+      "trustedHint": "When someone ticks “Remember this browser” on the e-mailed-code screen, they stay signed in on that browser for this long, instead of the usual idle and maximum-length limits. Signing out, ending sessions, deactivation and a password change still end it. A shorter choice applies to new sign-ins. Off is the default.",
       "promptAdmins": "Invite Organization Admins to set up an authenticator app at sign-in",
       "promptAdminsHint": "For those who don't use an app yet; they can postpone it.",
       "trustedOff": "Off",
@@ -1562,8 +1558,7 @@
     "ending": "Ending…",
     "ended": "The selected sign-in sessions have ended.",
     "empty": "There are no active sign-in sessions.",
-    "allowed": "({count} of {max} allowed)",
-    "alsoForgets": "This also forgets the browsers they asked to remember."
+    "allowed": "({count} of {max} allowed)"
   },
   "files": {
     "errors": {

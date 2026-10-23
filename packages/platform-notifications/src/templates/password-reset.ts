@@ -20,7 +20,7 @@ export const PasswordResetVariables = z.strictObject({
   organizationName: Localized(150),
   /** The reset page in each language (the worker builds both from the same token). */
   resetUrl: z.strictObject({ ar: Link, en: Link }),
-  /** How long the link works (Auth's `otp_exp`: 60 minutes). */
+  /** How long the link works (Auth's `otp_exp`: 10 minutes). */
   validMinutes: z.number().int().min(1).max(1440),
   loginEmail: z.string().refine(isEmailAddress, 'e-mail address'),
   /** The account uses an authenticator app: the page will ask for its code too (T-M2-10). */

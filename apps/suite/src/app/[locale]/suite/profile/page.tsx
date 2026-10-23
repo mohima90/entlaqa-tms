@@ -1,7 +1,6 @@
 import { toClientError } from '@jadarat/platform-core';
 import type { UserProfile } from '@jadarat/platform-db';
 import type { PersonRecordView } from '@jadarat/platform-rbac';
-import { currentRememberedBrowserHashForRequest } from '@jadarat/platform-identity/auth';
 import { type AppLocale, type DisplayDateFormatter, formatHijriDate } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { Alert, Avatar, Badge, FormSection, Icon, PageHeader, TabNav } from '@jadarat/ui';
@@ -81,8 +80,7 @@ export default async function MyProfilePage({
         );
     } else {
       // Own sign-in sessions, password rule and authenticator app (T-M2-10).
-      const currentBrowser = await currentRememberedBrowserHashForRequest();
-      const security = await mySecurityQuery(currentBrowser ? { currentBrowser } : {});
+      const security = await mySecurityQuery({});
       content = (
         <MyProfile
           locale={locale}
@@ -523,16 +521,16 @@ async function MyProfile({
                   {t('remembered.title')}
                 </h2>
                 <p className="m-0 mt-1 text-text-muted">
-                  {security.remembered.days === 0
+                  {security.kept.days === 0
                     ? t('remembered.introOff')
-                    : t('remembered.intro', { days: security.remembered.days })}
+                    : t('remembered.intro', { days: security.kept.days })}
                 </p>
               </div>
             </div>
             <RememberedBrowsers
-              days={security.remembered.days}
-              rows={await rememberedRows(locale, security.remembered.browsers, dates)}
-              labels={await rememberedLabels(locale, security.remembered.browsers.length)}
+              days={security.kept.days}
+              rows={await rememberedRows(locale, security.kept.sessions, dates)}
+              labels={await rememberedLabels(locale, security.kept.sessions.length)}
               errors={errors}
             />
           </section>

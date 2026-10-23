@@ -23,22 +23,19 @@ export {
   requestPasswordResetMail,
 } from './account-mail';
 export {
-  type RememberedBrowser,
-  type RememberedSignInTake,
-  type SignInCodeApi,
-  type SignInCodeCheck,
-  type SignInCodeRequest,
-  createSignInCodeApi,
-  forgetMemberRememberedBrowsers,
-  forgetThisBrowser,
-  forgetMyRememberedBrowsers,
-  isRememberedBrowserForEmail,
-  listMyRememberedBrowsers,
-  rememberBrowser,
-  requestSignInCode,
-  takeRememberedSignIn,
-  verifySignInCode,
-} from './sign-in-codes';
+  type AuthMailAccount,
+  type AuthMailApi,
+  type AuthMailRoute,
+  authMailApi,
+  createAuthMailApi,
+} from './auth-mail';
+export type { EmailRouteRow } from './email-route';
+export {
+  type KeptSession,
+  forgetKeptSessions,
+  keepSession,
+  listMyKeptSessions,
+} from './kept-sessions';
 export { DomainError, isDomainError } from './domain-error';
 export {
   BRAND_IMAGE_KINDS,

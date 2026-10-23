@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import type { ClaimsTx } from '../claims-tx';
+import { type EmailRouteRow, type EmailRouteSqlRow, toEmailRouteRow } from '../email-route';
 import { pgError } from '../pg-error';
 
 /**
@@ -9,6 +10,8 @@ import { pgError } from '../pg-error';
  * organization (withSystemTx) for its route. Sealed provider secrets leave the database here only — they are
  * opened by the worker (platform-notifications jobs) and never logged.
  */
+
+export { type EmailRouteRow, type EmailRouteSqlRow, toEmailRouteRow };
 
 /** SQLSTATE undefined_function: the database is not migrated yet (the worker and the DB deploy in parallel). */
 const UNDEFINED_FUNCTION = '42883';
@@ -28,89 +31,11 @@ export async function publishEmailCredentialsKey(
   return row?.changed === true;
 }
 
-/** The sender rule's inputs for the job's organization (private.email_route). */
-export interface EmailRouteRow {
-  readonly tenant: {
-    readonly provider: string;
-    readonly options: unknown;
-    readonly credentialsSealed: string;
-    readonly fromName: string;
-    readonly fromAddress: string;
-    readonly replyTo: string | null;
-    /** Enabled AND verified. */
-    readonly enabled: boolean;
-    readonly version: number;
-  } | null;
-  readonly platform: {
-    readonly provider: string;
-    readonly options: unknown;
-    readonly credentialsSealed: string;
-    readonly fromAddress: string;
-    readonly verified: boolean;
-    readonly version: number;
-  } | null;
-  readonly brandNameAr: string;
-  readonly brandNameEn: string | null;
-  readonly defaultLocale: 'ar' | 'en';
-}
-
 export async function loadEmailRoute(tx: ClaimsTx): Promise<EmailRouteRow | null> {
-  const [r] = await tx.execute<{
-    tenant_provider: string | null;
-    tenant_options: unknown;
-    tenant_credentials_sealed: string | null;
-    tenant_from_name: string | null;
-    tenant_from_address: string | null;
-    tenant_reply_to: string | null;
-    tenant_enabled: boolean;
-    tenant_version: number | null;
-    platform_configured: boolean;
-    platform_provider: string | null;
-    platform_options: unknown;
-    platform_credentials_sealed: string | null;
-    platform_from_address: string | null;
-    platform_verified: boolean;
-    platform_version: number | null;
-    brand_name_ar: string;
-    brand_name_en: string | null;
-    default_locale: string;
-  }>(sql`select * from private.email_route()`);
-  if (!r) return null;
-  return {
-    tenant:
-      r.tenant_provider !== null &&
-      r.tenant_credentials_sealed !== null &&
-      r.tenant_from_name !== null &&
-      r.tenant_from_address !== null
-        ? {
-            provider: r.tenant_provider,
-            options: r.tenant_options,
-            credentialsSealed: r.tenant_credentials_sealed,
-            fromName: r.tenant_from_name,
-            fromAddress: r.tenant_from_address,
-            replyTo: r.tenant_reply_to,
-            enabled: r.tenant_enabled,
-            version: r.tenant_version ?? 0,
-          }
-        : null,
-    platform:
-      r.platform_configured &&
-      r.platform_provider !== null &&
-      r.platform_credentials_sealed !== null &&
-      r.platform_from_address !== null
-        ? {
-            provider: r.platform_provider,
-            options: r.platform_options,
-            credentialsSealed: r.platform_credentials_sealed,
-            fromAddress: r.platform_from_address,
-            verified: r.platform_verified,
-            version: r.platform_version ?? 0,
-          }
-        : null,
-    brandNameAr: r.brand_name_ar,
-    brandNameEn: r.brand_name_en,
-    defaultLocale: r.default_locale === 'ar' ? 'ar' : 'en',
-  };
+  const [r] = await tx.execute<EmailRouteSqlRow & Record<string, unknown>>(
+    sql`select * from private.email_route()`,
+  );
+  return r ? toEmailRouteRow(r) : null;
 }
 
 /** A waiting test e-mail, claimed (tenantId null: the platform sender). The recipient is personal data. */

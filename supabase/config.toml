@@ -54,12 +54,13 @@ enable_signup = true
 # The invitation e-mail already proved the address: the sign-up returns a session at once (as on staging,
 # "Confirm email" off, and self-hosted GOTRUE_MAILER_AUTOCONFIRM).
 enable_confirmations = false
-# Password reset (FR-IAM-13, T-M2-08; docs/engineering/password-reset.md): the e-mailed link is valid for
-# 60 minutes and single use; one e-mail a minute per account. The link's token hash is
-# sha224(e-mail + one-time code): with Auth's default 6-digit code it could be guessed (about 20 bits once
-# the address is known), so the code has GoTrue's maximum length — 10 digits — although it is never shown.
-otp_expiry = 3600
-otp_length = 10
+# E-mail one-time codes, ONE setting for every e-mail Auth issues: the sign-in code (WP-ADM-05: 6 digits typed
+# by the person, valid 10 minutes, one e-mail a minute per account) and the password-reset link (FR-IAM-13,
+# T-M2-08; docs/engineering/password-reset.md). The reset link's token hash is sha224(e-mail + one-time code):
+# with a 6-digit code it could be guessed (about 20 bits once the address is known) - which is why the life
+# is 10 minutes, not 60 (PO 23 Oct 2026): the window is too short for a spread guess (sign-in-protection.md §12).
+otp_expiry = 600
+otp_length = 6
 max_frequency = "60s"
 # Secure password change: a session signed in more than 24 hours ago must re-authenticate before it sets
 # a password (staging: Authentication → Sign In / Providers → Email; self-hosted

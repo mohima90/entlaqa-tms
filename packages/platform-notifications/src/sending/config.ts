@@ -14,7 +14,7 @@ export interface EmailSettings {
   createTransport(): EmailTransport | null;
 }
 
-const read = (env: NodeJS.ProcessEnv, name: string) => {
+const read = (env: Readonly<Record<string, string | undefined>>, name: string) => {
   const value = env[name]?.trim();
   return value === '' ? undefined : value;
 };
@@ -27,7 +27,7 @@ const read = (env: NodeJS.ProcessEnv, name: string) => {
  * worker's environment, never in the web app's (ADR 0005 §1). Error messages name variables, never values.
  */
 export function readEmailSettings(
-  env: NodeJS.ProcessEnv,
+  env: Readonly<Record<string, string | undefined>>,
   readFile: (path: string) => string = (path) => readFileSync(path, 'utf8'),
 ): EmailSettings {
   // Unset = none: no installation sender (messages wait for the sender set in the product, never dropped).

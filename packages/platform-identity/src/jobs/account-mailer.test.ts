@@ -190,7 +190,7 @@ describe('account mailer (T-M2-17): reset e-mail and "password changed" notice',
         ar: `${BASE}/ar/reset-password#token_hash=${HASH}&type=recovery`,
         en: `${BASE}/en/reset-password#token_hash=${HASH}&type=recovery`,
       },
-      validMinutes: 60,
+      validMinutes: 10,
       loginEmail: EMAIL,
       codeNeeded: false,
     });

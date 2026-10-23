@@ -101,7 +101,7 @@ begin
                            where a.attrelid = 'private.auth_session_validity'::regclass and a.attnum > 0 and not a.attisdropped),
     'id, user_id, not_after, created_at, updated_at, user_agent, aal, factor_id', 'private.auth_session_validity: no address, no token');
   for r in select * from (values ('private.auth_mfa_factor'), ('private.auth_session_validity'),
-                                 ('private.revoked_sessions'), ('private.mfa_prompt_dismissals'),
+                                 ('private.revoked_sessions'), ('private.kept_sessions'), ('private.mfa_prompt_dismissals'),
                                  ('private.mfa_factor_confirmations'), ('private.mfa_setup_code_failures'),
                                  ('private.security_notice_digests')) as o (obj) loop
     foreach v_list in array array['anon', 'authenticated', 'app_server', 'app_worker', 'app_queue', 'invitation_guard',
@@ -125,7 +125,8 @@ begin
                        and not has_table_privilege('tenant_guard', 'private.auth_session_validity', 'insert, update'),
     'tenant_guard deletes through the Auth views (removal, sign-out), never inserts or changes');
   perform tests.assert((select bool_and(relrowsecurity and relforcerowsecurity) from pg_class
-                        where oid in ('private.revoked_sessions'::regclass, 'private.mfa_prompt_dismissals'::regclass,
+                        where oid in ('private.revoked_sessions'::regclass, 'private.kept_sessions'::regclass,
+                                      'private.mfa_prompt_dismissals'::regclass,
                                       'private.mfa_factor_confirmations'::regclass,
                                       'private.mfa_setup_code_failures'::regclass,
                                       'private.security_notice_digests'::regclass)),

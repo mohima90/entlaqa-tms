@@ -113,28 +113,6 @@ export function createRecoveryLinkIssuer(
   settings: AuthAdminSettings,
   op: AdminOperation,
 ): RecoveryLinkIssuer {
-  return createLinkIssuer(settings, op, 'recovery');
-}
-
-/**
- * One-time sign-in tokens for the worker's e-mailed sign-in codes (WP-ADM-05), through the same admin
- * `generate_link` (type `magiclink`): Auth stores the token hash and sends NOTHING; the worker keeps the hash
- * beside the keyed hash of the code, and the web app exchanges it (verifyOtp) once the right code was typed.
- * The CALLER must have established that the account exists (the database's claim does): for an unknown address
- * a magic link would CREATE a user in Auth, unlike a recovery link.
- */
-export function createSignInLinkIssuer(
-  settings: AuthAdminSettings,
-  op: AdminOperation,
-): RecoveryLinkIssuer {
-  return createLinkIssuer(settings, op, 'magiclink');
-}
-
-function createLinkIssuer(
-  settings: AuthAdminSettings,
-  op: AdminOperation,
-  type: 'recovery' | 'magiclink',
-): RecoveryLinkIssuer {
   assertAdminOperation(op);
   const client = createClient(settings.url, settings.secretKey, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
@@ -147,9 +125,7 @@ function createLinkIssuer(
     async issue(email) {
       let answer: Awaited<ReturnType<typeof client.auth.admin.generateLink>>;
       try {
-        answer = await client.auth.admin.generateLink(
-          type === 'recovery' ? { type: 'recovery', email } : { type: 'magiclink', email },
-        );
+        answer = await client.auth.admin.generateLink({ type: 'recovery', email });
       } catch {
         throw new AuthAdminError('AUTH_UNREACHABLE', true);
       }

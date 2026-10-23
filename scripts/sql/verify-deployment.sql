@@ -188,7 +188,7 @@ begin
   -- Ended sessions, the MFA prompt answers, the confirmed apps and the wrong set-up codes (T-M2-10):
   -- tenant_guard alone.
   for r in
-    select o.obj from (values ('private.revoked_sessions'), ('private.mfa_prompt_dismissals'),
+    select o.obj from (values ('private.revoked_sessions'), ('private.kept_sessions'), ('private.mfa_prompt_dismissals'),
                               ('private.mfa_factor_confirmations'), ('private.mfa_setup_code_failures')) as o(obj)
   loop
     if to_regclass(r.obj) is null then
@@ -607,13 +607,10 @@ begin
         -- Profile photos (WP-ADM-04)
         'private.publish_profile_photo(uuid,text,bigint,text,bytea)', 'private.remove_profile_photo()',
         -- Sign-in extras (WP-ADM-05)
-        'private.remembered_browser_ok(uuid,bytea)', 'private.remember_browser(bytea,text,bytea)', 'private.forget_this_browser(bytea)',
-        'private.my_remembered_browsers(bytea)', 'private.remembered_browser_for_email(text,bytea)',
-        'private.forget_member_remembered_browsers(uuid)', 'private.forget_remembered_browsers_of_inactive_member()',
-        'private.sign_in_code_hmac(uuid,text)', 'private.request_sign_in_code(text,bytea)',
-        'private.verify_sign_in_code(uuid,text,text)', 'private.take_remembered_sign_in(uuid,text,bytea,bytea)',
-        'private.claim_sign_in_code_request()', 'private.account_needs_platform_sender(uuid)', 'private.issue_sign_in_code(uuid,uuid,uuid,text,text)',
-        'private.sign_in_code_dead_end(uuid)', 'private.retry_sign_in_code_request(uuid)')
+        'private.keep_session()', 'private.my_kept_sessions()', 'private.forget_kept_sessions()',
+        'private.account_sender_is_platform(uuid)', 'private.account_needs_platform_sender(uuid)',
+        'private.auth_mail_account(uuid)', 'private.auth_mail_route(uuid)',
+        'private.audit_sign_in_code_sent(uuid,uuid)', 'private.audit_sign_in_code_refused(text,boolean)')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;

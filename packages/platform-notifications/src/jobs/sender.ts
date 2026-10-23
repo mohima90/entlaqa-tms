@@ -12,7 +12,7 @@ import {
   EmailSendError,
   type EmailTransport,
   type OutgoingEmail,
-} from './transport';
+} from '../sending/transport';
 
 /** Emitted with each queued e-mail (subject = delivery id); data carries the template key only. */
 export const EMAIL_QUEUED_EVENT = 'com.entlaqa.platform.email.queued';

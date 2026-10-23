@@ -58,7 +58,6 @@ export const IdentityErrors = defineErrorCodes({
    * request within a minute (`seconds`). The same for every address, with or without an account.
    */
   SIGN_IN_CODE_INVALID: { status: 401, messageKey: 'auth.errors.signInCodeInvalid' },
-  SIGN_IN_CODE_EXPIRED: { status: 401, messageKey: 'auth.errors.signInCodeExpired' },
   SIGN_IN_CODE_LOCKED: { status: 429, messageKey: 'auth.errors.signInCodeLocked' },
   SIGN_IN_CODE_TOO_SOON: { status: 429, messageKey: 'auth.errors.signInCodeTooSoon' },
 });
@@ -85,10 +84,11 @@ export interface AuthClientLike extends SupabaseAuthLike {
       password: string;
     }): Promise<{ data: unknown; error: { status?: number | undefined } | null }>;
     refreshSession(current?: { refresh_token: string }): Promise<{ data: unknown; error: unknown }>;
-    /** The one-time sign-in token minted for an e-mailed code (WP-ADM-05; the Auth admin key is the worker's). */
+    /** The e-mailed sign-in code (WP-ADM-05): Auth's own e-mail OTP, checked by Auth. */
     verifyOtp(params: {
-      token_hash: string;
-      type: 'magiclink';
+      email: string;
+      token: string;
+      type: 'email';
     }): Promise<{ data: unknown; error: { status?: number | undefined } | null }>;
     signOut(options: { scope: 'local' }): Promise<{ error: unknown }>;
   };

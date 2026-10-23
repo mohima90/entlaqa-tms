@@ -1,29 +1,22 @@
--- «Remember a trusted device» becomes real (WP-ADM-05, FR-IAM-12; business flow EP-AUTH-signin-extras, PO
--- answers 21 Oct 2026 #5 and 23 Oct 2026 #4): how long a browser the person chose to remember skips the e-mailed
--- sign-in code - Off / 1 / 7 / 14 / 30 days, default Off (0). Class: T. No personal data.
+-- «Remember this browser» = «keep me signed in» (WP-ADM-05, FR-IAM-12; business flow EP-AUTH-signin-extras, PO
+-- answers 21 Oct 2026 #5 and 23 Oct 2026): how long a session the person chose to keep stays signed in on its
+-- browser - Off / 1 / 7 / 14 / 30 days, default Off (0). Class: T. No personal data.
 --
 --   platform.security_policies.remembered_browser_days  0 (off, the default for every organization), 1, 7, 14
 --                           or 30. Written by the Organization Admin at AAL2 with the other security settings
---                           (policy security_policies_update); shortening it, or switching it off, applies at
---                           once to browsers already remembered (the check at use compares the browser's own
---                           date with creation + the CURRENT days: 20261026100200).
+--                           (policy security_policies_update); read when a session is kept (20261026100100:
+--                           the strictest organization of the account wins).
 --   private.security_policy_changed_mail()  the change notice to every Organization Admin also names this
 --                           setting (`rememberedBrowserDays`, never the value).
---   account_mail_guard      may read the setting (the sign-in code functions of 20261026100200 ask whether a
---                           remembered browser is still allowed).
 -- Expand-first: a column with a default; older code never sees it.
 
 alter table platform.security_policies add column remembered_browser_days smallint not null default 0;
 alter table platform.security_policies add constraint security_policies_remembered_browser_days_check
   check (remembered_browser_days in (0, 1, 7, 14, 30));
 comment on column platform.security_policies.remembered_browser_days is
-  'How many days a remembered browser skips the e-mailed sign-in code: 0 (off), 1, 7, 14 or 30 (WP-ADM-05).';
+  'How many days a session kept with "Remember this browser" stays signed in: 0 (off), 1, 7, 14 or 30 (WP-ADM-05).';
 
 grant update (remembered_browser_days) on platform.security_policies to authenticated;
-
-create policy security_policies_account_mail_guard_read on platform.security_policies for select
-  to account_mail_guard using (true);
-grant select (tenant_id, remembered_browser_days) on platform.security_policies to account_mail_guard;
 
 create or replace function private.security_policy_changed_mail()
 returns trigger

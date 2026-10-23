@@ -145,8 +145,8 @@ describe('message delivery helpers', () => {
   });
 
   it('reads the template of a delivery that is not final', async () => {
-    const fake = fakeTx([{ template: 'platform.sign_in_code_platform' }]);
-    expect(await getEmailDeliveryTemplate(fake.tx, ID)).toBe('platform.sign_in_code_platform');
+    const fake = fakeTx([{ template: 'platform.password_reset_platform' }]);
+    expect(await getEmailDeliveryTemplate(fake.tx, ID)).toBe('platform.password_reset_platform');
     expect(fake.executed[0]?.sql).toContain("status in ('queued', 'sending')");
     expect(fake.executed[0]?.params).toEqual([ID]);
     expect(await getEmailDeliveryTemplate(fakeTx([]).tx, ID)).toBeNull();

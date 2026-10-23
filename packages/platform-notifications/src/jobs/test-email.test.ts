@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { sendTestEmail } from './test-email';
-import type { EmailTransport } from './transport';
+import type { EmailTransport } from '../sending/transport';
 
 describe('sendTestEmail', () => {
   it('sends a sample invitation marked as a test to the given address', async () => {

@@ -3,7 +3,7 @@ import type { DeliveredEvent, InTenant } from '@jadarat/platform-jobs/jobs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { EmailRouter } from './router';
 import { EMAIL_MAX_ATTEMPTS, EMAIL_QUEUED_EVENT, createEmailSender } from './sender';
-import { EmailSendError, type EmailTransport } from './transport';
+import { EmailSendError, type EmailTransport } from '../sending/transport';
 
 const db = vi.hoisted(() => ({
   claimEmailDelivery: vi.fn(),
@@ -294,7 +294,7 @@ describe('e-mail sender', () => {
     );
     const router: EmailRouter = { resolve, close: () => Promise.resolve() };
     await createEmailSender({ log: vi.fn(), router }).perform({
-      event: { ...event, data: { template: 'platform.sign_in_code_platform' } },
+      event: { ...event, data: { template: 'platform.password_reset_platform' } },
       inTenant,
       attempt: 1,
       maxAttempts: EMAIL_MAX_ATTEMPTS,
@@ -305,7 +305,7 @@ describe('e-mail sender', () => {
 
   it('an event queued again by the resume task carries no template: it is looked up in the delivery', async () => {
     db.claimEmailDelivery.mockResolvedValue(claimed);
-    db.getEmailDeliveryTemplate.mockResolvedValue('platform.sign_in_code_platform');
+    db.getEmailDeliveryTemplate.mockResolvedValue('platform.password_reset_platform');
     const resolve = vi.fn<EmailRouter['resolve']>(() =>
       Promise.resolve({ kind: 'wait' as const, code: 'NO_SENDER' as const }),
     );

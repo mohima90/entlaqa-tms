@@ -77,7 +77,7 @@ describe('raw invite messages on the client', () => {
   it('splits the password-reset messages around their bold part and link (T-M2-08)', () => {
     for (const messages of [ar, en]) {
       const validity = splitTaggedMessage(messages.passwordReset.sent.validity, 'b');
-      expect(validity.inner).toMatch(/60/);
+      expect(validity.inner).toMatch(/10/);
       const link = splitTaggedMessage(messages.passwordReset.reset.validity, 'link');
       expect(link.inner).not.toBe('');
       for (const part of [validity, link]) {

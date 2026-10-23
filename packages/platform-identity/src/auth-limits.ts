@@ -168,11 +168,6 @@ export function deviceSubject(token: string): Buffer {
   return subject('device', token);
 }
 
-/** A remembered browser's subject (WP-ADM-05): its own namespace, never the trusted-device cookie's. */
-export function rememberedBrowserSubject(token: string): Buffer {
-  return subject('device', `remembered-browser\n${token}`);
-}
-
 /**
  * The browser's trusted-device cookie (auth-next.ts: HttpOnly, Secure, SameSite=Lax, `__Host-` prefix).
  * It holds a random token only — never the account; the database knows which accounts trust it (keyed
@@ -210,7 +205,7 @@ export const LIMIT_BUCKETS = {
   signInCodeCheckClient: 'sign_in_code.check_client',
   signInCodeRequestAccountDaily: 'sign_in_code.request_account_daily',
   signInCodeCheckAllClients: 'sign_in_code.check_all_clients',
-  signInCodeCheckRememberedBrowser: 'sign_in_code.check_remembered_browser',
+  signInCodeRequestMinute: 'sign_in_code.request_minute',
 } as const;
 
 /**

@@ -7,7 +7,8 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
-    "./jobs": "./src/jobs/index.ts"
+    "./jobs": "./src/jobs/index.ts",
+    "./inline": "./src/inline.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

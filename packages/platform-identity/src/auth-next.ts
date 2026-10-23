@@ -9,7 +9,6 @@ import {
   type Result,
   actorFromClaims,
   appError,
-  describeUserAgent,
   err,
   hasTenant,
   ok,
@@ -22,10 +21,12 @@ import {
   getLockoutPolicy,
   getSessionAccess,
   hashInvitationToken,
+  authMailApi,
   insertAuditEvent,
   invitationByToken,
   invitationPasswordMinLength,
   isPlatformAdmin,
+  keepSession,
   getEmailCredentialsPublicKey,
   getPlatformEmailSettings,
   savePlatformEmailSettings as savePlatformEmailSettingsInDatabase,
@@ -39,12 +40,6 @@ import {
   passwordMinLengthForCaller,
   queueOwnPasswordChangedMail,
   rateLimitStore,
-  rememberBrowser,
-  requestSignInCode as requestSignInCodeInDatabase,
-  forgetThisBrowser,
-  isRememberedBrowserForEmail,
-  takeRememberedSignIn,
-  verifySignInCode as verifySignInCodeInDatabase,
   rejectMfaFactor,
   removeMfaApp as removeMfaAppInDatabase,
   requestAccountLockedMail as requestAccountLockedMailInDatabase,
@@ -59,11 +54,17 @@ import {
   withUserTx,
 } from '@jadarat/platform-db';
 import {
+  KEEP_SIGNED_IN_COOKIE,
+  KEPT_SESSION_COOKIE_SECONDS,
   createSupabaseServerClient,
   createSupabaseStatelessClient,
   createSupabaseVerifierClient,
 } from '@jadarat/platform-db/supabase-server';
-import { kickWorkerAfterResponse, kicksWorker } from '@jadarat/platform-jobs/kick/next';
+import {
+  createInlineEmailRouter,
+  createInlineEmailSender,
+} from '@jadarat/platform-notifications/inline';
+import { kicksWorker } from '@jadarat/platform-jobs/kick/next';
 import { log } from '@jadarat/platform-observability';
 import { cookies, headers } from 'next/headers';
 import { after } from 'next/server';
@@ -117,18 +118,9 @@ import {
   startTotpSetup,
   verifyTotpCode,
 } from './mfa';
-import {
-  type PendingRememberCookie,
-  type RememberDeps,
-  type RememberedBrowserCookie,
-  type SignInCodeDeps,
-  completeRememberedSignIn,
-  forgetBrowserOnSignOut,
-  rememberAfterSecondStep,
-  requestSignInCode,
-  signInWithEmailedCode,
-} from './sign-in-code';
-import { createSignInCodeLimiter, rememberedBrowserHash } from './sign-in-code-limits';
+import { handleSendEmailHook } from './auth-email-hook';
+import { type SignInCodeDeps, requestSignInCode, signInWithEmailedCode } from './sign-in-code';
+import { createSignInCodeLimiter } from './sign-in-code-limits';
 import { type SupabaseAuthLike, verifyClaims } from './verify-claims';
 import { getVerifiedClaims, getVerifiedClaimsStrict } from './next';
 import {
@@ -247,86 +239,6 @@ function trustedDeviceCookie(store: CookieStore): TrustedDeviceCookie {
 }
 
 /**
- * The remembered-browser cookie (WP-ADM-05, PO 23 Oct 2026): a random 256-bit token only - HttpOnly (never
- * readable by scripts), Secure with the `__Host-` prefix (this host only, path /), SameSite=Lax. Written only
- * after a code sign-in with «Remember this browser» ticked, and only when every organization of the person
- * allows it; the database keeps SHA-256(token) per person and organization, with the dates. Separate from the
- * trusted-device cookie above (that one only protects against lock-outs).
- */
-export const REMEMBERED_BROWSER_COOKIE = SECURE_COOKIES
-  ? '__Host-jadarat-remember'
-  : 'jadarat-remember';
-
-function rememberedBrowserCookie(store: CookieStore): RememberedBrowserCookie {
-  return {
-    read: () => {
-      const value = store.get(REMEMBERED_BROWSER_COOKIE)?.value ?? '';
-      return DEVICE_TOKEN_PATTERN.test(value) ? value : null;
-    },
-    write: (token, maxAgeSeconds) => {
-      try {
-        store.set(REMEMBERED_BROWSER_COOKIE, token, {
-          httpOnly: true,
-          secure: SECURE_COOKIES,
-          sameSite: 'lax',
-          path: '/',
-          maxAge: maxAgeSeconds,
-        });
-      } catch {
-        // Not in a server action (cookies are read-only there): the browser is not remembered.
-      }
-    },
-    clear: () => {
-      try {
-        store.delete(REMEMBERED_BROWSER_COOKIE);
-      } catch {
-        // Not in a server action: nothing to clear.
-      }
-    },
-  };
-}
-
-/**
- * The tick of «Remember this browser» while the organization's second step is still to come (BR-AUTH-f): a
- * short-lived HttpOnly cookie that names the account and Auth session it belongs to, nothing else. Completed
- * (and removed) where the second step ends - the authenticator code, or the organization chosen with no code to
- * pass; a tick of another session is dropped.
- */
-export const PENDING_REMEMBER_COOKIE = SECURE_COOKIES
-  ? '__Host-jadarat-remember-next'
-  : 'jadarat-remember-next';
-const PENDING_REMEMBER_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
-
-function pendingRememberCookie(store: CookieStore): PendingRememberCookie {
-  return {
-    read: () => {
-      const value = store.get(PENDING_REMEMBER_COOKIE)?.value ?? '';
-      return PENDING_REMEMBER_PATTERN.test(value) ? value : null;
-    },
-    write: (value, maxAgeSeconds) => {
-      try {
-        store.set(PENDING_REMEMBER_COOKIE, value, {
-          httpOnly: true,
-          secure: SECURE_COOKIES,
-          sameSite: 'lax',
-          path: '/',
-          maxAge: maxAgeSeconds,
-        });
-      } catch {
-        // Not in a server action (cookies are read-only there): the browser is not remembered.
-      }
-    },
-    clear: () => {
-      try {
-        store.delete(PENDING_REMEMBER_COOKIE);
-      } catch {
-        // Not in a server action: the tick expires by itself.
-      }
-    },
-  };
-}
-
-/**
  * The organization whose own host this request came to, VERIFIED (never a client-supplied value).
  * INTEGRATION POINT (ADR 0002 §4, host → tenant resolution): not built yet — the proxy only classifies the
  * Host header (apps/suite lib/host-tenant.ts) — so every request is on the platform's host today. Return
@@ -389,6 +301,7 @@ function authClientOptions(client: RequestClient | null) {
 async function requestDeps(
   signInGuard: SignInGuard = NO_SIGN_IN_GUARD,
   client: RequestClient | null = null,
+  keptSession?: () => boolean,
 ): Promise<AuthFlowDeps> {
   const store = await cookies();
   // The browser's User-Agent goes to Auth with our calls, so a session created at sign-in records the real
@@ -406,7 +319,7 @@ async function requestDeps(
       },
     },
     undefined,
-    { ...authClientOptions(client), userAgent },
+    { ...authClientOptions(client), userAgent, ...(keptSession ? { keptSession } : {}) },
   );
   return {
     supabase: supabase as AuthClientLike | null,
@@ -436,42 +349,20 @@ export async function signInWithPasswordForRequest(
   return signInWithPassword(await requestDeps(await signInGuardFor(client), client), credentials);
 }
 
-// Sign in with an e-mailed code (WP-ADM-05): limits on the shared limiter, the database checks the keyed hash,
-// the worker (which alone holds the Auth admin key) mints the one-time sign-in token and e-mails the code.
-// Public actions: the person is not signed in yet.
+// Sign in with an e-mailed code (WP-ADM-05): the code is Supabase Auth's own e-mail OTP, e-mailed at once by the
+// Send Email hook (handleSendEmailHookForRequest); limits on the shared limiter run before Auth is asked or
+// answered. Public actions: the person is not signed in yet. No Auth secret key anywhere in the web app.
 
 const SIGN_IN_CODE_REQUEST_ACTION = 'platform.auth.sign_in_code_request';
 const SIGN_IN_CODE_VERIFY_ACTION = 'platform.auth.sign_in_code_verify';
 
-/** "Chrome on Windows" from the request's user agent (well-known names only), or null. */
-async function browserLabelOfRequest(): Promise<string | null> {
-  const device = describeUserAgent((await headers()).get('user-agent'));
-  return device.browser && device.system
-    ? `${device.browser} on ${device.system}`
-    : (device.browser ?? device.system);
-}
-
-/** What remembering a browser needs, for the places where the second step ends. */
-async function rememberDepsForRequest(): Promise<RememberDeps> {
-  const auth = await requestDeps();
-  const store = await cookies();
-  const label = await browserLabelOfRequest();
-  return {
-    withUserTx: auth.withUserTx,
-    logWarning: auth.logWarning,
-    rememberBrowser,
-    forgetThisBrowser,
-    cookie: rememberedBrowserCookie(store),
-    pendingRemember: pendingRememberCookie(store),
-    browserLabel: () => label,
-  };
-}
-
 async function signInCodeDeps(client: RequestClient): Promise<SignInCodeDeps> {
-  const auth = await requestDeps(undefined, client);
+  // Whether THIS request's session cookies last (kept) or end with the browser: flipped by the flow.
+  let kept = false;
+  const auth = await requestDeps(undefined, client, () => kept);
   const store = await cookies();
-  const label = await browserLabelOfRequest();
   const limiterBase = limiterDeps();
+  const otpClient = createSupabaseStatelessClient(undefined, authClientOptions(client));
   return {
     ...auth,
     limiter: createSignInCodeLimiter({
@@ -490,44 +381,69 @@ async function signInCodeDeps(client: RequestClient): Promise<SignInCodeDeps> {
         limiterBase.limits.signInCode.checkAccountFailures,
       ),
     }),
-    codes: {
-      request: (email, rememberHash) => requestSignInCodeInDatabase(email, rememberHash),
-      verify: verifySignInCodeInDatabase,
-      takeRemembered: takeRememberedSignIn,
-      isRemembered: isRememberedBrowserForEmail,
+    requestOtp: async (email) => {
+      if (!otpClient) return { status: undefined };
+      try {
+        const { error } = await otpClient.auth.signInWithOtp({
+          email,
+          options: { shouldCreateUser: false },
+        });
+        return { status: error ? (error.status ?? undefined) : 200 };
+      } catch {
+        return { status: undefined };
+      }
     },
-    rememberBrowser,
-    forgetThisBrowser,
-    cookie: rememberedBrowserCookie(store),
-    pendingRemember: pendingRememberCookie(store),
-    browserLabel: () => label,
-    kickWorker: () => {
-      kickWorkerAfterResponse('sign_in_code');
+    keepSession,
+    setSessionCookieLifetime: (value) => {
+      kept = value;
+    },
+    setKeepMarker: (value) => {
+      try {
+        if (value) store.set(KEEP_SIGNED_IN_COOKIE, '1', keepMarkerOptions());
+        else store.delete(KEEP_SIGNED_IN_COOKIE);
+      } catch {
+        // Not in a server action: the marker is written by the next sign-in.
+      }
+    },
+    auditRefused: (email, killed) => authMailApi.auditRefused(email, killed),
+    keepAlive: (work) => {
+      after(work);
     },
   };
 }
 
-/**
- * SHA-256 (hex) of this browser's remembered-browser token, or null when it has none: My profile marks "this
- * browser" in its list with it (never the token itself).
- */
-export async function currentRememberedBrowserHashForRequest(): Promise<string | null> {
-  const token = rememberedBrowserCookie(await cookies()).read();
-  return token ? rememberedBrowserHash(token).toString('hex') : null;
+/** The marker's cookie options: HttpOnly, Secure (`__Host-` prefix), SameSite=Lax, as long as the longest kept session. */
+function keepMarkerOptions() {
+  return {
+    httpOnly: true,
+    secure: SECURE_COOKIES,
+    sameSite: 'lax' as const,
+    path: '/',
+    maxAge: KEPT_SESSION_COOKIE_SECONDS,
+  };
 }
 
-/** «Email me a code instead»: queues a code for the typed address (the same answer for every address). */
+/**
+ * Is «Email me a code» offered? Only where Auth's Send Email hook is set up (SEND_EMAIL_HOOK_SECRET, the
+ * runbook's one PO step): without the hook no code could ever arrive, so the app does not pretend to send one.
+ * Nothing else switches code sign-in off - not the speed of delivery, not a setting (PO 23 Oct 2026).
+ */
+export function isCodeSignInOffered(): boolean {
+  return (process.env.SEND_EMAIL_HOOK_SECRET?.trim() ?? '') !== '';
+}
+
+/** «Email me a code»: asks Auth for a code for the typed address (the same answer for every address). */
 export async function requestSignInCodeForRequest(
-  input: { readonly email: string; readonly forceCode?: boolean },
+  input: { readonly email: string },
   client: RequestClient,
 ) {
+  if (!isCodeSignInOffered()) return err(appError('NOT_CONFIGURED'));
   return requestSignInCode(await signInCodeDeps(client), input);
 }
 
-/** The six digits (and «Remember this browser»): opens the session like a password sign-in would. */
+/** The six digits (and «Remember this browser» = keep me signed in): opens the session like a password sign-in would. */
 export async function signInWithEmailedCodeForRequest(
   input: {
-    readonly requestId: string;
     readonly email: string;
     readonly code: string;
     readonly remember: boolean;
@@ -537,30 +453,49 @@ export async function signInWithEmailedCodeForRequest(
   return signInWithEmailedCode(await signInCodeDeps(client), input);
 }
 
-/** A remembered browser: finishes the sign-in that needs no code (waits briefly for the worker). */
-export async function completeRememberedSignInForRequest(
-  input: { readonly requestId: string; readonly email: string },
-  client: RequestClient,
+// Supabase Auth's Send Email hook (WP-ADM-05): Auth hands the e-mail to the app, which sends the code at once.
+// The route (apps/suite app/api/auth/send-email) only passes the request here.
+let hookSender: ReturnType<typeof createInlineEmailSender> | null = null;
+
+function hookLog(
+  level: 'info' | 'warn' | 'error',
+  message: string,
+  fields?: Record<string, string | number>,
 ) {
-  return completeRememberedSignIn(await signInCodeDeps(client), input);
+  log[level](message, { action: 'platform.auth.send_email_hook', ...fields });
+}
+
+/** Verifies the signature, then sends the sign-in code (any other e-mail type is refused). Never throws. */
+export async function handleSendEmailHookForRequest(request: Request): Promise<{
+  readonly status: number;
+  readonly body: Record<string, unknown>;
+}> {
+  hookSender ??= createInlineEmailSender(
+    createInlineEmailRouter(process.env, (level, message) => {
+      hookLog(level === 'warning' ? 'warn' : level === 'error' ? 'error' : 'info', message);
+    }),
+  );
+  const appBaseUrl = process.env.APP_BASE_URL?.trim();
+  return handleSendEmailHook(
+    {
+      secret: process.env.SEND_EMAIL_HOOK_SECRET,
+      appBaseUrl: appBaseUrl === '' ? undefined : appBaseUrl,
+      api: authMailApi,
+      sender: hookSender,
+      now: () => Date.now(),
+      log: hookLog,
+    },
+    {
+      body: await request.text(),
+      webhookId: request.headers.get('webhook-id'),
+      webhookTimestamp: request.headers.get('webhook-timestamp'),
+      webhookSignature: request.headers.get('webhook-signature'),
+    },
+  );
 }
 
 export async function selectOrganizationForRequest(tenantId: string) {
-  const deps = await requestDeps();
-  const selected = await selectOrganization(deps, tenantId);
-  // A sign-in with an e-mailed code that ticked «Remember this browser» and had to choose an organization:
-  // with no second step to pass, the browser is remembered now (BR-AUTH-f). Never blocks the sign-in.
-  if (selected.ok && selected.value.next === 'home') {
-    try {
-      const claims = await verifyClaims(deps.supabase);
-      if (claims.ok) await rememberAfterSecondStep(await rememberDepsForRequest(), claims.value);
-    } catch {
-      deps.logWarning('could not remember the browser', {
-        action: 'platform.auth.select_organization',
-      });
-    }
-  }
-  return selected;
+  return selectOrganization(await requestDeps(), tenantId);
 }
 
 export async function getSessionOrganizationsForRequest() {
@@ -568,16 +503,14 @@ export async function getSessionOrganizationsForRequest() {
 }
 
 export async function signOutForRequest() {
-  const deps = await requestDeps();
-  // A browser remembered with «Remember this browser» works like "keep me signed in": signing out forgets it
-  // (server side) and removes the cookie (PO 23 Oct 2026). Before the session ends, so the account is known.
+  const result = await signOut(await requestDeps());
+  // Signing out ends a kept session too (the Auth session is gone): the marker goes with it.
   try {
-    const claims = await verifyClaims(deps.supabase);
-    if (claims.ok) await forgetBrowserOnSignOut(await rememberDepsForRequest(), claims.value);
+    (await cookies()).delete(KEEP_SIGNED_IN_COOKIE);
   } catch {
-    deps.logWarning('could not forget the browser', { action: 'platform.auth.sign_out' });
+    // Not in a server action: the marker is harmless without a session.
   }
-  return signOut(deps);
+  return result;
 }
 
 /** The sign-in page signs out a session its organization's rules ended (T-M2-10). */
@@ -656,21 +589,14 @@ export async function verifyTotpCodeForRequest(
   return verifyTotpCode(
     {
       ...deps,
-      rememberBrowser: async (session) => {
-        await rememberBrowserAfterCode(
+      rememberBrowser: (session) =>
+        rememberBrowserAfterCode(
           limiterDeps(),
           MFA_VERIFY_ACTION,
           device,
           (presented, fresh, days) =>
             withUserTx(session, (tx) => trustDeviceAfterCode(tx, presented, fresh, days)),
-        );
-        // The second step of a code sign-in that ticked «Remember this browser» has passed (BR-AUTH-f).
-        try {
-          await rememberAfterSecondStep(await rememberDepsForRequest(), session);
-        } catch {
-          log.warn('could not remember the browser', { action: MFA_VERIFY_ACTION });
-        }
-      },
+        ),
     },
     input,
   );

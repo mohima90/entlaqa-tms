@@ -20,6 +20,27 @@ export const SESSION_COOKIE_OPTIONS: CookieOptions = {
 };
 
 /**
+ * «Remember this browser» = «keep me signed in» (WP-ADM-05): a browser whose session was kept keeps this
+ * HttpOnly marker, and its session cookies last (KEPT_SESSION_COOKIE_SECONDS, the longest kept session; the
+ * database ends the session at the chosen period). Without the marker the session cookies end with the
+ * browser. The marker decides nothing about access: a session is kept in the database
+ * (private.kept_sessions), and every other rule still ends it.
+ */
+export const KEEP_SIGNED_IN_COOKIE =
+  process.env.NODE_ENV === 'development' ? 'jadarat-keep' : '__Host-jadarat-keep';
+export const KEPT_SESSION_COOKIE_SECONDS = 31 * 24 * 60 * 60;
+
+type CookieWrite = Parameters<NonNullable<CookieMethodsServer['setAll']>>[0][number];
+
+/** The cookie as Auth's client wants it set, with the lifetime of a kept or an ordinary browser session. */
+function withSessionLifetime(cookie: CookieWrite, kept: boolean): CookieWrite {
+  // Removals (an empty value, or already expired) stay removals.
+  if (cookie.value === '' || cookie.options.maxAge === 0) return cookie;
+  const { maxAge: _maxAge, expires: _expires, ...rest } = cookie.options;
+  return { ...cookie, options: kept ? { ...rest, maxAge: KEPT_SESSION_COOKIE_SECONDS } : rest };
+}
+
+/**
  * Extra request headers sent with every Auth call of a client. Used for the visitor's rate-limit key on
  * self-hosted installations, whose gateway trusts it from the app's network only and hands it to Auth's
  * own per-IP limits (T-M2-11; JADARAT_AUTH_CLIENT_HEADER). Never secrets.
@@ -76,6 +97,12 @@ export interface SupabaseServerClientOptions extends AuthClientOptions {
    * Null or absent: the Supabase URL (T-M2-18).
    */
   readonly storageOrigin?: string | null;
+  /**
+   * Whether the session cookies this client writes are persistent (a session kept signed in) or end with the
+   * browser. Default: the browser's keep marker (KEEP_SIGNED_IN_COOKIE) as sent with the request; a sign-in
+   * flow passes its own answer, because the marker can only be set after Auth answered.
+   */
+  readonly keptSession?: () => boolean;
 }
 
 /**
@@ -92,8 +119,26 @@ export function createSupabaseServerClient(
 ): SupabaseClient | null {
   if (!config) return null;
   const userAgent = forwardableUserAgent(options.userAgent);
+  const { setAll } = cookies;
+  const lifetimeAware: CookieMethodsServer = setAll
+    ? {
+        ...cookies,
+        setAll: async (toSet, headers) => {
+          const kept =
+            options.keptSession?.() ??
+            (await cookies.getAll())?.some(
+              (c) => c.name === KEEP_SIGNED_IN_COOKIE && c.value === '1',
+            ) ??
+            false;
+          await setAll(
+            toSet.map((cookie) => withSessionLifetime(cookie, kept)),
+            headers,
+          );
+        },
+      }
+    : cookies;
   return createServerClient(config.url, config.publishableKey, {
-    cookies,
+    cookies: lifetimeAware,
     cookieOptions: SESSION_COOKIE_OPTIONS,
     ...globalOptions(options, userAgent),
   });

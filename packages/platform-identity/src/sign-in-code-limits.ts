@@ -1,5 +1,4 @@
 import 'server-only';
-import { createHash } from 'node:crypto';
 import type { RateLimit, RateLimitCounter } from '@jadarat/platform-db';
 import {
   ALL_CLIENTS_SUBJECT,
@@ -12,30 +11,21 @@ import {
   codeMissesClientKey,
   errorNameOf,
   failClosed,
-  rememberedBrowserSubject,
 } from './auth-limits';
 
 /**
  * «Email me a code» on the shared limiter (WP-ADM-05, PO 23 Oct 2026; docs/engineering/sign-in-protection.md
- * §9). Requests are limited per client (an IPv6 client by its /48), then per typed address (15 minutes and a
- * day; the database also allows one code a minute per address); checks count wrong codes only, per typed
- * address - whether or not it has an account, so the counts tell nothing - per client and for all clients
- * together (security review M2); the 5th wrong code in the window pauses code checks for the rest of it
- * (15 minutes), as the database kills the code itself after 5 tries. The address's budget follows the
- * organization's lock-out policy where it applies (L2), and a REMEMBERED browser is not stopped by the typed
- * address's pause - it has its own budget (M3), as a trusted browser has at the password step. Fails closed
- * (RateLimiterUnavailableError, the generic internal error). Keys are hashed subjects, never readable.
+ * §12). The code itself is Auth's e-mail OTP, so these limits run in OUR database before Auth is asked or
+ * answered. Requests are limited per client (an IPv6 client by its /48), then per typed address - one a minute,
+ * 10 in 15 minutes and 40 a day - the same for known and unknown addresses; checks count wrong codes only, per
+ * typed address - whether or not it has an account, so the counts tell nothing - per client and for all
+ * clients together; the 5th wrong code in the window pauses code checks for the rest of it (15 minutes, longer
+ * than the code lives, so a paused address has no live code to guess). The address's budget follows the
+ * organization's lock-out policy where it applies. Fails closed (RateLimiterUnavailableError, the generic
+ * internal error). Keys are hashed subjects, never readable.
  */
 
-/**
- * The remembered-browser token's hash, as the database stores it (SHA-256 under a fixed domain prefix): the
- * token itself is a random 256-bit value that exists in the browser's HttpOnly cookie only.
- */
-export function rememberedBrowserHash(token: string): Buffer {
-  return createHash('sha256').update(`jadarat.remembered-browser.v1\n${token}`).digest();
-}
-
-/** One check of a sign-in code that reached the database. No method throws. */
+/** One check of a sign-in code that reached Auth. No method throws. */
 export interface SignInCodeAttempt {
   /**
    * The tries left on the typed address if this check is wrong (0: this would be the last one and checks
@@ -47,30 +37,20 @@ export interface SignInCodeAttempt {
   /** The code was right: the run of wrong codes ends, the provisional failures are given back. */
   succeeded(): Promise<void>;
   /**
-   * No code was compared (the request was expired, used up or not the typed address's): the provisional
-   * failures are given back - guessing needs a live code.
+   * No code was compared (Auth could not answer, was rate limiting): the provisional failures are given back.
    */
   released(): Promise<void>;
 }
 
+/** The verdict of a request: allowed, or refused - `tooSoonSeconds` when it is the one-a-minute rule. */
+export type SignInCodeRequestVerdict =
+  { readonly allowed: true } | { readonly allowed: false; readonly tooSoonSeconds?: number };
+
 export interface SignInCodeLimiter {
-  /**
-   * Per client first, then - only for an allowed client - per typed address (not for a remembered browser:
-   * `trusted` is asked only then, and such a browser needs no code). Throws when the limiter fails.
-   */
-  readonly allowRequest: (
-    email: string,
-    options?: { readonly trusted?: () => Promise<boolean> },
-  ) => Promise<boolean>;
-  /**
-   * Before a code is looked at: counts a provisional wrong code; refused when a budget is used up.
-   * `rememberedToken`: the browser is remembered for this address (checked by the caller) - its own budget
-   * replaces the typed address's.
-   */
-  readonly checkCode: (
-    email: string,
-    options?: { readonly rememberedToken?: string | null },
-  ) => Promise<LimitGate<SignInCodeAttempt>>;
+  /** Per client first, then - only for an allowed client - per typed address. Throws when the limiter fails. */
+  readonly allowRequest: (email: string) => Promise<SignInCodeRequestVerdict>;
+  /** Before a code is looked at: counts a provisional wrong code; refused when a budget is used up. */
+  readonly checkCode: (email: string) => Promise<LimitGate<SignInCodeAttempt>>;
 }
 
 export function createSignInCodeLimiter(
@@ -103,15 +83,15 @@ export function createSignInCodeLimiter(
     }
   };
   return {
-    async allowRequest(email, options) {
+    async allowRequest(email) {
       const action = deps.requestAction;
-      return failClosed(deps, action, async () => {
+      return failClosed(deps, action, async (): Promise<SignInCodeRequestVerdict> => {
         const fromClient = await deps.store.hit(
           B.signInCodeRequestClient,
           clientKey,
           shared ? limits.sharedClientRequests : limits.requestsPerClient,
         );
-        const refused = (limit: string, counter: RateLimitCounter) => {
+        const refused = (limit: string, counter: RateLimitCounter): SignInCodeRequestVerdict => {
           deps.log({
             event: 'auth.rate_limited',
             action,
@@ -120,55 +100,55 @@ export function createSignInCodeLimiter(
             retryAfterS: counter.retryAfterSeconds,
             clientRef: fromClient.ref,
           });
-          return false;
+          return { allowed: false };
         };
         // A refused client counts nowhere else: it cannot use up (or fill up) other addresses' budgets.
         if (!fromClient.allowed) return refused(B.signInCodeRequestClient, fromClient);
-        // A remembered browser asks for no code: the address's ceilings (an attacker's way to keep the owner
-        // from asking) do not apply to it.
-        if (options?.trusted && (await options.trusted())) return true;
-        const account = await deps.store.hit(
+        const account = accountSubject(email);
+        // One code a minute per address: the same wait for a known and an unknown address.
+        const minute = await deps.store.hit(
+          B.signInCodeRequestMinute,
+          account,
+          limits.requestsPerMinute,
+        );
+        if (!minute.allowed) {
+          return { allowed: false, tooSoonSeconds: minute.retryAfterSeconds };
+        }
+        const recent = await deps.store.hit(
           B.signInCodeRequestAccount,
-          accountSubject(email),
+          account,
           limits.requestsPerAccount,
         );
-        if (!account.allowed) return refused(B.signInCodeRequestAccount, account);
+        if (!recent.allowed) return refused(B.signInCodeRequestAccount, recent);
         const daily = await deps.store.hit(
           B.signInCodeRequestAccountDaily,
-          accountSubject(email),
+          account,
           limits.requestsPerAccountDaily,
         );
-        return daily.allowed || refused(B.signInCodeRequestAccountDaily, daily);
+        return daily.allowed ? { allowed: true } : refused(B.signInCodeRequestAccountDaily, daily);
       });
     },
-    async checkCode(email, options) {
+    async checkCode(email) {
       const action = deps.checkAction;
-      const token = options?.rememberedToken ?? null;
-      // The address's own budget (the organization's lock-out policy where it applies) - or, for a remembered
-      // browser, that browser's.
-      const accountBucket =
-        token === null ? B.signInCodeCheckAccount : B.signInCodeCheckRememberedBrowser;
-      const account = token === null ? accountSubject(email) : rememberedBrowserSubject(token);
+      // The address's own budget (the organization's lock-out policy where it applies).
       const budgetOf = deps.accountBudget;
-      const accountLimit =
-        token !== null
-          ? limits.checkRememberedBrowserFailures
-          : budgetOf
-            ? await failClosed(deps, action, () => budgetOf(email))
-            : limits.checkAccountFailures;
+      const accountLimit = budgetOf
+        ? await failClosed(deps, action, () => budgetOf(email))
+        : limits.checkAccountFailures;
+      const account = accountSubject(email);
       const clientFailures = shared ? limits.sharedClientCheckFailures : limits.checkClientFailures;
       const [byAccount, byClient] = await failClosed(deps, action, () =>
         Promise.all([
-          deps.store.hit(accountBucket, account, accountLimit),
+          deps.store.hit(B.signInCodeCheckAccount, account, accountLimit),
           deps.store.hit(B.signInCodeCheckClient, clientKey, clientFailures),
         ]),
       );
       const refs = { subjectRef: byAccount.ref, clientRef: byClient.ref };
       if (!byAccount.allowed || !byClient.allowed) {
         // Refused before the code is looked at: it is no wrong code - the other budget gets its failure back.
-        if (byAccount.allowed) await giveBack(accountBucket, account);
+        if (byAccount.allowed) await giveBack(B.signInCodeCheckAccount, account);
         if (byClient.allowed) await giveBack(B.signInCodeCheckClient, clientKey);
-        const limit = byAccount.allowed ? B.signInCodeCheckClient : accountBucket;
+        const limit = byAccount.allowed ? B.signInCodeCheckClient : B.signInCodeCheckAccount;
         const retryAfterSeconds = Math.max(
           byAccount.allowed ? 0 : byAccount.retryAfterSeconds,
           byClient.allowed ? 0 : byClient.retryAfterSeconds,
@@ -192,7 +172,7 @@ export function createSignInCodeLimiter(
         ),
       );
       if (!all.allowed) {
-        await giveBack(accountBucket, account);
+        await giveBack(B.signInCodeCheckAccount, account);
         await giveBack(B.signInCodeCheckClient, clientKey);
         // The alert line of the ceiling: no code, no address, no client reference - it belongs to nobody.
         deps.log({
@@ -209,7 +189,7 @@ export function createSignInCodeLimiter(
         failed() {
           deps.log({ event: 'auth.sign_in_code.failed', action, reason: 'invalid_code', ...refs });
           for (const [bucket, counter] of [
-            [accountBucket, byAccount],
+            [B.signInCodeCheckAccount, byAccount],
             [B.signInCodeCheckClient, byClient],
           ] as const) {
             if (counter.remaining === 0) {
@@ -237,7 +217,7 @@ export function createSignInCodeLimiter(
         },
         async succeeded() {
           try {
-            await deps.store.clear(accountBucket, account);
+            await deps.store.clear(B.signInCodeCheckAccount, account);
           } catch (error) {
             deps.log({
               event: 'auth.limiter.unavailable',
@@ -250,7 +230,7 @@ export function createSignInCodeLimiter(
           await giveBack(B.signInCodeCheckAllClients, ALL_CLIENTS_SUBJECT);
         },
         async released() {
-          await giveBack(accountBucket, account);
+          await giveBack(B.signInCodeCheckAccount, account);
           await giveBack(B.signInCodeCheckClient, clientKey);
           await giveBack(B.signInCodeCheckAllClients, ALL_CLIENTS_SUBJECT);
         },

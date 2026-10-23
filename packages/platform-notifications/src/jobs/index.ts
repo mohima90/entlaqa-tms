@@ -3,14 +3,14 @@
  * job's tenant transaction, the e-mail sender, the sender rule over the settings in the database
  * (WP-ADM-01), the provider adapters, opening sealed provider secrets, and the e-mail platform tasks.
  */
-export { type EmailSettings, readEmailSettings } from './config';
+export { type EmailSettings, readEmailSettings } from '../sending/config';
 export {
   CredentialsError,
   type CredentialsKeyPair,
   EMAIL_CREDENTIALS_KEY_ENV,
   EMAIL_CREDENTIALS_KEY_MIN_LENGTH,
   deriveCredentialsKeyPair,
-} from './credentials';
+} from '../sending/credentials';
 export {
   EMAIL_HOUSEKEEPING_TASK,
   EMAIL_RESUME_TASK,
@@ -19,15 +19,15 @@ export {
   createEmailResumeTask,
   createEmailTestTask,
 } from './email-tasks';
-export { createProviderTransport } from './factory';
-export { createMailgunTransport, MAILGUN_API_ORIGINS } from './mailgun';
+export { createProviderTransport } from '../sending/factory';
+export { createMailgunTransport, MAILGUN_API_ORIGINS } from '../sending/mailgun';
 export {
   MICROSOFT_GRAPH_ORIGIN,
   MICROSOFT_LOGIN_ORIGIN,
   createMicrosoftGraphTransport,
-} from './microsoft-graph';
+} from '../sending/microsoft-graph';
 export { type EmailRequest, queueEmail } from './queue';
-export { RESEND_API_URL, createResendTransport, formatFrom } from './resend';
+export { RESEND_API_URL, createResendTransport, formatFrom } from '../sending/resend';
 export { type EmailRouter, type InstallationSender, brandName, createEmailRouter } from './router';
 export {
   EMAIL_MAX_ATTEMPTS,
@@ -35,7 +35,7 @@ export {
   EMAIL_SENDER_NAME,
   createEmailSender,
 } from './sender';
-export { SENDGRID_API_URL, createSendGridTransport } from './sendgrid';
+export { SENDGRID_API_URL, createSendGridTransport } from '../sending/sendgrid';
 export {
   type HostLookup,
   SMTP_SEND_DEADLINE_MS,
@@ -45,7 +45,7 @@ export {
   createSmtpTransport,
   isPublicAddress,
   parseSmtpUrl,
-} from './smtp';
+} from '../sending/smtp';
 export { sendTestEmail } from './test-email';
 export {
   EmailSendError,
@@ -53,4 +53,4 @@ export {
   type EmailSenderKind,
   type EmailTransport,
   type OutgoingEmail,
-} from './transport';
+} from '../sending/transport';

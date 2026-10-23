@@ -398,8 +398,7 @@ begin
     'private.end_sessions(uuid,uuid[],uuid,text,uuid) (owner tenant_guard), '
     'private.end_unserved_login_sessions(uuid,uuid,uuid) (owner tenant_guard), '
     'private.enforce_device_limit(uuid,uuid,uuid) (owner tenant_guard), '
-    'private.forget_member_remembered_browsers(uuid) (owner tenant_guard), '
-    'private.forget_remembered_browsers_of_inactive_member() (owner tenant_guard), '
+    'private.forget_kept_sessions() (owner tenant_guard), '
     'private.has_active_membership(uuid,uuid) (owner tenant_guard), '
     'private.invitation_allows_signup(text,text) (owner invitation_guard), '
     'private.invitation_by_token(bytea) (owner invitation_guard), '
@@ -408,6 +407,8 @@ begin
     'private.invitation_password_min_length(bytea) (owner invitation_guard), '
     'private.issue_invitation_code(uuid) (owner invitation_guard), '
     'private.issue_mfa_factor_tokens(uuid,uuid,bytea,bytea) (owner tenant_guard), '
+    'private.keep_session() (owner tenant_guard), '
+    'private.my_kept_sessions() (owner tenant_guard), '
     'private.my_mfa_apps() (owner tenant_guard), '
     'private.my_sessions() (owner tenant_guard), '
     'private.password_min_length_for_caller() (owner tenant_guard), '
@@ -520,20 +521,13 @@ begin
                     order by p.oid::regprocedure::text collate "C") into v_list
   from pg_proc p where p.proowner = 'account_mail_guard'::regrole;
   perform tests.assert_eq(v_list,
-    'private.account_needs_platform_sender(uuid), private.claim_account_mail_request(), '
-    'private.claim_sign_in_code_request(), '
-    'private.finish_account_mail_request(uuid), private.forget_this_browser(bytea), '
-    'private.issue_sign_in_code(uuid,uuid,uuid,text,text), '
-    'private.my_remembered_browsers(bytea), '
-    'private.remember_browser(bytea,text,bytea), private.remembered_browser_for_email(text,bytea), '
-    'private.remembered_browser_ok(uuid,bytea), '
+    'private.account_needs_platform_sender(uuid), private.account_sender_is_platform(uuid), '
+    'private.audit_sign_in_code_refused(text,boolean), private.audit_sign_in_code_sent(uuid,uuid), '
+    'private.auth_mail_account(uuid), private.claim_account_mail_request(), '
+    'private.finish_account_mail_request(uuid), '
     'private.request_account_locked_mail(text,integer), private.request_mfa_code_locked_mail(uuid,integer), '
     'private.request_password_changed_mail(uuid), private.request_password_reset_mail(text), '
-    'private.request_sign_in_code(text,bytea), '
-    'private.request_sign_in_unlocked_mail(uuid), private.retry_account_mail_request(uuid), '
-    'private.retry_sign_in_code_request(uuid), private.sign_in_code_dead_end(uuid), '
-    'private.sign_in_code_hmac(uuid,text), private.take_remembered_sign_in(uuid,text,bytea,bytea), '
-    'private.verify_sign_in_code(uuid,text,text)',
+    'private.request_sign_in_unlocked_mail(uuid), private.retry_account_mail_request(uuid)',
     'account_mail_guard owns the account e-mail and sign-in code functions only, all SECURITY DEFINER');
   perform tests.assert(not exists (select 1 from pg_class c where c.relowner = 'account_mail_guard'::regrole),
     'account_mail_guard owns no relations');

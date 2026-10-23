@@ -73,7 +73,12 @@ export default async function SignInPage({
         panel={await signInPanelTexts(locale)}
         languageSwitch={<AuthLanguageSwitch {...await authLanguageSwitch(locale, '/sign-in')} />}
         title={t('welcomeBack')}
-        subtitles={{ email: t('enterEmailToContinue'), method: t('passwordStepIntro') }}
+        codeTitle={t('signInCode.title')}
+        subtitles={{
+          email: t('enterEmailToContinue'),
+          method: t('passwordStepIntro'),
+          code: t('signInCode.subtitle'),
+        }}
         notices={
           notice === 'password-reset' ||
           notice === 'session-ended' ||
@@ -126,6 +131,32 @@ export default async function SignInPage({
           emailInvalid: t('emailInvalid'),
           emailPlaceholder: t('emailPlaceholder'),
           passwordPlaceholder: t('passwordPlaceholder'),
+          codeInstead: t('signInCode.codeInstead'),
+          or: t('signInCode.or'),
+          sendingCode: t('signInCode.sending'),
+          code: {
+            intro: t.raw('signInCode.intro') as string,
+            label: t('signInCode.label'),
+            digit: t.raw('signInCode.digit') as string,
+            spam: t('signInCode.spam'),
+            remember: t('signInCode.remember'),
+            rememberHint: t('signInCode.rememberHint'),
+            submit: t('signInCode.submit'),
+            submitting: t('signInCode.submitting'),
+            resendIn: t.raw('signInCode.resendIn') as string,
+            resend: t('signInCode.resend'),
+            resendLead: t('signInCode.resendLead'),
+            resending: t('signInCode.resending'),
+            resent: t('signInCode.resent'),
+            resendReady: t('signInCode.resendReady'),
+            errFormat: t('signInCode.errFormat'),
+            triesLeft: t.raw('signInCode.triesLeft') as Record<string, string>,
+            lockedHelp: t('signInCode.lockedHelp'),
+            usePassword: t('signInCode.usePassword'),
+            rememberedTitle: t('signInCode.rememberedTitle'),
+            rememberedText: t('signInCode.rememberedText'),
+            rememberedFailed: t('signInCode.rememberedFailed'),
+          },
         }}
         errors={await authErrorTexts(locale)}
       />

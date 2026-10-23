@@ -122,7 +122,7 @@ import {
   requestSignInCode,
   signInWithEmailedCode,
 } from './sign-in-code';
-import { createSignInCodeLimiter } from './sign-in-code-limits';
+import { createSignInCodeLimiter, rememberedBrowserHash } from './sign-in-code-limits';
 import { type SupabaseAuthLike, verifyClaims } from './verify-claims';
 import { getVerifiedClaims, getVerifiedClaimsStrict } from './next';
 import {
@@ -420,9 +420,18 @@ async function signInCodeDeps(client: RequestClient): Promise<SignInCodeDeps> {
   };
 }
 
+/**
+ * SHA-256 (hex) of this browser's remembered-browser token, or null when it has none: My profile marks "this
+ * browser" in its list with it (never the token itself).
+ */
+export async function currentRememberedBrowserHashForRequest(): Promise<string | null> {
+  const token = rememberedBrowserCookie(await cookies()).read();
+  return token ? rememberedBrowserHash(token).toString('hex') : null;
+}
+
 /** «Email me a code instead»: queues a code for the typed address (the same answer for every address). */
 export async function requestSignInCodeForRequest(
-  input: { readonly email: string },
+  input: { readonly email: string; readonly forceCode?: boolean },
   client: RequestClient,
 ) {
   return requestSignInCode(await signInCodeDeps(client), input);

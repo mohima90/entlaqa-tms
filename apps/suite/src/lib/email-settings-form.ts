@@ -209,6 +209,7 @@ export function templateKey(template: string): string {
     'platform.account_locked',
     'platform.sign_in_unlocked',
     'platform.mfa_code_locked',
+    'platform.sign_in_code',
   ];
   return known.includes(template) ? template.replace('platform.', '') : 'other';
 }

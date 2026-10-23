@@ -7,6 +7,7 @@ import {
   defineAction,
   endMemberSessionsActionDefinition,
   endMySessionsActionDefinition,
+  forgetMyRememberedBrowsersActionDefinition,
   resetMemberMfaActionDefinition,
   updateSecurityPolicyActionDefinition,
 } from '@jadarat/platform-rbac';
@@ -16,6 +17,11 @@ export const updateSecurityPolicyAction = defineAction(updateSecurityPolicyActio
 
 /** My profile: end another of one's own sign-in sessions, or all others. */
 export const endMySessionsAction = defineAction(endMySessionsActionDefinition());
+
+/** My profile: forget the browsers I asked to remember (WP-ADM-05). */
+export const forgetMyRememberedBrowsersAction = defineAction(
+  forgetMyRememberedBrowsersActionDefinition(),
+);
 
 /** User profile (screen 3): force sign-out of a member's sessions in this organization. */
 export const endMemberSessionsAction = defineAction(endMemberSessionsActionDefinition());

@@ -9,17 +9,25 @@ import {
   useState,
   useTransition,
 } from 'react';
-import { signInAction } from '../../auth/actions';
+import { requestSignInCodeAction, signInAction } from '../../auth/actions';
 import {
   type SignInMethod,
   looksLikeEmail,
   readPreferredMethod,
   rememberMethod,
+  signInDestination,
 } from '../../lib/sign-in-steps';
-import { AuthField, AuthSpinner, RevealButton, authPrimaryButton } from './auth-field';
+import {
+  AuthField,
+  AuthSpinner,
+  RevealButton,
+  authPrimaryButton,
+  authSecondaryButton,
+} from './auth-field';
 import { AuthIcon } from './auth-icons';
 import { type AuthBrand, AuthShell, type AuthPanelTexts, type AuthShellTexts } from './auth-shell';
 import { type ErrorTexts, errorText } from './error-text';
+import { RememberedSignIn, type SignInCodeLabels, SignInCodeStep } from './sign-in-code-step';
 
 /** The generic answer for a wrong e-mail or password (never says which: no account enumeration). */
 const INVALID_CREDENTIALS = 'auth.errors.invalidCredentials';
@@ -44,7 +52,15 @@ export interface SignInFormLabels {
   readonly emailInvalid: string;
   readonly emailPlaceholder: string;
   readonly passwordPlaceholder: string;
+  /** «Email me a code instead» (WP-ADM-05): the button, its separator and the code screen's texts. */
+  readonly codeInstead: string;
+  readonly or: string;
+  readonly sendingCode: string;
+  readonly code: SignInCodeLabels;
 }
+
+/** The steps of the sign-in form; the page's title and subtitle follow them. */
+export type SignInStep = 'email' | 'method' | 'code' | 'remembered';
 
 export interface SignInFormProps {
   readonly locale: string;
@@ -53,7 +69,7 @@ export interface SignInFormProps {
   readonly labels: SignInFormLabels;
   readonly errors: ErrorTexts;
   /** Called when the step changes (the page's subtitle follows the step, Kawadir). */
-  readonly onStep?: (step: 'email' | 'method') => void;
+  readonly onStep?: (step: SignInStep) => void;
 }
 
 /**
@@ -74,7 +90,14 @@ export interface SignInFormProps {
 export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInFormProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [step, setStep] = useState<'email' | 'method'>('email');
+  const [step, setStep] = useState<SignInStep>('email');
+  // «Email me a code instead»: the request being answered (its id, address and seconds before a new code).
+  const [codeRequest, setCodeRequest] = useState<{
+    readonly id: string;
+    readonly email: string;
+    readonly resendSeconds: number;
+    readonly notice?: string;
+  } | null>(null);
   const [method, setMethod] = useState<SignInMethod>('password');
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState<string | undefined>(undefined);
@@ -115,6 +138,36 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
     setStep('method');
   }
 
+  /** «Email me a code instead»: the same screen follows for every address (no account enumeration). */
+  function emailMeACode() {
+    setMessage(null);
+    setPasswordError(undefined);
+    const typed = email.trim();
+    startTransition(async () => {
+      const result = await requestSignInCodeAction({ email: typed, forceCode: false });
+      if (result.ok) {
+        const { value } = result;
+        moved.current = true;
+        setCodeRequest({
+          id: value.requestId,
+          email: typed,
+          resendSeconds: value.kind === 'code' ? value.resendAfterSeconds : 0,
+        });
+        setStep(value.kind === 'remembered' ? 'remembered' : 'code');
+      } else if (result.error.code === 'SIGN_IN_CODE_TOO_SOON' && codeRequest?.email === typed) {
+        // A code was just sent for this address: back to its screen, with the seconds left.
+        moved.current = true;
+        setCodeRequest({
+          ...codeRequest,
+          resendSeconds: Number(result.error.params?.seconds ?? 60),
+        });
+        setStep('code');
+      } else {
+        setMessage(errorText(result.error, errors));
+      }
+    });
+  }
+
   function onSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     if (step === 'email') {
@@ -133,15 +186,8 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
     startTransition(async () => {
       const result = await signInAction({ email: email.trim(), password, remember });
       if (result.ok) {
-        const paths = {
-          home: '/suite',
-          mfa: '/mfa',
-          'choose-organization': '/select-organization',
-          // A Platform Super Admin without organizations (FR-ADM-17).
-          platform: '/platform',
-        };
         // 'mfa': the organization asks for an authenticator code or app first (T-M2-10).
-        router.replace(`/${locale}${paths[result.value.next]}`);
+        router.replace(signInDestination(locale, result.value.next));
         router.refresh();
       } else if (result.error.messageKey === INVALID_CREDENTIALS) {
         setPasswordError(errorText(result.error, errors));
@@ -150,6 +196,54 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
         setMessage(errorText(result.error, errors));
       }
     });
+  }
+
+  if (step === 'code' && codeRequest) {
+    return (
+      <SignInCodeStep
+        key={codeRequest.id}
+        locale={locale}
+        email={codeRequest.email}
+        requestId={codeRequest.id}
+        resendSeconds={codeRequest.resendSeconds}
+        notice={codeRequest.notice}
+        labels={labels.code}
+        errors={errors}
+        onNewRequest={(id) => {
+          setCodeRequest((current) => (current ? { ...current, id } : current));
+        }}
+        onUsePassword={() => {
+          moved.current = true;
+          setMessage(null);
+          setStep('method');
+        }}
+      />
+    );
+  }
+  if (step === 'remembered' && codeRequest) {
+    return (
+      <RememberedSignIn
+        locale={locale}
+        email={codeRequest.email}
+        requestId={codeRequest.id}
+        labels={labels.code}
+        errors={errors}
+        onFallback={(fallback) => {
+          if ('requestId' in fallback) {
+            setCodeRequest({
+              id: fallback.requestId,
+              email: codeRequest.email,
+              resendSeconds: 60,
+              notice: labels.code.rememberedFailed,
+            });
+            setStep('code');
+          } else {
+            setMessage(fallback.message);
+            setStep('method');
+          }
+        }}
+      />
+    );
   }
 
   return (
@@ -305,6 +399,23 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
             {pending ? labels.submitting : labels.submit}
             {pending ? null : <AuthIcon name="arrow" />}
           </button>
+          {/* A second way in, instead of the password, for everybody (PO 23 Oct 2026): nothing about the
+              account or its roles shows here or on the screen that follows. */}
+          <p
+            aria-hidden="true"
+            className="m-0 flex items-center gap-3 text-sm text-text-muted before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border"
+          >
+            {labels.or}
+          </p>
+          <button
+            type="button"
+            className={authSecondaryButton}
+            disabled={disabled || pending}
+            onClick={emailMeACode}
+            data-testid="sign-in-email-code"
+          >
+            {pending ? labels.sendingCode : labels.codeInstead}
+          </button>
         </>
       )}
     </form>
@@ -316,8 +427,14 @@ export interface SignInViewProps extends Omit<SignInFormProps, 'onStep'> {
   readonly panel: AuthPanelTexts;
   readonly languageSwitch: ReactNode;
   readonly title: string;
+  /** The title of the e-mailed-code screens («Check your email»), WP-ADM-05. */
+  readonly codeTitle: string;
   /** The subtitle for each step (Kawadir: it follows the step). */
-  readonly subtitles: { readonly email: string; readonly method: string };
+  readonly subtitles: {
+    readonly email: string;
+    readonly method: string;
+    readonly code: string;
+  };
   readonly notices?: ReactNode;
   /** Under the card ("Have an invitation code?"). */
   readonly after?: ReactNode;
@@ -333,6 +450,7 @@ export function SignInView({
   panel,
   languageSwitch,
   title,
+  codeTitle,
   subtitles,
   notices,
   after,
@@ -340,7 +458,8 @@ export function SignInView({
   brand,
   ...form
 }: SignInViewProps) {
-  const [step, setStep] = useState<'email' | 'method'>('email');
+  const [step, setStep] = useState<SignInStep>('email');
+  const onCodeScreen = step === 'code' || step === 'remembered';
   return (
     <AuthShell
       variant="split"
@@ -348,10 +467,18 @@ export function SignInView({
       texts={shell}
       panel={panel}
       languageSwitch={languageSwitch}
-      title={title}
-      subtitle={<p>{step === 'email' ? subtitles.email : subtitles.method}</p>}
+      title={onCodeScreen ? codeTitle : title}
+      subtitle={
+        <p>
+          {step === 'email'
+            ? subtitles.email
+            : onCodeScreen
+              ? subtitles.code
+              : subtitles.method}
+        </p>
+      }
       notices={notices}
-      after={after}
+      after={onCodeScreen ? undefined : after}
     >
       {before}
       <SignInForm {...form} onStep={setStep} />

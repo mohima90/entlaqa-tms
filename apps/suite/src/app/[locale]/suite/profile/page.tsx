@@ -1,6 +1,7 @@
 import { toClientError } from '@jadarat/platform-core';
 import type { UserProfile } from '@jadarat/platform-db';
 import type { PersonRecordView } from '@jadarat/platform-rbac';
+import { currentRememberedBrowserHashForRequest } from '@jadarat/platform-identity/auth';
 import { type AppLocale, type DisplayDateFormatter, formatHijriDate } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { Alert, Avatar, Badge, FormSection, Icon, PageHeader, TabNav } from '@jadarat/ui';
@@ -16,6 +17,7 @@ import {
   AuthenticatorRow,
 } from '../../../../components/profile/authenticator-card';
 import { ChangePasswordForm } from '../../../../components/profile/change-password-form';
+import { RememberedBrowsers } from '../../../../components/profile/remembered-browsers';
 import { PersonalDetailsForm } from '../../../../components/profile/personal-details-form';
 import { ProfilePhotoCard } from '../../../../components/profile/profile-photo-card';
 import { SessionsTable } from '../../../../components/sessions/sessions-table';
@@ -23,6 +25,7 @@ import { HrDetailsCard } from '../../../../components/users/hr-details-card';
 import { SuiteShell } from '../../../../components/suite-shell';
 import { mfaErrorTexts } from '../../../../lib/auth-texts';
 import { personPhotoHref } from '../../../../lib/person-photo';
+import { rememberedLabels, rememberedRows } from '../../../../lib/remembered-view';
 import { stepUpHref } from '../../../../lib/mfa-view';
 import { formStateFrom } from '../../../../lib/profile-form';
 import { profileErrorTexts } from '../../../../lib/profile-texts';
@@ -78,7 +81,8 @@ export default async function MyProfilePage({
         );
     } else {
       // Own sign-in sessions, password rule and authenticator app (T-M2-10).
-      const security = await mySecurityQuery({});
+      const currentBrowser = await currentRememberedBrowserHashForRequest();
+      const security = await mySecurityQuery(currentBrowser ? { currentBrowser } : {});
       content = (
         <MyProfile
           locale={locale}
@@ -495,6 +499,40 @@ async function MyProfile({
               target={{ kind: 'own' }}
               sessions={await sessionRows(locale, security.sessions, dates)}
               labels={sessionLabels(locale)}
+              errors={errors}
+            />
+          </section>
+        ) : null}
+        {/* Remembered browsers (WP-ADM-05): where «Remember this browser» was ticked on the e-mailed-code
+            screen, and «Forget all». */}
+        {security ? (
+          <section
+            aria-labelledby="remembered-title"
+            className="rounded-2xl border border-border bg-surface px-4.5 py-5 shadow-2 md:px-6.5"
+            data-testid="profile-remembered"
+          >
+            <div className="mb-4 flex items-start gap-4">
+              <span
+                aria-hidden="true"
+                className="hidden size-11 shrink-0 place-items-center rounded-[14px] bg-primary-subtle text-primary-text md:grid"
+              >
+                <Icon name="shield" className="size-5" />
+              </span>
+              <div>
+                <h2 id="remembered-title" className="m-0 text-lg font-bold">
+                  {t('remembered.title')}
+                </h2>
+                <p className="m-0 mt-1 text-text-muted">
+                  {security.remembered.days === 0
+                    ? t('remembered.introOff')
+                    : t('remembered.intro', { days: security.remembered.days })}
+                </p>
+              </div>
+            </div>
+            <RememberedBrowsers
+              days={security.remembered.days}
+              rows={await rememberedRows(locale, security.remembered.browsers, dates)}
+              labels={await rememberedLabels(locale, security.remembered.browsers.length)}
               errors={errors}
             />
           </section>

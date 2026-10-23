@@ -18,6 +18,7 @@ import { fillText } from '../../lib/fill-text';
 import { SECURITY_FORM_LIMITS, type SecurityNumberField } from '../../lib/security-limits';
 import {
   type MfaMode,
+  REMEMBERED_BROWSER_CHOICES,
   type SecurityFormValues,
   mfaBecomesStricter,
   parseWhole,
@@ -76,6 +77,8 @@ export interface SecurityFormProps {
   readonly common: SettingsCommonTexts;
   /** The confirmation's grace sentence for 0…30 days (plural forms, formatted on the server). */
   readonly graceTexts: readonly string[];
+  /** «Off», «1 day», «7 days»… for REMEMBERED_BROWSER_CHOICES, in order (plural forms, formatted on the server). */
+  readonly rememberedTexts: readonly string[];
   readonly organization: string;
   readonly locale: 'ar' | 'en';
   readonly lastChanged: string;
@@ -355,7 +358,13 @@ export function SecuritySettingsForm(props: SecurityFormProps) {
       icon: 'shield',
       label: t('mfa.title'),
       value: t(`mfa.modes.${current.mfaMode}`),
-      changed: changed(['mfaMode', 'mfaRequiredRoles', 'mfaGraceDays', 'mfaPromptAdmins']),
+      changed: changed([
+        'mfaMode',
+        'mfaRequiredRoles',
+        'mfaGraceDays',
+        'mfaPromptAdmins',
+        'rememberedBrowserDays',
+      ]),
     },
     {
       id: 'security-password',
@@ -400,12 +409,8 @@ export function SecuritySettingsForm(props: SecurityFormProps) {
     sessionMaxHours: t('sessions.maxHours'),
     sessionMaxDevices: t('sessions.devices'),
   };
-  const comingSoon = [
-    t('mfa.methodEmail'),
-    t('mfa.methodSms'),
-    t('mfa.trusted'),
-    t('password.history'),
-  ];
+  // The text-message code and blocking the reuse of earlier passwords (PO, 21 Oct 2026): still to come.
+  const comingSoon = [t('mfa.methodSms'), t('password.history')];
 
   return (
     <>
@@ -585,6 +590,45 @@ export function SecuritySettingsForm(props: SecurityFormProps) {
             </Row>
             <Row title={t('mfa.grace')} hint={t('mfa.graceHint')}>
               {numberInput('mfaGraceDays', t('mfa.grace'), t('mfa.graceUnit'))}
+            </Row>
+            {/* «Remember a trusted device» (WP-ADM-05, PO 23 Oct 2026): how long a browser the person chose to
+                remember skips the e-mailed sign-in code. Shortening it applies at once to browsers already
+                remembered. */}
+            <Row title={t('mfa.trusted')} hint={t('mfa.trustedHint')} titleId="security-trusted-label">
+              <div
+                role="radiogroup"
+                aria-labelledby="security-trusted-label"
+                className="flex flex-wrap gap-2"
+                data-testid="security-rememberedBrowserDays"
+              >
+                {REMEMBERED_BROWSER_CHOICES.map((days, index) => {
+                  const on = values.rememberedBrowserDays === days;
+                  return (
+                    <label
+                      key={days}
+                      className={cn(
+                        'flex min-h-11 items-center gap-2 rounded-full border-[1.5px] bg-surface px-3.5 text-sm font-medium',
+                        on ? 'border-primary text-primary-text' : 'border-border-strong',
+                        disabled ? 'cursor-default' : 'cursor-pointer',
+                      )}
+                    >
+                      <input
+                        type="radio"
+                        name="rememberedBrowserDays"
+                        value={days}
+                        checked={on}
+                        disabled={disabled}
+                        onChange={() => {
+                          change({ ...values, rememberedBrowserDays: days });
+                        }}
+                        className="size-4.5 accent-primary"
+                        data-testid={`security-remembered-${String(days)}`}
+                      />
+                      {props.rememberedTexts[index] ?? String(days)}
+                    </label>
+                  );
+                })}
+              </div>
             </Row>
             <Row
               title={t('mfa.promptAdmins')}

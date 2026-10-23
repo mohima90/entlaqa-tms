@@ -6,9 +6,12 @@
  * @jadarat/platform-identity (auth-flow.ts); these actions only validate input.
  */
 import {
+  completeRememberedSignInForRequest,
+  requestSignInCodeForRequest,
   selectOrganizationForRequest,
   signInWithPasswordForRequest,
   signOutEndedSessionForRequest,
+  signInWithEmailedCodeForRequest,
   signOutForRequest,
 } from '@jadarat/platform-identity/auth';
 import { definePublicAction } from '@jadarat/platform-rbac';
@@ -31,6 +34,45 @@ export const signInAction = definePublicAction({
     remember: z.boolean().default(false),
   }),
   handler: async ({ input }) => signInWithPasswordForRequest(input, await requestClient()),
+});
+
+/**
+ * «Email me a code instead» (WP-ADM-05, PO 23 Oct 2026): a second way to sign in, offered to everybody on the
+ * password step. Limited per client and per address before anything is queued; the answer is the same for every
+ * address (no account enumeration). `forceCode`: send a code even if this browser is remembered (the fallback
+ * when the remembered sign-in could not finish).
+ */
+export const requestSignInCodeAction = definePublicAction({
+  name: 'platform.auth.sign_in_code_request',
+  input: z.strictObject({ email: z.email().max(254), forceCode: z.boolean().default(false) }),
+  handler: async ({ input }) =>
+    requestSignInCodeForRequest(
+      { email: input.email, forceCode: input.forceCode },
+      await requestClient(),
+    ),
+});
+
+/**
+ * The six digits (and «Remember this browser»): opens the session like a password sign-in would. Wrong codes
+ * are counted per address and per client (5 pause code checks for 15 minutes); the code itself dies after 5
+ * tries, 10 minutes or its first use.
+ */
+export const signInWithCodeAction = definePublicAction({
+  name: 'platform.auth.sign_in_code_verify',
+  input: z.strictObject({
+    requestId: z.uuid(),
+    email: z.email().max(254),
+    code: z.string().regex(/^[0-9]{6}$/),
+    remember: z.boolean().default(false),
+  }),
+  handler: async ({ input }) => signInWithEmailedCodeForRequest(input, await requestClient()),
+});
+
+/** A remembered browser: finishes the sign-in that needs no code (waits a few seconds for the worker). */
+export const completeRememberedSignInAction = definePublicAction({
+  name: 'platform.auth.sign_in_remembered',
+  input: z.strictObject({ requestId: z.uuid(), email: z.email().max(254) }),
+  handler: async ({ input }) => completeRememberedSignInForRequest(input, await requestClient()),
 });
 
 export const selectOrganizationAction = definePublicAction({

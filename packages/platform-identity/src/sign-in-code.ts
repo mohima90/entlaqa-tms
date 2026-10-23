@@ -94,10 +94,10 @@ export const SIGN_IN_CODE_RESEND_SECONDS = 60;
 
 export async function requestSignInCode(
   deps: SignInCodeDeps,
-  input: { readonly email: string },
+  input: { readonly email: string; readonly forceCode?: boolean },
 ): Promise<Result<SignInCodeStart, AppError>> {
   if (!(await deps.limiter.allowRequest(input.email))) return err(appError('RATE_LIMITED'));
-  const token = deps.cookie.read();
+  const token = input.forceCode ? null : deps.cookie.read();
   const answer = await deps.codes.request(input.email, token ? rememberedBrowserHash(token) : null);
   if (answer.outcome === 'too_soon') {
     return err(

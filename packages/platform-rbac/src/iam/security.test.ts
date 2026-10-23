@@ -14,6 +14,7 @@ import {
   SecuritySettingsInput,
   endMemberSessionsActionDefinition,
   endMySessionsActionDefinition,
+  forgetMyRememberedBrowsersActionDefinition,
   memberSecurityQueryDefinition,
   mySecurityQueryDefinition,
   resetMemberMfaActionDefinition,
@@ -41,6 +42,9 @@ const db = vi.hoisted(() => ({
   listMyMfaApps: vi.fn(),
   listMySessions: vi.fn(),
   endMySessions: vi.fn(),
+  listMyRememberedBrowsers: vi.fn(),
+  forgetMyRememberedBrowsers: vi.fn(),
+  forgetMemberRememberedBrowsers: vi.fn(),
   listMemberSessions: vi.fn(),
   endMemberSessions: vi.fn(),
   mayManagePerson: vi.fn(),
@@ -135,6 +139,9 @@ beforeEach(() => {
   db.listMySessions.mockResolvedValue([]);
   db.listMemberSessions.mockResolvedValue([]);
   db.endMySessions.mockResolvedValue(1);
+  db.listMyRememberedBrowsers.mockResolvedValue([]);
+  db.forgetMyRememberedBrowsers.mockResolvedValue(2);
+  db.forgetMemberRememberedBrowsers.mockResolvedValue(1);
   db.endMemberSessions.mockResolvedValue(2);
   db.mayManagePerson.mockResolvedValue(true);
   db.resetMemberMfa.mockResolvedValue('reset');
@@ -291,13 +298,49 @@ describe('changing the policy (high risk, Organization Admin)', () => {
 describe('own sign-in sessions (My profile)', () => {
   it('every member lists their own sessions and password rule', async () => {
     const query = createDefineQuery(runtime([]).rt)(mySecurityQueryDefinition());
-    expect(await query({})).toEqual(ok({ sessions: [], passwordMinLength: 16, apps: [APP] }));
+    expect(await query({})).toEqual(
+      ok({
+        sessions: [],
+        passwordMinLength: 16,
+        apps: [APP],
+        remembered: { days: 0, browsers: [] },
+      }),
+    );
     // The apps as this session sees them (re-review N1), never another person's.
     expect(db.listMyMfaApps).toHaveBeenCalledWith(TX);
     expect(db.getMemberMfa).not.toHaveBeenCalled();
     db.passwordMinLengthForCaller.mockResolvedValue(null);
     const gone = await query({});
     expect(!gone.ok && gone.error.code).toBe('UNAUTHENTICATED');
+  });
+
+  it("lists the member's own remembered browsers; this browser is told by the hash of its token", async () => {
+    const query = createDefineQuery(runtime([]).rt)(mySecurityQueryDefinition());
+    const hash = 'ab'.repeat(32);
+    await query({ currentBrowser: hash });
+    expect(db.listMyRememberedBrowsers).toHaveBeenLastCalledWith(
+      TX,
+      Uint8Array.from(Buffer.from(hash, 'hex')),
+    );
+    await query({});
+    expect(db.listMyRememberedBrowsers).toHaveBeenLastCalledWith(TX, null);
+    const bad = await query({ currentBrowser: 'not-a-hash' });
+    expect(!bad.ok && bad.error.code).toBe('VALIDATION_FAILED');
+  });
+
+  it("forgets the member's own remembered browsers; audited with the count only", async () => {
+    const { rt, writeAudit } = runtime([]);
+    const action = createDefineAction(rt)(forgetMyRememberedBrowsersActionDefinition());
+    expect(await action({})).toEqual(ok({ forgotten: 2 }));
+    expect(writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {
+      action: 'platform.auth.browsers_forgotten',
+      entityType: 'user',
+      data: { scope: 'own', count: 2 },
+    });
+    writeAudit.mockClear();
+    db.forgetMyRememberedBrowsers.mockResolvedValue(0);
+    await action({});
+    expect(writeAudit).not.toHaveBeenCalled();
   });
 
   it('ends one other session or all others; audited without personal data', async () => {
@@ -345,6 +388,16 @@ describe("a member's sessions (screen 3: user managers)", () => {
         data: { scope: 'all', count: 2 },
       });
     }
+  });
+
+  it("ending ALL of a member's sessions also forgets their remembered browsers; ending one does not", async () => {
+    const { rt } = runtime(forRoles('tenant_admin'));
+    const end = createDefineAction(rt)(endMemberSessionsActionDefinition());
+    await end({ personId: SARA, sessionId: null });
+    expect(db.forgetMemberRememberedBrowsers).toHaveBeenCalledWith(TX, SARA);
+    db.forgetMemberRememberedBrowsers.mockClear();
+    await end({ personId: SARA, sessionId: SESSION });
+    expect(db.forgetMemberRememberedBrowsers).not.toHaveBeenCalled();
   });
 
   it('roles without user management are FORBIDDEN; out of scope 404; the manage rule FORBIDDEN', async () => {

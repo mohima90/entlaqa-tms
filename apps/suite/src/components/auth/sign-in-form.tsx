@@ -98,6 +98,7 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
     readonly resendSeconds: number;
     readonly notice?: string;
   } | null>(null);
+  const [sendingCode, setSendingCode] = useState(false);
   const [method, setMethod] = useState<SignInMethod>('password');
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState<string | undefined>(undefined);
@@ -143,8 +144,10 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
     setMessage(null);
     setPasswordError(undefined);
     const typed = email.trim();
+    setSendingCode(true);
     startTransition(async () => {
       const result = await requestSignInCodeAction({ email: typed, forceCode: false });
+      setSendingCode(false);
       if (result.ok) {
         const { value } = result;
         moved.current = true;
@@ -201,7 +204,6 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
   if (step === 'code' && codeRequest) {
     return (
       <SignInCodeStep
-        key={codeRequest.id}
         locale={locale}
         email={codeRequest.email}
         requestId={codeRequest.id}
@@ -393,11 +395,11 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
             type="submit"
             className={authPrimaryButton}
             disabled={disabled || pending}
-            aria-busy={pending || undefined}
+            aria-busy={(pending && !sendingCode) || undefined}
           >
-            {pending ? <AuthSpinner /> : null}
-            {pending ? labels.submitting : labels.submit}
-            {pending ? null : <AuthIcon name="arrow" />}
+            {pending && !sendingCode ? <AuthSpinner /> : null}
+            {pending && !sendingCode ? labels.submitting : labels.submit}
+            {pending && !sendingCode ? null : <AuthIcon name="arrow" />}
           </button>
           {/* A second way in, instead of the password, for everybody (PO 23 Oct 2026): nothing about the
               account or its roles shows here or on the screen that follows. */}
@@ -414,7 +416,7 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
             onClick={emailMeACode}
             data-testid="sign-in-email-code"
           >
-            {pending ? labels.sendingCode : labels.codeInstead}
+            {pending && sendingCode ? labels.sendingCode : labels.codeInstead}
           </button>
         </>
       )}

@@ -111,10 +111,19 @@ describe.skipIf(!configured)('passive reads against PostgreSQL (integration revi
   });
 
   it('never revives an idle session: past the inactivity limit it is refused, and stays so', async () => {
-    await lastActive(31); // the default limit is 30 minutes
-    const facts = await withUserTx(claims(), (tx) => loadSessionFacts(tx), passive);
-    expect(facts.active).toBe(false);
-    expect(await idleMinutes()).toBeGreaterThan(30.9);
+    // A 31-minute idle session is what the worker's purge (session-purge.integration.test.ts, run in
+    // parallel on the same database) deletes; holding the login's lock makes the purge skip it meanwhile.
+    const held = await owner.reserve();
+    await held`select pg_advisory_lock(hashtextextended(${`platform.login_sessions:${user}`}, 0))`;
+    try {
+      await lastActive(31); // the default limit is 30 minutes
+      const facts = await withUserTx(claims(), (tx) => loadSessionFacts(tx), passive);
+      expect(facts.active).toBe(false);
+      expect(await idleMinutes()).toBeGreaterThan(30.9);
+    } finally {
+      await held`select pg_advisory_unlock(hashtextextended(${`platform.login_sessions:${user}`}, 0))`;
+      held.release();
+    }
   });
 
   it('refuses a name that is not on the list, before any connection', async () => {

@@ -172,10 +172,29 @@ export async function rememberBrowser(
   tx: UserTx,
   tokenHash: Uint8Array,
   label: string | null,
+  /**
+   * The hash of the token the browser presented before (the previous account's, or an earlier one of this
+   * account): forgotten for everybody - "keep me signed in" follows the last account used on the browser.
+   */
+  replaceHash: Uint8Array | null = null,
 ): Promise<number> {
   if (tokenHash.length !== 32) throw new Error('rememberBrowser: the token hash must be 32 bytes');
+  if (replaceHash && replaceHash.length !== 32) {
+    throw new Error('rememberBrowser: the replaced token hash must be 32 bytes');
+  }
+  const replace = replaceHash ? sql`${hex(replaceHash)}::bytea` : sql`null::bytea`;
   const [row] = await tx.execute<{ count: number }>(
-    sql`select private.remember_browser(${hex(tokenHash)}::bytea, ${label}) as count`,
+    sql`select private.remember_browser(${hex(tokenHash)}::bytea, ${label}, ${replace}) as count`,
+  );
+  return row?.count ?? 0;
+}
+
+/** Explicit sign-out: the signed-in account forgets the browser with this token hash. Returns how many rows. */
+export async function forgetThisBrowser(tx: UserTx, tokenHash: Uint8Array): Promise<number> {
+  if (tokenHash.length !== 32)
+    throw new Error('forgetThisBrowser: the token hash must be 32 bytes');
+  const [row] = await tx.execute<{ count: number }>(
+    sql`select private.forget_this_browser(${hex(tokenHash)}::bytea) as count`,
   );
   return row?.count ?? 0;
 }

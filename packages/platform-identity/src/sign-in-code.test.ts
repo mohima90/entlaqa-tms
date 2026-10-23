@@ -7,6 +7,7 @@ import {
   type RememberedBrowserCookie,
   type SignInCodeDeps,
   completeRememberedSignIn,
+  forgetBrowserOnSignOut,
   rememberAfterSecondStep,
   requestSignInCode,
   signInWithEmailedCode,
@@ -57,6 +58,7 @@ interface Options {
 function setup(options: Options = {}) {
   const events: string[] = [];
   const cookieWrites: { token: string; maxAge: number }[] = [];
+  const cookieCleared: boolean[] = [];
   const attempt = {
     triesIfWrong: options.triesIfWrong ?? 3,
     failed: vi.fn(() => {
@@ -117,6 +119,9 @@ function setup(options: Options = {}) {
     write: (token, maxAge) => {
       cookieWrites.push({ token, maxAge });
     },
+    clear: () => {
+      cookieCleared.push(true);
+    },
   };
   let pendingValue: string | null = options.pending ?? null;
   const pendingWrites: string[] = [];
@@ -172,6 +177,7 @@ function setup(options: Options = {}) {
     limiter,
     codes: { ...defaultCodes, ...options.codes },
     rememberBrowser: vi.fn(() => Promise.resolve(options.rememberResult ?? 1)),
+    forgetThisBrowser: vi.fn(() => Promise.resolve(1)),
     cookie,
     pendingRemember,
     browserLabel: () => 'Chrome on Windows',
@@ -185,6 +191,7 @@ function setup(options: Options = {}) {
     audited,
     events,
     cookieWrites,
+    cookieCleared,
     pendingWrites,
     pending: () => pendingValue,
   };
@@ -465,6 +472,23 @@ describe('signInWithEmailedCode', () => {
     expect(none.deps.codes.isRemembered).not.toHaveBeenCalled();
   });
 
+  it('"keep me signed in": the token the browser presented is replaced when another (or the same) account is remembered', async () => {
+    const next = setup({ cookie: TOKEN, rememberResult: 1 });
+    await signInWithEmailedCode(next.deps, { ...input, remember: true });
+    const [, fresh, , replaced] =
+      (next.deps.rememberBrowser as unknown as { mock: { calls: unknown[][] } }).mock.calls[0] ??
+      [];
+    expect(replaced).toEqual(rememberedBrowserHash(TOKEN));
+    expect(fresh).not.toEqual(replaced);
+    // A browser with no cookie replaces nothing.
+    const first = setup({ rememberResult: 1 });
+    await signInWithEmailedCode(first.deps, { ...input, remember: true });
+    const [, , , none] =
+      (first.deps.rememberBrowser as unknown as { mock: { calls: unknown[][] } }).mock.calls[0] ??
+      [];
+    expect(none).toBeNull();
+  });
+
   it('a failure to remember never blocks the sign-in', async () => {
     const { deps } = setup();
     (
@@ -527,6 +551,36 @@ describe('completeRememberedSignIn', () => {
       error: { code: 'SIGN_IN_CODE_EXPIRED' },
     });
     expect(none.deps.codes.takeRemembered).not.toHaveBeenCalled();
+  });
+});
+
+describe('forgetBrowserOnSignOut', () => {
+  const claims = { sub: USER, session_id: SESSION } as never;
+
+  it('explicit sign-out forgets the browser server side and removes the cookie', async () => {
+    const { deps, cookieCleared } = setup({ cookie: TOKEN });
+    await forgetBrowserOnSignOut(deps, claims);
+    const [, hash] =
+      (deps.forgetThisBrowser as unknown as { mock: { calls: unknown[][] } }).mock.calls[0] ?? [];
+    expect(hash).toEqual(rememberedBrowserHash(TOKEN));
+    expect(cookieCleared).toEqual([true]);
+  });
+
+  it('a browser with no remembered-browser cookie: nothing to do', async () => {
+    const { deps, cookieCleared } = setup();
+    await forgetBrowserOnSignOut(deps, claims);
+    expect(deps.forgetThisBrowser).not.toHaveBeenCalled();
+    expect(cookieCleared).toEqual([]);
+  });
+
+  it('never blocks the sign-out: the cookie goes even when the database fails', async () => {
+    const { deps, cookieCleared } = setup({ cookie: TOKEN });
+    (
+      deps.forgetThisBrowser as unknown as { mockRejectedValue: (e: Error) => void }
+    ).mockRejectedValue(new Error('db'));
+    await forgetBrowserOnSignOut(deps, claims);
+    expect(deps.logWarning).toHaveBeenCalled();
+    expect(cookieCleared).toEqual([true]);
   });
 });
 

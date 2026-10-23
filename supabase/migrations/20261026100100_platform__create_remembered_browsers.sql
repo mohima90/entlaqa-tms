@@ -151,7 +151,7 @@ comment on function private.remembered_browser_ok(uuid, bytea) is
 -- ---------------------------------------------------------------------------------------------------
 -- Remembering (the signed-in user, right after a code sign-in; no organization selected yet)
 -- ---------------------------------------------------------------------------------------------------
-create or replace function private.remember_browser(p_token_hash bytea, p_label text)
+create or replace function private.remember_browser(p_token_hash bytea, p_label text, p_replace_hash bytea default null)
 returns integer
 language plpgsql volatile security definer
 set search_path = ''
@@ -184,6 +184,11 @@ begin
                   and coalesce(p.remembered_browser_days, 0) = 0) then
     return 0;
   end if;
+  -- "Keep me signed in" on this browser follows the LAST account used on it (PO 23 Oct 2026): the token the browser
+  -- presented (the previous account's, or an earlier one of this account) is forgotten for everybody.
+  if p_replace_hash is not null and octet_length(p_replace_hash) = 32 and p_replace_hash <> p_token_hash then
+    delete from platform.remembered_browsers r where r.token_hash = p_replace_hash;
+  end if;
   insert into platform.remembered_browsers (tenant_id, user_id, person_id, token_hash, password_marker, label, created_at, expires_at)
   select m.tenant_id, v_user, m.person_id, p_token_hash, v_marker, v_label, now(),
          now() + make_interval(days => p.remembered_browser_days)
@@ -210,8 +215,32 @@ begin
   return v_count;
 end
 $$;
-comment on function private.remember_browser(bytea, text) is
-  'SECURITY-RELEVANT (WP-ADM-05, BR-AUTH-f). Remembers a browser (SHA-256 of its cookie token) for the signed-in account in every organization, for each organization''s days; nothing when any has the setting Off. app_server, user claims.';
+comment on function private.remember_browser(bytea, text, bytea) is
+  'SECURITY-RELEVANT (WP-ADM-05, BR-AUTH-f). Remembers a browser (SHA-256 of its cookie token) for the signed-in account in every organization, for each organization''s days; nothing when any has the setting Off. The token the browser presented before (p_replace_hash) is forgotten for every account: the browser follows the last account used. app_server, user claims.';
+
+-- Explicit sign-out (PO 23 Oct 2026: it works like "keep me signed in"): the signing-out account forgets this
+-- browser in every organization.
+create or replace function private.forget_this_browser(p_token_hash bytea)
+returns integer
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+declare
+  v_claims jsonb := private.request_claims();
+  v_user uuid := private.request_user_id();
+  v_count integer;
+begin
+  if session_user <> 'app_server' or v_user is null or coalesce(v_claims ->> 'role', '') <> 'authenticated'
+     or p_token_hash is null or octet_length(p_token_hash) <> 32 then
+    raise exception 'reserved to a signed-in user' using errcode = 'insufficient_privilege';
+  end if;
+  delete from platform.remembered_browsers r where r.user_id = v_user and r.token_hash = p_token_hash;
+  get diagnostics v_count = row_count;
+  return v_count;
+end
+$$;
+comment on function private.forget_this_browser(bytea) is
+  'SECURITY-RELEVANT (WP-ADM-05). The signed-in account forgets the browser with this token hash (explicit sign-out). app_server, user claims.';
 
 -- ---------------------------------------------------------------------------------------------------
 -- My profile's list (security review H1: `authenticated` has no column grant on token_hash, so the list asks
@@ -295,17 +324,20 @@ create trigger tenant_memberships_forget_remembered after update of status on pl
 -- Ownership hand-over as in migration 20260930120100 (non-superuser migration role on hosted Supabase).
 grant create on schema private to account_mail_guard, tenant_guard;
 alter function private.remembered_browser_ok(uuid, bytea) owner to account_mail_guard;
-alter function private.remember_browser(bytea, text) owner to account_mail_guard;
+alter function private.remember_browser(bytea, text, bytea) owner to account_mail_guard;
+alter function private.forget_this_browser(bytea) owner to account_mail_guard;
 alter function private.my_remembered_browsers(bytea) owner to account_mail_guard;
 alter function private.forget_member_remembered_browsers(uuid) owner to tenant_guard;
 alter function private.forget_remembered_browsers_of_inactive_member() owner to tenant_guard;
 revoke create on schema private from account_mail_guard, tenant_guard;
 
 revoke all on function private.remembered_browser_ok(uuid, bytea) from public;
-revoke all on function private.remember_browser(bytea, text) from public;
+revoke all on function private.remember_browser(bytea, text, bytea) from public;
+revoke all on function private.forget_this_browser(bytea) from public;
 revoke all on function private.my_remembered_browsers(bytea) from public;
 revoke all on function private.forget_member_remembered_browsers(uuid) from public;
 revoke all on function private.forget_remembered_browsers_of_inactive_member() from public;
-grant execute on function private.remember_browser(bytea, text) to authenticated;
+grant execute on function private.remember_browser(bytea, text, bytea) to authenticated;
+grant execute on function private.forget_this_browser(bytea) to authenticated;
 grant execute on function private.my_remembered_browsers(bytea) to authenticated;
 grant execute on function private.forget_member_remembered_browsers(uuid) to authenticated;

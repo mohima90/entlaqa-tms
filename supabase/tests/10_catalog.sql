@@ -522,9 +522,10 @@ begin
   perform tests.assert_eq(v_list,
     'private.account_needs_platform_sender(uuid), private.claim_account_mail_request(), '
     'private.claim_sign_in_code_request(), '
-    'private.finish_account_mail_request(uuid), private.issue_sign_in_code(uuid,uuid,uuid,text,text), '
+    'private.finish_account_mail_request(uuid), private.forget_this_browser(bytea), '
+    'private.issue_sign_in_code(uuid,uuid,uuid,text,text), '
     'private.my_remembered_browsers(bytea), '
-    'private.remember_browser(bytea,text), private.remembered_browser_for_email(text,bytea), '
+    'private.remember_browser(bytea,text,bytea), private.remembered_browser_for_email(text,bytea), '
     'private.remembered_browser_ok(uuid,bytea), '
     'private.request_account_locked_mail(text,integer), private.request_mfa_code_locked_mail(uuid,integer), '
     'private.request_password_changed_mail(uuid), private.request_password_reset_mail(text), '

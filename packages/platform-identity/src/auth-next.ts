@@ -41,6 +41,7 @@ import {
   rateLimitStore,
   rememberBrowser,
   requestSignInCode as requestSignInCodeInDatabase,
+  forgetThisBrowser,
   isRememberedBrowserForEmail,
   takeRememberedSignIn,
   verifySignInCode as verifySignInCodeInDatabase,
@@ -122,6 +123,7 @@ import {
   type RememberedBrowserCookie,
   type SignInCodeDeps,
   completeRememberedSignIn,
+  forgetBrowserOnSignOut,
   rememberAfterSecondStep,
   requestSignInCode,
   signInWithEmailedCode,
@@ -272,6 +274,13 @@ function rememberedBrowserCookie(store: CookieStore): RememberedBrowserCookie {
         });
       } catch {
         // Not in a server action (cookies are read-only there): the browser is not remembered.
+      }
+    },
+    clear: () => {
+      try {
+        store.delete(REMEMBERED_BROWSER_COOKIE);
+      } catch {
+        // Not in a server action: nothing to clear.
       }
     },
   };
@@ -451,6 +460,7 @@ async function rememberDepsForRequest(): Promise<RememberDeps> {
     withUserTx: auth.withUserTx,
     logWarning: auth.logWarning,
     rememberBrowser,
+    forgetThisBrowser,
     cookie: rememberedBrowserCookie(store),
     pendingRemember: pendingRememberCookie(store),
     browserLabel: () => label,
@@ -487,6 +497,7 @@ async function signInCodeDeps(client: RequestClient): Promise<SignInCodeDeps> {
       isRemembered: isRememberedBrowserForEmail,
     },
     rememberBrowser,
+    forgetThisBrowser,
     cookie: rememberedBrowserCookie(store),
     pendingRemember: pendingRememberCookie(store),
     browserLabel: () => label,
@@ -557,7 +568,16 @@ export async function getSessionOrganizationsForRequest() {
 }
 
 export async function signOutForRequest() {
-  return signOut(await requestDeps());
+  const deps = await requestDeps();
+  // A browser remembered with «Remember this browser» works like "keep me signed in": signing out forgets it
+  // (server side) and removes the cookie (PO 23 Oct 2026). Before the session ends, so the account is known.
+  try {
+    const claims = await verifyClaims(deps.supabase);
+    if (claims.ok) await forgetBrowserOnSignOut(await rememberDepsForRequest(), claims.value);
+  } catch {
+    deps.logWarning('could not forget the browser', { action: 'platform.auth.sign_out' });
+  }
+  return signOut(deps);
 }
 
 /** The sign-in page signs out a session its organization's rules ended (T-M2-10). */

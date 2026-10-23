@@ -59,6 +59,8 @@ export interface RememberedBrowserCookie {
   read(): string | null;
   /** Sets the cookie for `maxAgeSeconds`. */
   write(token: string, maxAgeSeconds: number): void;
+  /** Removes the cookie (explicit sign-out). */
+  clear(): void;
 }
 
 /** The remembered-browser cookie lives at most as long as the longest period an organization can choose. */
@@ -84,7 +86,10 @@ export interface RememberDeps extends Pick<AuthFlowDeps, 'withUserTx' | 'logWarn
     tx: UserTx,
     tokenHash: Uint8Array,
     label: string | null,
+    replaceHash: Uint8Array | null,
   ) => Promise<number>;
+  /** The signed-in account forgets the browser with this token hash (explicit sign-out). */
+  readonly forgetThisBrowser: (tx: UserTx, tokenHash: Uint8Array) => Promise<number>;
   readonly cookie: RememberedBrowserCookie;
   readonly pendingRemember: PendingRememberCookie;
   /** "Chrome on Windows" from the request's user agent (well-known names only), or null. */
@@ -197,13 +202,39 @@ async function openSession(
 async function rememberThisBrowser(deps: RememberDeps, claims: VerifiedClaims): Promise<void> {
   try {
     const token = newDeviceToken();
+    // "Keep me signed in" follows the LAST account used on this browser: the token it presented before
+    // (whoever's) is forgotten when this one is remembered (PO 23 Oct 2026).
+    const previous = deps.cookie.read();
     const remembered = await deps.withUserTx(claims, (tx) =>
-      deps.rememberBrowser(tx, rememberedBrowserHash(token), deps.browserLabel()),
+      deps.rememberBrowser(
+        tx,
+        rememberedBrowserHash(token),
+        deps.browserLabel(),
+        previous ? rememberedBrowserHash(previous) : null,
+      ),
     );
     if (remembered > 0) deps.cookie.write(token, REMEMBERED_BROWSER_COOKIE_SECONDS);
   } catch {
     deps.logWarning('could not remember the browser', { action: 'platform.auth.sign_in_code' });
   }
+}
+
+/**
+ * Explicit sign-out (PO 23 Oct 2026: «Remember this browser» works like "keep me signed in"): the signing-out
+ * account forgets this browser server-side and the cookie is cleared. Best effort - sign-out never fails here.
+ */
+export async function forgetBrowserOnSignOut(
+  deps: RememberDeps,
+  claims: VerifiedClaims,
+): Promise<void> {
+  const token = deps.cookie.read();
+  if (token === null) return;
+  try {
+    await deps.withUserTx(claims, (tx) => deps.forgetThisBrowser(tx, rememberedBrowserHash(token)));
+  } catch {
+    deps.logWarning('could not forget the browser', { action: 'platform.auth.sign_out' });
+  }
+  deps.cookie.clear();
 }
 
 /** The value of the pending tick: the account and the Auth session it belongs to. */

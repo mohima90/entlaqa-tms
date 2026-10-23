@@ -305,6 +305,50 @@ begin
 end $$;
 rollback;
 
+-- "Keep me signed in" on a browser: explicit sign-out forgets it, the last account used replaces the previous one,
+-- another account's address always gets a code (PO 23 Oct 2026).
+begin;
+delete from private.sign_in_codes;
+update platform.security_policies set remembered_browser_days = 14
+where tenant_id in ('a0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001');
+set local session authorization app_server;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1', null));
+do $$
+begin
+  perform tests.assert_eq(private.remember_browser(sha256('first'::bytea), 'Chrome on Windows'), 1::integer, 'uA remembers the browser');
+  -- Sign-out: the signing-out account forgets this browser, and only this one.
+  perform tests.assert_eq(private.forget_this_browser(sha256('other'::bytea)), 0::integer, 'another browser: nothing forgotten');
+  perform tests.assert_eq(private.forget_this_browser(sha256('first'::bytea)), 1::integer, 'sign-out forgets this browser');
+  perform tests.assert_eq(private.remember_browser(sha256('first'::bytea), 'Chrome on Windows'), 1::integer, 'remembered again');
+end $$;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ad', null));
+do $$
+begin
+  perform tests.assert_eq(private.forget_this_browser(sha256('first'::bytea)), 0::integer, 'another account cannot forget uA''s browser');
+  -- The next account used on this browser replaces the previous one (the cookie it presented is 'first').
+  perform tests.assert_eq(private.remember_browser(sha256('second'::bytea), 'Chrome on Windows', sha256('first'::bytea)), 2::integer,
+    'uAB remembers the browser in both organizations, replacing the previous account');
+end $$;
+select tests.set_claims(null);
+do $$
+begin
+  perform tests.assert_fails($q$select private.forget_this_browser(sha256('first'::bytea))$q$, array['42501'], 'no claims: refused');
+  perform tests.assert(not private.remembered_browser_for_email('ua@a.test', sha256('first'::bytea)), 'uA no longer skips the code on this browser');
+  perform tests.assert(not private.remembered_browser_for_email('ua@a.test', sha256('second'::bytea)), 'the new token is not uA''s');
+  perform tests.assert(private.remembered_browser_for_email('uab@ab.test', sha256('second'::bytea)), 'the last account used is remembered');
+  -- A typed address of any other account always gets a code.
+  perform tests.assert((select outcome from private.request_sign_in_code('ua@a.test', sha256('second'::bytea))) = 'queued', 'another account''s address: a code');
+  perform tests.assert((select outcome from private.request_sign_in_code('uab@ab.test', sha256('second'::bytea))) = 'remembered', 'the remembered account: no code');
+end $$;
+set local session authorization default;
+do $$
+begin
+  perform tests.assert_eq((select count(*) from platform.remembered_browsers where token_hash = sha256('first'::bytea)), 0::bigint, 'the previous account''s row is gone');
+  perform tests.assert_eq((select count(*) from platform.remembered_browsers where token_hash = sha256('second'::bytea)), 2::bigint, 'two rows for the new account');
+end $$;
+rollback;
+
 -- A full queue: the same answer, nothing stored, the outcome tells the caller (logged, never shown).
 begin;
 delete from private.sign_in_codes;

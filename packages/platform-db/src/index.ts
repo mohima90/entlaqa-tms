@@ -30,6 +30,7 @@ export {
   type SignInCodeRequest,
   createSignInCodeApi,
   forgetMemberRememberedBrowsers,
+  forgetThisBrowser,
   forgetMyRememberedBrowsers,
   isRememberedBrowserForEmail,
   listMyRememberedBrowsers,

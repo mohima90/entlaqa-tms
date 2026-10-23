@@ -607,7 +607,7 @@ begin
         -- Profile photos (WP-ADM-04)
         'private.publish_profile_photo(uuid,text,bigint,text,bytea)', 'private.remove_profile_photo()',
         -- Sign-in extras (WP-ADM-05)
-        'private.remembered_browser_ok(uuid,bytea)', 'private.remember_browser(bytea,text)',
+        'private.remembered_browser_ok(uuid,bytea)', 'private.remember_browser(bytea,text,bytea)', 'private.forget_this_browser(bytea)',
         'private.my_remembered_browsers(bytea)', 'private.remembered_browser_for_email(text,bytea)',
         'private.forget_member_remembered_browsers(uuid)', 'private.forget_remembered_browsers_of_inactive_member()',
         'private.sign_in_code_hmac(uuid,text)', 'private.request_sign_in_code(text,bytea)',

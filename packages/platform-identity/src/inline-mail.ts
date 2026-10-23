@@ -4,7 +4,6 @@ import {
   type InlineEmailTestScope,
   type InlineEmailTestTicket,
   type InlineInvitationFacts,
-  type InlineMailApi,
   type InlineMailTicket,
   type InlineMailToQueue,
   claimInlineEmailTest,
@@ -66,8 +65,10 @@ let sharedRouter: InlineEmailRouter | null = null;
 /** The web tier's sender rule over its environment: one instance (its transports are cached for a minute). */
 export function inlineEmailRouter(): InlineEmailRouter {
   sharedRouter ??= createInlineEmailRouter(process.env, (level, message) => {
-    const fn = level === 'error' ? log.error : level === 'warning' ? log.warn : log.info;
-    fn(message, { action: 'platform.email.inline' });
+    const fields = { action: 'platform.email.inline' };
+    if (level === 'error') log.error(message, fields);
+    else if (level === 'warning') log.warn(message, fields);
+    else log.info(message, fields);
   });
   return sharedRouter;
 }
@@ -155,7 +156,7 @@ export const queueInvitationEmailInline = createInlineInvitationMailer({
   send: (ticket) =>
     sendInlineDelivery(
       {
-        api: inlineMailApi as InlineMailApi,
+        api: inlineMailApi,
         router: inlineEmailRouter(),
         log: (level, message, fields) => {
           log[level](message, { action: 'platform.email.inline', ...fields });

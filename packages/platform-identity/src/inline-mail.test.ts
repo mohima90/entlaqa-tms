@@ -58,8 +58,8 @@ function setup(over: Partial<InlineMailerDeps> = {}) {
   const deps: InlineMailerDeps = {
     configured: () => true,
     base: () => 'https://tms.example.com',
-    prepare: prepare as InlineMailerDeps['prepare'],
-    queue: queue as InlineMailerDeps['queue'],
+    prepare: prepare,
+    queue: queue,
     schedule,
     send,
     warn,
@@ -180,7 +180,7 @@ describe('the test e-mail of the settings pages, claimed in the action and sent 
     } as never;
     const start = createInlineEmailTester({
       configured: () => true,
-      claim: claim as InlineEmailTesterDeps['claim'],
+      claim: claim,
       schedule,
       send,
       warn,

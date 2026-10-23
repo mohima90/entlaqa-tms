@@ -19,10 +19,42 @@
 
 Only jobs (system claims) can read or write deliveries, and the sender acts only on events written by a job; logs and the queue carry codes, never addresses or content.
 
-## 1a. Provider secrets (WP-ADM-01) — sealed for the worker, never readable by the web app
+## 1b. Sent the moment the action commits (WP-ADM-05 follow-up, PO 23 Oct 2026) — the worker is the safety net
+
+**Decision (PO, 23 Oct 2026):** every e-mail arrives immediately, with the organization's sender or the platform's - not after a worker pass. The web app sends it itself, right after the response (`after()`), with the same sender code the worker uses (`packages/platform-notifications/src/sending/`). The queue and the worker stay: if the web app cannot send (no key, provider down, function stopped), the worker sends it later, once.
+
+| Message | How it goes out |
+|---|---|
+| Invitation (create, **Invite another**, resend) | **Immediate** from the web app |
+| Test e-mail on **Platform settings → Email** («Save and send test») and **Settings → Email integration** («Send test e-mail») | **Immediate** from the web app |
+| Sign-in code (WP-ADM-05) | Immediate (Send Email Hook route, ADR 0005) - unchanged |
+| Password reset, «password changed», authenticator set-up code and removal, security-policy / lockout notices, the digest, «import finished», invitations released by an import | **Worker** (still prompt: the kick starts a pass when the action commits, the minute cron is the fallback). Reasons in the table below |
+
+**The steps**
+
+1. **Queue (in the action's transaction).** After the invitation (or test) is saved, `queueInvitationEmailInline` renders the e-mail in the web app and calls `private.inline_mail_queue(...)` in a savepoint. The function checks that the caller may manage that invitation (it asks the same authority function the invitation screens use), that the invitation is pending, and that the address is the invitation's; it writes the delivery as `queued` with a `source_key` (`invitation:<id>:<send count>`) and the **SHA-256 of a request secret** (32 random bytes). The web app keeps the secret in memory only. A failure here never fails the action: no delivery is queued and the worker's own invitation mailer queues it as before.
+2. **Send (after the response).** `after()` calls `sendInlineDelivery(id, secret)`: `private.inline_mail_claim` takes the **shared lease** (status `sending`, `updated_at` = the lease start, 300 seconds - the same lease the worker's sender uses) only for the holder of the secret, and returns the sender settings with the claim (never without it). The sender rule runs (`fromRow`, platform-only for account-opening templates), the provider is called with the **delivery id as idempotency key**, and `private.inline_mail_finish` records `sent` / `failed` (content, address and secret hash removed) or sends it back to `queued` with the reason (temporary failure, `NO_SENDER`).
+3. **Worker side, no double send.** The worker's invitation mailer skips an invitation whose inline delivery exists (`inlineDeliveryExists`, by `source_key`). A delivery the web app queued but never finished (function stopped) is re-queued by the rescue task `platform.email_inline_rescue` once it is 60 seconds old - or immediately when its lease ran out - and the normal worker sender then sends it (same idempotency key, same lease: whoever claims first sends; the other sees `busy`). A delivery waiting for a sender (`NO_SENDER`) is left to the resume task. Rescue is attempted at most once an hour per delivery (`rescued_at`).
+4. **Test e-mails.** The action claims the test in its own transaction (`private.inline_email_test_claim`: Super Admin for the platform sender, the organization's admin for its provider; the same 3-claim limit and lease as the worker's test task; keeps the SHA-256 of a request secret), then sends it after the response and records the outcome with `private.inline_email_test_finish(secret, version, ...)`, which verifies only the settings version it tested (audited). A test nobody finishes is claimed by the worker task after its lease.
+
+**What the web app can and cannot do in the database.** It uses no new login: the functions run as the new role `inline_mail_guard` (SECURITY DEFINER, `NOLOGIN`, `NOBYPASSRLS`, column grants only on the delivery, invitation, person, tenant, membership and custom-role columns it needs) and are granted to `authenticated`/`app_server` only. `queue` and `test_claim` need the caller's verified claims; `claim` and `finish` need **no claims** but need the **secret** - so a request can claim only the message its own transaction queued, never another one (tenant isolation, pgTAP `99_inline_mail_*`). The sender settings (sealed secrets) leave the database only together with a successful claim.
+
+**Rules kept.** Accounts in more than one organization, or with a platform role, still get the platform sender only for account-security e-mails (`PLATFORM_SENDER_TEMPLATES`, applied in the inline path as in the worker's). The one-minute and daily caps of the worker's mailers stay in the worker.
+
+**Gating and set-up.** Inline sending is on only when the web app has `EMAIL_CREDENTIALS_KEY` (already added for the sign-in code; **secret**, the same value as the worker's) or an installation sender (`EMAIL_PROVIDER` not `none`, self-hosted). `APP_BASE_URL` (**config**, already set) builds the links. **No new variable.** Without them the web app queues nothing inline and the worker does everything as in §1.
+
+**Why these stay on the worker**
+
+| Message | Reason |
+|---|---|
+| Password-reset link | The link needs Auth's `generateLink` (admin API), which needs the Auth **secret key** - never in Vercel. Proposal for an immediate path in ADR 0005 (Send Email Hook `recovery` type + our own sealed-token pattern); not built until approved |
+| «Password changed», authenticator code and removal, policy / lockout notices, digest | Their content, caps, hourly ceiling, quiet hours and «held / digest» decisions live in worker-only database functions (`claim_account_mail_request`, `issue_mfa_factor_tokens`); the public ones (reset, account locked) are anonymous requests on purpose, so that nobody can tell whether an account exists. They need a «prepare and consume the request in the same transaction» function per kind (follow-up) |
+| «Import finished», invitations released by an import | Started by the worker itself; it sends them within its own pass |
+
+## 1a. Provider secrets (WP-ADM-01) — sealed for the worker, never readable by the web app (since 23 Oct 2026 the web app also holds the key for immediate sending, §1b)
 
 - The worker derives an X25519 key pair from its **secret** `EMAIL_CREDENTIALS_KEY` (HKDF-SHA256; at least 32 characters) and, at every pass, publishes the **public** key in the database (`private.email_credentials_key`, with a 12-character key id).
-- When a Super Admin or an Organization Admin saves a provider, the web app's server seals the secret fields (API key, SMTP password, Microsoft client secret) with that public key: a **sealed box** — a fresh ephemeral X25519 key, ECDH, HKDF-SHA256, AES-256-GCM with a random nonce, the scope (`platform` or the organization's id) and the provider bound as additional data — and stores `v1.<key id>.<payload>`. Vercel (the web app) holds **no** key at all and can never open a saved secret; nothing returns it to any page, log or audit record. Non-secret options (SMTP host/port/user, Mailgun domain/region, Microsoft tenant and client ids) are stored in clear and shown back.
+- When a Super Admin or an Organization Admin saves a provider, the web app's server seals the secret fields (API key, SMTP password, Microsoft client secret) with that public key: a **sealed box** — a fresh ephemeral X25519 key, ECDH, HKDF-SHA256, AES-256-GCM with a random nonce, the scope (`platform` or the organization's id) and the provider bound as additional data — and stores `v1.<key id>.<payload>`. Until 23 Oct 2026 Vercel (the web app) held **no** key and could never open a saved secret; with immediate sending it holds `EMAIL_CREDENTIALS_KEY` (accepted by the PO, ADR 0005) and opens them only to send a message it claimed (§1b); nothing returns it to any page, log or audit record. Non-secret options (SMTP host/port/user, Mailgun domain/region, Microsoft tenant and client ids) are stored in clear and shown back.
 - Only the worker opens them, for the scope they were sealed for (another organization's value does not open). The settings tables are in schema `private`, reachable only through `email_guard`'s reviewed functions (pgTAP `99_email_*`).
 - **Without `EMAIL_CREDENTIALS_KEY`** nothing else breaks: no key is published, the pages say e-mail sending is not set up and refuse to save secrets; messages wait. **A new value** = a new key: saved secrets can no longer be opened (`CREDENTIALS_KEY_CHANGED`) — the pages ask for them again and messages wait until then. Keep the value in a password manager; never in chat.
 - An SMTP relay set in the product must be on the public internet and use a submission port — 465, 587 or 2525, not 25 (resolved before every send; private, loopback, link-local and IPv4-embedding IPv6 addresses such as NAT64 and 6to4 are refused — `SMTP_HOST_NOT_ALLOWED`); TLS is always required. This holds for every organization's relay and for the platform sender's, unless the operator of a self-hosted installation sets `EMAIL_PLATFORM_SMTP_ALLOW_PRIVATE=true` (internal relay, any port).
@@ -31,7 +63,7 @@ Only jobs (system claims) can read or write deliveries, and the sender acts only
 - **Test e-mails** (security review): at most one a minute per sender (every platform save sends one) and 20 a day per organization (`RATE_LIMITED`); the worker claims them one at a time within a 90-second budget per pass; a test claimed 3 times without an outcome fails with `TIMEOUT`; a test still unsent after 7 days (e.g. of a suspended organization) fails with `TEST_EXPIRED` and its recipient is removed.
 - Click and open tracking are switched off for SendGrid and Mailgun (invitation links carry codes). Microsoft 365 sends the HTML version only (Graph's JSON sendMail has one body).
 
-## 2. Settings (worker only — the web app never holds provider credentials)
+## 2. Settings (the worker; the web app only for immediate sending, §1b)
 
 | Variable | Meaning |
 |---|---|

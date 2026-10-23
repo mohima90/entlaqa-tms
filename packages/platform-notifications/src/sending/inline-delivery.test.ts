@@ -28,9 +28,7 @@ const mail: ClaimedInlineMail = {
 function setup(
   over: { claim?: InlineClaim; route?: EmailRoute; send?: EmailTransport['send'] } = {},
 ) {
-  const send = vi.fn(
-    over.send ?? (() => Promise.resolve({ providerMessageId: 'msg-1' as string | null })),
-  );
+  const send = vi.fn(over.send ?? (() => Promise.resolve({ providerMessageId: 'msg-1' })));
   const transport = { provider: 'resend', send } as unknown as EmailTransport;
   const route: EmailRoute = over.route ?? {
     kind: 'send',

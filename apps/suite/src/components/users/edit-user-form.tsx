@@ -60,6 +60,8 @@ export interface EditUserFormProps {
     readonly employeeNumber: string;
     readonly departmentId: string;
     readonly branchId: string;
+    /** WP-HR-01: the person's cost centre ('' = none; a unit's default fills it when saved empty). */
+    readonly costCentreId: string;
     readonly managerPersonId: string;
     readonly jobTitleAr: string;
     readonly jobTitleEn: string;
@@ -67,6 +69,8 @@ export interface EditUserFormProps {
   };
   readonly departments: readonly UnitChoice[];
   readonly branches: readonly UnitChoice[];
+  /** Cost centres as choices (none: the field is hidden — before the migration or none defined). */
+  readonly costCentres: readonly UnitChoice[];
   readonly managers: readonly ManagerChoice[];
   /** Texts by key (translated on the server). */
   readonly labels: Readonly<Record<string, string>>;
@@ -113,6 +117,7 @@ export function EditUserForm(props: EditUserFormProps) {
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
   const [departmentId, setDepartmentId] = useState(values.departmentId);
   const [branchId, setBranchId] = useState(values.branchId);
+  const [costCentreId, setCostCentreId] = useState(values.costCentreId);
   const [hireOn, setHireOn] = useState(values.hireOn);
   const [managerId, setManagerId] = useState(values.managerPersonId);
   const [showAll, setShowAll] = useState(false);
@@ -181,6 +186,8 @@ export function EditUserForm(props: EditUserFormProps) {
       preferredLocale: field('preferredLocale') === 'en' ? ('en' as const) : ('ar' as const),
       departmentId,
       branchId,
+      // Not sent while no cost centre exists (the server keeps what the person has).
+      ...(props.costCentres.length > 0 ? { costCentreId } : {}),
       managerPersonId: managerId,
       jobTitleAr: field('jobTitleAr'),
       jobTitleEn: field('jobTitleEn'),
@@ -496,6 +503,29 @@ export function EditUserForm(props: EditUserFormProps) {
               </option>
             ))}
           </SelectField>
+          {props.costCentres.length > 0 ? (
+            <SelectField
+              id="edit-cost-centre"
+              name="costCentreId"
+              label={text('costCentre')}
+              marker={text('optional')}
+              hint={costCentreId === '' ? text('costCentreFromUnit') : text('costCentreHint')}
+              value={costCentreId}
+              onChange={(event) => {
+                setCostCentreId(event.target.value);
+              }}
+              error={fieldErrors.costCentreId}
+              disabled={pending}
+              data-testid="edit-cost-centre"
+            >
+              <option value="">{text('noCostCentre')}</option>
+              {props.costCentres.map((choice) => (
+                <option key={choice.id} value={choice.id}>
+                  {choice.name}
+                </option>
+              ))}
+            </SelectField>
+          ) : null}
           <div className="flex flex-col gap-2 sm:col-span-2">
             <SelectField
               id="edit-manager"

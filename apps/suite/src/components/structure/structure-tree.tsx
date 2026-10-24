@@ -11,12 +11,17 @@ import {
   EmptyState,
   Icon,
   PageHeader,
+  buttonClasses,
   cn,
   toast,
 } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { type ReactNode, useMemo, useState } from 'react';
-import { deleteStructureUnitAction, setStructureUnitStatusAction } from '../../actions/structure';
+import {
+  deleteStructureUnitAction,
+  reorderStructureUnitAction,
+  setStructureUnitStatusAction,
+} from '../../actions/structure';
 import { fillText } from '../../lib/fill-text';
 import { unitFieldText } from '../../lib/structure-form';
 import { deactivatesWithUndo, parentIds, unitDeleteBlockers } from '../../lib/structure-view';
@@ -24,6 +29,7 @@ import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { ConfirmDialog } from './confirm-dialog';
 import { failureOf } from './failure';
+import { MoveUnitDialog } from './move-unit-dialog';
 import { type Choice, type UnitDialogMode, UnitPanel, type UnitView } from './unit-panel';
 
 export interface StructureTreeProps {
@@ -34,6 +40,8 @@ export interface StructureTreeProps {
   readonly firstLevelName: string | null;
   readonly branches: readonly Choice[];
   readonly people: readonly Choice[];
+  /** Active cost centres as a unit's default (WP-HR-01). */
+  readonly costCentres: readonly Choice[];
   readonly texts: Readonly<Record<string, string>>;
   /** «تراجع» / "Undo" (the toast after deactivating a unit no role is limited to). */
   readonly undoLabel: string;
@@ -50,12 +58,15 @@ export interface StructureTreeProps {
   readonly top?: ReactNode;
   /** The address of the levels view (the empty state's first step). */
   readonly levelsHref: string;
+  /** Structure → Import units (WP-HR-01). */
+  readonly importHref: string;
 }
 
 type DialogState =
   | { readonly kind: 'unit'; readonly mode: UnitDialogMode }
   | { readonly kind: 'status'; readonly unit: UnitView }
-  | { readonly kind: 'delete'; readonly unit: UnitView };
+  | { readonly kind: 'delete'; readonly unit: UnitView }
+  | { readonly kind: 'move'; readonly unit: UnitView };
 
 /**
  * The structure tree (FR-ADM-05, EP-ORG), direction C (redesign package 2; approved direction,
@@ -65,7 +76,9 @@ type DialogState =
  * tree in view; while adding, the parent is highlighted and a dashed placeholder shows where the unit
  * goes. Deactivating a unit no role is limited to acts at once with «Undo» (Q2-9); with limited roles the
  * confirmation stays. Delete shows what still depends on the unit. The tree is a plain nested list of
- * buttons (no ARIA tree): every control is reachable with Tab.
+ * buttons (no ARIA tree): every control is reachable with Tab. Structure completion (WP-HR-01, design screen 1):
+ * «Move to…» in the row menu (not for top units: a unit keeps its level), «Move up» / «Move down» and a drag
+ * handle that reorders a unit among its siblings — dragging never changes the parent.
  */
 export function StructureTree(props: StructureTreeProps) {
   const { units, canManage, texts, locale } = props;
@@ -76,6 +89,9 @@ export function StructureTree(props: StructureTreeProps) {
   const sessionRefused = useSessionRefusal();
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(parentIds(units)));
   const [dialog, setDialog] = useState<DialogState | null>(null);
+  // Drag-and-drop among siblings: the unit being dragged and the row it would land on.
+  const [dragging, setDragging] = useState<UnitView | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   const children = useMemo(() => {
     const ids = new Set(units.map((u) => u.id));
@@ -165,6 +181,22 @@ export function StructureTree(props: StructureTreeProps) {
     setDialog({ kind: 'status', unit });
   }
 
+  /** Puts a unit at a position among its siblings (0 = first); the parent never changes. */
+  async function reorder(unit: UnitView, position: number) {
+    const result = await reorderStructureUnitAction({
+      id: unit.id,
+      version: unit.version,
+      position,
+    });
+    if (!result.ok) {
+      const message = refusal(result.error);
+      if (message) toast.error(message);
+      return;
+    }
+    toast.success(fill('toasts.reordered', { name: unit.name }));
+    router.refresh();
+  }
+
   function addUnder(unit: UnitView) {
     setExpanded((current) => new Set(current).add(unit.id));
     setDialog({
@@ -180,7 +212,7 @@ export function StructureTree(props: StructureTreeProps) {
     });
   };
 
-  const menu = (unit: UnitView) => {
+  const menu = (unit: UnitView, index: number, count: number) => {
     const blockers = unitDeleteBlockers(unit);
     return (
       <DropdownMenu>
@@ -212,6 +244,39 @@ export function StructureTree(props: StructureTreeProps) {
             <Icon name="pencil" />
             {text('edit')}
           </DropdownMenuItem>
+          {unit.parentId !== null ? (
+            <DropdownMenuItem
+              onSelect={() => {
+                setDialog({ kind: 'move', unit });
+              }}
+              data-testid="unit-menu-move"
+            >
+              <Icon name="arrow-end" />
+              {text('move.menu')}
+            </DropdownMenuItem>
+          ) : null}
+          {index > 0 ? (
+            <DropdownMenuItem
+              onSelect={() => {
+                void reorder(unit, index - 1);
+              }}
+              data-testid="unit-menu-up"
+            >
+              <Icon name="arrow-up" />
+              {text('moveUp')}
+            </DropdownMenuItem>
+          ) : null}
+          {index < count - 1 ? (
+            <DropdownMenuItem
+              onSelect={() => {
+                void reorder(unit, index + 1);
+              }}
+              data-testid="unit-menu-down"
+            >
+              <Icon name="arrow-down" />
+              {text('moveDown')}
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuItem
             onSelect={() => {
               changeStatus(unit);
@@ -267,22 +332,76 @@ export function StructureTree(props: StructureTreeProps) {
             : 'm-0 ms-5 flex list-none flex-col gap-0.5 border-s border-border p-0 ps-3 md:ms-6.5 md:ps-4'
         }
       >
-        {list.map((unit) => {
+        {list.map((unit, index) => {
           const own = children.get(unit.id) ?? [];
           const open = expanded.has(unit.id) || addingUnder?.id === unit.id;
           const childListId = `unit-children-${unit.id}`;
           const current = addingUnder?.id === unit.id || editing?.id === unit.id;
+          // Only a sibling of the dragged unit takes a drop (dragging never changes the parent).
+          const sibling =
+            dragging !== null && dragging.id !== unit.id && dragging.parentId === unit.parentId;
           return (
             <li key={unit.id} data-testid={`unit-${unit.code}`}>
+              {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- a drop target for mouse dragging only; «Move up» / «Move down» in the row menu do the same from the keyboard. */}
               <div
                 className={cn(
                   'group flex items-center gap-2 rounded-lg border-s-[3px] px-2 py-2.5 md:gap-3 md:px-3',
                   current
                     ? 'border-primary bg-primary-subtle'
                     : 'border-transparent hover:bg-surface-hover focus-within:bg-surface-hover',
+                  dragging?.id === unit.id && 'opacity-50',
+                  dropTarget === unit.id && 'outline-2 outline-dashed outline-primary',
                 )}
                 data-current={current || undefined}
+                onDragOver={
+                  sibling
+                    ? (event) => {
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = 'move';
+                        setDropTarget(unit.id);
+                      }
+                    : undefined
+                }
+                onDragLeave={
+                  sibling
+                    ? () => {
+                        setDropTarget((target) => (target === unit.id ? null : target));
+                      }
+                    : undefined
+                }
+                onDrop={
+                  sibling
+                    ? (event) => {
+                        event.preventDefault();
+                        const moved = dragging;
+                        setDragging(null);
+                        setDropTarget(null);
+                        void reorder(moved, index);
+                      }
+                    : undefined
+                }
               >
+                {canManage && list.length > 1 ? (
+                  <span
+                    draggable
+                    onDragStart={(event) => {
+                      event.dataTransfer.effectAllowed = 'move';
+                      event.dataTransfer.setData('text/plain', unit.code);
+                      setDragging(unit);
+                    }}
+                    onDragEnd={() => {
+                      setDragging(null);
+                      setDropTarget(null);
+                    }}
+                    title={text('dragHint')}
+                    aria-hidden="true"
+                    className="hidden size-6 shrink-0 cursor-grab place-items-center text-text-muted hover:text-text active:cursor-grabbing md:grid"
+                    data-testid="unit-drag"
+                  >
+                    {/* Mouse only: «Move up» / «Move down» in the menu do the same from the keyboard. */}
+                    <Icon name="grip" />
+                  </span>
+                ) : null}
                 {own.length > 0 ? (
                   <button
                     type="button"
@@ -347,7 +466,7 @@ export function StructureTree(props: StructureTreeProps) {
                     {fill('add', { level: unit.nextLevelName })}
                   </button>
                 ) : null}
-                {canManage ? menu(unit) : null}
+                {canManage ? menu(unit, index, list.length) : null}
               </div>
               {(own.length > 0 && open) || addingUnder?.id === unit.id
                 ? renderUnits(unit.id, depth + 1, childListId)
@@ -371,10 +490,23 @@ export function StructureTree(props: StructureTreeProps) {
         breadcrumbsLabel={props.header.breadcrumbsLabel}
         actions={
           canManage && props.firstLevelName ? (
-            <Button onClick={addTop} className="w-full md:w-auto" data-testid="unit-add-top">
-              <Icon name="plus" />
-              {fill('add', { level: props.firstLevelName })}
-            </Button>
+            <div className="flex w-full flex-wrap gap-2.5 md:w-auto">
+              <a
+                href={props.importHref}
+                className={buttonClasses({
+                  variant: 'secondary',
+                  className: 'flex-1 md:flex-none',
+                })}
+                data-testid="unit-import-link"
+              >
+                <Icon name="upload" />
+                {text('import.title')}
+              </a>
+              <Button onClick={addTop} className="flex-1 md:flex-none" data-testid="unit-add-top">
+                <Icon name="plus" />
+                {fill('add', { level: props.firstLevelName })}
+              </Button>
+            </div>
           ) : null
         }
       />
@@ -463,6 +595,7 @@ export function StructureTree(props: StructureTreeProps) {
           mode={dialog.mode}
           branches={props.branches}
           people={props.people}
+          costCentres={props.costCentres}
           texts={texts}
           errors={props.errors}
           locale={locale}
@@ -472,6 +605,19 @@ export function StructureTree(props: StructureTreeProps) {
           onStatus={changeStatus}
           onDelete={(unit) => {
             setDialog({ kind: 'delete', unit });
+          }}
+        />
+      ) : null}
+
+      {dialog?.kind === 'move' ? (
+        <MoveUnitDialog
+          unit={dialog.unit}
+          units={units}
+          texts={texts}
+          errors={props.errors}
+          locale={locale}
+          onClose={() => {
+            setDialog(null);
           }}
         />
       ) : null}

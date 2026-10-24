@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { branchFieldText, levelFieldText, unitFieldText } from './structure-form';
+import {
+  branchFieldText,
+  costCentreFieldText,
+  levelFieldText,
+  unitFieldText,
+} from './structure-form';
 
 describe('unitFieldText', () => {
   it('maps every field error of the unit actions to its field and text', () => {
@@ -57,5 +62,33 @@ describe('branchFieldText', () => {
     expect(branchFieldText('timezone', 'TIMEZONE_UNKNOWN').key).toBe('fieldErrors.timezone');
     expect(branchFieldText('parentBranchId', 'BRANCH_TREE').key).toBe('fieldErrors.parent');
     expect(branchFieldText('isHeadquarters', 'INVALID_TYPE').field).toBe('form');
+  });
+});
+
+describe('structure completion texts (WP-HR-01)', () => {
+  it('maps moves, locked levels, cost centres and branch details', () => {
+    expect(unitFieldText('parentId', 'LEVEL_CHANGES')).toEqual({
+      field: 'form',
+      key: 'fieldErrors.levelChanges',
+    });
+    expect(unitFieldText('parentId', 'MOVE_INTO_ITSELF').key).toBe('fieldErrors.moveIntoItself');
+    expect(unitFieldText('defaultCostCentreId', 'COST_CENTRE_INACTIVE')).toEqual({
+      field: 'defaultCostCentreId',
+      key: 'fieldErrors.costCentreInactive',
+    });
+    expect(levelFieldText('level', 'LEVELS_LOCKED').key).toBe('levels.locked');
+    expect(branchFieldText('latitude', 'CUSTOM').key).toBe('fieldErrors.location');
+    expect(branchFieldText('addressAr', 'TOO_BIG').key).toBe('fieldErrors.address');
+    expect(branchFieldText('workingDays.0.endsAt', 'INVALID_FORMAT')).toEqual({
+      field: 'workingDays',
+      key: 'fieldErrors.hours',
+    });
+    expect(costCentreFieldText('code', 'CODE_TAKEN').key).toBe('costCentres.codeTaken');
+    expect(costCentreFieldText('code', 'INVALID_FORMAT').key).toBe('fieldErrors.code');
+    expect(costCentreFieldText('nameEn', 'CUSTOM').key).toBe('costCentres.name');
+    expect(costCentreFieldText('costCentre', 'COST_CENTRE_IN_USE')).toEqual({
+      field: 'form',
+      key: 'costCentres.inUse',
+    });
   });
 });

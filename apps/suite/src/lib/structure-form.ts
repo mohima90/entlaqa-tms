@@ -27,12 +27,20 @@ export function unitFieldText(path: string, code: string): FieldText {
       return { field, key: 'fieldErrors.headNotActive' };
     case 'branchId':
       return { field, key: 'fieldErrors.branchNotFound' };
+    case 'defaultCostCentreId':
+      return { field, key: 'fieldErrors.costCentreInactive' };
     case 'parentId':
-      return {
-        field: 'form',
-        key:
-          code === 'BELOW_LAST_LEVEL' ? 'fieldErrors.belowLastLevel' : 'fieldErrors.parentNotFound',
-      };
+      switch (code) {
+        case 'BELOW_LAST_LEVEL':
+          return { field: 'form', key: 'fieldErrors.belowLastLevel' };
+        // «Move to…» (WP-HR-01): a unit keeps its level; never under itself or a unit below it.
+        case 'LEVEL_CHANGES':
+          return { field: 'form', key: 'fieldErrors.levelChanges' };
+        case 'MOVE_INTO_ITSELF':
+          return { field: 'form', key: 'fieldErrors.moveIntoItself' };
+        default:
+          return { field: 'form', key: 'fieldErrors.parentNotFound' };
+      }
     default:
       return { field: 'form', key: 'fieldErrors.required' };
   }
@@ -54,6 +62,9 @@ export function levelFieldText(path: string, code: string): FieldText {
           return { field: 'form', key: 'levels.lastOnly' };
         case 'ONLY_LEVEL':
           return { field: 'form', key: 'levels.onlyLevel' };
+        // People are placed in units (WP-HR-01): levels are only renamed.
+        case 'LEVELS_LOCKED':
+          return { field: 'form', key: 'levels.locked' };
         default:
           // LEVEL_IN_USE: the page shows the level's own count (formatted on the server).
           return { field: 'form', key: 'levels.inUse' };
@@ -80,6 +91,33 @@ export function branchFieldText(path: string, code: string): FieldText {
       return { field, key: 'fieldErrors.timezone' };
     case 'parentBranchId':
       return { field, key: 'fieldErrors.parent' };
+    // WP-HR-01: address, typed location (both or neither, in range), own working week.
+    case 'addressEn':
+    case 'addressAr':
+      return { field, key: 'fieldErrors.address' };
+    case 'latitude':
+    case 'longitude':
+      return { field, key: 'fieldErrors.location' };
+    case 'workingDays':
+      return { field, key: 'fieldErrors.hours' };
+    default:
+      return { field: 'form', key: 'fieldErrors.required' };
+  }
+}
+
+/** Cost centre form (WP-HR-01) and its delete. */
+export function costCentreFieldText(path: string, code: string): FieldText {
+  const field = path.split('.')[0] ?? path;
+  switch (field) {
+    case 'code':
+      if (code === 'CODE_TAKEN') return { field, key: 'costCentres.codeTaken' };
+      return nameText(field, code, 'fieldErrors.code');
+    case 'nameEn':
+    case 'nameAr':
+      // One sentence for both rules: a name in either language, with visible letters.
+      return { field, key: 'costCentres.name' };
+    case 'costCentre':
+      return { field: 'form', key: 'costCentres.inUse' };
     default:
       return { field: 'form', key: 'fieldErrors.required' };
   }

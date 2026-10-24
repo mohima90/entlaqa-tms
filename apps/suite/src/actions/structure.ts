@@ -9,7 +9,10 @@ import {
   createStructureUnitActionDefinition,
   defineAction,
   deleteStructureUnitActionDefinition,
+  moveStructureUnitActionDefinition,
+  previewStructureUnitMoveActionDefinition,
   removeStructureLevelActionDefinition,
+  reorderStructureUnitActionDefinition,
   renameStructureLevelActionDefinition,
   setStructureUnitStatusActionDefinition,
   updateStructureUnitActionDefinition,
@@ -35,3 +38,14 @@ export const setStructureUnitStatusAction = defineAction(setStructureUnitStatusA
 
 /** Delete a unit nothing points at any more. */
 export const deleteStructureUnitAction = defineAction(deleteStructureUnitActionDefinition());
+
+/** «Move to…» — the preview first: what moves and who sees more or less (WP-HR-01). */
+export const previewStructureUnitMoveAction = defineAction(
+  previewStructureUnitMoveActionDefinition(),
+);
+
+/** «Move»: under a unit of the same level as its parent (WP-HR-01). */
+export const moveStructureUnitAction = defineAction(moveStructureUnitActionDefinition());
+
+/** Drag-and-drop, «Move up», «Move down» (WP-HR-01). */
+export const reorderStructureUnitAction = defineAction(reorderStructureUnitActionDefinition());

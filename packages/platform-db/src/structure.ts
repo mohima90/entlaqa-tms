@@ -601,8 +601,9 @@ export async function deleteStructureUnit(
 /** The unit and every live unit below it. */
 function subtreeIds(units: readonly StructureUnitRow[], id: string): readonly string[] {
   const out: string[] = [id];
-  for (let at = 0; at < out.length; at += 1) {
-    for (const unit of units) if (unit.parentId === out[at]) out.push(unit.id);
+  // Breadth first: `out` grows while it is read.
+  for (const parent of out) {
+    for (const unit of units) if (unit.parentId === parent) out.push(unit.id);
   }
   return out;
 }
@@ -632,7 +633,7 @@ function moveRefusal(
   if (!parent) return 'parent_not_found';
   if (subtreeIds(units, unit.id).includes(parentId)) return 'move_into_itself';
   const oldParent = units.find((candidate) => candidate.id === unit.parentId);
-  if (!oldParent || oldParent.levelOrdinal !== parent.levelOrdinal) return 'level_changes';
+  if (oldParent?.levelOrdinal !== parent.levelOrdinal) return 'level_changes';
   return null;
 }
 

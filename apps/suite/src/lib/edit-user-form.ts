@@ -41,6 +41,8 @@ export function editFieldErrorKey(path: string, code: string): string {
     case 'jobTitleAr':
     case 'jobTitleEn':
       return 'jobTitle';
+    case 'costCentreId':
+      return 'costCentreInactive';
     case 'hireOn':
       return code === 'AFTER_END' ? 'hireOnAfterEnd' : 'hireOn';
     case 'mobile':

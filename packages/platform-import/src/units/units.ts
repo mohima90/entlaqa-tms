@@ -129,6 +129,8 @@ export async function readUnitFile(bytes: Uint8Array): Promise<UnitFileRead> {
           return [c.key, index === undefined ? '' : (row.cells[index] ?? '').trim()];
         }),
       ) as Record<UnitColumn, string>;
+      // A blank line in the sheet is not a row to check.
+      if (Object.values(cells).every((value) => value === '')) continue;
       rows.push({ row: row.number, cells });
     }
     if (positions === null || rows.length === 0) return { ok: false, problem: 'FILE_EMPTY' };

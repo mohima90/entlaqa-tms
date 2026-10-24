@@ -9,12 +9,16 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { type LevelView, LevelsCard } from '../../../../../components/structure/levels-card';
+import {
+  type CostCentreView,
+  CostCentresTable,
+} from '../../../../../components/structure/cost-centres-table';
 import { StructureTree } from '../../../../../components/structure/structure-tree';
 import type { UnitView } from '../../../../../components/structure/unit-panel';
 import { SuiteShell } from '../../../../../components/suite-shell';
 import { flattenTexts } from '../../../../../lib/flatten-texts';
 import { profileErrorTexts } from '../../../../../lib/profile-texts';
-import { structurePageQuery } from '../../../../../lib/structure-queries';
+import { costCentresPageQuery, structurePageQuery } from '../../../../../lib/structure-queries';
 import { levelName, nextLevel } from '../../../../../lib/structure-view';
 import { getSuiteContext } from '../../../../../lib/suite-context';
 import { localizedName } from '../../../../../lib/users-view';
@@ -22,7 +26,7 @@ import { localizedName } from '../../../../../lib/users-view';
 const PATH = '/suite/admin/structure';
 /** Ten levels at most (platform.structure_levels; MAX_STRUCTURE_LEVELS in platform-db). */
 const MAX_LEVELS = 10;
-const VIEWS = ['tree', 'levels'] as const;
+const VIEWS = ['tree', 'levels', 'costCentres'] as const;
 type View = (typeof VIEWS)[number];
 
 /** Before the database is connected: the default level every organization starts with (EP-ORG). */
@@ -49,7 +53,8 @@ export default async function StructurePage({
   const { locale } = await params;
   if (!hasLocale(routing.locales, locale)) notFound();
   const query = await searchParams;
-  const view: View = query.view === 'levels' ? 'levels' : 'tree';
+  const view: View =
+    query.view === 'levels' ? 'levels' : query.view === 'costCentres' ? 'costCentres' : 'tree';
   const context = await getSuiteContext(locale);
   const t = await getTranslations({ locale, namespace: 'structure' });
   const common = await getTranslations({ locale, namespace: 'common' });
@@ -67,7 +72,15 @@ export default async function StructurePage({
   let content: ReactNode;
   let data: StructurePageView | null = null;
   if (!context.live) {
-    data = { levels: DEFAULT_LEVELS, units: [], branches: [], people: [], canManage: false };
+    data = {
+      levels: DEFAULT_LEVELS,
+      units: [],
+      branches: [],
+      people: [],
+      costCentres: [],
+      levelsLocked: false,
+      canManage: false,
+    };
     content = (
       <Alert tone="info" data-testid="structure-not-configured">
         {t('notConfigured')}
@@ -115,7 +128,7 @@ export default async function StructurePage({
       locale={locale}
       context={context}
       current="structure"
-      path={view === 'levels' ? `${PATH}?view=levels` : PATH}
+      path={view === 'tree' ? PATH : `${PATH}?view=${view}`}
     >
       {data ? (
         <Structure locale={locale} view={view} data={data} header={header} notice={content} />
@@ -185,6 +198,9 @@ async function Structure({
     headPersonId: unit.headPersonId,
     // A head may have an English name only (PO 17 Oct 2026).
     headName: unit.headPersonId ? localizedName(locale, unit.headNameAr, unit.headNameEn) : null,
+    defaultCostCentreId: unit.defaultCostCentreId,
+    levelOrdinal: unit.levelOrdinal,
+    sortOrder: unit.sortOrder,
     active: unit.status === 'active',
     version: unit.version,
     childCount: unit.childCount,
@@ -239,9 +255,9 @@ async function Structure({
           className="-mb-px [&_ul]:border-b-0"
           items={VIEWS.map((key) => ({
             key,
-            href: key === 'tree' ? `/${locale}${PATH}` : `/${locale}${PATH}?view=levels`,
+            href: key === 'tree' ? `/${locale}${PATH}` : `/${locale}${PATH}?view=${key}`,
             label: t(`tabs.${key}`),
-            icon: key === 'tree' ? 'structure' : 'plan',
+            icon: key === 'tree' ? 'structure' : key === 'levels' ? 'plan' : 'wallet',
           }))}
           data-testid="structure-views"
         />
@@ -250,6 +266,12 @@ async function Structure({
             className="m-0 flex flex-wrap items-center gap-1.5 pb-2.5 text-sm text-text-muted"
             data-testid="structure-chain"
           >
+            {data.levelsLocked ? (
+              <span className="flex items-center gap-1" data-testid="structure-levels-locked">
+                <Icon name="lock" className="size-3.5" aria-hidden="true" />
+                {t('levels.lockedShort')} ·
+              </span>
+            ) : null}
             <span>{t('levels.caption')}:</span>
             {levelNames.map((name, index) => (
               <span key={index} className="flex items-center gap-1.5">
@@ -278,6 +300,9 @@ async function Structure({
             value: b.id,
             label: localizedName(locale, b.nameAr, b.nameEn),
           }))}
+          costCentres={data.costCentres
+            .filter((c) => c.active)
+            .map((c) => ({ value: c.id, label: costCentreLabel(locale, c) }))}
           people={data.people.map((p) => ({
             value: p.id,
             label: p.employeeNumber
@@ -291,21 +316,81 @@ async function Structure({
           header={header}
           top={top}
           levelsHref={`/${locale}${PATH}?view=levels`}
+          importHref={`/${locale}${PATH}/import`}
         />
-      ) : (
+      ) : view === 'levels' ? (
         <>
           <PageHeader {...header} />
           <div className="mb-5 flex flex-col gap-5">{top}</div>
           <LevelsCard
             levels={levels}
             canManage={data.canManage}
+            locked={data.levelsLocked}
             maxLevels={MAX_LEVELS}
             texts={texts}
             errors={errors}
             locale={locale}
           />
         </>
+      ) : (
+        <>
+          <PageHeader {...header} />
+          <div className="mb-5 flex flex-col gap-5">{top}</div>
+          <CostCentresSection locale={locale} />
+        </>
       )}
     </>
   );
+}
+
+/** Structure → Cost centres (WP-HR-01, design screen 2): its own query (the list with what uses each one). */
+async function CostCentresSection({ locale }: { locale: AppLocale }) {
+  const t = await getTranslations({ locale, namespace: 'structure' });
+  const common = await getTranslations({ locale, namespace: 'common' });
+  const result = await costCentresPageQuery({});
+  if (!result.ok) {
+    const error = toClientError(result.error);
+    if (error.code === 'UNAUTHENTICATED') redirect(`/${locale}/sign-in`);
+    return (
+      <Alert tone="danger" data-testid="cost-centres-load-failed">
+        {t('loadFailed', { correlationId: error.correlationId ?? '' })}
+      </Alert>
+    );
+  }
+  const rows: CostCentreView[] = result.value.costCentres.map((row) => ({
+    id: row.id,
+    code: row.code,
+    nameEn: row.nameEn,
+    nameAr: row.nameAr,
+    name: (locale === 'ar' ? (row.nameAr ?? row.nameEn) : (row.nameEn ?? row.nameAr)) ?? row.code,
+    active: row.status === 'active',
+    version: row.version,
+    peopleCount: row.peopleCount,
+    unitCount: row.unitCount,
+    usageLabel: t('costCentres.usage', { people: row.peopleCount, units: row.unitCount }),
+  }));
+  const texts: Record<string, string> = {
+    ...flattenTexts(getMessages(locale).structure),
+    required: common('required'),
+    optional: common('optional'),
+  };
+  delete texts['costCentres.usage'];
+  return (
+    <CostCentresTable
+      rows={rows}
+      canManage={result.value.canManage}
+      texts={texts}
+      errors={await profileErrorTexts(locale)}
+      locale={locale}
+    />
+  );
+}
+
+/** «CC-100 · Finance» in the page's language (a code alone when it has no name in either language). */
+function costCentreLabel(
+  locale: AppLocale,
+  c: { code: string; nameEn: string | null; nameAr: string | null },
+): string {
+  const name = locale === 'ar' ? (c.nameAr ?? c.nameEn) : (c.nameEn ?? c.nameAr);
+  return name ? `${c.code} · ${name}` : c.code;
 }

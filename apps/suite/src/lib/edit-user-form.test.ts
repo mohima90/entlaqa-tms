@@ -31,6 +31,7 @@ describe('editFieldErrorKey', () => {
     expect(editFieldErrorKey('hireOn', 'INVALID_FORMAT')).toBe('hireOn');
     expect(editFieldErrorKey('hireOn', 'AFTER_END')).toBe('hireOnAfterEnd');
     expect(editFieldErrorKey('branchId', 'DELETED')).toBe('unitDeleted');
+    expect(editFieldErrorKey('costCentreId', 'INACTIVE')).toBe('costCentreInactive');
     expect(editFieldErrorKey('mobile', 'CUSTOM')).toBe('mobile');
     expect(editFieldErrorKey('familyNameAr', 'TOO_BIG')).toBe('name');
   });

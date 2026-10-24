@@ -55,7 +55,7 @@ export default async function BranchesPage({
     content = (
       <Branches
         locale={locale}
-        view={{ branches: [], canManage: false }}
+        view={{ branches: [], organizationWeek: null, canManage: false }}
         context={context}
         header={header}
         filter={filter}
@@ -174,6 +174,11 @@ async function Branches({
       timezone: branch.timezone,
       timezoneLabel: timeZoneLabel(branch.timezone, locale, now),
       isHeadquarters: branch.isHeadquarters,
+      addressEn: branch.addressEn,
+      addressAr: branch.addressAr,
+      latitude: branch.latitude,
+      longitude: branch.longitude,
+      workingDays: branch.workingDays,
       active: branch.status === 'active',
       version: branch.version,
       childCount: branch.childCount,
@@ -195,6 +200,8 @@ async function Branches({
       countries={choices.countries}
       timeZones={zones}
       defaultTimeZone={context.regional.timeZone}
+      organizationWeek={view.organizationWeek}
+      weekdays={choices.weekdays}
       texts={{
         ...flattenTexts(getMessages(locale).branches),
         required: common('required'),

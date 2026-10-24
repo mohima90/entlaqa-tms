@@ -44,6 +44,7 @@ const db = vi.hoisted(() => ({
   setStructureUnitStatus: vi.fn(),
   deleteStructureUnit: vi.fn(),
   listBranches: vi.fn(),
+  getOrganizationProfile: vi.fn(),
   createBranch: vi.fn(),
   updateBranch: vi.fn(),
   setBranchStatus: vi.fn(),
@@ -427,10 +428,21 @@ const branch = (over: Record<string, unknown> = {}) => ({
 describe('branches (FR-ADM-04)', () => {
   it('everyone who reads the structure sees the branches; only the HR Manager changes them', async () => {
     db.listBranches.mockResolvedValue([branch()]);
+    db.getOrganizationProfile.mockResolvedValue({
+      workingDays: [0, 1, 2, 3, 4],
+      workStartsAt: '08:00',
+      workEndsAt: '16:00',
+    });
     const hr = await createDefineQuery(runtime(['hr_manager']).rt)(branchesPageQueryDefinition())(
       {},
     );
-    expect(hr).toEqual(ok({ branches: [branch()], canManage: true }));
+    expect(hr).toEqual(
+      ok({
+        branches: [branch()],
+        organizationWeek: { days: [0, 1, 2, 3, 4], startsAt: '08:00', endsAt: '16:00' },
+        canManage: true,
+      }),
+    );
     const admin = await createDefineQuery(runtime(['tenant_admin']).rt)(
       branchesPageQueryDefinition(),
     )({});

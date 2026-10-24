@@ -5,6 +5,7 @@ import {
   type UserTx,
   createBranch,
   deleteBranch,
+  getOrganizationProfile,
   listBranches,
   setBranchStatus,
   updateBranch,
@@ -117,8 +118,17 @@ export const BranchStatusInput = z.strictObject({
 });
 export const BranchRefInput = z.strictObject({ id: z.uuid(), version: z.number().int().min(1) });
 
+/** The organization's working week (organization profile): what a branch without its own week follows. */
+export interface OrganizationWeek {
+  readonly days: readonly number[];
+  readonly startsAt: string;
+  readonly endsAt: string;
+}
+
 export interface BranchesPageView {
   readonly branches: readonly BranchRow[];
+  /** null when the organization has no profile row (the branch form then starts from an empty week). */
+  readonly organizationWeek: OrganizationWeek | null;
   readonly canManage: boolean;
 }
 
@@ -132,11 +142,21 @@ export function branchesPageQueryDefinition(): QueryDefinition<
   return {
     permission: p['platform.org.read'],
     input: BranchesPageInput,
-    handler: async ({ ctx }) =>
-      ok({
-        branches: await listBranches(ctx.tx),
+    handler: async ({ ctx }) => {
+      const branches = await listBranches(ctx.tx);
+      const profile = await getOrganizationProfile(ctx.tx);
+      return ok({
+        branches,
+        organizationWeek: profile
+          ? {
+              days: profile.workingDays,
+              startsAt: profile.workStartsAt,
+              endsAt: profile.workEndsAt,
+            }
+          : null,
         canManage: ctx.can(p['platform.org.manage'], 'tenant'),
-      }),
+      });
+    },
   };
 }
 

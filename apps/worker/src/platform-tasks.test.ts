@@ -43,6 +43,7 @@ describe('worker platform tasks (T-M2-17, T-M2-10)', () => {
     expect(tasks.map((t) => t.name)).toEqual([
       'platform.account_mail',
       'platform.session_purge',
+      'platform.trial_expiry',
       'platform.email_tests',
       'platform.email_resume',
       'platform.email_housekeeping',
@@ -60,7 +61,7 @@ describe('worker platform tasks (T-M2-17, T-M2-10)', () => {
 
     recoveryLinksFor.mockClear();
     const tasks = platformTasks({ ...deps, authAdmin: undefined, recoveryLinksFor });
-    expect(tasks.map((t) => t.name)).toEqual(['platform.account_mail', 'platform.session_purge']);
+    expect(tasks.map((t) => t.name)).toEqual(['platform.account_mail', 'platform.session_purge', 'platform.trial_expiry']);
     expect(recoveryLinksFor).not.toHaveBeenCalled();
   });
 
@@ -101,6 +102,7 @@ describe('worker file tasks (T-M2-18) and user imports (T-M2-12)', () => {
     expect(platformTasks({ ...base, authAdmin: settings }).map((t) => t.name)).toEqual([
       'platform.account_mail',
       'platform.session_purge',
+      'platform.trial_expiry',
       'platform.files.housekeeping',
       'platform.user_imports',
       'platform.brand_assets',
@@ -113,6 +115,7 @@ describe('worker file tasks (T-M2-18) and user imports (T-M2-12)', () => {
     ).toEqual([
       'platform.account_mail',
       'platform.session_purge',
+      'platform.trial_expiry',
       'platform.files.housekeeping',
       'platform.user_imports',
       'platform.brand_assets',
@@ -122,7 +125,7 @@ describe('worker file tasks (T-M2-18) and user imports (T-M2-12)', () => {
     // Without Storage there is nothing to read: no file task at all, even with a scanner.
     expect(
       platformTasks({ ...base, authAdmin: undefined, scanner: scanner3310 }).map((t) => t.name),
-    ).toEqual(['platform.account_mail', 'platform.session_purge']);
+    ).toEqual(['platform.account_mail', 'platform.session_purge', 'platform.trial_expiry']);
   });
 
   it('builds the real Storage and clamd clients by default (no network until a pass runs)', () => {
@@ -136,6 +139,7 @@ describe('worker file tasks (T-M2-18) and user imports (T-M2-12)', () => {
     expect(tasks.map((t) => t.name)).toEqual([
       'platform.account_mail',
       'platform.session_purge',
+      'platform.trial_expiry',
       'platform.files.housekeeping',
       'platform.user_imports',
       'platform.brand_assets',

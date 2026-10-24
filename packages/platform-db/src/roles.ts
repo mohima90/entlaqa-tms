@@ -1,6 +1,7 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
 import { customRolesExist, roleScopeUnitsExist } from './custom-roles-present';
+import { getOrganizationFeatures } from './plans';
 import type { UserTx } from './with-user-tx';
 
 export { customRolesExist };
@@ -31,6 +32,8 @@ export interface MemberAuthorizationFacts {
   readonly headedDepartmentIds: readonly string[];
   /** The member's custom roles (read with the roles on every request, so changes apply at once). */
   readonly customRoles: readonly MemberCustomRole[];
+  /** The features the organization's plan includes (WP-ADM-06; every feature on no plan). */
+  readonly features: readonly string[];
 }
 
 function toDate(value: Date | string | null): Date | null {
@@ -107,6 +110,7 @@ export async function loadMemberAuthorizationFacts(tx: UserTx): Promise<MemberAu
       dataScope: c.data_scope,
       permissions: c.permissions ?? [],
     })),
+    features: await getOrganizationFeatures(tx),
   };
 }
 

@@ -361,6 +361,29 @@ export {
 } from './tenant-settings';
 export { type OrgUnitOption, type OrgUnitOptions, listOrgUnitOptions } from './org';
 export {
+  type OrganizationPlan,
+  PLAN_FEATURES,
+  PLAN_FIELDS,
+  PlanError,
+  type PlanErrorCode,
+  type PlanFeature,
+  type PlanField,
+  type PlanInput,
+  type PlanRow,
+  TENANT_STATUSES,
+  type TenantPlanInput,
+  type TenantPlanRow,
+  type TenantStatus,
+  getOrganizationFeatures,
+  getOrganizationPlan,
+  listPlans,
+  listTenantPlans,
+  planErrorOf,
+  planLimitOf,
+  savePlan,
+  setTenantPlan,
+} from './plans';
+export {
   type LevelNames,
   MAX_STRUCTURE_LEVELS,
   type PersonOption,

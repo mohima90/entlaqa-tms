@@ -76,6 +76,7 @@ export {
   loadPersonName,
   retryAccountMailRequest,
 } from './account-mail';
+export { expireTrials } from '../plans';
 export {
   type GeneratedFileInput,
   type HousekeepingAction,

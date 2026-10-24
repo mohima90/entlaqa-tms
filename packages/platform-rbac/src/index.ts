@@ -16,6 +16,7 @@ export * from './system-roles';
 export * from './custom-roles';
 export * from './role-templates';
 export * from './separation-of-duties';
+export * from './plan-features';
 export * from './role-matrix';
 export * from './role-grants';
 export * from './person-scope';

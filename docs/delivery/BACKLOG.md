@@ -233,7 +233,7 @@ Planning first (agreed EP-PLN flow), then delivery set-up ([roadmap §4.3](ROADM
 
 | ID | Task | WP | Owner | Status | Notes / PR |
 |---|---|---|---|---|---|
-| T-M4-07 | **Business flow agreed with the PO**: sessions and scheduling — multi-day, recurrence, lifecycle, calendar, conflicts, minimum enrollment, cost estimate → actual | WP-LD-08 | Claude → PO | ⚪ | — |
+| T-M4-07 | **Business flow agreed with the PO**: sessions and scheduling — multi-day, recurrence, lifecycle, calendar, conflicts, minimum enrollment, cost estimate → actual | WP-LD-08 | Claude → PO | ⚪ | **PO, 24 Oct 2026 (FR-FIN-03):** each session's cost is charged in one of two ways, chosen per session — **by participants** (default: cost ÷ participants, each share to the participant's own cost centre; e.g. USD 10,000 / 20 = 500 each → 5 + 5 + 10 people = 2,500 / 2,500 / 5,000) or **to one cost centre** (e.g. L&D carries a general course) |
 | T-M4-08 | **Build sessions and scheduling** per T-M4-07 | WP-LD-08 | Claude | ⚪ | FR-SCH-01, 02, 03, 05, 08, FR-FIN-03. Migrations `202611121xxxxx` |
 
 #### WP-LD-09 Enrollment

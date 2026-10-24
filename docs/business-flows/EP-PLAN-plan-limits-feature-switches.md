@@ -14,6 +14,8 @@
 ## Design (approved by the PO, 24 Oct 2026)
 Screens as in the artifact «Plans and Limits Design». The Organization Admin's page is reached from the menu item **Subscription** (name kept).
 
+**Suspension (PO, 24 Oct 2026):** the Organization Admin reaches the **Subscription** page only while suspended (not all settings); reactivation from that page comes with online payment later.
+
 ## 1. Goal
 Every organization is on a **plan** (edition) that decides which parts of Jadarat TMS it has and how big it may grow. ENTLAQA's Super Admin sets the plan, its limits and the organization's status. The Organization Admin sees the plan and how much of each limit is used, and can **switch off** parts its people should not use (for example, hide Planning until the organization is ready). Nothing here takes or shows payments: it decides what is available, not what it costs.
 

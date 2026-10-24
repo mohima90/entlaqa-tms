@@ -23,7 +23,8 @@ begin
       ('private.request_aal2()', 'tenant_guard', 'authenticated,rate_limit_guard'),
       ('private.request_code_fresh()', 'tenant_guard', 'authenticated,rate_limit_guard'),
       ('private.request_session_facts()', 'tenant_guard', 'authenticated'),
-      ('private.session_access_state()', 'tenant_guard', 'authenticated'),
+      -- plan_guard: the Organization Admin's plan view while the organization is suspended (WP-ADM-06).
+      ('private.session_access_state()', 'tenant_guard', 'authenticated,plan_guard'),
       ('private.dismiss_mfa_prompt()', 'tenant_guard', 'authenticated'),
       ('private.tenant_member_mfa(uuid)', 'tenant_guard', 'authenticated'),
       ('private.password_min_length_for_caller()', 'tenant_guard', 'authenticated'),

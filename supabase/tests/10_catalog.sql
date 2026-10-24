@@ -638,9 +638,11 @@ begin
   select string_agg(format('%s%s', p.oid::regprocedure, case when p.prosecdef then '' else ' (INVOKER)' end), ', '
                     order by p.oid::regprocedure::text collate "C") into v_list
   from pg_proc p where p.proowner = 'membership_guard'::regrole;
+  -- WP-ADM-06 (20261027100200): a suspended organization's paused admins and whether an account is paused.
   perform tests.assert_eq(v_list,
-    'private.account_sign_in_refused(uuid), '
-    'private.end_member_sessions(), private.end_unserved_logins(), private.reactivate_membership(uuid)',
+    'private.account_access_paused(uuid), private.account_sign_in_refused(uuid), '
+    'private.end_member_sessions(), private.end_unserved_logins(), private.paused_admin_tenants(uuid), '
+    'private.reactivate_membership(uuid)',
     'membership_guard owns the deactivation, reactivation and sign-in refusal functions only');
   perform tests.assert(not exists (select 1 from pg_class c where c.relowner = 'membership_guard'::regrole),
     'membership_guard owns no relations');
@@ -697,7 +699,11 @@ begin
     where p.proowner = 'membership_guard'::regrole and a.privilege_type = 'EXECUTE' and a.grantee <> p.proowner
       and not (pg_get_userbyid(a.grantee) = 'authenticated' and p.oid = 'private.reactivate_membership(uuid)'::regprocedure)
       and not (pg_get_userbyid(a.grantee) = 'supabase_auth_admin'
-               and p.oid = 'private.account_sign_in_refused(uuid)'::regprocedure)
+               and p.oid in ('private.account_sign_in_refused(uuid)'::regprocedure,
+                             'private.account_access_paused(uuid)'::regprocedure,
+                             'private.paused_admin_tenants(uuid)'::regprocedure))
+      and not (pg_get_userbyid(a.grantee) = 'tenant_guard'
+               and p.oid = 'private.paused_admin_tenants(uuid)'::regprocedure)
   loop
     perform tests.assert(false, format('unexpected EXECUTE: %s', v_list));
   end loop;

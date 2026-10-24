@@ -368,10 +368,14 @@ begin
       ('private.end_unserved_logins()', 'membership_guard', array['membership_guard'], true),
       ('private.reactivate_membership(uuid)', 'membership_guard', array['membership_guard', 'authenticated'], true),
       ('private.account_sign_in_refused(uuid)', 'membership_guard', array['membership_guard', 'supabase_auth_admin'], true),
+      -- A suspended organization (WP-ADM-06, 20261027100200): its paused admins (the hook and the session rules)
+      -- and whether a refused account is paused (the hook's message).
+      ('private.paused_admin_tenants(uuid)', 'membership_guard', array['membership_guard', 'supabase_auth_admin', 'tenant_guard'], true),
+      ('private.account_access_paused(uuid)', 'membership_guard', array['membership_guard', 'supabase_auth_admin'], true),
       -- Security policy, MFA and sign-in sessions (T-M2-10): the decision is tenant_guard's own; the web app
       -- calls the others (app_server, checked inside).
       ('private.session_access(uuid, uuid, uuid, boolean, boolean)', 'tenant_guard', array['tenant_guard'], true),
-      ('private.session_access_state()',            'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.session_access_state()',            'tenant_guard', array['tenant_guard', 'authenticated', 'plan_guard'], true),
       -- rate_limit_guard: a remembered browser after the sign-in code (20261013090000); membership_guard no
       -- longer (its authenticator-code rule was removed by 20261017090400).
       ('private.request_aal2()',                    'tenant_guard', array['tenant_guard', 'authenticated', 'rate_limit_guard'], true),
@@ -678,7 +682,7 @@ begin
         'private.current_tenant_features()', 'private.organization_plan()', 'private.platform_list_plans()',
         'private.platform_save_plan(uuid,text,text,integer,integer,text[],integer)', 'private.platform_tenant_plans()',
         'private.platform_set_tenant_plan(uuid,uuid,text,timestamp with time zone,integer,integer)',
-        'private.expire_trials()')
+        'private.expire_trials()', 'private.paused_admin_tenants(uuid)', 'private.account_access_paused(uuid)')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;

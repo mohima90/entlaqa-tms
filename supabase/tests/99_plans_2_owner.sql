@@ -290,6 +290,27 @@ update platform.tenant_branding set primary_color = '#1E3A5F', secondary_color =
                                     email_link_color = '#1E3A5F'
 where tenant_id = 'a0000000-0000-4000-8000-000000000001';
 insert into private.plans (id, name, features) values ('e2000000-0000-4000-8000-000000000003', 'Plain', '{courses}');
+-- The sign-in page's look (review M3): the organization's own colours only while the plan includes branding.
+set local session authorization app_server;
+set local role authenticated;
+do $$
+begin
+  perform tests.assert_eq((select primary_color from private.public_tenant_brand('tenant-a')), '#1E3A5F',
+    'no plan: the organization''s own look on its sign-in page');
+end $$;
+reset role;
+reset session authorization;
+update platform.tenants set plan_id = 'e2000000-0000-4000-8000-000000000003' where id = 'a0000000-0000-4000-8000-000000000001';
+set local session authorization app_server;
+set local role authenticated;
+do $$
+begin
+  perform tests.assert_eq((select primary_color from private.public_tenant_brand('tenant-a')), null::text,
+    'branding not in the plan: the Jadarat look on the sign-in page');
+end $$;
+reset role;
+reset session authorization;
+update platform.tenants set plan_id = null where id = 'a0000000-0000-4000-8000-000000000001';
 -- The Auth e-mail route (reachable by the mail guards only): the same plan conditions as the worker's route.
 do $$
 begin

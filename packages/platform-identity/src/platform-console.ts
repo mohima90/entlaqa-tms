@@ -11,6 +11,7 @@ import {
 import {
   type NewPlatformTenant,
   type PlatformAdminCode,
+  PlanError,
   PlatformConsoleError,
   type PlatformTenantRow,
   type TenantPlanInput,
@@ -81,6 +82,12 @@ const FIELD_PATHS = {
 
 /** A console refusal as the action's answer; anything else is thrown (an internal error). */
 function refusal(error: unknown): Result<never, AppError> {
+  // The new organization's plan (WP-ADM-06): a plan that no longer exists, or a refused trial.
+  if (error instanceof PlanError) {
+    return error.code === 'NOT_ALLOWED'
+      ? notFound()
+      : err(fieldError(error.field === 'plan' ? 'planId' : 'form', 'INVALID'));
+  }
   if (!(error instanceof PlatformConsoleError)) throw error;
   switch (error.code) {
     case 'NOT_PLATFORM_ADMIN':

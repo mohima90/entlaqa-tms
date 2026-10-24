@@ -106,7 +106,7 @@ export function OrganizationPlanForm({
       maxStorageGbOverride: specialStorage ? number('maxStorageGbOverride') : null,
     };
     const local: Partial<Record<Field, string>> = {};
-    if (status === 'trial' && !(trialEndsOn > riyadhDate(0)))
+    if (status === 'trial' && !(trialEndsOn > riyadhDate(0) && trialEndsOn <= riyadhDate(364)))
       local.trialEndsOn = text('organizationPlan.errors.trialEndsOn');
     if (Number.isNaN(input.maxPeopleOverride))
       local.maxPeopleOverride = text('organizationPlan.errors.limit');
@@ -265,7 +265,7 @@ export function OrganizationPlanForm({
             setTrialEndsOn(event.target.value);
           }}
           min={riyadhDate(1)}
-          max={riyadhDate(365)}
+          max={riyadhDate(364)}
           disabled={pending}
           error={errors.trialEndsOn}
           hint={text('organizationPlan.trialHint')}

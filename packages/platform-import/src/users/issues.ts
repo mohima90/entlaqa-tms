@@ -242,6 +242,14 @@ export const ISSUES: Catalogue = {
       'You may no longer add this person, so the row wasn’t imported.',
     ),
   },
+  // The organization's plan has reached its people limit (WP-ADM-06): this row adds nobody; the others go on.
+  PEOPLE_LIMIT: {
+    severity: 'e',
+    review: both(
+      'بلغت خطة المنشأة حدّها من الأشخاص، فلم يُضف هذا الصف. لرفع الحد تواصل مع ENTLAQA.',
+      'Your organization’s plan has reached its people limit, so this row wasn’t added. To raise the limit, contact ENTLAQA.',
+    ),
+  },
   WRITE_FAILED: {
     severity: 'e',
     review: both(

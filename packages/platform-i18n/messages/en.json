@@ -2170,6 +2170,7 @@
       "CHANGED_SINCE_REVIEW": "Changed since the review",
       "NOT_PROCESSED": "Not reached by the import",
       "NOT_ALLOWED": "You may no longer add people",
+      "PEOPLE_LIMIT": "People limit of the plan reached",
       "WRITE_FAILED": "Fault on our side while saving",
       "DEPARTMENT_NOT_FOUND": "Unit not in the organization's structure",
       "DEPARTMENT_AMBIGUOUS": "Unit name matches several units",

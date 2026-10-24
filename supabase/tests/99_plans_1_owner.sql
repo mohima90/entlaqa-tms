@@ -61,7 +61,7 @@ begin
       'private.platform_set_tenant_plan(uuid,uuid,text,timestamp with time zone,integer,integer) → authenticated',
       'private.platform_tenant_plans() → authenticated',
       'private.expire_trials() → authenticated',
-      'private.tenant_has_feature(uuid,text) → email_guard',
+      'private.tenant_has_feature(uuid,text) → email_guard,file_guard',
       'private.tenant_plan_features(uuid) → authenticated,email_guard,file_guard,invitation_guard,membership_guard,rate_limit_guard,tenant_guard'),
       format('unexpected EXECUTE: %s', v_list));
   end loop;
@@ -254,6 +254,21 @@ begin
           'a1000000-0000-4000-8000-00000000e102', 'active');
   perform tests.assert_eq(private.tenant_people_used('a0000000-0000-4000-8000-000000000001'), v_used + 1,
     'the invited person''s account is the same person');
+  -- Accepting an invitation above a lowered limit: the invitation is marked accepted first, then the
+  -- account is added — the person held a place already (review M1).
+  insert into auth.users (id, email) values ('00000000-0000-4000-8000-00000000e101', 'first@a.test');
+  -- (Test only, rolled back: the invitation as the acceptance leaves it, without its other checks.)
+  alter table platform.invitations disable trigger invitations_check;
+  update platform.invitations set expires_at = now() + interval '1 day', status = 'accepted', accepted_at = now(),
+                                  accepted_user_id = '00000000-0000-4000-8000-00000000e101',
+                                  token_hash = coalesce(token_hash, pg_catalog.sha256('t'::bytea)),
+                                  token_issued_at = coalesce(token_issued_at, now()),
+                                  send_count = greatest(send_count, 1)
+  where id = 'a4000000-0000-4000-8000-00000000e101';
+  alter table platform.invitations enable trigger invitations_check;
+  insert into platform.tenant_memberships (tenant_id, user_id, person_id, status)
+  values ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-00000000e101',
+          'a1000000-0000-4000-8000-00000000e101', 'active');
   -- Another organization is not affected; no plan, no limit.
   update platform.tenants set plan_id = null, max_people_override = null where id = 'a0000000-0000-4000-8000-000000000001';
   perform pg_temp.invite('a4000000-0000-4000-8000-00000000e103', 'a1000000-0000-4000-8000-00000000e103', 'third@a.test');

@@ -2170,6 +2170,7 @@
       "CHANGED_SINCE_REVIEW": "تغيّر منذ المراجعة",
       "NOT_PROCESSED": "لم يصل إليه الاستيراد",
       "NOT_ALLOWED": "لم تعد لديك صلاحية الإضافة",
+      "PEOPLE_LIMIT": "بلغت الخطة حدّها من الأشخاص",
       "WRITE_FAILED": "خلل لدينا عند الحفظ",
       "DEPARTMENT_NOT_FOUND": "وحدة غير موجودة في هيكل المنظمة",
       "DEPARTMENT_AMBIGUOUS": "اسم وحدة يطابق أكثر من وحدة",

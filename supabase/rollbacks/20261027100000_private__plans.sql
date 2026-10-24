@@ -95,6 +95,27 @@ begin
     where t.id = p_tenant_id and t.status in ('active', 'trial');
 end
 $$;
+CREATE OR REPLACE FUNCTION private.public_tenant_brand(p_slug text)
+ RETURNS TABLE(name_ar text, name_en text, primary_color text, secondary_color text, use_gradient boolean, logo_asset_id uuid, favicon_asset_id uuid, sign_in_image_asset_id uuid)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+begin
+  if session_user <> 'app_server' or p_slug is null or p_slug !~ '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' then
+    return;
+  end if;
+  return query
+  select t.name_ar, t.name_en, b.primary_color, b.secondary_color, coalesce(b.use_gradient, true),
+         (select a.id from platform.brand_assets a where a.tenant_id = t.id and a.file_id = b.logo_file_id),
+         (select a.id from platform.brand_assets a where a.tenant_id = t.id and a.file_id = b.favicon_file_id),
+         (select a.id from platform.brand_assets a where a.tenant_id = t.id and a.file_id = b.sign_in_image_file_id)
+  from platform.tenants t
+  left join platform.tenant_branding b on b.tenant_id = t.id
+  where t.slug = p_slug and t.status in ('trial', 'active');
+end
+$function$;
+
 comment on function private.member_permissions(uuid, uuid) is
   'SECURITY-RELEVANT (EP-ROLES, ADR 0003 §5). Permissions the user holds organization-wide now in the organization (standard and custom roles).';
 
@@ -143,7 +164,7 @@ revoke select (tenant_id, membership_id, role_code, valid_from, valid_until) on 
 drop policy files_plan_guard_read on platform.files;
 revoke select (tenant_id, id, status, declared_size, size_bytes, upload_expires_at) on platform.files from plan_guard;
 drop policy invitations_plan_guard_read on platform.invitations;
-revoke select (tenant_id, id, person_id, status, expires_at) on platform.invitations from plan_guard;
+revoke select (tenant_id, id, person_id, status, expires_at, accepted_user_id) on platform.invitations from plan_guard;
 drop policy tenant_memberships_plan_guard_read on platform.tenant_memberships;
 revoke select (id, tenant_id, user_id, person_id, status) on platform.tenant_memberships from plan_guard;
 drop policy tenants_plan_guard_update on platform.tenants;

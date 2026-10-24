@@ -466,6 +466,9 @@ const ACCEPTANCE_ERRORS: Readonly<Record<string, InvitationErrorCode>> = {
   // The role guard refused the invitation's roles together (BR-IAM-4). Unreachable while the link check
   // (invitation_inviter_may_grant) refuses them first; kept so a refusal never becomes a 500.
   JR001: 'INVITATION_NOT_VALID',
+  // The organization's people limit (WP-ADM-06): unreachable for the invitation's own person (counted
+  // already, review M1); kept so a refusal never becomes a 500.
+  JL001: 'INVITATION_NOT_VALID',
 };
 
 function acceptanceErrorOf(error: unknown): unknown {

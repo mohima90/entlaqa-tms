@@ -165,7 +165,7 @@ grant update (status, plan_id, trial_ends_at, max_people_override, max_storage_g
 create policy tenant_memberships_plan_guard_read on platform.tenant_memberships for select to plan_guard using (true);
 grant select (id, tenant_id, user_id, person_id, status) on platform.tenant_memberships to plan_guard;
 create policy invitations_plan_guard_read on platform.invitations for select to plan_guard using (true);
-grant select (tenant_id, id, person_id, status, expires_at) on platform.invitations to plan_guard;
+grant select (tenant_id, id, person_id, status, expires_at, accepted_user_id) on platform.invitations to plan_guard;
 create policy files_plan_guard_read on platform.files for select to plan_guard using (true);
 grant select (tenant_id, id, status, declared_size, size_bytes, upload_expires_at) on platform.files to plan_guard;
 
@@ -354,6 +354,15 @@ begin
                 where i.tenant_id = new.tenant_id and i.person_id = new.person_id and i.status = 'pending'
                   and i.expires_at > now() and (tg_table_name <> 'invitations' or i.id <> new.id)) then
     return new;  -- this person is counted already
+  end if;
+  -- The account of an invitation being accepted: the acceptance marks the invitation accepted before it adds
+  -- the membership, and the person held a place already (also above a lowered limit, BR-PLAN-6).
+  if tg_table_name = 'tenant_memberships' and tg_op = 'INSERT' then
+    if exists (select 1 from platform.invitations i
+               where i.tenant_id = new.tenant_id and i.person_id = new.person_id and i.status = 'accepted'
+                 and i.accepted_user_id = (to_jsonb(new) ->> 'user_id')::uuid) then
+      return new;
+    end if;
   end if;
   if private.tenant_people_used(new.tenant_id) >= v_max then
     raise exception 'the organization''s people limit is reached' using errcode = 'JL001', detail = v_max::text;
@@ -683,7 +692,8 @@ declare
   r record;
   v_count integer := 0;
 begin
-  if session_user <> 'app_worker' or coalesce(v_claims ->> 'role', '') <> 'system' then
+  if session_user <> 'app_worker' or coalesce(v_claims ->> 'role', '') <> 'system'
+     or coalesce(btrim(v_claims ->> 'job_id'), '') = '' then
     raise exception 'reserved to the worker' using errcode = 'insufficient_privilege';
   end if;
   for r in
@@ -767,6 +777,29 @@ begin
 end
 $$;
 
+-- The sign-in page's look (definition of 20261023100300): the organization's own only while its plan includes
+-- own branding.
+CREATE OR REPLACE FUNCTION private.public_tenant_brand(p_slug text)
+ RETURNS TABLE(name_ar text, name_en text, primary_color text, secondary_color text, use_gradient boolean, logo_asset_id uuid, favicon_asset_id uuid, sign_in_image_asset_id uuid)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+begin
+  if session_user <> 'app_server' or p_slug is null or p_slug !~ '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' then
+    return;
+  end if;
+  return query
+  select t.name_ar, t.name_en, b.primary_color, b.secondary_color, coalesce(b.use_gradient, true),
+         (select a.id from platform.brand_assets a where a.tenant_id = t.id and a.file_id = b.logo_file_id),
+         (select a.id from platform.brand_assets a where a.tenant_id = t.id and a.file_id = b.favicon_file_id),
+         (select a.id from platform.brand_assets a where a.tenant_id = t.id and a.file_id = b.sign_in_image_file_id)
+  from platform.tenants t
+  left join platform.tenant_branding b on b.tenant_id = t.id and private.tenant_has_feature(t.id, 'branding')
+  where t.slug = p_slug and t.status in ('trial', 'active');
+end
+$function$;
+
 -- ---------------------------------------------------------------------------------------------------
 -- Ownership hand-over and grants
 -- ---------------------------------------------------------------------------------------------------
@@ -812,8 +845,9 @@ grant execute on function private.plan_feature_codes() to plan_guard;
 grant execute on function private.permission_feature(text), private.tenant_plan_features(uuid)
   to authenticated, plan_guard, email_guard, file_guard, invitation_guard, membership_guard, rate_limit_guard,
      tenant_guard;
--- The e-mail routes (owned by email_guard) ask whether the plan includes the organization's provider and colours.
-grant execute on function private.tenant_has_feature(uuid, text) to email_guard, plan_guard;
+-- The e-mail routes (owned by email_guard) and the sign-in page's look (file_guard) ask whether the plan includes
+-- the organization's provider and look.
+grant execute on function private.tenant_has_feature(uuid, text) to email_guard, file_guard, plan_guard;
 -- Called inside `set local role authenticated` transactions; each function checks the LOGIN role itself.
 grant execute on function private.current_tenant_features() to authenticated;
 grant execute on function private.organization_plan() to authenticated;

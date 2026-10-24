@@ -535,7 +535,7 @@ begin
       -- what a member's organization has and the Organization Admin's view (app_server, checked inside), the
       -- console (a signed-in Super Admin, checked inside) and the trial expiry (worker system claims).
       ('private.tenant_plan_features(uuid)', 'plan_guard', array['plan_guard', 'authenticated', 'email_guard', 'file_guard', 'invitation_guard', 'membership_guard', 'rate_limit_guard', 'tenant_guard'], true),
-      ('private.tenant_has_feature(uuid, text)', 'plan_guard', array['plan_guard', 'email_guard'], true),
+      ('private.tenant_has_feature(uuid, text)', 'plan_guard', array['plan_guard', 'email_guard', 'file_guard'], true),
       ('private.tenant_limits(uuid)', 'plan_guard', array['plan_guard'], false),
       ('private.tenant_people_used(uuid)', 'plan_guard', array['plan_guard'], false),
       ('private.tenant_storage_used(uuid)', 'plan_guard', array['plan_guard'], false),

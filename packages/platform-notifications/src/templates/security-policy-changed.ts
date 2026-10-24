@@ -21,6 +21,7 @@ export const SECURITY_SETTING_NAMES = [
   'sessionIdleMinutes',
   'sessionMaxHours',
   'sessionMaxDevices',
+  'rememberedBrowserDays',
 ] as const;
 type SettingName = (typeof SECURITY_SETTING_NAMES)[number];
 
@@ -36,6 +37,7 @@ const LABELS: Readonly<Record<AppLocale, Readonly<Record<SettingName, string>>>>
     sessionIdleMinutes: 'مدة عدم النشاط',
     sessionMaxHours: 'أقصى مدة للجلسة',
     sessionMaxDevices: 'أقصى عدد من الأجهزة',
+    rememberedBrowserDays: 'مدة تذكّر المتصفح',
   },
   en: {
     mfaMode: 'Multi-factor authentication',
@@ -48,6 +50,7 @@ const LABELS: Readonly<Record<AppLocale, Readonly<Record<SettingName, string>>>>
     sessionIdleMinutes: 'Inactivity limit',
     sessionMaxHours: 'Maximum session length',
     sessionMaxDevices: 'Maximum devices',
+    rememberedBrowserDays: 'Remembering a browser',
   },
 };
 

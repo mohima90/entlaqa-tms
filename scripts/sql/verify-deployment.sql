@@ -188,7 +188,7 @@ begin
   -- Ended sessions, the MFA prompt answers, the confirmed apps and the wrong set-up codes (T-M2-10):
   -- tenant_guard alone.
   for r in
-    select o.obj from (values ('private.revoked_sessions'), ('private.mfa_prompt_dismissals'),
+    select o.obj from (values ('private.revoked_sessions'), ('private.kept_sessions'), ('private.mfa_prompt_dismissals'),
                               ('private.mfa_factor_confirmations'), ('private.mfa_setup_code_failures')) as o(obj)
   loop
     if to_regclass(r.obj) is null then
@@ -208,6 +208,31 @@ begin
     loop
       failures := failures || format('%s must have no privilege on %s', v_role, r.obj);
     end loop;
+  end loop;
+  -- Sign-in codes by e-mail (WP-ADM-05, security re-review H1): the keyed hashes and sealed tokens, and their HMAC
+  -- key - account_mail_guard alone.
+  for r in select o.obj, o.rights from (values ('private.sign_in_codes', array['SELECT', 'INSERT', 'UPDATE', 'DELETE']),
+                                               ('private.sign_in_code_secret', array['SELECT'])) as o(obj, rights)
+  loop
+    if to_regclass(r.obj) is null then
+      failures := failures || format('%s is missing', r.obj);
+      continue;
+    end if;
+    for v_role in
+      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
+      from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+      where c.oid = to_regclass(r.obj) and a.grantee <> c.relowner
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'account_mail_guard' and a.privilege_type = any (r.rights))
+      union
+      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
+      from pg_attribute att, aclexplode(att.attacl) a
+      where att.attrelid = to_regclass(r.obj) and att.attacl is not null
+    loop
+      failures := failures || format('%s must have no privilege on %s', v_role, r.obj);
+    end loop;
+    if not (select relrowsecurity and relforcerowsecurity from pg_class where oid = to_regclass(r.obj)) then
+      failures := failures || format('%s must have row level security enabled and forced', r.obj);
+    end if;
   end loop;
   -- Security notices held for an account's digest (T-M2-10, final re-review L1): account_mail_guard alone.
   if to_regclass('private.security_notice_digests') is null then
@@ -320,7 +345,7 @@ begin
       -- The workflow's allow-list and audit data (review L3, L5): SECURITY INVOKER, called by the above.
       ('private.platform_admin_operator()', 'platform_admin_guard', array['platform_admin_guard'], false),
       ('private.platform_admin_workflow_data(text, text)', 'platform_admin_guard', array['platform_admin_guard'], false),
-      ('private.platform_admin_is_active(uuid)', 'platform_admin_guard', array['platform_admin_guard', 'invitation_guard', 'email_guard'], true),
+      ('private.platform_admin_is_active(uuid)', 'platform_admin_guard', array['platform_admin_guard', 'invitation_guard', 'email_guard', 'account_mail_guard'], true),
       ('private.is_platform_invitation(uuid)', 'platform_admin_guard', array['platform_admin_guard', 'invitation_guard'], true),
       -- email_guard: the Super Admin's e-mail settings functions (20261022100100, WP-ADM-01) use the same check.
       ('private.platform_admin_caller()', 'platform_admin_guard', array['platform_admin_guard', 'email_guard'], false),
@@ -605,7 +630,13 @@ begin
         'private.public_brand_asset(uuid)', 'private.public_brand_asset_meta(uuid)',
         'private.public_tenant_brand(text)', 'private.branding_image_names(uuid[])',
         -- Profile photos (WP-ADM-04)
-        'private.publish_profile_photo(uuid,text,bigint,text,bytea)', 'private.remove_profile_photo()')
+        'private.publish_profile_photo(uuid,text,bigint,text,bytea)', 'private.remove_profile_photo()',
+        -- Sign-in extras (WP-ADM-05)
+        'private.keep_session()', 'private.my_kept_sessions()', 'private.forget_kept_sessions()',
+        'private.account_sender_is_platform(uuid)', 'private.account_needs_platform_sender(uuid)',
+        'private.auth_mail_account(uuid)', 'private.auth_mail_route(uuid)', 'private.auth_mail_issue(uuid,text,text,text)',
+        'private.sign_in_code_hmac(uuid,text)', 'private.verify_sign_in_code(text,text)', 'private.kept_until_effective(uuid,timestamp with time zone,timestamp with time zone)',
+        'private.audit_sign_in_code_sent(uuid,uuid)', 'private.audit_sign_in_code_refused(text,boolean)')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;

@@ -1,3 +1,4 @@
+import 'server-only';
 import {
   EMAIL_PROVIDER_OPTIONS,
   EMAIL_PROVIDER_SECRETS,

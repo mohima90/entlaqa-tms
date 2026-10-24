@@ -120,6 +120,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: 5.0.5
         version: 5.0.5(vitest@5.0.5)
+      happy-dom:
+        specifier: 20.14.5
+        version: 20.14.5
       postcss:
         specifier: 8.5.30
         version: 8.5.30
@@ -568,6 +571,9 @@ importers:
       nodemailer:
         specifier: 10.1.6
         version: 10.1.6
+      server-only:
+        specifier: 0.0.1
+        version: 0.0.1
       zod:
         specifier: 4.6.7
         version: 4.6.7

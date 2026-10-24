@@ -200,7 +200,9 @@ jobs:
     name: 'Gate 8 · Component library (Storybook): every story in Arabic/English × light/dark, axe'
     needs: install
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # Every story × 2 languages × 2 themes (+ organization colours) takes 7–18 min on a hosted runner and
+    # grows with each story; a slow runner hit 20 min while still passing (PR #88, run 40015101691).
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

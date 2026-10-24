@@ -458,3 +458,43 @@ describe('rules on installed packages fire (C1: node_modules is not excluded)', 
     expect(found.filter((v) => v.includes('other.stories'))).toEqual([]);
   });
 });
+
+describe('the e-mail sending code stays behind the Send Email hook (ADR 0005 amendment, re-review M-B)', () => {
+  it('rejects any other module importing the sender code; allows the hook, the package itself and the worker', async () => {
+    const root = fixtureRepo({
+      'packages/platform-notifications/package.json': JSON.stringify({
+        name: '@jadarat/platform-notifications',
+      }),
+      'packages/platform-notifications/src/sending/router.ts': 'export const router = 1;\n',
+      'packages/platform-notifications/src/inline.ts':
+        "import { router } from './sending/router';\nexport const i = router;\n",
+      'packages/platform-notifications/src/jobs/index.ts':
+        "import { router } from '../sending/router';\nexport const j = router;\n",
+      'packages/platform-identity/package.json': JSON.stringify({
+        name: '@jadarat/platform-identity',
+      }),
+      // The hook's adapter: allowed.
+      'packages/platform-identity/src/auth-email-hook.ts':
+        "import { i } from '../../platform-notifications/src/inline';\nexport const h = i;\n",
+      // Anything else of the identity package (or the web app) reaching for it: refused.
+      'packages/platform-identity/src/password-reset.ts':
+        "import { i } from '../../platform-notifications/src/inline';\nexport const p = i;\n",
+      'apps/suite/package.json': JSON.stringify({ name: '@jadarat/suite' }),
+      'apps/suite/src/lib/mail.ts':
+        "import { router } from '../../../../packages/platform-notifications/src/sending/router';\nexport const m = router;\n",
+      'apps/worker/package.json': JSON.stringify({ name: '@jadarat/worker' }),
+      'apps/worker/src/main.ts':
+        "import { j } from '../../../packages/platform-notifications/src/jobs/index';\nexport const w = j;\n",
+    });
+    const found = (await violations(root)).filter((v) =>
+      v.startsWith('email-sending-code-is-private:'),
+    );
+    expect(found).toContain(
+      'email-sending-code-is-private: packages/platform-identity/src/password-reset.ts → packages/platform-notifications/src/inline.ts',
+    );
+    expect(found).toContain(
+      'email-sending-code-is-private: apps/suite/src/lib/mail.ts → packages/platform-notifications/src/sending/router.ts',
+    );
+    expect(found).toHaveLength(2);
+  });
+});

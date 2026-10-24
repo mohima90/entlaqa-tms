@@ -31,6 +31,7 @@ export {
   claimEmailDelivery,
   discardInactiveTenantDelivery,
   finishEmailDelivery,
+  getEmailDeliveryTemplate,
   insertEmailDelivery,
 } from './deliveries';
 export {
@@ -62,6 +63,7 @@ export {
   type MfaRemovalReason,
   type PolicyChange,
   accountHasApp,
+  accountNeedsPlatformSender,
   claimAccountMailRequest,
   finishAccountMailRequest,
   issueMfaFactorTokens,

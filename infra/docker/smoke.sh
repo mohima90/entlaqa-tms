@@ -12,9 +12,9 @@
 # internal port for the app only, clamd scan, EICAR quarantined, fail closed) and the bulk user import
 # (T-M2-12, smoke-import.sh: upload, review, run, error report, undo, held invitations), deactivates and
 # reactivates members (reassignment, sessions end at once, Auth issues no token to a login that belongs
-# nowhere any more — T-M2-09), runs the sign-in protection journey (T-M2-11: lock after 5 wrong
-# passwords, generic answers in Arabic and English, the shared limiter; Auth's own per-IP limits keyed by the
-# gateway), sends a browser and a server error to the in-country error tracker (GlitchTip) and checks they
+# nowhere any more — T-M2-09), checks the e-mailed sign-in code screen (WP-ADM-05, no mailbox needed), runs the
+# sign-in protection journey (T-M2-11: lock after 5 wrong passwords, generic answers in Arabic and English,
+# the shared limiter; Auth's own per-IP limits keyed by the gateway), sends a browser and a server error to the in-country error tracker (GlitchTip) and checks they
 # arrive without personal data, then tears everything down.
 #
 #   bash infra/docker/smoke.sh            # KEEP=1 leaves the stack running; SKIP_BUILD=1 reuses the build
@@ -665,6 +665,9 @@ files_journey "$EMAIL" "$PASSWORD" sovereign-smoke
 # T-M2-11 lockout, the T-M2-09 deactivations and the T-M2-10 policy (MFA required) change the accounts.
 import_journey "$EMAIL" "$PASSWORD"
 
+echo "smoke: sign in with an e-mailed code (WP-ADM-05) — the code screen for an address without an account, six labelled boxes, paste, wrong codes on the field, the lock, in Arabic and English"
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 SIGN_IN_CODE_E2E=1 \
+  pnpm exec playwright test e2e/sign-in-code.spec.ts --project=desktop-chromium)
 # Before the T-M2-09 and T-M2-10 journeys, which change the accounts' passwords and the organization's MFA
 # policy; Auth's own per-IP limits (below) come after them: they use up the host's budget for direct Auth calls.
 echo "smoke: sign-in protection (T-M2-11) — 5 wrong passwords lock, a remembered browser (opt-in) still signs in, one lockout e-mail a day, the Organization Admin unlocks and the member is told"

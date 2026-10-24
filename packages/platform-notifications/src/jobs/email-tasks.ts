@@ -16,12 +16,12 @@ import type { PlatformTask, WorkerLogLevel } from '@jadarat/platform-jobs/jobs';
 import { credentialsContext } from '../credentials-seal';
 import { isEmailProvider } from '../providers';
 import { renderEmail } from '../templates/index';
-import { CredentialsError, type CredentialsKeyPair } from './credentials';
-import { createProviderTransport } from './factory';
+import { CredentialsError, type CredentialsKeyPair } from '../sending/credentials';
+import { createProviderTransport } from '../sending/factory';
 import type { EmailRouter } from './router';
 import { EMAIL_QUEUED_EVENT } from './sender';
-import type { HostLookup } from './smtp';
-import { EmailSendError } from './transport';
+import type { HostLookup } from '../sending/smtp';
+import { EmailSendError } from '../sending/transport';
 
 type Log = (level: WorkerLogLevel, message: string) => void;
 

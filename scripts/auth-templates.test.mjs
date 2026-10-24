@@ -62,8 +62,10 @@ describe('Auth e-mail templates (T-M2-08)', () => {
     expect(config).toContain('content_path = "./supabase/templates/password-changed.html"');
     expect(config).toMatch(/\[auth\.email\.notification\.password_changed\]\nenabled = false\n/);
     expect(config).toMatch(/otp_expiry = 3600/);
-    // The token hash is sha224(e-mail + code): the code must have GoTrue's maximum length (review H).
+    // The token hash is sha224(e-mail + code): the code must have GoTrue's maximum length (review H). The
+    // e-mailed sign-in code is our own (WP-ADM-05 re-review H1), so Auth's one-time password stays long.
     expect(config).toMatch(/^otp_length = 10$/m);
+    expect(config).toMatch(/^max_frequency = "60s"$/m);
   });
 
   it('the self-hosted stack: tokens as before, but Auth sends nothing — the worker does (T-M2-17)', () => {

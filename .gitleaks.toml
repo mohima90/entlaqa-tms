@@ -30,3 +30,10 @@ condition = "AND"
 paths = ['''^apps/suite/src/lib/(cron-jobs|server-settings)\.test\.ts$''', '''^packages/platform-jobs/src/kick/dispatch\.test\.ts$''']
 regexTarget = "line"
 regexes = ['''(const SECRET = 'cron-secret-0123456789abcdef';|CRON_SECRET: '0123456789abcdef0123'|const INSTALLATION_TOKEN = 'ghs_16C7e42F292c6912E7710c838347Ae178B4a';)''']
+
+[[allowlists]]
+description = "Fake Resend key in the inline e-mail router unit test (WP-ADM-05; fixture, not a secret). Commit 0991656 holds it as a literal; the current file uses a low-entropy placeholder."
+condition = "AND"
+paths = ['''^packages/platform-notifications/src/sending/inline\.test\.ts$''']
+regexTarget = "line"
+regexes = ['''RESEND_API_KEY: 're_abcdefgh1234',''']

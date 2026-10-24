@@ -166,7 +166,10 @@
       "passwordSame": "The new password is the same as the current one. Choose a different password.",
       "reauthenticationNeeded": "For your account's security, sign out and sign in again, then change the password.",
       "passwordRejected": "The new password was not accepted. Choose a different one.",
-      "tooManyAttempts": "Sign-in is paused for now after too many unsuccessful attempts. Try again later, or reset your password with “Forgot password?”."
+      "tooManyAttempts": "Sign-in is paused for now after too many unsuccessful attempts. Try again later, or reset your password with “Forgot password?”.",
+      "signInCodeInvalid": "That code isn’t right, or it has expired.",
+      "signInCodeLocked": "Too many incorrect codes. This code no longer works, and code checks are paused for 15 minutes.",
+      "signInCodeTooSoon": "We just sent a code. You can ask for another in {seconds} seconds."
     },
     "sessionEnded": "Your sign-in session has ended. Sign in again to continue.",
     "welcomeBack": "Welcome back",
@@ -198,6 +201,40 @@
         "assess": "Attendance, assessments and certificates",
         "report": "Reports and dashboards"
       }
+    },
+    "signInCode": {
+      "codeInstead": "Email me a code instead",
+      "or": "or",
+      "sending": "Sending the code…",
+      "sendFailed": "We couldn’t send the code. Try again, or sign in with your password.",
+      "eyebrow": "Sign-in code",
+      "title": "Check your email",
+      "subtitle": "We sent you a sign-in code.",
+      "intro": "We sent a 6-digit code to {email}. It works for 10 minutes and only once.",
+      "label": "Sign-in code",
+      "digit": "Digit {n} of {total}",
+      "spam": "Not there? Check your spam folder.",
+      "remember": "Remember this browser",
+      "rememberHint": "Keeps you signed in on this browser for the period your organization chose, if it allows it. Signing out, ending sessions or changing your password signs you out. Don’t tick this on a shared computer.",
+      "submit": "Verify and sign in",
+      "submitting": "Checking…",
+      "resendIn": "Didn’t get it? You can ask for a new code in {time}.",
+      "resend": "Send a new code",
+      "resendLead": "Didn’t get the code?",
+      "resending": "Sending…",
+      "resent": "We sent a new code. Only the newest code works.",
+      "resendReady": "You can ask for a new code now.",
+      "errFormat": "Enter all 6 digits.",
+      "triesLeft": {
+        "zero": "No tries left",
+        "one": "{n} try left",
+        "two": "{n} tries left",
+        "few": "{n} tries left",
+        "many": "{n} tries left",
+        "other": "{n} tries left"
+      },
+      "lockedHelp": "Try again in 15 minutes, or sign in with your password.",
+      "usePassword": "Use my password instead"
     }
   },
   "invite": {
@@ -616,7 +653,27 @@
       "intro": "Devices and browsers signed in to your account, in every organization."
     },
     "addArabicName": "Add the name in Arabic (optional)",
-    "addEnglishName": "Add the name in English (optional)"
+    "addEnglishName": "Add the name in English (optional)",
+    "remembered": {
+      "title": "Browsers kept signed in",
+      "intro": "Browsers where you chose “Remember this browser”. They keep you signed in for up to {days, plural, one {# day} other {# days}}, as your organization allows. Signing out, ending a session or changing your password ends it.",
+      "introOff": "Your organization doesn’t keep people signed in, so a browser asks you to sign in again after you close it.",
+      "off": "Your organization doesn’t keep people signed in, so a browser asks you to sign in again after you close it.",
+      "count": "{count, plural, =0 {No browsers kept signed in} one {# browser kept signed in} other {# browsers kept signed in}}",
+      "forgetAll": "Forget all",
+      "rememberedOn": "Signed in {date}",
+      "until": "stays signed in until {date}",
+      "expired": "no longer kept",
+      "none": "No browser is kept signed in. Tick “Remember this browser” next time you enter a code.",
+      "forgetTitle": "Stop keeping you signed in?",
+      "forgetText": "Your sessions follow your organization’s normal rules again, so they end after a short time without activity.",
+      "forgetConfirm": "Stop keeping",
+      "forgotten": "Your sessions are no longer kept signed in.",
+      "current": "This browser",
+      "unknownBrowser": "A browser",
+      "close": "Close",
+      "cancel": "Cancel"
+    }
   },
   "editUser": {
     "title": "Edit user details",
@@ -1410,10 +1467,12 @@
       "grace": "Set-up grace period",
       "graceHint": "Time allowed before setting it up becomes a condition for signing in (0 to 30 days).",
       "graceUnit": "days",
-      "trusted": "Remember a trusted device",
-      "trustedHint": "The code isn't asked again on the same device during this period.",
+      "trusted": "Keep people signed in",
+      "trustedHint": "When someone ticks “Remember this browser” on the e-mailed-code screen, they stay signed in on that browser for this long, instead of the usual idle and maximum-length limits. Signing out, ending sessions, deactivation and a password change still end it. A shorter choice applies to new sign-ins. Off is the default.",
       "promptAdmins": "Invite Organization Admins to set up an authenticator app at sign-in",
-      "promptAdminsHint": "For those who don't use an app yet; they can postpone it."
+      "promptAdminsHint": "For those who don't use an app yet; they can postpone it.",
+      "trustedOff": "Off",
+      "trustedDays": "{days, plural, one {# day} other {# days}}"
     },
     "password": {
       "title": "Password",
@@ -3100,7 +3159,8 @@
       "account_locked": "Sign-in paused",
       "sign_in_unlocked": "Sign-in unlocked",
       "mfa_code_locked": "Sign-in codes paused",
-      "other": "Other e-mail"
+      "other": "Other e-mail",
+      "sign_in_code": "Sign-in code"
     },
     "senders": {
       "organization": "Your provider",

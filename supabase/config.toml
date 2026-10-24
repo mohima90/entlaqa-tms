@@ -57,7 +57,10 @@ enable_confirmations = false
 # Password reset (FR-IAM-13, T-M2-08; docs/engineering/password-reset.md): the e-mailed link is valid for
 # 60 minutes and single use; one e-mail a minute per account. The link's token hash is
 # sha224(e-mail + one-time code): with Auth's default 6-digit code it could be guessed (about 20 bits once
-# the address is known), so the code has GoTrue's maximum length — 10 digits — although it is never shown.
+# the address is known), so the code has GoTrue's maximum length - 10 digits - although it is never shown.
+# The e-mailed SIGN-IN code (WP-ADM-05) does NOT use Auth's one-time password: the Send Email hook makes its
+# own six-digit code and checks it in our database behind our limiters (security re-review H1,
+# sign-in-protection.md §12), so these settings stay as they were.
 otp_expiry = 3600
 otp_length = 10
 max_frequency = "60s"

@@ -3,6 +3,7 @@ import { type SystemTx, getEmailBrand, insertEmailDelivery } from '@jadarat/plat
 import type { AppLocale } from '@jadarat/platform-i18n';
 import { isEmailAddress, maskEmailAddress } from '../address';
 import { type EmailTemplateKey, type EmailVariables, renderEmail } from '../templates/index';
+import { brandAssetUrl } from '../brand-asset';
 import { EMAIL_QUEUED_EVENT } from './sender';
 
 export interface EmailRequest<K extends EmailTemplateKey> {
@@ -21,19 +22,7 @@ export interface EmailRequest<K extends EmailTemplateKey> {
   readonly appBaseUrl?: string | undefined;
 }
 
-const ASSET_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
-/** The address of a published branding image for e-mail clients (they fetch it without a session). */
-export function brandAssetUrl(
-  appBaseUrl: string | undefined,
-  assetId: string | null,
-): string | null {
-  if (!appBaseUrl || !assetId || !ASSET_ID.test(assetId)) return null;
-  // Trailing slashes trimmed without a regular expression (CodeQL: polynomial regex on input).
-  let end = appBaseUrl.length;
-  while (end > 0 && appBaseUrl[end - 1] === '/') end -= 1;
-  return `${appBaseUrl.slice(0, end)}/api/brand/${assetId}`;
-}
+export { brandAssetUrl };
 
 /**
  * Queues an e-mail in the job's tenant transaction (ADR 0008 §1): renders it (with the organization's look,

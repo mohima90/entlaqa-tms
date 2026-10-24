@@ -1,11 +1,11 @@
 import type { EmailRouteRow, SystemTx } from '@jadarat/platform-db/jobs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { credentialsContext, sealCredentials } from '../credentials-seal';
-import { deriveCredentialsKeyPair } from './credentials';
-import { createProviderTransport } from './factory';
+import { deriveCredentialsKeyPair } from '../sending/credentials';
+import { createProviderTransport } from '../sending/factory';
 import { brandName, createEmailRouter } from './router';
-import { isPublicAddress } from './smtp';
-import type { EmailTransport } from './transport';
+import { isPublicAddress } from '../sending/smtp';
+import type { EmailTransport } from '../sending/transport';
 
 const db = vi.hoisted(() => ({ loadEmailRoute: vi.fn() }));
 vi.mock('@jadarat/platform-db/jobs', () => db);
@@ -93,6 +93,24 @@ describe('the sender rule (WP-ADM-01, Kawadir)', () => {
     });
     db.loadEmailRoute.mockResolvedValue(row({ defaultLocale: 'ar' }));
     expect(await router.resolve(tx, TENANT)).toMatchObject({ from: { name: 'الراية' } });
+  });
+
+  it("platformOnly (the sign-in code of an account of several organizations) skips the organization's own provider", async () => {
+    db.loadEmailRoute.mockResolvedValue(row({ tenant: ownProvider }));
+    const router = createEmailRouter({ keys, installation: null, log: vi.fn() });
+    expect(await router.resolve(tx, TENANT, { platformOnly: true })).toMatchObject({
+      kind: 'send',
+      sender: 'platform',
+      from: { name: 'Al Raya', address: 'no-reply@jadarat.example' },
+    });
+    // The organization's provider is still first for everything else.
+    expect(await router.resolve(tx, TENANT)).toMatchObject({ sender: 'organization' });
+    // No platform sender ready: the message waits - it never falls back to the organization's provider.
+    db.loadEmailRoute.mockResolvedValue(row({ tenant: ownProvider, platform: null }));
+    expect(await router.resolve(tx, TENANT, { platformOnly: true })).toEqual({
+      kind: 'wait',
+      code: 'NO_SENDER',
+    });
   });
 
   it('a platform sender not verified yet: messages wait (nothing lost) — never the installation sender', async () => {

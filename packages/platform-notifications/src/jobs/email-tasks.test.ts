@@ -6,7 +6,7 @@ import type {
 } from '@jadarat/platform-db/jobs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { credentialsContext, sealCredentials } from '../credentials-seal';
-import { deriveCredentialsKeyPair } from './credentials';
+import { deriveCredentialsKeyPair } from '../sending/credentials';
 import {
   createEmailHousekeepingTask,
   createEmailResumeTask,
@@ -14,7 +14,7 @@ import {
 } from './email-tasks';
 import type { EmailRouter } from './router';
 import { EMAIL_QUEUED_EVENT } from './sender';
-import { EmailSendError, type EmailTransport } from './transport';
+import { EmailSendError, type EmailTransport } from '../sending/transport';
 
 const db = vi.hoisted(() => ({
   claimEmailTests: vi.fn(),

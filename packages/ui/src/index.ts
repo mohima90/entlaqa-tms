@@ -27,7 +27,8 @@ export {
 } from './nav-item';
 export { type NavState, NavStateContext } from './nav-state';
 // Kawadir page patterns and shell controls (T-M2-43).
-export { Avatar, type AvatarProps, initialsOf } from './avatar';
+export { Avatar, type AvatarProps } from './avatar';
+export { initialsOf } from './initials';
 export {
   CommandPalette,
   type CommandPaletteProps,

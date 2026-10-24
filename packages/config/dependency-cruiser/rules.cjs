@@ -142,6 +142,22 @@ module.exports = {
       to: { path: '^(packages|modules)/[^/]+/src/(admin|jobs)/', reachable: true },
     },
     {
+      name: 'email-sending-code-is-private',
+      severity: 'error',
+      comment:
+        "ADR 0005 §1 amendment (23 Oct 2026, security re-review M-B): the sender code that opens an organization's sealed e-mail provider secrets (packages/platform-notifications/src/sending/ and its web entry src/inline.ts) runs in the web tier ONLY for the sign-in code's Send Email hook. Only that hook's adapter (platform-identity auth-next.ts / auth-email-hook.ts, the hook route) and the notifications package itself (the worker's jobs/) may import it - this restores the protection admin-jobs-folders-are-private gave before the code left jobs/.",
+      from: {
+        pathNot: [
+          '^packages/platform-notifications/src/',
+          '^packages/platform-identity/src/(auth-next|auth-email-hook)\\.ts$',
+          '^apps/suite/src/app/api/auth/send-email/route\\.ts$',
+          '^apps/worker/',
+          '\\.(integration\\.)?test\\.tsx?$',
+        ],
+      },
+      to: { path: '^packages/platform-notifications/src/(inline\\.ts$|sending/)' },
+    },
+    {
       name: 'verified-claims-brand-restricted',
       severity: 'error',
       comment:

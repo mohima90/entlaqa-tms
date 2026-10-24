@@ -56,7 +56,7 @@ describe('account e-mail requests on the request path (T-M2-17)', () => {
   it('queues the "account locked" e-mail for the typed address with the lock minutes (T-M2-11)', async () => {
     const { db, executed } = fakeDb();
     const api = createAccountMailApi(() => db);
-    await expect(api.requestAccountLockedMail('Locked@example.test', 15)).resolves.toBeUndefined();
+    await expect(api.requestAccountLockedMail('Locked@example.test', 15)).resolves.toBeNull();
     expect(executed[1]?.params).toEqual(['']);
     expect(executed.at(-1)).toMatchObject({
       sql: 'select private.request_account_locked_mail($1, $2::integer)',
@@ -72,7 +72,7 @@ describe('account e-mail requests on the request path (T-M2-17)', () => {
   it('queues the "wrong codes after your password" notice for the user with the pause minutes (integration review M1)', async () => {
     const { db, executed } = fakeDb();
     const api = createAccountMailApi(() => db);
-    await expect(api.requestMfaCodeLockedMail(USER, 15)).resolves.toBeUndefined();
+    await expect(api.requestMfaCodeLockedMail(USER, 15)).resolves.toBeNull();
     // Without claims (the limiter's own short transaction, after the session's verified token).
     expect(executed[1]?.params).toEqual(['']);
     expect(executed.at(-1)).toMatchObject({

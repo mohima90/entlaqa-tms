@@ -55,9 +55,18 @@ export type InviteLinkOf = (locale: 'ar' | 'en', code: string) => string | null;
 /** What the invitation actions need from the web app. */
 export interface InvitationActionOptions {
   readonly inviteLinkOf?: InviteLinkOf;
+  /**
+   * Queues the invitation's e-mail in the action's own transaction and sends it the moment the action has
+   * committed (WP-ADM-05 follow-up: every e-mail arrives immediately). Never throws; without it (tests, a
+   * deployment that cannot send from the web app) the worker's mailer sends the e-mail as before.
+   */
+  readonly queueEmail?: QueueInvitationEmail;
 }
 
+export type QueueInvitationEmail = (tx: UserTx, invitationId: string) => Promise<void>;
+
 const noLink: InviteLinkOf = () => null;
+const noMail: QueueInvitationEmail = () => Promise.resolve();
 
 /** First code + 3 new ones on resend (contract §1 step 3). */
 export const MAX_INVITATION_SENDS = 4;
@@ -153,6 +162,7 @@ async function invite(
   ctx: ActionContext<UserTx>,
   input: InviteUserInputValue,
   inviteLinkOf: InviteLinkOf,
+  queueEmail: QueueInvitationEmail,
 ): Promise<InvitationCreated> {
   const created = await createInvitation(ctx.tx, {
     email: input.email,
@@ -169,6 +179,7 @@ async function invite(
     locale: input.locale,
     scopeUnitId: input.scopeUnitId,
   });
+  await queueEmail(ctx.tx, created.invitationId);
   return {
     invitationId: created.invitationId,
     personId: created.personId,
@@ -184,6 +195,7 @@ function inviteAction(
   permission: PermissionDefinition,
   privileged: boolean,
   inviteLinkOf: InviteLinkOf,
+  queueEmail: QueueInvitationEmail,
 ): ActionDefinition<typeof InviteUserInput, InvitationCreated, UserTx> {
   return {
     permission,
@@ -210,7 +222,7 @@ function inviteAction(
       );
       if (unitProblem) return err(fieldError('scopeUnitId', unitProblem));
       try {
-        return ok(await invite(ctx, input, inviteLinkOf));
+        return ok(await invite(ctx, input, inviteLinkOf, queueEmail));
       } catch (error) {
         const code = invitationRefusalCode(error);
         if (code === null) throw error;
@@ -234,12 +246,22 @@ function inviteAction(
 
 /** Invite with ordinary roles (HR Manager, Organization Admin). */
 export function inviteUserActionDefinition(options: InvitationActionOptions = {}) {
-  return inviteAction(p['platform.user.invite'], false, options.inviteLinkOf ?? noLink);
+  return inviteAction(
+    p['platform.user.invite'],
+    false,
+    options.inviteLinkOf ?? noLink,
+    options.queueEmail ?? noMail,
+  );
 }
 
 /** Invite with a privileged role: the Organization Admin. */
 export function invitePrivilegedUserActionDefinition(options: InvitationActionOptions = {}) {
-  return inviteAction(p['platform.role.assign_privileged'], true, options.inviteLinkOf ?? noLink);
+  return inviteAction(
+    p['platform.role.assign_privileged'],
+    true,
+    options.inviteLinkOf ?? noLink,
+    options.queueEmail ?? noMail,
+  );
 }
 
 export const InvitationIdInput = z.strictObject({ invitationId: z.uuid() });
@@ -266,11 +288,9 @@ function invitationRoleNotAllowed(): AppError {
  * database applies the same rule when it issues the code (security review M2). Copying a code is not a
  * resend.
  */
-export function resendInvitationActionDefinition(): ActionDefinition<
-  typeof InvitationIdInput,
-  InvitationResent,
-  UserTx
-> {
+export function resendInvitationActionDefinition(
+  options: InvitationActionOptions = {},
+): ActionDefinition<typeof InvitationIdInput, InvitationResent, UserTx> {
   return {
     permission: p['platform.user.invite'],
     input: InvitationIdInput,
@@ -298,6 +318,8 @@ export function resendInvitationActionDefinition(): ActionDefinition<
           ),
         );
       }
+      // The new code exists in this transaction: its e-mail is queued here and sent once it has committed.
+      await (options.queueEmail ?? noMail)(ctx.tx, input.invitationId);
       return ok({ invitationId: input.invitationId });
     },
     audit: (_input, output) => ({

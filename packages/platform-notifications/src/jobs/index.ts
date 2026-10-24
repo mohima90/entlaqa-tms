@@ -13,9 +13,11 @@ export {
 } from '../sending/credentials';
 export {
   EMAIL_HOUSEKEEPING_TASK,
+  EMAIL_INLINE_RESCUE_TASK,
   EMAIL_RESUME_TASK,
   EMAIL_TESTS_TASK,
   createEmailHousekeepingTask,
+  createEmailInlineRescueTask,
   createEmailResumeTask,
   createEmailTestTask,
 } from './email-tasks';

@@ -1,4 +1,3 @@
-import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { describeUserAgent } from '@jadarat/platform-core';
 import {
   type AccountMailRequest,
@@ -18,48 +17,39 @@ import {
 import type { PlatformTask, WorkerLogLevel } from '@jadarat/platform-jobs/jobs';
 import { isEmailAddress, isSafeLink, renderEmail } from '@jadarat/platform-notifications';
 import { type EmailRequest, queueEmail } from '@jadarat/platform-notifications/jobs';
+import {
+  ACCOUNT_MAIL_HOURLY_CAP,
+  MFA_CODE_VALID_HOURS,
+  MFA_REMOVE_VALID_DAYS,
+  type OrganizationName,
+  RESET_LINK_VALID_MINUTES,
+  SECURITY_NOTICE_KINDS,
+  accountMailVerdict,
+  composeAccountNotice,
+  composeMfaSetUp,
+  composeReset,
+  hashLinkToken,
+  hashMfaSetupCode,
+  newMfaRemoveToken,
+  newMfaSetupCode,
+  quietMinutesFor,
+} from '../account-mail-compose';
 import { type AuthLimits, PLATFORM_AUTH_LIMITS } from '../auth-limits-config';
-import { hashToken } from './invitation-mailer';
 
 /** graphile-worker task of the account e-mails (a platform task: requests have no tenant yet). */
 export const ACCOUNT_MAIL_TASK = 'platform.account_mail';
 /** Requests answered per pass; a full pass queues the next one at once. */
 export const ACCOUNT_MAIL_BATCH = 20;
-/** Auth's link lifetime (`otp_exp` = 3600 s), stated in the e-mail. */
-export const RESET_LINK_VALID_MINUTES = 60;
-/**
- * Per person and organization: at most this many e-mails of each account template an hour (beyond the web
- * app's own limits and Auth's one link a minute) — a further request is answered without an e-mail.
- * Security notices are exempt (SECURITY_NOTICE_KINDS). The "account locked" notice has stricter caps of
- * its own (PLATFORM_AUTH_LIMITS.lockoutMail, T-M2-11 M3): at most one per person a day and a ceiling per
- * organization an hour.
- */
-export const ACCOUNT_MAIL_HOURLY_CAP = 5;
-/**
- * Security notices (re-review N3): an authenticator app added (its e-mail carries the set-up code) or removed
- * (also an admin or support reset, an expired set-up), the security settings changed, the password changed,
- * wrong codes after the password (integration review T-M2-11 M1 — at most one per pause: none to the person
- * within the pause's minutes of the last one), and the digest of held ones. They are never dropped by the per-template hourly cap — the owner must learn
- * of every change to the account's security — and a notice over that cap is logged. Their volume per account
- * is bounded by the database (final re-review L1): 20 in 24 hours one by one, further ones merged into one
- * digest an hour (outcome `held`, then a `security_digest` request).
- */
-export const SECURITY_NOTICE_KINDS: ReadonlySet<AccountMailRequest['kind']> = new Set([
-  'mfa_factor_added',
-  'mfa_factor_removed',
-  'security_policy_changed',
-  'password_changed',
-  'mfa_code_locked',
-  'security_digest',
-]);
-/**
- * The set-up e-mail's code and link lifetimes, stated in it — the database's private.mfa_code_lifetime() /
- * mfa_remove_link_lifetime() decide; pgTAP 68 checks they are these values.
- */
-export const MFA_CODE_VALID_HOURS = 72;
-export const MFA_REMOVE_VALID_DAYS = 7;
-/** Dates in the security notices (policy change, app set-up), until organizations have their own time zone. */
-const TIME_ZONE = 'Asia/Riyadh';
+// The caps, lifetimes and wording are the pure part shared with the web app's immediate sending
+// (../account-mail-compose.ts); they are re-exported here for the callers and tests of the worker.
+export {
+  ACCOUNT_MAIL_HOURLY_CAP,
+  MFA_CODE_VALID_HOURS,
+  MFA_REMOVE_VALID_DAYS,
+  RESET_LINK_VALID_MINUTES,
+  SECURITY_NOTICE_KINDS,
+  hashMfaSetupCode,
+};
 
 /** The Auth admin API's recovery links (platform-db/admin `createRecoveryLinkIssuer`), worker only. */
 export interface RecoveryLinks {
@@ -104,10 +94,6 @@ function codeOf(error: unknown): string {
 }
 
 type Sendable = Extract<AccountMailRequest, { outcome: 'send' }>;
-interface OrganizationName {
-  readonly ar: string;
-  readonly en: string | null;
-}
 type AccountTemplate =
   | 'platform.password_reset'
   | 'platform.password_changed'
@@ -143,20 +129,6 @@ const PLATFORM_VARIANT: Readonly<Partial<Record<AccountTemplate, AccountTemplate
   'platform.password_reset': 'platform.password_reset_platform',
   'platform.mfa_factor_added': 'platform.mfa_factor_added_platform',
 };
-
-/** A new link token: 32 random bytes, base64url (43 characters) — only its SHA-256 is stored. */
-const newToken = () => randomBytes(32).toString('base64url');
-
-/** A new set-up code: 8 random digits (re-review N1) — only its SHA-256 with the app's id is stored. */
-const newSetupCode = () => String(randomInt(0, 100_000_000)).padStart(8, '0');
-
-/**
- * SHA-256 of a set-up code bound to its app — as the database checks it (private.confirm_mfa_setup:
- * sha256(factor id || ':' || code)). The same code for another app is another hash.
- */
-export function hashMfaSetupCode(factorId: string, code: string): Buffer {
-  return createHash('sha256').update(`${factorId.toLowerCase()}:${code}`, 'utf8').digest();
-}
 
 /** Stands in for the token while the reset e-mail's content is checked before a token exists. */
 const PLACEHOLDER_TOKEN_HASH = '0'.repeat(56);
@@ -227,13 +199,7 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
     request: Sendable,
   ): Promise<{ readonly organizationName: OrganizationName } | { readonly reason: string }> {
     const template = TEMPLATE_OF[request.kind];
-    const locked = request.kind === 'account_locked';
-    const codesPaused = request.kind === 'mfa_code_locked';
-    const quietMinutes = locked
-      ? lockoutMail.personQuietHours * 60
-      : codesPaused
-        ? Math.min(Math.max(request.lockMinutes ?? 1, 1), 1440)
-        : 0;
+    const quietMinutes = quietMinutesFor(request.kind, request.lockMinutes, lockoutMail);
     // A suspended or closed organization since the lease: its RLS shows nothing; nothing is sent.
     const context = (await tenantIsServed(tx))
       ? await loadAccountMailContext(tx, request.personId, template, quietMinutes)
@@ -242,22 +208,14 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
       await finishAccountMailRequest(tx, request.id);
       return { reason: 'organization_unavailable' };
     }
-    if (context.recentCount >= ACCOUNT_MAIL_HOURLY_CAP) {
-      if (!SECURITY_NOTICE_KINDS.has(request.kind)) {
-        await finishAccountMailRequest(tx, request.id);
-        return { reason: 'hourly_cap' };
-      }
-      // Re-review N3: never dropped silently — sent, and the volume shows in the logs.
+    const verdict = accountMailVerdict(request.kind, context, lockoutMail);
+    if (!verdict.send) {
+      await finishAccountMailRequest(tx, request.id);
+      return { reason: verdict.reason };
+    }
+    // Re-review N3: never dropped silently - sent, and the volume shows in the logs.
+    if (verdict.overCap)
       log('warning', `security notice over the hourly cap sent anyway (${request.kind})`);
-    }
-    if ((locked || codesPaused) && context.quietCount > 0) {
-      await finishAccountMailRequest(tx, request.id);
-      return { reason: 'already_notified' };
-    }
-    if (locked && context.tenantRecentCount >= lockoutMail.tenantPerHour) {
-      await finishAccountMailRequest(tx, request.id);
-      return { reason: 'organization_hourly_cap' };
-    }
     return { organizationName: context.organizationName };
   }
 
@@ -296,24 +254,20 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
    * is gone or already confirmed. The e-mail says when and from which browser (well-known names only) the
    * app was set up.
    */
-  async function sendSetUp(
-    jobId: string,
-    request: Sendable,
-    pages: (path: string) => { ar: string; en: string },
-  ): Promise<string> {
+  async function sendSetUp(jobId: string, request: Sendable, appBase: string): Promise<string> {
     const { factorId } = request;
     return withSystemTx({ tenantId: request.tenantId, jobId }, async (tx: SystemTx) => {
       const checked = await admissible(tx, request);
       if ('reason' in checked) return checked.reason;
-      const code = newSetupCode();
-      const remove = newToken();
+      const code = newMfaSetupCode();
+      const remove = newMfaRemoveToken();
       const issued = factorId
         ? await issueMfaFactorTokens(
             tx,
             factorId,
             request.userId,
             hashMfaSetupCode(factorId, code),
-            hashToken(remove),
+            hashLinkToken(remove),
           )
         : null;
       if (!issued) {
@@ -330,18 +284,16 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
         to: request.email,
         recipientPersonId: request.personId,
         appBaseUrl: base,
-        variables: {
+        variables: composeMfaSetUp({
           organizationName: checked.organizationName,
+          loginEmail: request.email,
+          appBase,
           code,
-          setUpAt: issued.setUpAt.toISOString(),
-          timeZone: TIME_ZONE,
+          removeToken: remove,
+          setUpAt: issued.setUpAt,
           browser: device.browser,
           system: device.system,
-          removeUrl: pages(`mfa/remove#token=${remove}`),
-          codeValidHours: MFA_CODE_VALID_HOURS,
-          removeValidDays: MFA_REMOVE_VALID_DAYS,
-          loginEmail: request.email,
-        },
+        }),
       });
       await finishAccountMailRequest(tx, request.id);
       return 'queued';
@@ -349,126 +301,31 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
   }
 
   async function send(jobId: string, request: Sendable, appBase: string): Promise<string> {
-    const pages = (path: string) => ({ ar: `${appBase}/ar/${path}`, en: `${appBase}/en/${path}` });
-    if (request.kind === 'account_locked') {
-      return queueInTenant(jobId, request, (organizationName) => ({
-        template: 'platform.account_locked',
-        locale: request.locale,
-        to: request.email,
-        recipientPersonId: request.personId,
-        variables: {
+    if (request.kind === 'mfa_factor_added') return sendSetUp(jobId, request, appBase);
+    const noticeKind = request.kind;
+    if (noticeKind !== 'password_reset') {
+      return queueInTenant(jobId, request, async (organizationName, tx) => {
+        const change = request.policyChange;
+        const plan = composeAccountNotice({
+          kind: noticeKind,
           organizationName,
-          lockMinutes: request.lockMinutes ?? 15,
-          forgotPasswordUrl: pages('forgot-password'),
           loginEmail: request.email,
-        },
-      }));
-    }
-    if (request.kind === 'mfa_code_locked') {
-      return queueInTenant(jobId, request, (organizationName) => ({
-        template: 'platform.mfa_code_locked',
-        locale: request.locale,
-        to: request.email,
-        recipientPersonId: request.personId,
-        variables: {
-          organizationName,
-          lockMinutes: request.lockMinutes ?? 15,
-          forgotPasswordUrl: pages('forgot-password'),
-          loginEmail: request.email,
-        },
-      }));
-    }
-    if (request.kind === 'sign_in_unlocked') {
-      return queueInTenant(jobId, request, (organizationName) => ({
-        template: 'platform.sign_in_unlocked',
-        locale: request.locale,
-        to: request.email,
-        recipientPersonId: request.personId,
-        variables: {
-          organizationName,
-          forgotPasswordUrl: pages('forgot-password'),
-          loginEmail: request.email,
-        },
-      }));
-    }
-    if (request.kind === 'mfa_factor_added') return sendSetUp(jobId, request, pages);
-    if (request.kind === 'mfa_factor_removed') {
-      const reason = request.mfaReason ?? 'removed';
-      return queueInTenant(jobId, request, (organizationName) => ({
-        template: 'platform.mfa_factor_removed',
-        locale: request.locale,
-        to: request.email,
-        recipientPersonId: request.personId,
-        variables: {
-          organizationName,
-          reason,
-          forgotPasswordUrl: pages('forgot-password'),
-          loginEmail: request.email,
-        },
-      }));
-    }
-    if (request.kind === 'security_policy_changed') {
-      const change = request.policyChange;
-      if (!change) {
-        // The database refuses such a request; a retry could not fix it.
-        throw Object.assign(new Error('policy change without its detail'), {
-          code: 'POLICY_CHANGE_DETAIL_MISSING',
-          temporary: false,
-        });
-      }
-      return queueInTenant(jobId, request, async (organizationName, tx) => ({
-        template: 'platform.security_policy_changed',
-        locale: request.locale,
-        to: request.email,
-        recipientPersonId: request.personId,
-        variables: {
-          organizationName,
-          changedBy: change.changedByPersonId
+          appBase,
+          lockMinutes: request.lockMinutes,
+          mfaReason: request.mfaReason,
+          policyChange: change,
+          changedByName: change?.changedByPersonId
             ? await loadPersonName(tx, change.changedByPersonId)
             : null,
-          changed: change.changed as never,
-          changedAt: change.changedAt.toISOString(),
-          timeZone: TIME_ZONE,
-          settingsUrl: pages('suite/admin/security'),
-          loginEmail: request.email,
-        },
-      }));
-    }
-    if (request.kind === 'security_digest') {
-      const digest = request.digest;
-      if (!digest) {
-        throw Object.assign(new Error('security digest without its detail'), {
-          code: 'SECURITY_DIGEST_DETAIL_MISSING',
-          temporary: false,
+          digest: request.digest,
         });
-      }
-      return queueInTenant(jobId, request, (organizationName) => ({
-        template: 'platform.security_digest',
-        locale: request.locale,
-        to: request.email,
-        recipientPersonId: request.personId,
-        variables: {
-          organizationName,
-          held: digest.held,
-          since: digest.since.toISOString(),
-          timeZone: TIME_ZONE,
-          forgotPasswordUrl: pages('forgot-password'),
-          loginEmail: request.email,
-        },
-      }));
-    }
-    if (request.kind === 'password_changed') {
-      return queueInTenant(jobId, request, (organizationName) => ({
-        template: 'platform.password_changed',
-        locale: request.locale,
-        to: request.email,
-        recipientPersonId: request.personId,
-        variables: {
-          organizationName,
-          forgotPasswordUrl: pages('forgot-password'),
-          loginEmail: request.email,
-        },
-      }));
+        return {
+          ...plan,
+          locale: request.locale,
+          to: request.email,
+          recipientPersonId: request.personId,
+        };
+      });
     }
     if (!recoveryLinks) {
       throw Object.assign(new Error('Auth admin API not configured'), {
@@ -479,7 +336,6 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
     // An account with an authenticator app: Auth wants a code to set the password (AAL2), so the page asks
     // for it and the e-mail says so (T-M2-10).
     const codeNeeded = await withPlatformTx({ jobId }, (tx) => accountHasApp(tx, request.userId));
-    const flag = codeNeeded ? '&mfa=1' : '';
     // In the URL FRAGMENT, as before (T-M2-08): never sent to the server with the page request.
     const resetEmail =
       (hashedToken: string) =>
@@ -488,16 +344,13 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
         locale: request.locale,
         to: request.email,
         recipientPersonId: request.personId,
-        variables: {
+        variables: composeReset({
           organizationName,
-          resetUrl: {
-            ar: `${appBase}/ar/reset-password#token_hash=${hashedToken}&type=recovery${flag}`,
-            en: `${appBase}/en/reset-password#token_hash=${hashedToken}&type=recovery${flag}`,
-          },
-          validMinutes: RESET_LINK_VALID_MINUTES,
           loginEmail: request.email,
+          appBase,
+          tokenHash: hashedToken,
           codeNeeded,
-        },
+        }),
       });
     // A new token REPLACES the account's previous one: the link the person may have just received stops
     // working. So everything that could still stop this e-mail is checked first — organization, person,

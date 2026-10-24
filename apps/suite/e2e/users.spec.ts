@@ -213,7 +213,7 @@ test.describe('users pages', () => {
     await expect(members(page)).toHaveCount(4);
   });
 
-  test('custom Line Manager role: only themselves and their team; roles only for the team', async ({
+  test('custom Line Manager role: only their team (direct reports), not themselves; roles only for the team', async ({
     page,
   }) => {
     test.skip(!managerEmail || !managerPassword, 'SIGNED_IN_E2E_MANAGER_* not set');
@@ -228,10 +228,12 @@ test.describe('users pages', () => {
     await expect(page.getByText('Coming soon').first()).toBeVisible();
     await expect(mainNavigation(page).getByRole('link', { name: 'General' })).toHaveCount(0);
     await mainNavigation(page).getByRole('link', { name: 'Team members' }).click();
-    await expect(members(page)).toHaveCount(2); // Mona herself, Khalid
-    await expect(member(page, 'Mona Saeed Alzahrani')).toBeVisible();
+    // «Their team» = her direct reports only (BRD FR-IAM-08 R1 note; EP-ROLES, one role per person — PO,
+    // 17 Oct 2026): Khalid (invited), not Mona herself, whose own record is My profile (FR-IAM-16). Until
+    // EP-ROLES she also held the Employee role (own record) and saw herself here.
+    await expect(members(page)).toHaveCount(1);
     await expect(member(page, 'خالد إبراهيم الشهري')).toContainText('Employee'); // her direct report
-    await expect(member(page, 'Mona Saeed Alzahrani')).not.toContainText('Line Manager'); // not readable to her
+    await expect(member(page, 'Mona Saeed Alzahrani')).toHaveCount(0);
     // No role.assign, user.update or user.deactivate: no ⋯ menu at all, no invitations.
     await expect(page.getByRole('button', { name: /^More actions for/ })).toHaveCount(0);
     await expect(page.getByTestId('invite-user-link')).toHaveCount(0);

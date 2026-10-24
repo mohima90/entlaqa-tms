@@ -124,6 +124,7 @@ export function unlockSignInActionDefinition(
 ): ActionDefinition<typeof UnlockSignInInput, UnlockSignInResult, UserTx> {
   return {
     permission: p['platform.user.unlock_sign_in'],
+    queuesAccountMail: true,
     input: UnlockSignInInput,
     resource: (input) => ({ type: 'person', id: input.personId }),
     handler: async ({ ctx, input }) => {

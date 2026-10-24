@@ -58,7 +58,9 @@ export function checkServerSettings(env: Env = process.env) {
   log.info(
     delivery === 'worker'
       ? 'password reset e-mails: worker (our notification service)'
-      : 'password reset e-mails: auth (Supabase Auth mailer)',
+      : delivery === 'hook'
+        ? "password reset e-mails: Auth's Send Email hook (sent at once by the web app)"
+        : 'password reset e-mails: auth (Supabase Auth mailer)',
     { action: 'app.start' },
   );
   const limitWindowSeconds = readAuthLimitWindowOverride(env);

@@ -37,3 +37,10 @@ condition = "AND"
 paths = ['''^packages/platform-notifications/src/sending/inline\.test\.ts$''']
 regexTarget = "line"
 regexes = ['''RESEND_API_KEY: 're_abcdefgh1234',''']
+
+[[allowlists]]
+description = "Fake Auth token hash in the reset e-mail compose unit test (instant e-mails; fixture, not a secret). Commit 1c5852a holds it as a literal; the current file uses a low-entropy placeholder."
+condition = "AND"
+paths = ['''^packages/platform-identity/src/account-mail-compose\.test\.ts$''']
+regexTarget = "line"
+regexes = ['''tokenHash: 'ab12cd34ef56ab12cd34ef56',''']

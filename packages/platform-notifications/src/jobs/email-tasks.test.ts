@@ -9,6 +9,7 @@ import { credentialsContext, sealCredentials } from '../credentials-seal';
 import { deriveCredentialsKeyPair } from '../sending/credentials';
 import {
   createEmailHousekeepingTask,
+  createEmailInlineRescueTask,
   createEmailResumeTask,
   createEmailTestTask,
 } from './email-tasks';
@@ -20,9 +21,11 @@ const db = vi.hoisted(() => ({
   claimEmailTests: vi.fn(),
   finishEmailTest: vi.fn(),
   isEmailSettingsMissing: (error: unknown) => (error as { code?: string }).code === '42883',
+  listTenantsToRescueInline: vi.fn(),
   listTenantsWaitingForSender: vi.fn(),
   publishEmailCredentialsKey: vi.fn(),
   sweepEmailDeliveries: vi.fn(),
+  takeInlineRescue: vi.fn(),
   takeWaitingDeliveries: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db/jobs', () => db);
@@ -316,5 +319,46 @@ describe('delivery log housekeeping (T-M2-48)', () => {
     );
     now = 30 * 60_000;
     expect(await task.run({ jobId: 'j' })).toBe(false);
+  });
+});
+
+describe('the safety net of immediate sending (WP-ADM-05 follow-up)', () => {
+  it("queues the web app's unfinished messages for the worker's sender, as the resume task does", async () => {
+    db.listTenantsToRescueInline.mockResolvedValue([TENANT]);
+    db.takeInlineRescue.mockResolvedValue(['d1', 'd2']);
+    const log = vi.fn();
+    expect(
+      await createEmailInlineRescueTask({ withPlatformTx, withSystemTx, log }).run({ jobId: 'j' }),
+    ).toBe(false);
+    expect(events.emitEvent).toHaveBeenCalledWith(tx, {
+      type: EMAIL_QUEUED_EVENT,
+      subject: 'd1',
+      data: { rescued: true },
+    });
+    expect(events.emitEvent).toHaveBeenCalledTimes(2);
+    expect(log).toHaveBeenCalledWith(
+      'warning',
+      '2 immediate e-mails unfinished; queued for the worker',
+    );
+    // Nothing logged with an address, an id or content.
+    expect(JSON.stringify(log.mock.calls)).not.toContain('d1');
+  });
+
+  it('asks for another pass when an organization had a full batch; does nothing when there is nothing', async () => {
+    db.listTenantsToRescueInline.mockResolvedValue([TENANT]);
+    db.takeInlineRescue.mockResolvedValue(Array.from({ length: 200 }, (_, i) => `d${String(i)}`));
+    expect(
+      await createEmailInlineRescueTask({ withPlatformTx, withSystemTx, log: vi.fn() }).run({
+        jobId: 'j',
+      }),
+    ).toBe(true);
+    events.emitEvent.mockClear();
+    db.listTenantsToRescueInline.mockResolvedValue([]);
+    expect(
+      await createEmailInlineRescueTask({ withPlatformTx, withSystemTx, log: vi.fn() }).run({
+        jobId: 'j',
+      }),
+    ).toBe(false);
+    expect(events.emitEvent).not.toHaveBeenCalled();
   });
 });

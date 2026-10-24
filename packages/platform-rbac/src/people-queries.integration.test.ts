@@ -36,8 +36,15 @@ describe.skipIf(!configured)('people reads through defineQuery against PostgreSQ
   const tenant = id();
   const otherTenant = id();
   const dept = { training: id(), academy: id(), finance: id() };
-  const member = (role: string | null) => ({ person: id(), user: id(), session: id(), role });
-  // head heads "training" (which contains "academy"); lead manages report1, who manages report2.
+  const member = (role: string | null, status: 'active' | 'invited' = 'active') => ({
+    person: id(),
+    user: id(),
+    session: id(),
+    role,
+    status,
+  });
+  // head heads "training" (which contains "academy"); lead manages report1, who manages report2, and
+  // invitedReport, who has not accepted the invitation yet (invited members are listed too).
   // The lead holds a custom «Line Manager» role (EP-ROLES: line managers come from the reporting line;
   // the template's scope is their team) — read from the database on every request.
   const lineManagerRole = { id: id(), code: `custom_${id().replaceAll('-', '').slice(0, 12)}` };
@@ -53,6 +60,7 @@ describe.skipIf(!configured)('people reads through defineQuery against PostgreSQ
     coordinator: member('training_coordinator'),
     report1: member(null),
     report2: member(null),
+    invitedReport: member(null, 'invited'),
     unplaced: member(null),
     trainingLead: member(null),
     academyLead: member(null),
@@ -127,7 +135,7 @@ describe.skipIf(!configured)('people reads through defineQuery against PostgreSQ
       await run(sql`insert into platform.persons (id, tenant_id, display_name_ar)
         values (${m.person}, ${tenantId}, ${`شخص ${index}`})`);
       await run(sql`insert into platform.tenant_memberships (tenant_id, user_id, person_id, status)
-        values (${tenantId}, ${m.user}, ${m.person}, 'active')`);
+        values (${tenantId}, ${m.user}, ${m.person}, ${m.status})`);
       await run(sql`insert into platform.session_context (session_id, user_id, active_tenant_id)
         values (${m.session}, ${m.user}, ${tenantId})`);
       if (m.role) {
@@ -150,6 +158,7 @@ describe.skipIf(!configured)('people reads through defineQuery against PostgreSQ
     await employ(people.lead, dept.finance, null);
     await employ(people.report1, dept.academy, people.lead.person);
     await employ(people.report2, dept.finance, people.report1.person);
+    await employ(people.invitedReport, dept.finance, people.lead.person);
     await employ(people.learner, dept.training, people.lead.person);
     for (const [holder, unit] of [
       [people.trainingLead, dept.training],
@@ -185,11 +194,15 @@ describe.skipIf(!configured)('people reads through defineQuery against PostgreSQ
   });
 
   const inTenant = Object.values(people);
-  const expected: Record<keyof typeof people, (typeof people)[keyof typeof people][]> = {
+  // Who sees whom, per signed-in member (invitedReport cannot sign in yet: a target only).
+  type Viewer = Exclude<keyof typeof people, 'invitedReport'>;
+  const expected: Record<Viewer, (typeof people)[keyof typeof people][]> = {
     admin: inTenant,
     coordinator: inTenant,
     head: [people.head, people.learner, people.report1],
-    lead: [people.report1, people.learner],
+    // «Their team» = direct reports only (FR-IAM-08 R1 note; CUSTOM_ROLE_SCOPE_MAP): not the lead
+    // themself — their own record is My profile (FR-IAM-16).
+    lead: [people.report1, people.learner, people.invitedReport],
     learner: [people.learner],
     report1: [],
     report2: [],
@@ -199,7 +212,7 @@ describe.skipIf(!configured)('people reads through defineQuery against PostgreSQ
     academyLead: [people.report1],
   };
 
-  it.each(Object.keys(expected) as (keyof typeof people)[])(
+  it.each(Object.keys(expected) as Viewer[])(
     '%s: the list and the single-person check cover exactly the same people',
     async (key) => {
       const { list, profile } = queriesFor(people[key]);

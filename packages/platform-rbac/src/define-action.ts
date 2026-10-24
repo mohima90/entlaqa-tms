@@ -145,6 +145,18 @@ export interface ActionRuntime<Tx> {
    * throw or delay the answer; a throw is ignored.
    */
   requestWorkerPass?(meta: { readonly permission: string }): void | Promise<void>;
+  /**
+   * In the transaction of an action that declares `queuesAccountMail`: marks the account e-mail requests the
+   * transaction created for an immediate e-mail (platform-db `tagInlineAccountMail`) and returns the key to send
+   * them with, or null (WP-ADM-05 follow-up, PO 23 Oct 2026). Must not throw into the action: where the
+   * database or the web app cannot do it, the worker sends the e-mail as before.
+   */
+  tagInlineAccountMail?(tx: Tx): Promise<unknown>;
+  /**
+   * After the commit: sends what `tagInlineAccountMail` marked, once the response has gone (it must return at
+   * once, never delay the answer; a throw is ignored). The worker is the safety net.
+   */
+  sendInlineAccountMail?(ticket: unknown): void;
 }
 
 /**
@@ -188,6 +200,14 @@ export type ActionDefinition<S extends z.ZodType, O, Tx, R = O, B = void> = Acti
    * cron, GitHub's 5-minute schedule); a kick for nothing is a harmless empty pass.
    */
   readonly queuesWork?: boolean;
+  /**
+   * true when the action's transaction queues ACCOUNT E-MAIL requests for other people (a security-policy
+   * change notice to the organization's admins, a sign-in unlock notice, an admin's authenticator reset):
+   * they are tagged in the transaction and e-mailed at once after the commit instead of waiting for the worker
+   * (WP-ADM-05 follow-up, PO 23 Oct 2026; `runtime.tagInlineAccountMail` / `sendInlineAccountMail`). The
+   * worker still sends whatever the web app could not.
+   */
+  readonly queuesAccountMail?: boolean;
   /**
    * The name of an allow-listed read that does NOT count as the session's activity (platform-db
    * `PASSIVE_READS`, which refuses any other name; T-M2-12 integration review L1): its transaction is READ
@@ -350,6 +370,8 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
       let refused = null as AppError | null;
       // Did the committed attempt queue background work (declared, or an event emitted)?
       let queued = false as boolean;
+      // The key to e-mail the committed attempt's account e-mail requests with, if it queued any.
+      let accountMail: unknown = null;
       // beforeTransaction's answer, for the handler.
       let prepared: B | undefined;
       try {
@@ -375,6 +397,7 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
           async (tx) => {
             refused = null; // a retried transaction starts again
             queued = false;
+            accountMail = null;
             const actor = actorFromClaims(tenantClaims);
             // Tenant-scoped work only while the database lets the session act there (review L1).
             const facts = await runtime.loadSessionFacts(tx);
@@ -436,6 +459,9 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
             const record = definition.audit?.(input.value, output.value);
             if (record) await runtime.writeAudit(tx, actor, record);
             queued = definition.queuesWork === true || (await runtime.queuedWork?.(tx)) === true;
+            if (definition.queuesAccountMail === true && runtime.tagInlineAccountMail) {
+              accountMail = (await runtime.tagInlineAccountMail(tx)) ?? null;
+            }
             return output.value;
           },
           {
@@ -454,6 +480,14 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
             await runtime.requestWorkerPass({ permission: definition.permission.code });
           } catch {
             // Best effort by design: the work is committed and the scheduled pass picks it up.
+          }
+        }
+        // Committed: the account e-mails the action queued go out at once, after the response.
+        if (accountMail !== null && runtime.sendInlineAccountMail) {
+          try {
+            runtime.sendInlineAccountMail(accountMail);
+          } catch {
+            // Best effort by design: the worker sends them.
           }
         }
         // Without afterCommit the handler's result is the answer (R defaults to O).

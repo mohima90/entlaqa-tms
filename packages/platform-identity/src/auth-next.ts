@@ -22,6 +22,8 @@ import {
   getSessionAccess,
   hashInvitationToken,
   authMailApi,
+  inlineMailApi,
+  inlineRecoveryApi,
   insertAuditEvent,
   invitationByToken,
   invitationPasswordMinLength,
@@ -48,6 +50,7 @@ import {
   requestPasswordChangedMail as requestPasswordChangedMailInDatabase,
   requestPasswordResetMail as requestPasswordResetMailInDatabase,
   type SessionAccess,
+  type UserTx,
   trustDeviceAfterCode,
   signInAccountInTenant,
   switchActiveTenant,
@@ -64,6 +67,7 @@ import {
 import {
   createInlineEmailRouter,
   createInlineEmailSender,
+  sendInlineDelivery,
 } from '@jadarat/platform-notifications/inline';
 import { kicksWorker } from '@jadarat/platform-jobs/kick/next';
 import { log } from '@jadarat/platform-observability';
@@ -126,6 +130,8 @@ import {
   requestSignInCode,
   signInWithEmailedCode,
 } from './sign-in-code';
+import { inlineAccountMailer } from './inline-account-mail';
+import { inlineEmailRouter, startInlineEmailTest } from './inline-mail';
 import { createSendEmailHookLimiter, createSignInCodeLimiter } from './sign-in-code-limits';
 import { openTokenHash } from './sign-in-code-seal';
 import { type SupabaseAuthLike, verifyClaims } from './verify-claims';
@@ -178,13 +184,54 @@ const sleep = (ms: number) =>
 // What these flows queue for the worker (account e-mails, the platform sender's test e-mail) asks for a
 // worker pass after the response (ADR 0005 §1 amendment, PO 20 Oct 2026; platform-jobs ./kick/next) — a
 // no-op without the dispatch App settings, throttled per server instance.
-const requestAccountLockedMail = kicksWorker('account_mail', requestAccountLockedMailInDatabase);
-const requestMfaCodeLockedMail = kicksWorker('account_mail', requestMfaCodeLockedMailInDatabase);
-const requestMfaFactorMail = kicksWorker('account_mail', requestMfaFactorMailInDatabase);
-const requestPasswordChangedMail = kicksWorker(
+//
+// Account e-mails arrive at once too (WP-ADM-05 follow-up, PO 23 Oct 2026): the request is still queued as above
+// and, in the same transaction, tagged for an immediate e-mail (`inline`); after the response the web app
+// claims it, writes and sends the e-mail (inline-account-mail.ts). The worker pass asked for here is the
+// safety net: it takes what the web app did not finish, after the request's two minutes.
+const requestAccountLockedMail = kicksWorker(
   'account_mail',
-  requestPasswordChangedMailInDatabase,
+  async (email: string, minutes: number) => {
+    inlineAccountMailer.schedule(
+      await requestAccountLockedMailInDatabase(email, minutes, {
+        inline: inlineAccountMailer.configured(),
+      }),
+    );
+  },
 );
+const requestMfaCodeLockedMail = kicksWorker(
+  'account_mail',
+  async (userId: string, minutes: number) => {
+    inlineAccountMailer.schedule(
+      await requestMfaCodeLockedMailInDatabase(userId, minutes, {
+        inline: inlineAccountMailer.configured(),
+      }),
+    );
+  },
+);
+const requestMfaFactorMail = kicksWorker(
+  'account_mail',
+  async (tx: Parameters<typeof requestMfaFactorMailInDatabase>[0], factorId: string) => {
+    const outcome = await requestMfaFactorMailInDatabase(tx, factorId);
+    if (outcome === 'queued') await inlineAccountMailer.tagInTransaction(tx);
+    return outcome;
+  },
+);
+const removeMfaAppAndMail = kicksWorker(
+  'account_mail',
+  async (tx: Parameters<typeof removeMfaAppInDatabase>[0], factorId: string) => {
+    const outcome = await removeMfaAppInDatabase(tx, factorId);
+    if (outcome === 'removed') await inlineAccountMailer.tagInTransaction(tx);
+    return outcome;
+  },
+);
+const requestPasswordChangedMail = kicksWorker('account_mail', async (userId: string) => {
+  inlineAccountMailer.schedule(
+    await requestPasswordChangedMailInDatabase(userId, {
+      inline: inlineAccountMailer.configured(),
+    }),
+  );
+});
 const requestPasswordResetMail = kicksWorker('account_mail', requestPasswordResetMailInDatabase);
 const savePlatformEmailSettings = kicksWorker(
   'platform_email_test',
@@ -599,6 +646,29 @@ export async function handleSendEmailHookForRequest(request: Request): Promise<{
       appBaseUrl: appBaseUrl === '' ? undefined : appBaseUrl,
       api: authMailApi,
       sender: hookSender,
+      // The password reset (type recovery) is queued as a delivery and sent once Auth has its answer.
+      recovery: {
+        api: inlineRecoveryApi,
+        schedule: (work) => {
+          try {
+            after(work);
+          } catch {
+            void work().catch(() => undefined);
+          }
+        },
+        deliver: (ticket) =>
+          sendInlineDelivery(
+            {
+              api: inlineMailApi,
+              router: inlineEmailRouter(),
+              log: (level, message, fields) => {
+                hookLog(level, message, fields);
+              },
+            },
+            ticket.id,
+            ticket.secret,
+          ),
+      },
       limiter: createSendEmailHookLimiter({
         ...limiterDeps(),
         action: 'platform.auth.send_email_hook',
@@ -662,7 +732,7 @@ async function mfaDeps(
     listMyMfaApps,
     requestMfaFactorMail,
     confirmMfaSetup: confirmMfaSetupInDatabase,
-    removeMfaApp: removeMfaAppInDatabase,
+    removeMfaApp: removeMfaAppAndMail,
     applyDeviceLimit,
     logWarning: auth.logWarning,
     limitCodeCheck,
@@ -988,6 +1058,8 @@ export async function acceptInvitationAsSignedInUserForRequest(
 
 /** Auth's own mailer, or the worker's queue (PASSWORD_RESET_DELIVERY, read on the server only). */
 function resetEmailDelivery(client: RequestClient): ResetEmailDelivery {
+  // `worker`: the request is queued for the worker. `auth` and `hook`: Auth is asked for the link (/recover);
+  // with the Send Email hook on, the hook e-mails it at once (auth-email-hook.ts), otherwise Auth's own mailer.
   if (readPasswordResetDelivery(process.env) === 'worker') {
     return { mode: 'worker', enqueue: requestPasswordResetMail };
   }
@@ -1090,7 +1162,8 @@ export async function completePasswordResetForRequest(
           // Nothing to end, or Auth unreachable: the cookies are cleared by auth-js either way.
         }
       },
-      ...(readPasswordResetDelivery(process.env) === 'worker'
+      // Ours unless Auth's own mailer is in use (`auth`): the worker's or, with the hook, the immediate one.
+      ...(readPasswordResetDelivery(process.env) !== 'auth'
         ? { queuePasswordChangedNotice: requestPasswordChangedMail }
         : {}),
     },
@@ -1099,17 +1172,19 @@ export async function completePasswordResetForRequest(
 }
 
 /**
- * My profile (FR-IAM-16), inside the action's withUserTx after the password changed: with
- * PASSWORD_RESET_DELIVERY=worker, queues the member's "password changed" notice (our notification
+ * My profile (FR-IAM-16), inside the action's withUserTx after the password changed: unless Auth's own
+ * mailer is in use (PASSWORD_RESET_DELIVERY=auth without the Send Email hook), queues the member's "password changed" notice (our notification
  * service, the session's organization). Best effort: never fails the change (a code is logged).
  */
 export async function queueOwnPasswordChangedNoticeForRequest(
   tx: Parameters<typeof queueOwnPasswordChangedMail>[0],
   userId: string,
 ): Promise<void> {
-  if (readPasswordResetDelivery(process.env) !== 'worker') return;
+  if (readPasswordResetDelivery(process.env) === 'auth') return;
   try {
     await queueOwnPasswordChangedMail(tx, userId);
+    // Tag what was just queued: the notice is e-mailed once this action has answered (the worker is the net).
+    await inlineAccountMailer.tagInTransaction(tx);
   } catch (error) {
     log.warn('password changed notice could not be queued', {
       action: 'platform.auth.change_password',
@@ -1175,6 +1250,8 @@ function platformEmailConsoleDeps() {
     getPlatformEmailSettings,
     savePlatformEmailSettings,
     getEmailCredentialsPublicKey,
+    // The test e-mail goes out the moment the save has committed; the worker's task is the safety net.
+    afterSave: (tx: UserTx) => startInlineEmailTest(tx, 'platform'),
   };
 }
 

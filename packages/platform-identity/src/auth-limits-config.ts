@@ -57,6 +57,15 @@ export interface AuthLimits {
     readonly completionsPerClient: RateLimit;
     readonly sharedClientRequests: RateLimit;
     readonly sharedClientCompletions: RateLimit;
+    /**
+     * Reset e-mails the Send Email hook sends to one account (WP-ADM-05 follow-up, PO 23 Oct 2026): Auth's
+     * public /recover can be called without passing the request limits above, so the hook counts what it
+     * e-mails per account - per 15 minutes and per day - like the sign-in code's (`signInCode.hookSends*`).
+     * Over the limit nothing is sent (the skip is logged). The database adds its own ceiling of five an hour
+     * per person.
+     */
+    readonly hookSendsPerAccount: RateLimit;
+    readonly hookSendsPerAccountDaily: RateLimit;
   };
   /**
    * Invitation links (T-M2-11; integration review M3 with T-M2-12). A bulk import invites many people who
@@ -164,6 +173,8 @@ export const PLATFORM_AUTH_LIMITS: AuthLimits = {
     completionsPerClient: { max: 5, windowSeconds: WINDOW },
     sharedClientRequests: { max: 100, windowSeconds: WINDOW },
     sharedClientCompletions: { max: 100, windowSeconds: WINDOW },
+    hookSendsPerAccount: { max: 5, windowSeconds: WINDOW },
+    hookSendsPerAccountDaily: { max: 20, windowSeconds: 24 * 60 * 60 },
   },
   invitation: {
     lookupsPerInvitation: { max: 30, windowSeconds: WINDOW },

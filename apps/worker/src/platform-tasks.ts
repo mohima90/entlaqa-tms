@@ -21,6 +21,7 @@ import {
   type CredentialsKeyPair,
   type EmailRouter,
   createEmailHousekeepingTask,
+  createEmailInlineRescueTask,
   createEmailResumeTask,
   createEmailTestTask,
 } from '@jadarat/platform-notifications/jobs';
@@ -139,6 +140,12 @@ export function platformTasks(deps: PlatformTaskDependencies): readonly Platform
         log: deps.log,
       }),
       createEmailHousekeepingTask({ withPlatformTx: deps.withPlatformTx, log: deps.log }),
+      // The safety net of the web app's immediate sending (WP-ADM-05 follow-up).
+      createEmailInlineRescueTask({
+        withPlatformTx: deps.withPlatformTx,
+        withSystemTx: deps.withSystemTx,
+        log: deps.log,
+      }),
     );
   }
   if (deps.authAdmin) {

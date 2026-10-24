@@ -32,7 +32,10 @@ export {
   discardInactiveTenantDelivery,
   finishEmailDelivery,
   getEmailDeliveryTemplate,
+  inlineDeliveryExists,
   insertEmailDelivery,
+  listTenantsToRescueInline,
+  takeInlineRescue,
 } from './deliveries';
 export {
   EMAIL_WAITING_CODES,

@@ -132,7 +132,7 @@ export default async function ResetPasswordPage({
       }}
       errors={await passwordResetErrorTexts(locale)}
       // Auth's own mailer cannot say whether the account has an authenticator app (T-M2-10).
-      codeOptional={readPasswordResetDelivery(process.env) !== 'worker'}
+      codeOptional={readPasswordResetDelivery(process.env) === 'auth'}
     />
   );
 }

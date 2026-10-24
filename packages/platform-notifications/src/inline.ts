@@ -1,12 +1,18 @@
 import 'server-only';
 /**
- * RESTRICTED ENTRY POINT — the Send Email hook route of the web app only (WP-ADM-05; ADR 0005 §1 amendment of
- * 23 Oct 2026): sending the one-time sign-in code at once, through the sender rule of the worker.
+ * RESTRICTED ENTRY POINT — the web app's immediate sending only (WP-ADM-05; ADR 0005 §1 amendments of 23 Oct
+ * 2026): the Send Email hook's sign-in code, and the messages an action queues in its transaction and sends the
+ * moment it has committed (sending/inline-delivery.ts) - both through the sender rule of the worker. Importable
+ * only by the adapters of platform-identity (dependency rule `email-sending-code-is-private`).
  */
 export {
   type InlineEmailSender,
   createInlineEmailRouter,
   createInlineEmailSender,
 } from './sending/inline';
+export type { InlineEmailRouter } from './sending/router';
+export { sendInlineEmailTest } from './sending/test-send';
+export { CredentialsError, deriveCredentialsKeyPair } from './sending/credentials';
+export { type InlineSendResult, sendInlineDelivery } from './sending/inline-delivery';
 export { EmailSendError } from './sending/transport';
 export { brandAssetUrl } from './brand-asset';

@@ -25,13 +25,13 @@ begin
     select rolname, rolcanlogin, rolinherit, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolreplication
     from pg_roles where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
                                     'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard',
-                                    'user_import_guard', 'platform_admin_guard', 'email_guard')
+                                    'user_import_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard')
   loop
     if r.rolname in ('app_server', 'app_worker', 'app_queue') and not r.rolcanlogin then
       failures := failures || format('%s must be LOGIN', r.rolname);
     end if;
     if r.rolname in ('tenant_guard', 'invitation_guard', 'account_mail_guard', 'membership_guard', 'rate_limit_guard',
-                     'file_guard', 'user_import_guard', 'platform_admin_guard', 'email_guard')
+                     'file_guard', 'user_import_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard')
        and r.rolcanlogin then
       failures := failures || format('%s must be NOLOGIN', r.rolname);
     end if;
@@ -42,8 +42,8 @@ begin
   if (select count(*) from pg_roles
       where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
                         'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard',
-                        'user_import_guard', 'platform_admin_guard', 'email_guard')) <> 12 then
-    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard, invitation_guard, account_mail_guard, membership_guard, rate_limit_guard, file_guard, user_import_guard, platform_admin_guard and email_guard must all exist'::text;
+                        'user_import_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard')) <> 13 then
+    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard, invitation_guard, account_mail_guard, membership_guard, rate_limit_guard, file_guard, user_import_guard, platform_admin_guard, email_guard and inline_mail_guard must all exist'::text;
   end if;
   -- The job runner (ADR 0005 §2): member of nothing (never authenticated), owner of graphile_worker.
   if exists (select 1 from pg_auth_members m join pg_roles u on u.oid = m.member where u.rolname = 'app_queue') then
@@ -300,7 +300,7 @@ begin
     from (values
       ('private.user_session_is_valid(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'invitation_guard', 'platform_admin_guard', 'email_guard'], true),
       ('private.has_active_membership(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'rate_limit_guard'], true),
-      ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated', 'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard', 'invitation_guard', 'platform_admin_guard', 'email_guard'], true),
+      ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated', 'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard', 'invitation_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard'], true),
       ('private.switch_active_tenant(uuid)',        'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.session_tenants()',                 'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.discard_inactive_tenant_delivery(uuid)', 'tenant_guard', array['tenant_guard', 'authenticated'], true),
@@ -314,7 +314,7 @@ begin
       -- Invitation codes (20261018090000, FR-IAM-03): issue and read for members who may manage the
       -- invitation (app_server user claims, checked inside); the mailer's read (app_worker system claims).
       ('private.issue_invitation_code(uuid)', 'invitation_guard', array['invitation_guard', 'authenticated'], true),
-      ('private.invitation_codes(uuid[])', 'invitation_guard', array['invitation_guard', 'authenticated'], true),
+      ('private.invitation_codes(uuid[])', 'invitation_guard', array['invitation_guard', 'authenticated', 'inline_mail_guard'], true),
       ('private.invitation_code_for_mail(uuid)', 'invitation_guard', array['invitation_guard', 'authenticated'], true),
       -- A code no invitation of any organization holds or held (the release trigger runs as the worker's
       -- authenticated; the issuer and the console as their guards). Reveals nothing (security review L9).
@@ -497,6 +497,8 @@ begin
       ('private.email_route()', 'email_guard', array['email_guard', 'authenticated'], true),
       ('private.claim_email_tests(integer)', 'email_guard', array['email_guard', 'authenticated'], true),
       ('private.finish_email_test(uuid, integer, boolean, text)', 'email_guard', array['email_guard', 'authenticated'], true),
+      ('private.inline_email_test_claim(text, bytea)', 'email_guard', array['email_guard', 'authenticated'], true),
+      ('private.inline_email_test_finish(bytea, integer, boolean, text)', 'email_guard', array['email_guard', 'authenticated'], true),
       ('private.email_tenants_waiting()', 'email_guard', array['email_guard', 'authenticated'], true),
       ('private.sweep_email_deliveries(integer)', 'email_guard', array['email_guard', 'authenticated'], true),
       ('private.note_invitation_mail_skipped(uuid)', 'email_guard', array['email_guard', 'authenticated'], true),
@@ -635,6 +637,19 @@ begin
         'private.keep_session()', 'private.my_kept_sessions()', 'private.forget_kept_sessions()',
         'private.account_sender_is_platform(uuid)', 'private.account_needs_platform_sender(uuid)',
         'private.auth_mail_account(uuid)', 'private.auth_mail_route(uuid)', 'private.auth_mail_issue(uuid,text,text,text)',
+        'private.inline_invitation_prepare(uuid)', 'private.inline_mail_queue(text,uuid,text,integer,text,text,text,text,text,text,bytea)',
+        'private.inline_email_test_claim(text,bytea)', 'private.inline_email_test_finish(bytea,integer,boolean,text)',
+        'private.inline_mail_claim(uuid,bytea)', 'private.inline_mail_finish(uuid,bytea,text,text,text,text,text)',
+        'private.inline_mail_tenants_to_rescue()',
+        -- Account e-mails sent at once (WP-ADM-05 follow-up)
+        'private.account_mail_claim_core(bytea)', 'private.account_mail_consume(bytea,uuid,text,bytea,bytea)',
+        'private.inline_account_mail_tag(bytea)', 'private.inline_account_mail_claim(bytea,integer)',
+        'private.inline_account_mail_queue(bytea,uuid,text,integer,text,text,text,text,bytea,bytea)',
+        'private.inline_account_mail_done(bytea,uuid)', 'private.inline_recovery_facts(uuid)',
+        'private.recovery_target(uuid,text,text)',
+        'private.inline_recovery_queue(uuid,text,integer,text,text,text,text,text,text,bytea)',
+        'private.mfa_setup_peek(uuid,uuid)', 'private.mfa_setup_issue(uuid,uuid,bytea,bytea)',
+        'private.user_has_totp_app(uuid)',
         'private.sign_in_code_hmac(uuid,text)', 'private.verify_sign_in_code(text,text)', 'private.kept_until_effective(uuid,timestamp with time zone,timestamp with time zone)',
         'private.audit_sign_in_code_sent(uuid,uuid)', 'private.audit_sign_in_code_refused(text,boolean)')
   loop

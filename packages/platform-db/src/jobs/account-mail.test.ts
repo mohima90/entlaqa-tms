@@ -279,15 +279,12 @@ describe('account e-mail queue, worker side (T-M2-17)', () => {
       quietCount: 1,
       tenantRecentCount: 7,
     });
-    expect(fake.executed[0]?.params).toEqual([
-      'platform.account_locked',
-      'platform.account_locked',
-      1440,
-      'platform.account_locked',
-      PERSON,
-    ]);
+    // Each count takes the template and its platform-only variant (the set-up e-mail has one).
+    const t = 'platform.account_locked';
+    expect(fake.executed[0]?.params).toEqual([t, t, t, t, 1440, t, t, PERSON]);
+    expect(fake.executed[0]?.sql).toContain("d.template in ($1, $2 || '_platform')");
     expect(fake.executed[0]?.sql).toContain(
-      "where d.tenant_id = p.tenant_id and d.template = $4\n              and d.created_at > now() - interval '1 hour') as tenant_recent",
+      "d.template in ($6, $7 || '_platform')\n              and d.created_at > now() - interval '1 hour') as tenant_recent",
     );
     await expect(loadAccountMailContext(fake.tx, PERSON, 'x.y', 1441)).rejects.toThrow(
       'quiet minutes',

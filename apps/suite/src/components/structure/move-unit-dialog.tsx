@@ -185,13 +185,16 @@ export function MoveUnitDialog({
             <Badge tone="info">{path(target)}</Badge>
           </p>
           <dl className="m-0 grid grid-cols-2 gap-3">
-            <div className="rounded-lg border border-border p-3">
-              <dd className="m-0 text-2xl font-bold tabular-nums">{preview.unitIds.length}</dd>
-              <dt className="text-[13px] text-text-muted">{text('move.unitsMove')}</dt>
+            {/* The term first (read first); the number shown above it. */}
+            <div className="flex flex-col rounded-lg border border-border p-3">
+              <dt className="order-2 text-[13px] text-text-muted">{text('move.unitsMove')}</dt>
+              <dd className="order-1 m-0 text-2xl font-bold tabular-nums">
+                {preview.unitIds.length}
+              </dd>
             </div>
-            <div className="rounded-lg border border-border p-3">
-              <dd className="m-0 text-2xl font-bold tabular-nums">{preview.peopleCount}</dd>
-              <dt className="text-[13px] text-text-muted">{text('move.peopleMove')}</dt>
+            <div className="flex flex-col rounded-lg border border-border p-3">
+              <dt className="order-2 text-[13px] text-text-muted">{text('move.peopleMove')}</dt>
+              <dd className="order-1 m-0 text-2xl font-bold tabular-nums">{preview.peopleCount}</dd>
             </div>
           </dl>
           <section aria-labelledby="move-changes-title" className="flex flex-col gap-2">
@@ -230,7 +233,7 @@ export function MoveUnitDialog({
                 name: unit.name,
                 cycles: preview.openCycles
                   .map((c) => (locale === 'ar' ? c.nameAr : c.nameEn))
-                  .join('، '),
+                  .join(locale === 'ar' ? '، ' : ', '),
                 parent: target?.name ?? '',
               })}
             </Alert>

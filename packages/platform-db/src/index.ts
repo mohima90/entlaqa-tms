@@ -372,6 +372,7 @@ export {
   type UnitImportOutcome,
   applyUnitImport,
   loadUnitImportContext,
+  lockUnitImport,
 } from './unit-import';
 export {
   type OrganizationProfile,

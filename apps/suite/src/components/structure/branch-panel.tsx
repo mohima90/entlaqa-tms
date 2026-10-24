@@ -70,6 +70,8 @@ export interface BranchPanelProps {
     readonly short: string;
     readonly long: string;
   }[];
+  /** Address, location and own week exist in the database (hidden before the WP-HR-01 migration). */
+  readonly detailsAvailable: boolean;
   readonly texts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
   readonly locale: 'ar' | 'en';
@@ -144,15 +146,15 @@ export function BranchPanel(props: BranchPanelProps) {
       addressAr: field('addressAr'),
       latitude: field('latitude').trim(),
       longitude: field('longitude').trim(),
-      workingDays: ownWeek ? workingDaysOf(week) : null,
+      workingDays: ownWeek && props.detailsAvailable ? workingDaysOf(week) : null,
     };
     setFailure({ fields: {}, message: null });
     // The week is checked here first (the action and the database repeat it).
-    if (ownWeek && (fields.workingDays?.length ?? 0) === 0) {
+    if (fields.workingDays !== null && fields.workingDays.length === 0) {
       setWeekError(text('form.weekEmpty'));
       return;
     }
-    if (ownWeek && !week.every(hoursValid)) {
+    if (fields.workingDays !== null && !week.every(hoursValid)) {
       setWeekError(text('fieldErrors.hours'));
       return;
     }
@@ -344,162 +346,170 @@ export function BranchPanel(props: BranchPanelProps) {
             disabled={pending}
           />
         </div>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <TextField
-            id="branch-addressEn"
-            name="addressEn"
-            label={text('form.addressEn')}
-            marker={text('optional')}
-            dir="ltr"
-            lang="en"
-            maxLength={300}
-            autoComplete="off"
-            defaultValue={branch?.addressEn ?? ''}
-            error={failure.fields.addressEn}
-            disabled={pending}
-          />
-          <TextField
-            id="branch-addressAr"
-            name="addressAr"
-            label={text('form.addressAr')}
-            marker={text('optional')}
-            dir="rtl"
-            lang="ar"
-            maxLength={300}
-            autoComplete="off"
-            defaultValue={branch?.addressAr ?? ''}
-            error={failure.fields.addressAr}
-            disabled={pending}
-          />
-          <TextField
-            id="branch-latitude"
-            name="latitude"
-            label={text('form.latitude')}
-            marker={text('optional')}
-            hint={text('form.latitudeHint')}
-            dir="ltr"
-            inputMode="decimal"
-            maxLength={12}
-            autoComplete="off"
-            defaultValue={branch?.latitude?.toString() ?? ''}
-            error={failure.fields.latitude}
-            disabled={pending}
-          />
-          <TextField
-            id="branch-longitude"
-            name="longitude"
-            label={text('form.longitude')}
-            marker={text('optional')}
-            hint={text('form.longitudeHint')}
-            dir="ltr"
-            inputMode="decimal"
-            maxLength={12}
-            autoComplete="off"
-            defaultValue={branch?.longitude?.toString() ?? ''}
-            error={failure.fields.longitude}
-            disabled={pending}
-          />
-        </div>
-        <fieldset
-          className="m-0 flex min-w-0 flex-col gap-3 rounded-lg border border-border p-4"
-          data-testid="branch-week"
-        >
-          <legend className="px-1 text-sm font-semibold">{text('form.week')}</legend>
-          <div className="flex items-start gap-3">
-            <input
-              id="branch-week-same"
-              type="checkbox"
-              aria-describedby="branch-week-same-hint"
-              checked={!ownWeek}
-              onChange={(event) => {
-                setOwnWeek(!event.target.checked);
-                setWeekError(null);
-              }}
-              disabled={pending}
-              className="mt-0.5 size-5 shrink-0 accent-primary"
-              data-testid="branch-week-same"
-            />
-            <span className="flex flex-col gap-0.5">
-              <label htmlFor="branch-week-same" className="cursor-pointer font-semibold">
-                {text('form.weekSame')}
-              </label>
-              <span id="branch-week-same-hint" className="text-sm text-text-muted">
-                {text('form.weekSameHint')}
-              </span>
-            </span>
-          </div>
-          {ownWeek ? (
-            // eslint-disable-next-line jsx-a11y/no-redundant-roles -- Safari/VoiceOver drops the list semantics of a `list-none` list.
-            <ul role="list" className="m-0 flex list-none flex-col gap-1.5 p-0">
-              {week.map((row) => {
-                const day = props.weekdays.find((d) => d.value === row.day);
-                const bad = !hoursValid(row);
-                return (
-                  <li
-                    key={row.day}
-                    className={cn(
-                      'flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md px-2 py-1.5',
-                      bad && 'bg-danger-subtle',
-                    )}
-                    data-testid={`branch-day-${String(row.day)}`}
-                  >
-                    <label className="flex min-w-32 cursor-pointer items-center gap-2.5">
-                      <input
-                        type="checkbox"
-                        checked={row.works}
-                        onChange={(event) => {
-                          setDay(row.day, { works: event.target.checked });
-                        }}
-                        disabled={pending}
-                        className="size-5 accent-primary"
-                        data-testid={`branch-day-${String(row.day)}-works`}
-                      />
-                      <span className="font-medium">{day?.long ?? row.day}</span>
-                    </label>
-                    {row.works ? (
-                      <span className="flex items-center gap-2" dir="ltr">
-                        {(['startsAt', 'endsAt'] as const).map((key) => (
-                          <select
-                            key={key}
-                            aria-label={fill(key === 'startsAt' ? 'form.dayStart' : 'form.dayEnd', {
-                              day: day?.long ?? '',
-                            })}
-                            value={row[key]}
+        {props.detailsAvailable ? (
+          <>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <TextField
+                id="branch-addressEn"
+                name="addressEn"
+                label={text('form.addressEn')}
+                marker={text('optional')}
+                dir="ltr"
+                lang="en"
+                maxLength={300}
+                autoComplete="off"
+                defaultValue={branch?.addressEn ?? ''}
+                error={failure.fields.addressEn}
+                disabled={pending}
+              />
+              <TextField
+                id="branch-addressAr"
+                name="addressAr"
+                label={text('form.addressAr')}
+                marker={text('optional')}
+                dir="rtl"
+                lang="ar"
+                maxLength={300}
+                autoComplete="off"
+                defaultValue={branch?.addressAr ?? ''}
+                error={failure.fields.addressAr}
+                disabled={pending}
+              />
+              <TextField
+                id="branch-latitude"
+                name="latitude"
+                label={text('form.latitude')}
+                marker={text('optional')}
+                hint={text('form.latitudeHint')}
+                dir="ltr"
+                inputMode="decimal"
+                maxLength={12}
+                autoComplete="off"
+                defaultValue={branch?.latitude?.toString() ?? ''}
+                error={failure.fields.latitude}
+                disabled={pending}
+              />
+              <TextField
+                id="branch-longitude"
+                name="longitude"
+                label={text('form.longitude')}
+                marker={text('optional')}
+                hint={text('form.longitudeHint')}
+                dir="ltr"
+                inputMode="decimal"
+                maxLength={12}
+                autoComplete="off"
+                defaultValue={branch?.longitude?.toString() ?? ''}
+                error={failure.fields.longitude}
+                disabled={pending}
+              />
+            </div>
+            <fieldset
+              className="m-0 flex min-w-0 flex-col gap-3 rounded-lg border border-border p-4"
+              data-testid="branch-week"
+            >
+              <legend className="px-1 text-sm font-semibold">{text('form.week')}</legend>
+              <div className="flex items-start gap-3">
+                <input
+                  id="branch-week-same"
+                  type="checkbox"
+                  aria-describedby="branch-week-same-hint"
+                  checked={!ownWeek}
+                  onChange={(event) => {
+                    setOwnWeek(!event.target.checked);
+                    setWeekError(null);
+                  }}
+                  disabled={pending}
+                  className="mt-0.5 size-5 shrink-0 accent-primary"
+                  data-testid="branch-week-same"
+                />
+                <span className="flex flex-col gap-0.5">
+                  <label htmlFor="branch-week-same" className="cursor-pointer font-semibold">
+                    {text('form.weekSame')}
+                  </label>
+                  <span id="branch-week-same-hint" className="text-sm text-text-muted">
+                    {text('form.weekSameHint')}
+                  </span>
+                </span>
+              </div>
+              {ownWeek ? (
+                // eslint-disable-next-line jsx-a11y/no-redundant-roles -- Safari/VoiceOver drops the list semantics of a `list-none` list.
+                <ul role="list" className="m-0 flex list-none flex-col gap-1.5 p-0">
+                  {week.map((row) => {
+                    const day = props.weekdays.find((d) => d.value === row.day);
+                    const bad = !hoursValid(row);
+                    return (
+                      <li
+                        key={row.day}
+                        className={cn(
+                          'flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md px-2 py-1.5',
+                          bad && 'bg-danger-subtle',
+                        )}
+                        data-testid={`branch-day-${String(row.day)}`}
+                      >
+                        <label className="flex min-w-32 cursor-pointer items-center gap-2.5">
+                          <input
+                            type="checkbox"
+                            checked={row.works}
                             onChange={(event) => {
-                              setDay(row.day, { [key]: event.target.value });
+                              setDay(row.day, { works: event.target.checked });
                             }}
                             disabled={pending}
-                            aria-invalid={bad || undefined}
-                            className="min-h-10 rounded-md border border-border-strong bg-surface px-2 text-sm tabular-nums"
-                            data-testid={`branch-day-${String(row.day)}-${key}`}
-                          >
-                            {hours.map((time) => (
-                              <option key={time} value={time}>
-                                {time}
-                              </option>
+                            className="size-5 accent-primary"
+                            data-testid={`branch-day-${String(row.day)}-works`}
+                          />
+                          <span className="font-medium">{day?.long ?? row.day}</span>
+                        </label>
+                        {row.works ? (
+                          <span className="flex items-center gap-2" dir="ltr">
+                            {(['startsAt', 'endsAt'] as const).map((key) => (
+                              <select
+                                key={key}
+                                aria-label={fill(
+                                  key === 'startsAt' ? 'form.dayStart' : 'form.dayEnd',
+                                  {
+                                    day: day?.long ?? '',
+                                  },
+                                )}
+                                value={row[key]}
+                                onChange={(event) => {
+                                  setDay(row.day, { [key]: event.target.value });
+                                }}
+                                disabled={pending}
+                                aria-invalid={bad || undefined}
+                                className="min-h-10 rounded-md border border-border-strong bg-surface px-2 text-sm tabular-nums"
+                                data-testid={`branch-day-${String(row.day)}-${key}`}
+                              >
+                                {hours.map((time) => (
+                                  <option key={time} value={time}>
+                                    {time}
+                                  </option>
+                                ))}
+                              </select>
                             ))}
-                          </select>
-                        ))}
-                      </span>
-                    ) : (
-                      <span className="text-sm text-text-muted">{text('form.dayOff')}</span>
-                    )}
-                    {isHalfDay(row, props.organizationWeek) ? (
-                      <Badge tone="info" data-testid={`branch-day-${String(row.day)}-half`}>
-                        {text('form.halfDay')}
-                      </Badge>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          ) : null}
-          {weekError || failure.fields.workingDays ? (
-            <Alert tone="danger" role="none" data-testid="branch-week-error">
-              {weekError ?? failure.fields.workingDays}
-            </Alert>
-          ) : null}
-        </fieldset>
+                          </span>
+                        ) : (
+                          <span className="text-sm text-text-muted">{text('form.dayOff')}</span>
+                        )}
+                        {isHalfDay(row, props.organizationWeek) ? (
+                          <Badge tone="info" data-testid={`branch-day-${String(row.day)}-half`}>
+                            {text('form.halfDay')}
+                          </Badge>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+              {weekError || failure.fields.workingDays ? (
+                <Alert tone="danger" role="none" data-testid="branch-week-error">
+                  {weekError ?? failure.fields.workingDays}
+                </Alert>
+              ) : null}
+            </fieldset>
+          </>
+        ) : null}
+
         <div className="flex items-start gap-3 rounded-lg border border-border bg-surface-sunken p-4">
           <input
             id="branch-headquarters"

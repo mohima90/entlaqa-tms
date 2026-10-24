@@ -268,7 +268,13 @@ describe.skipIf(!configured)('structure completion against PostgreSQL', () => {
         },
       ]),
     );
-    expect(outcome).toEqual({ ok: true, created: 2, updated: 1 });
+    expect(outcome).toMatchObject({
+      ok: true,
+      created: 2,
+      updated: 1,
+      createdCodes: ['C', 'C1'],
+      updatedIds: [unit.a],
+    });
     const units = await asHr((tx) => listStructureUnits(tx));
     const c = units.find((u) => u.code === 'C');
     expect(units.find((u) => u.code === 'C1')).toMatchObject({

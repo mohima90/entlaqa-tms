@@ -3148,10 +3148,11 @@
       "templateTitle": "1. Get the template",
       "templateText": "One row per unit, from the top level down. Fill it in Excel or any spreadsheet app.",
       "templateDownload": "Download template",
+      "templateCsv": "Download as CSV",
       "templateOther": "Template with Arabic headers",
       "rule": {
         "order": "Put a unit after its parent: the parent can be an existing unit or one in an earlier row.",
-        "update": "A row with an existing code updates that unit's names, branch, default cost centre and head (an empty cell clears it).",
+        "update": "A row with an existing code updates that unit's names, branch, default cost centre and head. An empty cell clears the value; a column left out of the file changes nothing.",
         "noMove": "The import never moves, deactivates or deletes a unit. Move units on the Structure page.",
         "limits": "CSV or XLSX, up to 512 KB and 2,000 rows."
       },
@@ -3209,7 +3210,7 @@
         "BRANCH_NOT_FOUND": "No active branch has this code.",
         "COST_CENTRE_NOT_FOUND": "No cost centre has this code.",
         "COST_CENTRE_INACTIVE": "This cost centre is inactive.",
-        "HEAD_NOT_FOUND": "No active person has this e-mail: the unit is imported without a head."
+        "HEAD_NOT_FOUND": "No active person has this e-mail: a new unit gets no head, an existing unit keeps its head."
       }
     }
   },

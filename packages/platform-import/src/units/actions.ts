@@ -1,5 +1,10 @@
 import { type AppError, type Result, appError, err, ok } from '@jadarat/platform-core';
-import { type UserTx, applyUnitImport, loadUnitImportContext } from '@jadarat/platform-db';
+import {
+  type UserTx,
+  applyUnitImport,
+  loadUnitImportContext,
+  lockUnitImport,
+} from '@jadarat/platform-db';
 import {
   type ActionDefinition,
   type QueryDefinition,
@@ -44,7 +49,7 @@ async function checkFile(tx: UserTx, content: string): Promise<Result<UnitCheck,
     );
   }
   const context = await loadUnitImportContext(tx, headEmailsOf(read.rows));
-  return ok(checkUnitRows(read.rows, context));
+  return ok(checkUnitRows(read.rows, context, read.columns));
 }
 
 /** «Check»: every row's result; nothing is written. */
@@ -67,6 +72,9 @@ export interface UnitImportApplied {
   readonly created: number;
   readonly updated: number;
   readonly problems: number;
+  /** For the audit: the codes created and the units updated (no names, no file content). */
+  readonly createdCodes: readonly string[];
+  readonly updatedIds: readonly string[];
 }
 
 /** «Import»: the good rows, in one go; the structure changed since the check → nothing is written. */
@@ -79,6 +87,8 @@ export function applyUnitImportActionDefinition(): ActionDefinition<
     permission: p['platform.org.manage'],
     input: UnitImportFileInput,
     handler: async ({ ctx, input }) => {
+      // The lock first: the check below and the writes see the same structure.
+      await lockUnitImport(ctx.tx);
       const checked = await checkFile(ctx.tx, input.content);
       if (!checked.ok) return checked;
       if (checked.value.operations.length === 0) {
@@ -101,12 +111,20 @@ export function applyUnitImportActionDefinition(): ActionDefinition<
         created: outcome.created,
         updated: outcome.updated,
         problems: checked.value.counts.problems,
+        createdCodes: outcome.createdCodes,
+        updatedIds: outcome.updatedIds,
       });
     },
     audit: (_input, output) => ({
       action: 'platform.org.units_imported',
       entityType: 'structure',
-      data: { created: output.created, updated: output.updated, skipped: output.problems },
+      data: {
+        created: output.created,
+        updated: output.updated,
+        skipped: output.problems,
+        createdCodes: output.createdCodes,
+        updatedIds: output.updatedIds,
+      },
     }),
   };
 }

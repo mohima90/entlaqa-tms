@@ -158,3 +158,27 @@ create trigger person_employment_validate_cost_centre_1_default before insert or
 create trigger person_employment_validate_cost_centre_2_ref before insert or update of department_id, cost_centre_id
   on platform.person_employment
   for each row execute function private.check_cost_centre_ref();
+
+-- A deleted unit (soft delete) gives no default any more: its cost centre would otherwise stay referenced by a
+-- unit nobody sees, and could never be deleted (review of 24 Oct 2026). Sorts after departments_soft_delete,
+-- which normalises deleted_at first.
+create or replace function private.clear_deleted_unit_cost_centre()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.deleted_at is not null and old.deleted_at is null then
+    new.default_cost_centre_id := null;
+  end if;
+  return new;
+end
+$$;
+
+comment on function private.clear_deleted_unit_cost_centre() is
+  'A unit''s default cost centre is cleared when the unit is deleted (WP-HR-01).';
+
+revoke all on function private.clear_deleted_unit_cost_centre() from public;
+
+create trigger departments_soft_delete_clears_cost_centre before update of deleted_at on platform.departments
+  for each row execute function private.clear_deleted_unit_cost_centre();

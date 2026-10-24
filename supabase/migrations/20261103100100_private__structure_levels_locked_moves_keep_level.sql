@@ -10,8 +10,10 @@
 --     creates a unit at the other level, moves the people and deactivates the old one.
 -- Both are serialised with every hierarchy change (the advisory lock 'platform.departments:' || tenant, which
 -- placing a person in a unit takes too: private.check_person_employment).
--- Expand-first: the running application already refuses these before the database (structure.ts) — the levels
+-- Expand-first: the application of this change refuses these before the database (structure.ts) — the levels
 -- card hides add / remove once people are placed, and the move dialog offers parents of the right level only.
+-- The application deployed before it has no move; its «Add level» gets an unmapped refusal (an error page)
+-- for the few minutes between this migration and the new application — accepted (review of 24 Oct 2026).
 
 create or replace function private.check_structure_level()
 returns trigger

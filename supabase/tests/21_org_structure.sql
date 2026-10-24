@@ -251,7 +251,9 @@ begin
      where tgrelid = 'platform.departments'::regclass and not tgisinternal),
     -- EP-ORG: the level (after the cycle and depth checks) and its cascade; the role-scope delete guard.
     -- S-M1: the writer guard first (it compares the row as the statement sent it).
-    array['departments_guard_writer', 'departments_soft_delete', 'departments_stamp_row', 'departments_tree', 'departments_tree_levels',
+    -- WP-HR-01: a deleted unit's default cost centre is cleared (after soft_delete).
+    array['departments_guard_writer', 'departments_soft_delete', 'departments_soft_delete_clears_cost_centre',
+          'departments_stamp_row', 'departments_tree', 'departments_tree_levels',
           'departments_tree_levels_cascade', 'departments_until_people_moved', 'departments_until_role_scopes_moved',
           -- WP-HR-01: the default cost centre is active (after the writer guard).
           'departments_validate_cost_centre', 'departments_validate_refs'],

@@ -45,6 +45,7 @@ const db = vi.hoisted(() => ({
   deleteStructureUnit: vi.fn(),
   listBranches: vi.fn(),
   getOrganizationProfile: vi.fn(),
+  structureCompletionExists: vi.fn(),
   createBranch: vi.fn(),
   updateBranch: vi.fn(),
   setBranchStatus: vi.fn(),
@@ -428,6 +429,7 @@ const branch = (over: Record<string, unknown> = {}) => ({
 describe('branches (FR-ADM-04)', () => {
   it('everyone who reads the structure sees the branches; only the HR Manager changes them', async () => {
     db.listBranches.mockResolvedValue([branch()]);
+    db.structureCompletionExists.mockResolvedValue(true);
     db.getOrganizationProfile.mockResolvedValue({
       workingDays: [0, 1, 2, 3, 4],
       workStartsAt: '08:00',
@@ -440,6 +442,7 @@ describe('branches (FR-ADM-04)', () => {
       ok({
         branches: [branch()],
         organizationWeek: { days: [0, 1, 2, 3, 4], startsAt: '08:00', endsAt: '16:00' },
+        detailsAvailable: true,
         canManage: true,
       }),
     );

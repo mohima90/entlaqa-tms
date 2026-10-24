@@ -55,7 +55,7 @@ export default async function BranchesPage({
     content = (
       <Branches
         locale={locale}
-        view={{ branches: [], organizationWeek: null, canManage: false }}
+        view={{ branches: [], organizationWeek: null, detailsAvailable: false, canManage: false }}
         context={context}
         header={header}
         filter={filter}
@@ -201,6 +201,7 @@ async function Branches({
       timeZones={zones}
       defaultTimeZone={context.regional.timeZone}
       organizationWeek={view.organizationWeek}
+      detailsAvailable={view.detailsAvailable}
       weekdays={choices.weekdays}
       texts={{
         ...flattenTexts(getMessages(locale).branches),

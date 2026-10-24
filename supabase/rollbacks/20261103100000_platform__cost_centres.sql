@@ -2,7 +2,9 @@
 
 drop trigger person_employment_validate_cost_centre_2_ref on platform.person_employment;
 drop trigger person_employment_validate_cost_centre_1_default on platform.person_employment;
+drop trigger departments_soft_delete_clears_cost_centre on platform.departments;
 drop trigger departments_validate_cost_centre on platform.departments;
+drop function private.clear_deleted_unit_cost_centre();
 drop function private.fill_person_cost_centre();
 drop function private.check_cost_centre_ref();
 revoke update (cost_centre_id) on platform.person_employment from authenticated;

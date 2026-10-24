@@ -146,6 +146,14 @@ export function UnitImport({
             {text('import.templateDownload')}
           </a>
           <a
+            href={`${templateHref}?lang=${locale}&format=csv`}
+            className={buttonClasses({ variant: 'secondary' })}
+            data-testid="unit-import-template-csv"
+          >
+            <Icon name="download" />
+            {text('import.templateCsv')}
+          </a>
+          <a
             href={`${templateHref}?lang=${locale === 'ar' ? 'en' : 'ar'}`}
             className={buttonClasses({ variant: 'ghost' })}
             data-testid="unit-import-template-other"

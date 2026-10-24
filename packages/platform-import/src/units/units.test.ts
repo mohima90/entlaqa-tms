@@ -8,6 +8,7 @@ import {
   checkUnitRows,
   headEmailsOf,
   readUnitFile,
+  unitTemplateCsv,
   unitTemplateFileName,
   unitTemplateXlsx,
 } from './units';
@@ -64,6 +65,9 @@ describe('unit import template (WP-HR-01)', () => {
       expect(rows[0]?.cells).toEqual(UNIT_COLUMNS.map((c) => c[locale]));
     }
     expect(unitTemplateFileName('en')).toBe('unit-import-template.xlsx');
+    expect(unitTemplateFileName('en', 'csv')).toBe('unit-import-template.csv');
+    const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode(unitTemplateCsv('en'));
+    expect(csv).toBe(`\uFEFF${UNIT_COLUMNS.map((c) => c.en).join(',')}\r\n`);
   });
 });
 
@@ -208,5 +212,40 @@ describe('checkUnitRows (EP-ORG-structure-completion §3 D)', () => {
     expect(
       headEmailsOf([unit('A', 'Sector', '', { headEmail: 'A@Example.test' }), unit('B', 'Sector')]),
     ).toEqual(['a@example.test']);
+  });
+
+  it('keeps what the file leaves out: absent columns and a head not found on an update', () => {
+    const update = unit('FIN', 'Department', 'OPS', { headEmail: 'nobody@example.test' });
+    const all = checkUnitRows([update], CONTEXT);
+    expect(all.operations[0]).toMatchObject({
+      kind: 'update',
+      branchId: null,
+      defaultCostCentreId: null,
+      headPersonId: undefined,
+    });
+    const namesOnly = checkUnitRows([unit('FIN', 'Department')], CONTEXT, [
+      'level',
+      'code',
+      'nameEn',
+      'nameAr',
+    ]);
+    expect(namesOnly.operations[0]).toMatchObject({
+      kind: 'update',
+      branchId: undefined,
+      defaultCostCentreId: undefined,
+      headPersonId: undefined,
+    });
+  });
+
+  it('counts a name of invisible characters as missing', () => {
+    const check = checkUnitRows([unit('S7', 'Sector', '', { nameEn: '\u200b ' })], CONTEXT);
+    expect(check.rows[0]?.issue).toBe('NAME_REQUIRED');
+  });
+
+  it('reports the columns the file has', async () => {
+    const read = await readUnitFile(
+      encode('Level,Code,Name (English),Name (Arabic)\nSector,HR,People,الموارد\n'),
+    );
+    expect(read.ok && read.columns).toEqual(['level', 'code', 'nameEn', 'nameAr']);
   });
 });

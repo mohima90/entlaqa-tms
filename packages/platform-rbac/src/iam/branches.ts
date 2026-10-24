@@ -7,6 +7,7 @@ import {
   deleteBranch,
   getOrganizationProfile,
   listBranches,
+  structureCompletionExists,
   setBranchStatus,
   updateBranch,
 } from '@jadarat/platform-db';
@@ -129,6 +130,8 @@ export interface BranchesPageView {
   readonly branches: readonly BranchRow[];
   /** null when the organization has no profile row (the branch form then starts from an empty week). */
   readonly organizationWeek: OrganizationWeek | null;
+  /** Address, location and own week exist (WP-HR-01 migration applied; the form hides them before). */
+  readonly detailsAvailable: boolean;
   readonly canManage: boolean;
 }
 
@@ -154,6 +157,7 @@ export function branchesPageQueryDefinition(): QueryDefinition<
               endsAt: profile.workEndsAt,
             }
           : null,
+        detailsAvailable: await structureCompletionExists(ctx.tx),
         canManage: ctx.can(p['platform.org.manage'], 'tenant'),
       });
     },

@@ -774,13 +774,19 @@ async function unitsInOpenPlanCycles(
   const [present] = await tx.execute<{ present: boolean }>(sql`
     select to_regprocedure('private.units_in_open_plan_cycles(uuid[])') is not null as present`);
   if (present?.present !== true) return [];
-  const ids = sql.join(
-    unitIds.map((unitId) => sql`${unitId}::uuid`),
-    sql`, `,
-  );
-  const rows = await tx.execute<{ name_en: string; name_ar: string }>(sql`
-    select c.name_en, c.name_ar from private.units_in_open_plan_cycles(array[${ids}]::uuid[]) c`);
-  return rows.map((r) => ({ nameEn: r.name_en, nameAr: r.name_ar }));
+  // The function answers at most 2,000 units per call: a larger subtree is asked in parts.
+  const found = new Map<string, { readonly nameEn: string; readonly nameAr: string }>();
+  for (let at = 0; at < unitIds.length; at += 2_000) {
+    const ids = sql.join(
+      unitIds.slice(at, at + 2_000).map((unitId) => sql`${unitId}::uuid`),
+      sql`, `,
+    );
+    const rows = await tx.execute<{ name_en: string; name_ar: string }>(sql`
+      select c.name_en, c.name_ar from private.units_in_open_plan_cycles(array[${ids}]::uuid[]) c`);
+    for (const r of rows)
+      found.set(`${r.name_en}\u0000${r.name_ar}`, { nameEn: r.name_en, nameAr: r.name_ar });
+  }
+  return [...found.values()];
 }
 
 /**

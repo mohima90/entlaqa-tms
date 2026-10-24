@@ -104,25 +104,41 @@ export type UnitImportOperation =
       readonly version: number;
       readonly nameEn: string;
       readonly nameAr: string;
-      readonly branchId: string | null;
-      readonly defaultCostCentreId: string | null;
-      readonly headPersonId: string | null;
+      /** undefined: the unit keeps its value (the column is not in the file, or the head was not found). */
+      readonly branchId: string | null | undefined;
+      readonly defaultCostCentreId: string | null | undefined;
+      readonly headPersonId: string | null | undefined;
     };
 
 export type UnitImportOutcome =
-  | { readonly ok: true; readonly created: number; readonly updated: number }
+  | {
+      readonly ok: true;
+      readonly created: number;
+      readonly updated: number;
+      /** The codes written (the audit names them). */
+      readonly createdCodes: readonly string[];
+      readonly updatedIds: readonly string[];
+    }
   | { readonly ok: false; readonly row: number; readonly refusal: StructureRefusal };
 
 /**
  * Writes the checked rows in order, under the hierarchy lock taken first. Any refusal (the structure changed since
  * the check) stops the import: the caller rolls the whole transaction back and the HR Manager checks the file again.
  */
+/**
+ * The organization's hierarchy lock (the same as every structure write), taken before «Import» checks the file
+ * again so the check and the writes see the same structure. Held until the transaction ends.
+ */
+export async function lockUnitImport(tx: UserTx): Promise<void> {
+  await tx.execute(sql`select pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('platform.departments:' || private.current_tenant_id()::text, 0))`);
+}
+
 export async function applyUnitImport(
   tx: UserTx,
   operations: readonly UnitImportOperation[],
 ): Promise<UnitImportOutcome> {
-  await tx.execute(sql`select pg_catalog.pg_advisory_xact_lock(
-    pg_catalog.hashtextextended('platform.departments:' || private.current_tenant_id()::text, 0))`);
+  await lockUnitImport(tx);
   const created = new Map<string, string>();
   const nextOrder = new Map<string, number>();
   const orderOf = async (parentId: string | null): Promise<number> => {
@@ -141,8 +157,8 @@ export async function applyUnitImport(
   };
   // The default cost centre once its column exists (deploy window).
   const completed = await structureCompletionExists(tx);
-  let createdCount = 0;
-  let updatedCount = 0;
+  const createdCodes: string[] = [];
+  const updatedIds: string[] = [];
   for (const op of operations) {
     try {
       if (op.kind === 'create') {
@@ -163,22 +179,32 @@ export async function applyUnitImport(
           returning id`);
         if (!row) throw new Error('applyUnitImport: no row returned');
         created.set(op.code.toLowerCase(), row.id);
-        createdCount += 1;
+        createdCodes.push(op.code);
       } else {
-        const costCentreSet = completed
-          ? sql`, default_cost_centre_id = ${op.defaultCostCentreId}::uuid`
-          : sql``;
+        // Only what the file gives: a value left undefined is kept.
+        const sets = [sql`name_ar = ${op.nameAr}`, sql`name_en = ${op.nameEn}`];
+        if (op.branchId !== undefined) sets.push(sql`branch_id = ${op.branchId}::uuid`);
+        if (op.headPersonId !== undefined)
+          sets.push(sql`head_person_id = ${op.headPersonId}::uuid`);
+        if (completed && op.defaultCostCentreId !== undefined) {
+          sets.push(sql`default_cost_centre_id = ${op.defaultCostCentreId}::uuid`);
+        }
         const rows = await tx.execute(sql`update platform.departments
-          set name_ar = ${op.nameAr}, name_en = ${op.nameEn}, branch_id = ${op.branchId}::uuid,
-              head_person_id = ${op.headPersonId}::uuid ${costCentreSet}
+          set ${sql.join(sets, sql`, `)}
           where id = ${op.id}::uuid and version = ${op.version} and deleted_at is null
           returning id`);
         if (rows.length === 0) return { ok: false, row: op.row, refusal: 'version_conflict' };
-        updatedCount += 1;
+        updatedIds.push(op.id);
       }
     } catch (error) {
       return { ok: false, row: op.row, refusal: structureRefusalOf(error) };
     }
   }
-  return { ok: true, created: createdCount, updated: updatedCount };
+  return {
+    ok: true,
+    created: createdCodes.length,
+    updated: updatedIds.length,
+    createdCodes,
+    updatedIds,
+  };
 }

@@ -15,6 +15,7 @@ export {
   type UnitRowResult,
   checkUnitRows,
   readUnitFile,
+  unitTemplateCsv,
   unitTemplateFileName,
   unitTemplateXlsx,
 } from './units/units';

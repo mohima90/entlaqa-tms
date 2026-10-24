@@ -108,6 +108,13 @@ begin
   perform tests.assert_eq(v_got, 'a7000000-0000-4000-8000-0000000000cc'::uuid, 'a deactivated cost centre stays on its people');
   perform tests.assert_fails($q$delete from platform.cost_centres where code = 'CC-100'$q$,
     array['23503'], 'a cost centre in use is not deleted');
+
+  -- A deleted unit gives no default any more: its cost centre can be deleted (review of 24 Oct 2026).
+  update platform.departments set deleted_at = now() where id = v_unit;
+  perform tests.assert((select default_cost_centre_id is null from platform.departments where id = v_unit),
+    'a deleted unit''s default cost centre is cleared');
+  perform tests.assert_eq(tests.rows_affected(format($q$delete from platform.cost_centres where id = %L$q$, v_active)),
+    1::bigint, 'the cost centre of a deleted unit is deleted');
 end $$;
 rollback;
 

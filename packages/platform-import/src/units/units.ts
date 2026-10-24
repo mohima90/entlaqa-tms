@@ -1,4 +1,5 @@
 import type { UnitImportContext, UnitImportOperation } from '@jadarat/platform-db';
+import { hasVisibleText } from '@jadarat/platform-i18n';
 import { readCsvRows } from '../spreadsheet/csv';
 import { type SheetRow, SpreadsheetError } from '../spreadsheet/errors';
 import { XlsxWorkbook } from '../spreadsheet/xlsx';
@@ -60,8 +61,17 @@ export function unitTemplateXlsx(locale: UnitTemplateLocale): Uint8Array<ArrayBu
   ]);
 }
 
-export function unitTemplateFileName(locale: UnitTemplateLocale): string {
-  return locale === 'ar' ? 'قالب-استيراد-الوحدات.xlsx' : 'unit-import-template.xlsx';
+/** The CSV template: the header row only, UTF-8 with a byte-order mark (Excel then reads Arabic headers). */
+export function unitTemplateCsv(locale: UnitTemplateLocale): Uint8Array<ArrayBuffer> {
+  const line = UNIT_COLUMNS.map((c) => c[locale]).join(',');
+  return new TextEncoder().encode(`\uFEFF${line}\r\n`);
+}
+
+export function unitTemplateFileName(
+  locale: UnitTemplateLocale,
+  format: 'xlsx' | 'csv' = 'xlsx',
+): string {
+  return locale === 'ar' ? `قالب-استيراد-الوحدات.${format}` : `unit-import-template.${format}`;
 }
 
 /** One data row as read, by column. */
@@ -73,7 +83,12 @@ export interface UnitFileRow {
 export type UnitFileProblem = 'FILE_COLUMNS' | 'FILE_TOO_MANY_ROWS' | 'FILE_EMPTY';
 
 export type UnitFileRead =
-  | { readonly ok: true; readonly rows: readonly UnitFileRow[] }
+  | {
+      readonly ok: true;
+      readonly rows: readonly UnitFileRow[];
+      /** The columns the file has (an optional column left out keeps the current values on updates). */
+      readonly columns: readonly UnitColumn[];
+    }
   | { readonly ok: false; readonly problem: UnitFileProblem | SpreadsheetError['code'] };
 
 const normalizeHeader = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -134,7 +149,11 @@ export async function readUnitFile(bytes: Uint8Array): Promise<UnitFileRead> {
       rows.push({ row: row.number, cells });
     }
     if (positions === null || rows.length === 0) return { ok: false, problem: 'FILE_EMPTY' };
-    return { ok: true, rows };
+    return {
+      ok: true,
+      rows,
+      columns: UNIT_COLUMNS.map((c) => c.key).filter((key) => positions[key] !== undefined),
+    };
   } catch (error) {
     if (error instanceof SpreadsheetError) return { ok: false, problem: error.code };
     throw error;
@@ -188,7 +207,13 @@ export function headEmailsOf(rows: readonly UnitFileRow[]): string[] {
 }
 
 /** Checks every row against the organization and the rows above it; nothing is written. */
-export function checkUnitRows(rows: readonly UnitFileRow[], context: UnitImportContext): UnitCheck {
+export function checkUnitRows(
+  rows: readonly UnitFileRow[],
+  context: UnitImportContext,
+  /** The file's columns (all by default): an optional column left out never clears a value (review 24 Oct). */
+  columns: readonly UnitColumn[] = UNIT_COLUMNS.map((c) => c.key),
+): UnitCheck {
+  const has = new Set(columns);
   const levelByName = new Map<string, number>();
   for (const level of context.levels) {
     levelByName.set(normalizeHeader(level.nameEn), level.ordinal);
@@ -227,7 +252,8 @@ export function checkUnitRows(rows: readonly UnitFileRow[], context: UnitImportC
       continue;
     }
     seen.add(key);
-    if (cells.nameEn === '' || cells.nameAr === '') {
+    // A name of spaces or invisible characters only counts as missing (the database refuses it too).
+    if (!hasVisibleText(cells.nameEn) || !hasVisibleText(cells.nameAr)) {
       problem('NAME_REQUIRED');
       continue;
     }
@@ -281,9 +307,11 @@ export function checkUnitRows(rows: readonly UnitFileRow[], context: UnitImportC
         version: current.version,
         nameEn: cells.nameEn,
         nameAr: cells.nameAr,
-        branchId,
-        defaultCostCentreId: costCentreId,
-        headPersonId,
+        // A column left out keeps the unit's value; an empty cell clears it; a head not found stays as is.
+        branchId: has.has('branchCode') ? branchId : undefined,
+        defaultCostCentreId:
+          has.has('costCentreCode') && context.costCentresAvailable ? costCentreId : undefined,
+        headPersonId: has.has('headEmail') && headWarning === null ? headPersonId : undefined,
       });
       results.push({ row, code, name, level: cells.level, result: 'update', issue: headWarning });
       continue;

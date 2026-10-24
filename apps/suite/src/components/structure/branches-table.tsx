@@ -45,6 +45,7 @@ export interface BranchesTableProps {
   /** The organization's week and the day names (the branch form's working week, WP-HR-01). */
   readonly organizationWeek: BranchPanelProps['organizationWeek'];
   readonly weekdays: BranchPanelProps['weekdays'];
+  readonly detailsAvailable: boolean;
   readonly texts: Readonly<Record<string, string>>;
   /** «تراجع» / "Undo" (the toast after deactivating). */
   readonly undoLabel: string;
@@ -440,6 +441,7 @@ export function BranchesTable(props: BranchesTableProps) {
           defaultTimeZone={props.defaultTimeZone}
           organizationWeek={props.organizationWeek}
           weekdays={props.weekdays}
+          detailsAvailable={props.detailsAvailable}
           headquartersName={
             headquarters && headquarters.id !== dialog.branch?.id ? headquarters.name : null
           }

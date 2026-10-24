@@ -109,6 +109,6 @@ No approval by another person is needed (as for the rest of the structure — TM
 | # | Question | Proposed answer | PO answer |
 |---|---|---|---|
 | Q1 | Cost centres as a **list the HR Manager keeps**? | **Yes** | **Agreed (24 Oct 2026), on the person** (unit default only to save typing) — §3 A |
-| Q2 | A move keeps the unit at its level (only under a unit of the same level as its current parent)? | **Yes** — the levels themselves are locked once people are placed (PO, 24 Oct 2026) | |
+| Q2 | A move keeps the unit at its level (only under a unit of the same level as its current parent)? | **Yes** — the levels themselves are locked once people are placed (PO, 24 Oct 2026) | **Agreed (24 Oct 2026)** — to change a unit's level, create a unit at the other level, move the people, deactivate the old one |
 | Q3 | The import also **updates** existing units found by code (names, branch, cost centre, head), but never moves them? | **Yes** | |
 | Q4 | Location typed or pasted from a map link, with «Open in map», and **no map inside the page** for now? | **Yes** — a built-in map needs an outside map service; in-country hosting comes first | **Typed only** — no map, no map link (24 Oct 2026) |

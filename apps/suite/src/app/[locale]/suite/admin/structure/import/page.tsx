@@ -58,7 +58,9 @@ export default async function UnitImportPage({ params }: { params: Promise<{ loc
       const errors = await getTranslations({ locale, namespace: 'errors' });
       body = (
         <Alert tone="warning" data-testid="unit-import-forbidden">
-          {error.code === 'FORBIDDEN' ? errors('forbidden') : t('loadFailed', { correlationId: error.correlationId ?? '' })}
+          {error.code === 'FORBIDDEN'
+            ? errors('forbidden')
+            : t('loadFailed', { correlationId: error.correlationId ?? '' })}
         </Alert>
       );
     } else {

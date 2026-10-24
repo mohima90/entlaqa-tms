@@ -201,13 +201,13 @@ describe('what each account e-mail says', () => {
       organizationName: ORG,
       loginEmail: EMAIL,
       appBase: BASE,
-      tokenHash: 'ab12cd34ef56ab12cd34ef56',
+      tokenHash: 'aaaaaaaaaaaaaaaaaaaaaaaa',
       codeNeeded: false,
     });
     expect(plain).toMatchObject({
       resetUrl: {
-        ar: `${BASE}/ar/reset-password#token_hash=ab12cd34ef56ab12cd34ef56&type=recovery`,
-        en: `${BASE}/en/reset-password#token_hash=ab12cd34ef56ab12cd34ef56&type=recovery`,
+        ar: `${BASE}/ar/reset-password#token_hash=aaaaaaaaaaaaaaaaaaaaaaaa&type=recovery`,
+        en: `${BASE}/en/reset-password#token_hash=aaaaaaaaaaaaaaaaaaaaaaaa&type=recovery`,
       },
       validMinutes: RESET_LINK_VALID_MINUTES,
       codeNeeded: false,
@@ -216,7 +216,7 @@ describe('what each account e-mail says', () => {
       organizationName: ORG,
       loginEmail: EMAIL,
       appBase: BASE,
-      tokenHash: 'ab12cd34ef56ab12cd34ef56',
+      tokenHash: 'aaaaaaaaaaaaaaaaaaaaaaaa',
       codeNeeded: true,
     });
     expect(withApp.resetUrl.en.endsWith('&type=recovery&mfa=1')).toBe(true);

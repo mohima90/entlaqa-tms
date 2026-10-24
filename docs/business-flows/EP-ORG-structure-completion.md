@@ -32,6 +32,7 @@ A cost centre is the finance department's accounting code that says **which budg
 4. A cost centre in use cannot be deleted, only deactivated. A deactivated one stays on the people who have it and cannot be picked again.
 5. Training costs are charged to cost centres when session costs are built (FR-FIN-03), in one of two ways chosen per session (PO, 24 Oct 2026): **by participants** (default — each participant's equal share to their own cost centre) or **all to one cost centre**.
 6. **One cost centre per person, never split by percentage** (PO, 24 Oct 2026): a participant's whole share of a cost goes to their one cost centre.
+7. **No cost-centre approver** (PO, 24 Oct 2026): a cost centre adds no approval step; budgets are protected by the remaining-budget check before approval (FR-FIN-02, WP-LD-14).
 
 **B. Moving a unit**
 1. In the tree, a unit's menu has **Move to…**. The HR Manager picks the new parent from the tree.

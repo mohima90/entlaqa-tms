@@ -4,7 +4,7 @@
 |---|---|
 | **Epic** | WP-ADM-09 (Organization Admin) |
 | **Requirements** | FR-STE-01 (suite or standalone per organization, one codebase), FR-STE-02 (one person record shared by all modules — built), FR-INT-01 (HR system sync — R2, PO 24 Oct 2026); BRD §3.4 |
-| **Status** | Draft — for discussion with the PO |
+| **Status** | **On hold (PO, 24 Oct 2026)** — drafted, not discussed; the PO moved to the next package |
 
 ## 1. Goal
 Every organization is either **standalone** (it uses Jadarat TMS with another HR system, or none) or **in the Jadarat HR Suite** (its people come from Jadarat Core HR). The mode decides **where people and the organization structure are managed**. It is one setting, so an organization can later move to the suite without moving its data: the TMS already keeps one record per person (FR-STE-02).

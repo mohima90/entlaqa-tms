@@ -90,11 +90,11 @@ Order: E-mail sending → Branding → Audit log → people record completion �
 
 #### WP-ADM-07 Custom fields
 
-**Claimed by:** — · **Business flow:** to write (T-M2-54) · **Depends on:** best after WP-LD-05, WP-LD-06, WP-LD-08
+**Claimed by:** Claude (branch `claude/youthful-davinci-00yhgl`) · **Business flow:** drafted 24 Oct 2026 (`EP-CF-custom-fields.md`, T-M2-54) · **Depends on:** best after WP-LD-05, WP-LD-06, WP-LD-08 — people and courses can ship first
 
 | ID | Task | WP | Owner | Status | Notes / PR |
 |---|---|---|---|---|---|
-| T-M2-54 | **Business flow agreed with the PO**: custom fields — entities, field types, who fills them, import | WP-ADM-07 | Claude → PO | ⚪ | — |
+| T-M2-54 | **Business flow agreed with the PO**: custom fields — entities, field types, who fills them, import | WP-ADM-07 | Claude → PO | 🔵 | Drafted 24 Oct 2026 (`docs/business-flows/EP-CF-custom-fields.md`): people + courses first, 8 field types, archive not delete, role visibility, import columns, filters; open Q1–Q3 |
 | T-M2-26 | Custom fields builder (#6) | WP-ADM-07 | Claude | ⚪ | Paused until after the planning core (PO, 15 Oct 2026); resumes in the Kawadir layout. FR-ADM-11 **17 Oct 2026 (re-organization by role):** resumed → WP-ADM-07 (best after the course / session / venue tables exist). |
 
 #### WP-ADM-08 Consent settings
@@ -108,7 +108,7 @@ Order: E-mail sending → Branding → Audit log → people record completion �
 
 #### WP-ADM-09 Suite / standalone mode
 
-**Claimed by:** Claude (branch `claude/youthful-davinci-00yhgl`) · **Business flow:** drafted (`EP-MODE-suite-standalone.md`, T-M2-56) · **Depends on:** security decision 7 — **answered 24 Oct 2026: HR file sync in R2**
+**Claimed by:** Claude (branch `claude/youthful-davinci-00yhgl`) · **Business flow:** drafted, **on hold (PO, 24 Oct 2026)** (`EP-MODE-suite-standalone.md`, T-M2-56) · **Depends on:** security decision 7 — **answered 24 Oct 2026: HR file sync in R2**
 
 | ID | Task | WP | Owner | Status | Notes / PR |
 |---|---|---|---|---|---|

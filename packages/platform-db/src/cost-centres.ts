@@ -45,7 +45,11 @@ export interface CostCentreInput {
 export type CostCentreRefusal = 'not_found' | 'version_conflict' | 'code_taken' | 'in_use';
 
 export type CostCentreOutcome =
-  | { readonly ok: true; readonly before: CostCentreRow | null; readonly after: CostCentreRow | null }
+  | {
+      readonly ok: true;
+      readonly before: CostCentreRow | null;
+      readonly after: CostCentreRow | null;
+    }
   | {
       readonly ok: false;
       readonly refusal: CostCentreRefusal;

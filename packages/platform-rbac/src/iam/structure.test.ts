@@ -31,6 +31,11 @@ const db = vi.hoisted(() => ({
   listStructureUnits: vi.fn(),
   listOrgUnitOptions: vi.fn(),
   listActivePersonOptions: vi.fn(),
+  listCostCentreOptions: vi.fn(),
+  structureLevelsLocked: vi.fn(),
+  moveStructureUnit: vi.fn(),
+  reorderStructureUnit: vi.fn(),
+  previewStructureUnitMove: vi.fn(),
   addStructureLevel: vi.fn(),
   renameStructureLevel: vi.fn(),
   removeStructureLevel: vi.fn(),
@@ -114,6 +119,7 @@ const unitForm = {
   nameAr: 'المبيعات',
   branchId: '',
   headPersonId: HEAD,
+  defaultCostCentreId: '',
 };
 
 beforeEach(() => {
@@ -122,6 +128,8 @@ beforeEach(() => {
   db.listStructureUnits.mockResolvedValue([unit()]);
   db.listOrgUnitOptions.mockResolvedValue({ departments: [], branches: [{ id: BRANCH }] });
   db.listActivePersonOptions.mockResolvedValue([{ id: HEAD, nameAr: 'منى' }]);
+  db.listCostCentreOptions.mockResolvedValue([]);
+  db.structureLevelsLocked.mockResolvedValue(true);
 });
 
 describe('inputs', () => {
@@ -133,6 +141,7 @@ describe('inputs', () => {
       nameAr: 'المبيعات',
       branchId: null,
       headPersonId: HEAD,
+      defaultCostCentreId: null,
     });
     for (const code of ['', 'with space', '-start', 'x'.repeat(33)]) {
       expect(CreateUnitInput.safeParse({ ...unitForm, code }).success, code).toBe(false);
@@ -159,6 +168,8 @@ describe('structure page (platform.org.read)', () => {
         units: [unit()],
         branches: [{ id: BRANCH }],
         people: [{ id: HEAD, nameAr: 'منى' }],
+        costCentres: [],
+        levelsLocked: true,
         canManage: true,
       }),
     );
@@ -289,6 +300,7 @@ describe('structure changes (platform.org.manage)', () => {
       nameAr: 'المبيعات',
       branchId: null,
       headPersonId: HEAD,
+      defaultCostCentreId: null,
     });
     db.updateStructureUnit.mockResolvedValue({
       ok: true,
@@ -387,6 +399,11 @@ const branchForm = {
   cityEn: 'Riyadh',
   timezone: 'Asia/Riyadh',
   isHeadquarters: true,
+  addressEn: '',
+  addressAr: '',
+  latitude: '',
+  longitude: '',
+  workingDays: null,
 };
 const branch = (over: Record<string, unknown> = {}) => ({
   id: BRANCH,
@@ -441,6 +458,10 @@ describe('branches (FR-ADM-04)', () => {
       ...branchForm,
       parentBranchId: null,
       cityAr: null,
+      addressEn: null,
+      addressAr: null,
+      latitude: null,
+      longitude: null,
     });
     expect(writeAudit).toHaveBeenCalledWith(
       TX,

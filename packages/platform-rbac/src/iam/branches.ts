@@ -41,6 +41,36 @@ const optionalText = (max: number) =>
     .refine((value) => value === '' || hasVisibleText(value), { message: 'invisible' })
     .transform((value) => (value === '' ? null : value));
 
+/** HH:MM, whole minutes (platform.branch_working_days). */
+const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+
+/** Decimal degrees typed in (no map, PO 24 Oct 2026); empty = none. */
+const coordinate = (limit: number) =>
+  z
+    .union([
+      z.literal(''),
+      z
+        .string()
+        .trim()
+        .regex(/^-?\d{1,3}(\.\d{1,6})?$/),
+    ])
+    .transform((value) => (value === '' ? null : Number(value)))
+    .refine((value) => value === null || Math.abs(value) <= limit, { message: 'range' });
+
+/**
+ * The branch's own working week (WP-HR-01; FR-ADM-04 working week with half-days and hours): one block per day,
+ * the end after the start; null = «Same as the organization». At least one day when given.
+ */
+export const BranchWorkingDays = z
+  .array(z.strictObject({ day: z.number().int().min(0).max(6), startsAt: time, endsAt: time }))
+  .min(1)
+  .max(7)
+  .refine((days) => new Set(days.map((d) => d.day)).size === days.length, {
+    message: 'duplicate_day',
+  })
+  .refine((days) => days.every((d) => d.endsAt > d.startsAt), { message: 'hours' })
+  .nullable();
+
 const branchFields = {
   code: z.string().trim().regex(ORG_CODE),
   nameEn: name,
@@ -59,14 +89,27 @@ const branchFields = {
     .max(64)
     .regex(/^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+){0,2}$/),
   isHeadquarters: z.boolean(),
+  // WP-HR-01: address, typed location (both or neither), own working week.
+  addressEn: optionalText(300),
+  addressAr: optionalText(300),
+  latitude: coordinate(90),
+  longitude: coordinate(180),
+  workingDays: BranchWorkingDays,
 };
 
-export const BranchInput = z.strictObject(branchFields);
-export const UpdateBranchInput = z.strictObject({
-  id: z.uuid(),
-  version: z.number().int().min(1),
-  ...branchFields,
-});
+const bothOrNeither = (value: { latitude: number | null; longitude: number | null }) =>
+  (value.latitude === null) === (value.longitude === null);
+
+export const BranchInput = z
+  .strictObject(branchFields)
+  .refine(bothOrNeither, { message: 'location', path: ['longitude'] });
+export const UpdateBranchInput = z
+  .strictObject({
+    id: z.uuid(),
+    version: z.number().int().min(1),
+    ...branchFields,
+  })
+  .refine(bothOrNeither, { message: 'location', path: ['longitude'] });
 export const BranchStatusInput = z.strictObject({
   id: z.uuid(),
   version: z.number().int().min(1),
@@ -118,6 +161,12 @@ function refusalError(outcome: Extract<BranchOutcome, { ok: false }>): AppError 
       return validation('parentBranchId', 'PARENT_NOT_FOUND');
     case 'branch_tree':
       return validation('parentBranchId', 'BRANCH_TREE');
+    case 'location_invalid':
+      return validation('longitude', 'LOCATION_INVALID');
+    case 'hours_invalid':
+      return validation('workingDays', 'HOURS_INVALID');
+    case 'address_invalid':
+      return validation('addressEn', 'ADDRESS_INVALID');
     case 'branch_in_use':
       return validation(
         'branch',
@@ -145,6 +194,11 @@ function branchAudit(row: BranchRow | null) {
         cityAr: row.cityAr,
         timezone: row.timezone,
         isHeadquarters: row.isHeadquarters,
+        addressEn: row.addressEn,
+        addressAr: row.addressAr,
+        latitude: row.latitude,
+        longitude: row.longitude,
+        workingDays: row.workingDays,
         status: row.status,
       }
     : null;

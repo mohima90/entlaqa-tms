@@ -202,7 +202,13 @@ async function writeBranchDetails(tx: UserTx, id: string, input: BranchInput): P
       and (address_en, address_ar, latitude, longitude) is distinct from
           (${input.addressEn}, ${input.addressAr}, ${input.latitude}::numeric, ${input.longitude}::numeric)`);
   const days = input.workingDays ?? [];
-  const keep = days.length > 0 ? sql.join(days.map((d) => sql`${d.day}::smallint`), sql`, `) : sql`null`;
+  const keep =
+    days.length > 0
+      ? sql.join(
+          days.map((d) => sql`${d.day}::smallint`),
+          sql`, `,
+        )
+      : sql`null`;
   await tx.execute(sql`delete from platform.branch_working_days
     where branch_id = ${id}::uuid and day not in (${keep})`);
   for (const d of days) {
@@ -282,16 +288,20 @@ export function updateBranch(
   let movedFrom: string | null = null;
   const written = writeBranch(tx, id, version, async () => {
     if (input.isHeadquarters) movedFrom = await clearHeadquarters(tx, id);
-    return tx.execute(sql`update platform.branches
+    return tx
+      .execute(
+        sql`update platform.branches
       set code = ${input.code}, name_ar = ${input.nameAr}, name_en = ${input.nameEn},
           parent_branch_id = ${input.parentBranchId}::uuid, country_code = ${input.countryCode},
           city_ar = ${input.cityAr}, city_en = ${input.cityEn}, timezone = ${input.timezone},
           is_headquarters = ${input.isHeadquarters}
       where id = ${id}::uuid and version = ${version} and deleted_at is null
-      returning id`).then(async (rows) => {
-      if (rows.length > 0) await writeBranchDetails(tx, id, input);
-      return rows;
-    });
+      returning id`,
+      )
+      .then(async (rows) => {
+        if (rows.length > 0) await writeBranchDetails(tx, id, input);
+        return rows;
+      });
   });
   return written.then((outcome) =>
     outcome.ok && movedFrom !== null ? { ...outcome, headquartersMovedFrom: movedFrom } : outcome,

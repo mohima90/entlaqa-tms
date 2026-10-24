@@ -189,7 +189,13 @@ describe('reads', () => {
 
 describe('levels', () => {
   it('adds a level below the last one, after the hierarchy lock', async () => {
-    const fake = fakeTx([[], [{ locked: false }], [levelRow(1)], [{ id: 'l2' }], [levelRow(1), levelRow(2)]]);
+    const fake = fakeTx([
+      [],
+      [{ locked: false }],
+      [levelRow(1)],
+      [{ id: 'l2' }],
+      [levelRow(1), levelRow(2)],
+    ]);
     const outcome = await addStructureLevel(fake.tx, { nameEn: 'Team', nameAr: 'فريق' });
     expect(outcome).toMatchObject({ ok: true, before: null, after: { id: 'l2', ordinal: 2 } });
     expect(isLock(fake.executed[0] ?? { sql: '' })).toBe(true);
@@ -198,7 +204,11 @@ describe('levels', () => {
   });
 
   it('refuses an eleventh level before writing; maps database refusals', async () => {
-    const full = fakeTx([[], [{ locked: false }], Array.from({ length: 10 }, (_, i) => levelRow(i + 1))]);
+    const full = fakeTx([
+      [],
+      [{ locked: false }],
+      Array.from({ length: 10 }, (_, i) => levelRow(i + 1)),
+    ]);
     expect(await addStructureLevel(full.tx, { nameEn: 'X', nameAr: 'س' })).toEqual({
       ok: false,
       refusal: 'too_many_levels',
@@ -229,10 +239,13 @@ describe('levels', () => {
       refusal: 'levels_locked',
     });
     expect(
-      await addStructureLevel(fakeTx([[], [{ locked: false }], [levelRow(1)], pgError('JO004')]).tx, {
-        nameEn: 'Team',
-        nameAr: 'فريق',
-      }),
+      await addStructureLevel(
+        fakeTx([[], [{ locked: false }], [levelRow(1)], pgError('JO004')]).tx,
+        {
+          nameEn: 'Team',
+          nameAr: 'فريق',
+        },
+      ),
     ).toEqual({ ok: false, refusal: 'levels_locked' });
   });
 
@@ -269,16 +282,20 @@ describe('levels', () => {
       refusal: 'only_level',
     });
     const three = [levelRow(1), levelRow(2), levelRow(3)];
-    expect(await removeStructureLevel(fakeTx([[], three, [{ locked: false }]]).tx, 'l2', 1)).toEqual({
+    expect(
+      await removeStructureLevel(fakeTx([[], three, [{ locked: false }]]).tx, 'l2', 1),
+    ).toEqual({
       ok: false,
       refusal: 'not_last_level',
     });
     const used = [levelRow(1), levelRow(2, { unit_count: 4 })];
-    expect(await removeStructureLevel(fakeTx([[], used, [{ locked: false }]]).tx, 'l2', 1)).toEqual({
-      ok: false,
-      refusal: 'level_in_use',
-      usage: { units: 4, people: 0, roles: 0 },
-    });
+    expect(await removeStructureLevel(fakeTx([[], used, [{ locked: false }]]).tx, 'l2', 1)).toEqual(
+      {
+        ok: false,
+        refusal: 'level_in_use',
+        usage: { units: 4, people: 0, roles: 0 },
+      },
+    );
     const fine = fakeTx([[], two, [{ locked: false }], [{ id: 'l2' }]]);
     expect(await removeStructureLevel(fine.tx, 'l2', 1)).toMatchObject({
       ok: true,

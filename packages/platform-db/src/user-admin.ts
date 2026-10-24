@@ -52,7 +52,9 @@ export interface EditableUser {
 }
 
 export async function getEditableUser(tx: UserTx, personId: string): Promise<EditableUser | null> {
-  const costCentre = (await structureCompletionExists(tx)) ? sql`e.cost_centre_id` : sql`null::uuid`;
+  const costCentre = (await structureCompletionExists(tx))
+    ? sql`e.cost_centre_id`
+    : sql`null::uuid`;
   const [row] = await tx.execute(sql`
     select p.id, p.first_name_ar, p.father_name_ar, p.grandfather_name_ar, p.family_name_ar,
            p.first_name_en, p.father_name_en, p.grandfather_name_en, p.family_name_en,

@@ -367,6 +367,13 @@ export {
   updateCostCentre,
 } from './cost-centres';
 export {
+  type UnitImportContext,
+  type UnitImportOperation,
+  type UnitImportOutcome,
+  applyUnitImport,
+  loadUnitImportContext,
+} from './unit-import';
+export {
   type OrganizationProfile,
   type OrganizationProfileRecord,
   type OfferedProfileField,

@@ -6,7 +6,7 @@
 |---|---|
 | **As of** | 17 Oct 2026 — branch `claude/youthful-davinci-00yhgl` @ `6ef8d58` (includes PR #61 Kawadir shell / invitation codes / Super Admin console, PR #63 roles, PR #64 structure + department-limited roles + course library + planning cycle + needs form builder + who-can-give-what) |
 | **Decision** | PO, 17 Oct 2026 «Work organized by role» (STATUS §2): Organization Admin first (finish what is open), then HR Manager, then L&D Manager, then the other roles |
-| **Sources** | Feature list v3.2 (`docs/brd/TMS_Feature_List.md`, R1 = 107), BRD v3.2, `docs/business-flows/`, `BACKLOG.md`, `STATUS.md`, `test-feedback-2026-10-17.md`; statuses checked in `supabase/migrations/`, `apps/suite/src/`, `packages/`, `modules/tms/` |
+| **Sources** | Feature list v3.2 (`docs/brd/TMS_Feature_List.md`, R1 = 107; **v3.5, 24 Oct 2026: R1 = 109** — FIN-01 R1 part and FIN-02 added, rows below), BRD v3.2 (now v3.5), `docs/business-flows/`, `BACKLOG.md`, `STATUS.md`, `test-feedback-2026-10-17.md`; statuses checked in `supabase/migrations/`, `apps/suite/src/`, `packages/`, `modules/tms/` |
 | **Rows** | **108** = the 107 R1 features + **IAM-08 (R1 part)**, which the R1 work builds although its release column says R2 (§7 flag 1). For split features (IAM-07, IAM-13, WFL-01/02, LMS-02 L2) only the R1 part is assessed |
 
 **Status meanings.** **Done** = the R1 part is merged on `main` and live in production. **Partly** = some of it is merged; «What's missing» says what is left. **Not started** = no working code (a database column or a «Coming soon» menu entry counts as Not started).
@@ -126,6 +126,8 @@ Done 0 · Partly 5 · Not started 42
 | SCH-05 | Conflict detection (instructor, room, learner, holidays) | **Not started** | Everything | none | WP-LD-08 |
 | SCH-08 | Minimum-enrollment warnings, auto-confirm / auto-cancel | **Not started** | Everything | none | WP-LD-08 |
 | FIN-03 | Session cost model, estimate → actual, cost-centre allocation | **Not started** | Everything | none | WP-LD-08 |
+| FIN-01 (R1 part) | Revise or move the approved department budgets during the year, with approval (PO, 24 Oct 2026, BRD v3.5) | **Not started** | Everything | none | WP-LD-14 |
+| FIN-02 | Approved / committed / spent / remaining per department; remaining shown before an enrollment or request is approved (PO, 24 Oct 2026, BRD v3.5) | **Not started** | Everything | none | WP-LD-14 |
 | ENR-03 | Admin bulk enrollment (list, group, unit) | **Not started** | Everything | none | WP-LD-09 |
 | ENR-13 | Learner schedule-conflict detection | **Not started** | Everything | none | WP-LD-09 |
 | ASM-01 | Question bank AR/EN | **Not started** | Everything | none | WP-LD-11 |
@@ -264,6 +266,7 @@ IAM-02 (HR-only fields) is in **WP-ADM-04**.
 | **WP-LD-11** Assessments and surveys | Question bank, pre/post tests, instructor grading, reaction surveys, evaluation forms | ASM-01, ASM-02, ASM-04, ASM-05, ASM-08 | Yes; **not written** | WP-LD-08 | new `tms/assessments`, `app/suite/assessments` | `202611151xxxxx` | |
 | **WP-LD-12** Certificates | Certificate designer, signatories, automatic issuance after attendance thresholds, public verification, expiry and renewal | CRT-01 … CRT-05, ATT-09 | Yes; **not written** | WP-TC-02, WP-LD-11 | new `tms/certificates`, `app/suite/certificates`, public `app/verify` | `202611161xxxxx` | |
 | **WP-LD-13** Reports | Executive dashboard and standard operational reports with filters, saved views, export | RPT-01, RPT-02 | Yes; **not written** | data from WP-LD-08 … 12 | new `tms/reports`, `app/suite/reports` | `202611171xxxxx` | |
+| **WP-LD-14** Budget follow-up | All year after the plan is approved: each department's approved, committed, spent and remaining budget; the remaining budget shown before an enrollment or training request is approved (going over is flagged); revise a department's budget or move an amount between departments, with approval | FIN-02, FIN-01 (R1 part) | Yes; **not written** | WP-LD-03, WP-LD-08 (session costs), WP-LD-09 | new `tms/budget`, `app/suite/planning/budget` | `202611181xxxxx` | |
 
 ### 4.4 Training Coordinator
 
@@ -348,6 +351,7 @@ Role order (PO, 17 Oct 2026). Within a role, top to bottom. **A free account tak
 | 25 | WP-LD-11 | Assessments and surveys | After WP-LD-08 |
 | 26 | WP-LD-12 | Certificates | After WP-TC-02, WP-LD-11 |
 | 27 | WP-LD-13 | Reports | Late |
+| 27b | WP-LD-14 | Budget follow-up (BRD v3.5) | After WP-LD-08, WP-LD-09 |
 | 28 | WP-TC-01 | Logistics tasks and joining instructions | After WP-LD-08 |
 | 29 | WP-TC-02 | Attendance | After WP-LD-09 |
 | 30 | WP-DH-01 | Manager hub | After WP-LD-03, WP-LD-09 |

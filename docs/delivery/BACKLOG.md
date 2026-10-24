@@ -281,6 +281,15 @@ Planning first (agreed EP-PLN flow), then delivery set-up ([roadmap §4.3](ROADM
 | T-M6-01 | **Business flow agreed with the PO**: executive dashboard and operational reports | WP-LD-13 | Claude → PO | ⚪ | — |
 | T-M6-02 | **Build reports** per T-M6-01 | WP-LD-13 | Claude | ⚪ | FR-RPT-01, 02. Migrations `202611171xxxxx` |
 
+#### WP-LD-14 Budget follow-up (BRD v3.5, PO 24 Oct 2026)
+
+**Claimed by:** — · **Business flow:** to write (T-M4-23) · **Depends on:** WP-LD-03, WP-LD-08 (session costs), WP-LD-09
+
+| ID | Task | WP | Owner | Status | Notes / PR |
+|---|---|---|---|---|---|
+| T-M4-23 | **Business flow agreed with the PO**: budget follow-up — approved / committed / spent / remaining per department, the check before an enrollment or request is approved, revising and moving budgets during the year | WP-LD-14 | Claude → PO | ⚪ | FR-FIN-02, FR-FIN-01 (R1 part) |
+| T-M4-24 | **Build budget follow-up** per T-M4-23 | WP-LD-14 | Claude | ⚪ | Migrations `202611181xxxxx` |
+
 ### Training Coordinator
 
 #### WP-TC-01 Logistics

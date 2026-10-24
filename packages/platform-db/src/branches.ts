@@ -202,15 +202,17 @@ async function writeBranchDetails(tx: UserTx, id: string, input: BranchInput): P
       and (address_en, address_ar, latitude, longitude) is distinct from
           (${input.addressEn}, ${input.addressAr}, ${input.latitude}::numeric, ${input.longitude}::numeric)`);
   const days = input.workingDays ?? [];
-  const keep =
+  // «Same as the organization» (null) removes every day of the branch's own week; `not in (null)` would
+  // match nothing.
+  const dropped =
     days.length > 0
-      ? sql.join(
+      ? sql`and day not in (${sql.join(
           days.map((d) => sql`${d.day}::smallint`),
           sql`, `,
-        )
-      : sql`null`;
+        )})`
+      : sql``;
   await tx.execute(sql`delete from platform.branch_working_days
-    where branch_id = ${id}::uuid and day not in (${keep})`);
+    where branch_id = ${id}::uuid ${dropped}`);
   for (const d of days) {
     await tx.execute(sql`insert into platform.branch_working_days (branch_id, day, starts_at, ends_at)
       values (${id}::uuid, ${d.day}, ${d.startsAt}::time, ${d.endsAt}::time)

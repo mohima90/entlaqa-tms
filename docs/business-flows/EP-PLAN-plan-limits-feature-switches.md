@@ -4,8 +4,12 @@
 |---|---|
 | **Epic** | WP-ADM-06 (Organization Admin) |
 | **Requirements** | FR-ADM-13, FR-SUB-01, FR-ADM-17 (organization plan, limits and status); BRD §14.1 editions |
-| **Status** | In discussion with the PO (24 Oct 2026) |
+| **Status** | **Agreed (PO, 24 Oct 2026)** — with the PO's answers in §9 (they change §3 A and C) |
 | **Reference** | Kawadir ATS: plans ("tiers") set by the Super Admin, each organization on one plan with its own status and dates; a trial banner; when an organization is not active, its members see a notice and only the Organization Admin keeps full access |
+
+## Changes after the PO's answers (24 Oct 2026)
+- **A. Plans:** the Super Admin **creates** plans (name, limits: people and storage, and a tick-list of the product's features); there are no fixed plans. Editing a plan applies to every organization on it, except a limit special to one organization.
+- **C. The Organization Admin's view:** **read-only** — plan name, status (days left in a trial), limits with usage, and the features the plan includes. No switching off; BR-PLAN-2/3/7 and the «switched off» page fall away. A feature not in the plan is simply not shown in menus and pages.
 
 ## 1. Goal
 Every organization is on a **plan** (edition) that decides which parts of Jadarat TMS it has and how big it may grow. ENTLAQA's Super Admin sets the plan, its limits and the organization's status. The Organization Admin sees the plan and how much of each limit is used, and can **switch off** parts its people should not use (for example, hide Planning until the organization is ready). Nothing here takes or shows payments: it decides what is available, not what it costs.
@@ -85,8 +89,8 @@ Every organization is on a **plan** (edition) that decides which parts of Jadara
 ## 9. Open questions
 | # | Question | Proposed answer | PO answer |
 |---|---|---|---|
-| 1 | Which plans in R1? | The four of BRD §14.1 (Starter, Professional, Enterprise, Government) | |
-| 2 | Which parts can be switched (today)? | Planning cycle, Needs forms, Course library, Branding images, Bulk import; later parts join the list as they are built | |
-| 3 | Which limits in R1? | Number of people and storage only (sessions, AI, WhatsApp and connectors join when those parts exist) | |
-| 4 | Trial length by default? | 30 days | |
-| 5 | When suspended, may the Organization Admin still work normally? | Yes, settings only (as Kawadir: they resolve it with ENTLAQA) | |
+| 1 | Which plans in R1? | The four of BRD §14.1 (Starter, Professional, Enterprise, Government) | **The Super Admin creates the plans and selects each plan's features** (no fixed four) |
+| 2 | Which parts can be switched (today)? | Planning cycle, Needs forms, Course library, Branding images, Bulk import; later parts join the list as they are built | **No switches for the Organization Admin**: only the plan decides; the Org Admin sees plan and limits (FR-ADM-13 updated, BRD v3.4) |
+| 3 | Which limits in R1? | Number of people and storage only (sessions, AI, WhatsApp and connectors join when those parts exist) |**Yes** |
+| 4 | Trial length by default? | 30 days |**Yes** |
+| 5 | When suspended, may the Organization Admin still work normally? | Yes, settings only (as Kawadir: they resolve it with ENTLAQA) |**Yes** |

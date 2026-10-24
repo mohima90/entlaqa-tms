@@ -82,6 +82,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | ID | Decision |
 |---|---|---|
+| 24 Oct 2026 | PO | **WP-ADM-06 business flow agreed:** the Super Admin creates plans (name, limits = people + storage, ticked features) and puts each organization on one with a status (trial 30 days by default, active, suspended, cancelled) and optional per-organization limits; the Organization Admin only **sees** plan, status and limits with usage — no feature switches (FR-ADM-13 changed, BRD v3.4, feature list v3.4); suspended: Org Admin keeps settings access. Next: Mobbin design |
 | 24 Oct 2026 | PO | **Way of working from now on:** each new feature's screens come from Mobbin and are approved by the PO; then Claude builds everything itself — **no builder agents**; each PR keeps its **one independent review** (security review when relevant) by a separate reviewer |
 | 24 Oct 2026 | PO | **A manager's team list shows their team only** — a custom role with scope «their team» lists the member's direct reports, not the member (they see themselves under My profile); the nightly users journey is updated to match |
 | 23 Oct 2026 | PO | **One security review, then a check of the fixes only** — the second look after a Critical/High finding checks only those fixes, never a fresh full review, and there is no third round (written into CLAUDE.md and Development Plan P2). Also PO: the sign-in-code E2E stays on every change, not nightly only (answer on how pending) |

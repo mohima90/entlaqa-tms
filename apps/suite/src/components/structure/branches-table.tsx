@@ -31,7 +31,7 @@ import { fillText } from '../../lib/fill-text';
 import { branchFieldText } from '../../lib/structure-form';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
-import { BranchPanel, type BranchView } from './branch-panel';
+import { BranchPanel, type BranchPanelProps, type BranchView } from './branch-panel';
 import { ConfirmDialog } from './confirm-dialog';
 import { failureOf } from './failure';
 import type { Choice } from './unit-panel';
@@ -42,6 +42,10 @@ export interface BranchesTableProps {
   readonly countries: readonly Choice[];
   readonly timeZones: readonly Choice[];
   readonly defaultTimeZone: string;
+  /** The organization's week and the day names (the branch form's working week, WP-HR-01). */
+  readonly organizationWeek: BranchPanelProps['organizationWeek'];
+  readonly weekdays: BranchPanelProps['weekdays'];
+  readonly detailsAvailable: boolean;
   readonly texts: Readonly<Record<string, string>>;
   /** «تراجع» / "Undo" (the toast after deactivating). */
   readonly undoLabel: string;
@@ -435,6 +439,9 @@ export function BranchesTable(props: BranchesTableProps) {
           countries={props.countries}
           timeZones={props.timeZones}
           defaultTimeZone={props.defaultTimeZone}
+          organizationWeek={props.organizationWeek}
+          weekdays={props.weekdays}
+          detailsAvailable={props.detailsAvailable}
           headquartersName={
             headquarters && headquarters.id !== dialog.branch?.id ? headquarters.name : null
           }

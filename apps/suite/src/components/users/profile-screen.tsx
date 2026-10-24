@@ -156,6 +156,10 @@ const EDIT_LABEL_KEYS = [
   'noDepartment',
   'branch',
   'noBranch',
+  'costCentre',
+  'costCentreHint',
+  'noCostCentre',
+  'costCentreFromUnit',
   'manager',
   'managerHint',
   'managerHintAll',
@@ -185,6 +189,7 @@ const EDIT_FIELD_ERROR_KEYS = [
   'jobTitle',
   'hireOn',
   'hireOnAfterEnd',
+  'costCentreInactive',
 ] as const;
 /** Text keys of the deactivation form (namespace `deactivation`). */
 const DEACTIVATION_KEYS = [
@@ -1050,6 +1055,7 @@ async function editFormProps(
       employeeNumber: user.employeeNumber ?? '',
       departmentId: user.departmentId ?? '',
       branchId: user.branchId ?? '',
+      costCentreId: user.costCentreId ?? '',
       managerPersonId: user.managerPersonId ?? '',
       jobTitleAr: user.jobTitleAr ?? '',
       jobTitleEn: user.jobTitleEn ?? '',
@@ -1057,6 +1063,14 @@ async function editFormProps(
     },
     departments: withCurrent(view.orgUnits.departments, user.departmentId, user.department),
     branches: withCurrent(view.orgUnits.branches, user.branchId, user.branch),
+    // Active cost centres; the person's own stays shown when deactivated since (WP-HR-01).
+    costCentres: view.costCentres
+      .filter((c) => c.active || c.id === user.costCentreId)
+      .map((c) => {
+        const name = locale === 'ar' ? (c.nameAr ?? c.nameEn) : (c.nameEn ?? c.nameAr);
+        const label = name ? `${c.code} · ${name}` : c.code;
+        return { id: c.id, name: c.active ? label : `${label} ${t('inactive')}` };
+      }),
     managers: view.managers.map((m) => ({
       personId: m.personId,
       name: localizedName(locale, m.nameAr, m.nameEn),

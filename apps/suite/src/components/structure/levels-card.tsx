@@ -35,6 +35,8 @@ export interface LevelsCardProps {
   readonly canManage: boolean;
   /** Ten levels at most (MAX_STRUCTURE_LEVELS). */
   readonly maxLevels: number;
+  /** People are placed in units: levels are only renamed, never added or removed (WP-HR-01, BR-ORG-b). */
+  readonly locked: boolean;
   readonly texts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
   readonly locale: 'ar' | 'en';
@@ -71,7 +73,7 @@ export function LevelsCard(props: LevelsCardProps) {
         title={text('levels.title')}
         description={text('levels.description')}
         actions={
-          canManage ? (
+          canManage && !props.locked ? (
             <Button
               onClick={() => {
                 setDialog({ kind: 'add' });
@@ -86,6 +88,13 @@ export function LevelsCard(props: LevelsCardProps) {
         }
         data-testid="structure-levels"
       >
+        {props.locked ? (
+          <div className="px-4 pt-4 sm:px-6 sm:pt-6">
+            <Alert tone="info" title={text('levels.lockedTitle')} data-testid="levels-locked">
+              {text('levels.lockedText')}
+            </Alert>
+          </div>
+        ) : null}
         {/* eslint-disable-next-line jsx-a11y/no-redundant-roles -- not redundant: Safari/VoiceOver drops the list semantics of a `list-none` list (WCAG 1.3.1). */}
         <ol
           role="list"
@@ -155,7 +164,7 @@ export function LevelsCard(props: LevelsCardProps) {
                       >
                         <Icon name="pencil" />
                       </button>
-                      {level === last && level.ordinal > 1 ? (
+                      {level === last && level.ordinal > 1 && !props.locked ? (
                         <button
                           type="button"
                           className="grid size-9 place-items-center rounded-md text-text-muted hover:bg-surface-hover hover:text-danger pointer-coarse:size-11"

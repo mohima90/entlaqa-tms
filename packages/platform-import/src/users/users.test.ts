@@ -52,9 +52,9 @@ describe('text', () => {
 });
 
 describe('fields and headers (screens 3 and 5)', () => {
-  it('has the 20 fields of the database allow-list, each with both headers', () => {
+  it('has the 21 fields of the database allow-list, each with both headers', () => {
     expect(FIELD_DEFINITIONS.map((d) => d.field)).toEqual([...IMPORT_FIELDS]);
-    expect(IMPORT_FIELDS).toHaveLength(20);
+    expect(IMPORT_FIELDS).toHaveLength(21);
     for (const d of FIELD_DEFINITIONS) {
       expect(fieldForHeader(d.header.ar), d.header.ar).toBe(d.field);
       expect(fieldForHeader(d.header.en), d.header.en).toBe(d.field);
@@ -529,6 +529,9 @@ describe('issues', () => {
       'DEPARTMENT_NOT_FOUND',
       'BRANCH_AMBIGUOUS',
       'BRANCH_NOT_FOUND',
+      'COST_CENTRE_AMBIGUOUS',
+      'COST_CENTRE_INACTIVE',
+      'COST_CENTRE_NOT_FOUND',
       'MANAGER_SELF',
       'MANAGER_LOOP',
       'MANAGER_NOT_FOUND',

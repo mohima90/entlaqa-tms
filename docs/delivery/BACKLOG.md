@@ -86,15 +86,15 @@ Order: E-mail sending → Branding → Audit log → people record completion �
 | ID | Task | WP | Owner | Status | Notes / PR |
 |---|---|---|---|---|---|
 | T-M2-53 | **Business flow agreed with the PO**: editions and limits set by the Super Admin, organization status, plan view and feature toggles for the Organization Admin | WP-ADM-06 | Claude → PO | 🟢 | FR-SUB-01, FR-ADM-13, FR-ADM-17. Agreed 24 Oct 2026 (Super Admin creates plans; the Organization Admin only sees them — no switches); design approved 24 Oct 2026 |
-| T-M2-27 | Feature toggles + plan and limits overview (#5, #49) | WP-ADM-06 | Claude | 🔵 | **Built 24 Oct 2026 (PR to open):** Platform → Plans (create / edit: people and storage limits, features), an organization's page (plan, status, trial end, special limits), new organizations start on a plan as a 30-day trial; Subscription page for the Organization Admin (read-only), 90% notice on the home page, people / storage limits refused at the moment of the action (invite, reactivation, import row, upload), features outside the plan hidden and refused; trials end by a worker task; a suspended organization: its Organization Admin sees the plan page only, everyone else «Access paused». Migrations `20261027100000`–`100200` (role `plan_guard`). Not built: online payment / reactivation by the Organization Admin (later, PO 24 Oct 2026); outside the plan the Jadarat look applies everywhere (product, sign-in page, e-mails). **Independent review 24 Oct 2026: no Critical/High;** fixed: accepting an invitation above a lowered limit (M1), import row «people limit» label (M2), sign-in page look (M3), plan errors on «Create organization» (L2), trial date picker max (L3), trial expiry needs a job id (L7). **Follow-ups (Low, not in this PR):** storage limit checked on the declared size, the real size can exceed it by up to one file (L1); `tenant_plan_features` returns another organization's feature list to a caller who knows its id (L4, list only); a paused admin's sign-in is not audited (L5); a paused admin who also belongs to an active organization must sign out to switch (L6); the device limit is not applied while paused (L7). | Paused until after the planning core (PO, 15 Oct 2026); resumes in the Kawadir layout. FR-ADM-13, FR-SUB-01 **17 Oct 2026 (re-organization by role):** resumed → WP-ADM-06 (with SUB-01 editions and the Super Admin's plan / limits / status). |
+| T-M2-27 | Feature toggles + plan and limits overview (#5, #49) | WP-ADM-06 | Claude | 🟢 | **Merged (#90) and deployed to production 24 Oct 2026.** Built 24 Oct 2026: Platform → Plans (create / edit: people and storage limits, features), an organization's page (plan, status, trial end, special limits), new organizations start on a plan as a 30-day trial; Subscription page for the Organization Admin (read-only), 90% notice on the home page, people / storage limits refused at the moment of the action (invite, reactivation, import row, upload), features outside the plan hidden and refused; trials end by a worker task; a suspended organization: its Organization Admin sees the plan page only, everyone else «Access paused». Migrations `20261027100000`–`100200` (role `plan_guard`). Not built: online payment / reactivation by the Organization Admin (later, PO 24 Oct 2026); outside the plan the Jadarat look applies everywhere (product, sign-in page, e-mails). **Independent review 24 Oct 2026: no Critical/High;** fixed: accepting an invitation above a lowered limit (M1), import row «people limit» label (M2), sign-in page look (M3), plan errors on «Create organization» (L2), trial date picker max (L3), trial expiry needs a job id (L7). **Follow-ups (Low, not in this PR):** storage limit checked on the declared size, the real size can exceed it by up to one file (L1); `tenant_plan_features` returns another organization's feature list to a caller who knows its id (L4, list only); a paused admin's sign-in is not audited (L5); a paused admin who also belongs to an active organization must sign out to switch (L6); the device limit is not applied while paused (L7). | Paused until after the planning core (PO, 15 Oct 2026); resumes in the Kawadir layout. FR-ADM-13, FR-SUB-01 **17 Oct 2026 (re-organization by role):** resumed → WP-ADM-06 (with SUB-01 editions and the Super Admin's plan / limits / status). |
 
 #### WP-ADM-07 Custom fields
 
-**Claimed by:** — · **Business flow:** to write (T-M2-54) · **Depends on:** best after WP-LD-05, WP-LD-06, WP-LD-08
+**Claimed by:** Claude (branch `claude/youthful-davinci-00yhgl`) · **Business flow:** drafted 24 Oct 2026, **on hold until the whole product is built (PO, 24 Oct 2026)** (`EP-CF-custom-fields.md`, T-M2-54) · **Depends on:** best after WP-LD-05, WP-LD-06, WP-LD-08 — people and courses can ship first
 
 | ID | Task | WP | Owner | Status | Notes / PR |
 |---|---|---|---|---|---|
-| T-M2-54 | **Business flow agreed with the PO**: custom fields — entities, field types, who fills them, import | WP-ADM-07 | Claude → PO | ⚪ | — |
+| T-M2-54 | **Business flow agreed with the PO**: custom fields — entities, field types, who fills them, import | WP-ADM-07 | Claude → PO | 🔵 | Drafted 24 Oct 2026 (`docs/business-flows/EP-CF-custom-fields.md`): people + courses first, 8 field types, archive not delete, role visibility, import columns, filters; open Q1–Q3 |
 | T-M2-26 | Custom fields builder (#6) | WP-ADM-07 | Claude | ⚪ | Paused until after the planning core (PO, 15 Oct 2026); resumes in the Kawadir layout. FR-ADM-11 **17 Oct 2026 (re-organization by role):** resumed → WP-ADM-07 (best after the course / session / venue tables exist). |
 
 #### WP-ADM-08 Consent settings
@@ -108,12 +108,12 @@ Order: E-mail sending → Branding → Audit log → people record completion �
 
 #### WP-ADM-09 Suite / standalone mode
 
-**Claimed by:** — · **Business flow:** to write (T-M2-56) · **Depends on:** security decision 7
+**Claimed by:** Claude (branch `claude/youthful-davinci-00yhgl`) · **Business flow:** drafted, **on hold (PO, 24 Oct 2026)** (`EP-MODE-suite-standalone.md`, T-M2-56) · **Depends on:** security decision 7 — **answered 24 Oct 2026: HR file sync in R2**
 
 | ID | Task | WP | Owner | Status | Notes / PR |
 |---|---|---|---|---|---|
-| T-M2-56 | **Business flow agreed with the PO**: suite vs. standalone mode, people data source | WP-ADM-09 | Claude → PO | ⚪ | — |
-| T-M2-32 | Standalone / HR Suite mode + HR system CSV/SFTP sync (#40, #41) | WP-ADM-09 | Claude | ⚪ | Paused until after the planning core (PO, 15 Oct 2026); resumes in the Kawadir layout. FR-STE-01, FR-INT-01 (R1 part) **17 Oct 2026 (re-organization by role):** resumed → WP-ADM-09 (HR system CSV/SFTP sync: R2 in the feature list, security decision 7 open). |
+| T-M2-56 | **Business flow agreed with the PO**: suite vs. standalone mode, people data source | WP-ADM-09 | Claude → PO | 🔵 | Drafted 24 Oct 2026 (`docs/business-flows/EP-MODE-suite-standalone.md`): R1 every organization standalone, suite mode prepared but greyed out until Jadarat Core HR exists; open Q1–Q2 |
+| T-M2-32 | Standalone / HR Suite mode + HR system CSV/SFTP sync (#40, #41) | WP-ADM-09 | Claude | ⚪ | Paused until after the planning core (PO, 15 Oct 2026); resumes in the Kawadir layout. FR-STE-01, FR-INT-01 (R1 part) **17 Oct 2026 (re-organization by role):** resumed → WP-ADM-09 (HR system CSV/SFTP sync: R2 in the feature list, security decision 7 open). **24 Oct 2026 (PO, decision 7):** the automatic HR file / SFTP sync is **R2**; R1 keeps invitations + the bulk import. |
 
 #### WP-ADM-10 LMS connection
 
@@ -148,12 +148,12 @@ IAM-02 (HR-only person fields) is built in WP-ADM-04 ([roadmap §4.2](ROADMAP-by
 
 #### WP-HR-01 Structure completion
 
-**Claimed by:** — · **Business flow:** addendum to EP-ORG to write (T-M3-12) · **Depends on:** WP-FIX-01 (same structure pages)
+**Claimed by:** Claude (branch `claude/youthful-davinci-00yhgl`) · **Business flow:** addendum to EP-ORG **agreed 24 Oct 2026** (`EP-ORG-structure-completion.md`, T-M3-12); design approved 24 Oct 2026; built (PR after its review) · **Depends on:** WP-FIX-01 (same structure pages — done)
 
 | ID | Task | WP | Owner | Status | Notes / PR |
 |---|---|---|---|---|---|
-| T-M3-12 | **Business flow agreed with the PO**: structure completion — cost centres, moving a unit to another parent (preview of the units and role assignments affected), drag-and-drop order, CSV import of units; GPS and working week / hours per branch (addendum to EP-ORG) | WP-HR-01 | Claude → PO | ⚪ | FR-ADM-04, FR-ADM-05; TM-0004 T-PEO-07 |
-| T-M3-13 | **Build structure completion** per T-M3-12 (remember T-M3-02's C-8 note: the move cascade bumps `version` of every unit below) | WP-HR-01 | Claude | ⚪ | Migrations `202611031xxxxx` |
+| T-M3-12 | **Business flow agreed with the PO**: structure completion — cost centres, moving a unit to another parent (preview of the units and role assignments affected), drag-and-drop order, CSV import of units; GPS and working week / hours per branch (addendum to EP-ORG) | WP-HR-01 | Claude → PO | 🟢 | FR-ADM-04, FR-ADM-05; TM-0004 T-PEO-07. **Agreed 24 Oct 2026** (levels locked once people are placed; cost centre on the person, no split, no approver; a move keeps the level; import creates + updates; location typed). Drafted: cost centre list (inherited from the parent), move with preview (same level only), drag + Move up/down, unit import (create + update by code, never moves), branch address / location / own working week with half-days; open Q1–Q4 |
+| T-M3-13 | **Build structure completion** per T-M3-12 (remember T-M3-02's C-8 note: the move cascade bumps `version` of every unit below) | WP-HR-01 | Claude | 🔵 | Built 24 Oct 2026 (review, then PR): migrations `20261103100000`–`100300` (cost centres + person / unit default, levels locked once people are placed, a moved unit keeps its level, branch address / location / own week, `structure_guard` + `private.units_in_open_plan_cycles` for the move preview); Structure tabs Units / Levels / **Cost centres**, «Move to…» with preview, Move up / down + drag, **Import units** page; branch form address / location / week with half-days; person form cost centre. SQL + integration + unit + E2E (EN/AR) tests |
 
 #### WP-HR-02 Compliance
 
@@ -233,7 +233,7 @@ Planning first (agreed EP-PLN flow), then delivery set-up ([roadmap §4.3](ROADM
 
 | ID | Task | WP | Owner | Status | Notes / PR |
 |---|---|---|---|---|---|
-| T-M4-07 | **Business flow agreed with the PO**: sessions and scheduling — multi-day, recurrence, lifecycle, calendar, conflicts, minimum enrollment, cost estimate → actual | WP-LD-08 | Claude → PO | ⚪ | — |
+| T-M4-07 | **Business flow agreed with the PO**: sessions and scheduling — multi-day, recurrence, lifecycle, calendar, conflicts, minimum enrollment, cost estimate → actual | WP-LD-08 | Claude → PO | ⚪ | **PO, 24 Oct 2026 (FR-FIN-03):** each session's cost is charged in one of two ways, chosen per session — **by participants** (default: cost ÷ participants, each share to the participant's own cost centre; e.g. USD 10,000 / 20 = 500 each → 5 + 5 + 10 people = 2,500 / 2,500 / 5,000) or **to one cost centre** (e.g. L&D carries a general course) |
 | T-M4-08 | **Build sessions and scheduling** per T-M4-07 | WP-LD-08 | Claude | ⚪ | FR-SCH-01, 02, 03, 05, 08, FR-FIN-03. Migrations `202611121xxxxx` |
 
 #### WP-LD-09 Enrollment
@@ -280,6 +280,15 @@ Planning first (agreed EP-PLN flow), then delivery set-up ([roadmap §4.3](ROADM
 |---|---|---|---|---|---|
 | T-M6-01 | **Business flow agreed with the PO**: executive dashboard and operational reports | WP-LD-13 | Claude → PO | ⚪ | — |
 | T-M6-02 | **Build reports** per T-M6-01 | WP-LD-13 | Claude | ⚪ | FR-RPT-01, 02. Migrations `202611171xxxxx` |
+
+#### WP-LD-14 Budget follow-up (BRD v3.5, PO 24 Oct 2026)
+
+**Claimed by:** — · **Business flow:** to write (T-M4-23) · **Depends on:** WP-LD-03, WP-LD-08 (session costs), WP-LD-09
+
+| ID | Task | WP | Owner | Status | Notes / PR |
+|---|---|---|---|---|---|
+| T-M4-23 | **Business flow agreed with the PO**: budget follow-up — approved / committed / spent / remaining per department, the check before an enrollment or request is approved, revising and moving budgets during the year | WP-LD-14 | Claude → PO | ⚪ | FR-FIN-02, FR-FIN-01 (R1 part) |
+| T-M4-24 | **Build budget follow-up** per T-M4-23 | WP-LD-14 | Claude | ⚪ | Migrations `202611181xxxxx` |
 
 ### Training Coordinator
 

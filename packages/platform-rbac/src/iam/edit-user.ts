@@ -1,5 +1,6 @@
 import { type AppError, appError, err, ok } from '@jadarat/platform-core';
 import {
+  type CostCentreOption,
   type EditableUser,
   type ManagerOption,
   type OrgUnitOptions,
@@ -8,6 +9,7 @@ import {
   type UserTx,
   getEditableUser,
   getTenantDefaultLocale,
+  listCostCentreOptions,
   listManagerOptions,
   listOrgUnitOptions,
   listStructureLevelLabels,
@@ -78,6 +80,8 @@ export const EditUserInput = z
         z.literal(''),
       ])
       .transform((value) => (value === '' ? null : value)),
+    // The person's one cost centre (WP-HR-01). Absent (a page opened before the change): kept as it is.
+    costCentreId: optionalId.optional(),
   })
   .superRefine((value, ctx) => {
     const length = (...parts: (string | null)[]) =>
@@ -115,6 +119,8 @@ export interface EditUserView {
   readonly locked: boolean;
   /** The grade list and grade of the person, and the HR-only fields for who may edit them. */
   readonly record: PersonRecordEdit;
+  /** The organization's cost centres (the form offers the active ones; WP-HR-01). */
+  readonly costCentres: readonly CostCentreOption[];
 }
 
 export const EditUserQueryInput = z.strictObject({ personId: z.uuid() });
@@ -144,6 +150,7 @@ export function editUserQueryDefinition(): QueryDefinition<
         levels: await listStructureLevelLabels(ctx.tx),
         locked: !user.mayManage,
         record,
+        costCentres: await listCostCentreOptions(ctx.tx),
       });
     },
   };
@@ -176,6 +183,8 @@ function refusalError(refusal: UserDetailsRefusal, nameLanguage: 'ar' | 'en'): A
       return field('hireOn', 'AFTER_END');
     case 'name_required':
       return field(nameLanguage === 'ar' ? 'firstNameAr' : 'firstNameEn', 'REQUIRED');
+    case 'cost_centre_inactive':
+      return field('costCentreId', 'INACTIVE');
   }
 }
 
@@ -235,6 +244,8 @@ export function updateUserDetailsActionDefinition(): ActionDefinition<
         jobTitleAr: input.jobTitleAr,
         jobTitleEn: input.jobTitleEn,
         hireOn: input.hireOn,
+        costCentreId:
+          input.costCentreId === undefined ? (before?.costCentreId ?? null) : input.costCentreId,
       });
       if (!outcome.ok) {
         return err(refusalError(outcome.refusal, await getTenantDefaultLocale(ctx.tx)));

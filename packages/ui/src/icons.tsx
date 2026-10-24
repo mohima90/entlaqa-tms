@@ -30,6 +30,8 @@ import {
   Eye,
   EyeOff,
   FileText,
+  GripVertical,
+  Wallet,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
@@ -184,6 +186,10 @@ const ICONS = {
   image: Image,
   ban: Ban,
   'log-in': LogIn,
+  // Structure completion (WP-HR-01): the drag handle that reorders units among their siblings, …
+  grip: GripVertical,
+  // … and the cost centres view.
+  wallet: Wallet,
 } as const satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;

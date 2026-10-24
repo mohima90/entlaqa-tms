@@ -301,7 +301,8 @@ begin
   perform tests.assert((select job_title_ar = 'مدير' and department_id = 'a3000000-0000-4000-8000-000000000001'
                         from platform.person_employment where person_id = 'a1000000-0000-4000-8000-000000000e01'),
     'row 6: job title and department changed');
-  perform tests.assert_eq(v_row.before, '{"job_title_ar": "محاسب", "department_id": "a3000000-0000-4000-8000-000000000003"}'::jsonb,
+  -- WP-HR-01 (migration 20261103100400): with the unit, the cost centre it may change (none here) is kept too.
+  perform tests.assert_eq(v_row.before, '{"job_title_ar": "محاسب", "department_id": "a3000000-0000-4000-8000-000000000003", "cost_centre_id": null}'::jsonb,
     'row 6: the previous values kept for undo');
   perform tests.assert_eq((select string_agg(ra.role_code, ',') from platform.role_assignments ra
                            join platform.tenant_memberships m on m.id = ra.membership_id

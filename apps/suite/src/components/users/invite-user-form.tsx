@@ -39,7 +39,7 @@ import { SelectField } from '../select-field';
 import type { UnitChoice } from './edit-user-form';
 import type { InviteCodeValue, InviteCopyTexts } from './invite-code-copy';
 import { OtherNameToggle } from './other-name-toggle';
-import { DiscardDialog, type DiscardTexts } from './person-panels';
+import { DiscardDialog, type DiscardTexts } from './discard-dialog';
 import { RoleSelect, type RoleSelectTexts } from './role-select';
 import { ScopeUnitSelect, type ScopeUnitTexts } from './scope-unit-select';
 

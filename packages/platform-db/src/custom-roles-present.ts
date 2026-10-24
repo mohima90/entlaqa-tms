@@ -87,10 +87,35 @@ export async function structureLevelsExistCached(tx: ClaimsTx): Promise<boolean>
   return structureLevelsSeen;
 }
 
+/**
+ * Does the structure completion exist yet (WP-HR-01: platform.cost_centres, platform.branch_working_days and the
+ * new columns, migrations 20261103100000…100200)? Same deploy window: until then the pages show no cost centres,
+ * addresses or working weeks and offer no change to them. Cached once true.
+ */
+let structureCompletionSeen = false;
+/** Tests only: the answer without asking the database (null: ask). */
+let structureCompletionForTests: boolean | null = null;
+
+export async function structureCompletionExists(tx: ClaimsTx): Promise<boolean> {
+  if (structureCompletionForTests !== null) return structureCompletionForTests;
+  if (structureCompletionSeen) return true;
+  const [row] = await tx.execute<{ present: boolean }>(sql`
+    select to_regclass('platform.cost_centres') is not null
+           and to_regclass('platform.branch_working_days') is not null as present`);
+  structureCompletionSeen = row?.present === true;
+  return structureCompletionSeen;
+}
+
 /** Tests only: forget what was seen (each test file may simulate the database before the migration). */
 export function forgetSchemaPresenceForTests(): void {
   englishOnlyNamesSeen = false;
   structureLevelsSeen = false;
+  structureCompletionSeen = false;
+}
+
+/** Tests only: answer structureCompletionExists without a query (null: ask the database again). */
+export function setStructureCompletionForTests(present: boolean | null): void {
+  structureCompletionForTests = present;
 }
 
 async function columnExists(tx: ClaimsTx, table: string, column: string): Promise<boolean> {

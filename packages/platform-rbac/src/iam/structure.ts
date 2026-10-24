@@ -1,21 +1,28 @@
 import { type AppError, appError, err, ok } from '@jadarat/platform-core';
 import {
+  type CostCentreOption,
   type OrgUnitOption,
   type PersonOption,
   type StructureLevelRow,
   type StructureOutcome,
   type StructureUnitRow,
+  type UnitMovePreview,
   type UserTx,
   addStructureLevel,
   createStructureUnit,
   deleteStructureUnit,
   listActivePersonOptions,
+  listCostCentreOptions,
   listOrgUnitOptions,
   listStructureLevels,
   listStructureUnits,
+  moveStructureUnit,
+  previewStructureUnitMove,
   removeStructureLevel,
   renameStructureLevel,
+  reorderStructureUnit,
   setStructureUnitStatus,
+  structureLevelsLocked,
   updateStructureUnit,
 } from '@jadarat/platform-db';
 import { hasVisibleText } from '@jadarat/platform-i18n';
@@ -77,6 +84,8 @@ const unitFields = {
   nameAr: unitName,
   branchId: optionalId,
   headPersonId: optionalId,
+  // WP-HR-01: the cost centre people placed in the unit get when HR picks none.
+  defaultCostCentreId: optionalId,
 };
 export const CreateUnitInput = z.strictObject({ parentId: optionalId, ...unitFields });
 export const UpdateUnitInput = z.strictObject({
@@ -90,6 +99,19 @@ export const UnitStatusInput = z.strictObject({
   status: z.enum(['active', 'inactive']),
 });
 export const UnitRefInput = z.strictObject({ id: z.uuid(), version: z.number().int().min(1) });
+/** «Move to…» (WP-HR-01): the new parent (empty: the top), the preview first. */
+export const MoveUnitPreviewInput = z.strictObject({ id: z.uuid(), parentId: optionalId });
+export const MoveUnitInput = z.strictObject({
+  id: z.uuid(),
+  version: z.number().int().min(1),
+  parentId: optionalId,
+});
+/** Drag-and-drop / «Move up» / «Move down»: the position among the units under the same parent (0 = first). */
+export const ReorderUnitInput = z.strictObject({
+  id: z.uuid(),
+  version: z.number().int().min(1),
+  position: z.number().int().min(0).max(10_000),
+});
 
 export interface StructurePageView {
   readonly levels: readonly StructureLevelRow[];
@@ -98,6 +120,10 @@ export interface StructurePageView {
   readonly branches: readonly OrgUnitOption[];
   /** Active people as head choices (only for members who change the structure). */
   readonly people: readonly PersonOption[];
+  /** Cost centres as default choices (only for members who change the structure; WP-HR-01). */
+  readonly costCentres: readonly CostCentreOption[];
+  /** People are placed in units: levels are no longer added or removed, only renamed (WP-HR-01). */
+  readonly levelsLocked: boolean;
   /** `platform.org.manage` organization-wide: add, edit, deactivate and delete. */
   readonly canManage: boolean;
 }
@@ -120,6 +146,8 @@ export function structurePageQueryDefinition(): QueryDefinition<
         units: await listStructureUnits(ctx.tx),
         branches: canManage ? (await listOrgUnitOptions(ctx.tx)).branches : [],
         people: canManage ? await listActivePersonOptions(ctx.tx) : [],
+        costCentres: canManage ? await listCostCentreOptions(ctx.tx) : [],
+        levelsLocked: await structureLevelsLocked(ctx.tx),
         canManage,
       });
     },
@@ -166,6 +194,14 @@ function refusalError(outcome: Extract<StructureOutcome<unknown>, { ok: false }>
       return validation('headPersonId', 'HEAD_NOT_ACTIVE');
     case 'branch_not_found':
       return validation('branchId', 'BRANCH_NOT_FOUND');
+    case 'levels_locked':
+      return validation('level', 'LEVELS_LOCKED');
+    case 'level_changes':
+      return validation('parentId', 'LEVEL_CHANGES');
+    case 'move_into_itself':
+      return validation('parentId', 'MOVE_INTO_ITSELF');
+    case 'cost_centre_inactive':
+      return validation('defaultCostCentreId', 'COST_CENTRE_INACTIVE');
     case 'unit_in_use':
       return validation(
         'unit',
@@ -193,6 +229,7 @@ function unitAudit(row: StructureUnitRow | null) {
         levelOrdinal: row.levelOrdinal,
         branchId: row.branchId,
         headPersonId: row.headPersonId,
+        defaultCostCentreId: row.defaultCostCentreId,
         status: row.status,
       }
     : null;
@@ -371,6 +408,75 @@ export function deleteStructureUnitActionDefinition(): ActionDefinition<
       entityType: 'structure_unit',
       entityId: output.id,
       data: { before: unitAudit(output.before), after: null },
+    }),
+  };
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Moving and ordering units (WP-HR-01; business flow EP-ORG-structure-completion.md §3 B, C)
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * The preview of «Move to…»: what moves and who sees more or less (TM-0004 SR-STE02-04). Changes nothing, so it
+ * is not audited; asked with `platform.org.manage` (it names role holders and heads).
+ */
+export function previewStructureUnitMoveActionDefinition(): ActionDefinition<
+  typeof MoveUnitPreviewInput,
+  UnitMovePreview,
+  UserTx
+> {
+  return {
+    permission: p['platform.org.manage'],
+    input: MoveUnitPreviewInput,
+    handler: async ({ ctx, input }) => {
+      const outcome = await previewStructureUnitMove(ctx.tx, input.id, input.parentId);
+      return outcome.ok ? ok(outcome.preview) : err(refusalError(outcome));
+    },
+  };
+}
+
+/** «Move»: under a unit of the same level as the old parent; everything below moves with it (BR-ORG-i, e). */
+export function moveStructureUnitActionDefinition(): ActionDefinition<
+  typeof MoveUnitInput,
+  StructureSaved<StructureUnitRow>,
+  UserTx
+> {
+  return {
+    permission: p['platform.org.manage'],
+    input: MoveUnitInput,
+    handler: async ({ ctx, input }) =>
+      result(await moveStructureUnit(ctx.tx, input.id, input.version, input.parentId)),
+    audit: (_input, output) => ({
+      action: 'platform.org.unit_moved',
+      entityType: 'structure_unit',
+      entityId: output.id,
+      data: {
+        before: output.before ? { parentId: output.before.parentId } : null,
+        after: output.after ? { parentId: output.after.parentId } : null,
+      },
+    }),
+  };
+}
+
+/** Drag-and-drop, «Move up» / «Move down»: the unit's place among the units under the same parent. */
+export function reorderStructureUnitActionDefinition(): ActionDefinition<
+  typeof ReorderUnitInput,
+  StructureSaved<StructureUnitRow>,
+  UserTx
+> {
+  return {
+    permission: p['platform.org.manage'],
+    input: ReorderUnitInput,
+    handler: async ({ ctx, input }) =>
+      result(await reorderStructureUnit(ctx.tx, input.id, input.version, input.position)),
+    audit: (input, output) => ({
+      action: 'platform.org.unit_reordered',
+      entityType: 'structure_unit',
+      entityId: output.id,
+      data: {
+        before: output.before ? { sortOrder: output.before.sortOrder } : null,
+        after: { position: input.position },
+      },
     }),
   };
 }

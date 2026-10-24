@@ -737,10 +737,15 @@
       "unitDeleted": "The chosen unit or branch was deleted. Refresh the page and choose another.",
       "jobTitle": "Must contain visible letters and be at most 150 characters.",
       "hireOn": "Enter a valid date between 1900 and 2100.",
-      "hireOnAfterEnd": "The hire date must be on or before the recorded end-of-service date."
+      "hireOnAfterEnd": "The hire date must be on or before the recorded end-of-service date.",
+      "costCentreInactive": "This cost centre is inactive. Choose an active one."
     },
     "addArabicName": "Add the name in Arabic (optional)",
-    "addEnglishName": "Add the name in English (optional)"
+    "addEnglishName": "Add the name in English (optional)",
+    "costCentre": "Cost centre",
+    "costCentreHint": "Training this person attends is charged here.",
+    "costCentreFromUnit": "Left empty, the unit's default cost centre is used when you save.",
+    "noCostCentre": "No cost centre"
   },
   "editRoles": {
     "title": "Change role",
@@ -1620,6 +1625,7 @@
       "job_title_en": "Job title (English)",
       "department": "Unit",
       "branch": "Branch",
+      "cost_centre": "Cost centre",
       "manager_email": "Direct manager's email",
       "hire_date": "Hire date",
       "primary_role": "Primary role",
@@ -2176,6 +2182,9 @@
       "DEPARTMENT_AMBIGUOUS": "Unit name matches several units",
       "BRANCH_NOT_FOUND": "Branch not in Organization data",
       "BRANCH_AMBIGUOUS": "Branch name matches several branches",
+      "COST_CENTRE_NOT_FOUND": "Cost centre not found",
+      "COST_CENTRE_AMBIGUOUS": "Cost centre name matches several cost centres",
+      "COST_CENTRE_INACTIVE": "Cost centre inactive",
       "MANAGER_NOT_FOUND": "Direct manager not found",
       "MANAGER_EMAIL_INVALID": "Invalid direct manager email",
       "MOBILE_NO_COUNTRY_CODE": "Mobile without country code",
@@ -2933,7 +2942,8 @@
     "tabsLabel": "Structure views",
     "tabs": {
       "tree": "Units",
-      "levels": "Levels"
+      "levels": "Levels",
+      "costCentres": "Cost centres"
     },
     "stats": {
       "label": "Summary",
@@ -2982,7 +2992,11 @@
       "saving": "Saving…",
       "cancel": "Cancel",
       "close": "Close",
-      "audited": "Every change is recorded in the audit log."
+      "audited": "Every change is recorded in the audit log.",
+      "defaultCostCentre": "Default cost centre",
+      "defaultCostCentreHint": "People placed in this unit get it when HR picks no cost centre for them.",
+      "noCostCentre": "No default",
+      "inactiveCostCentre": "Current cost centre (inactive)"
     },
     "fieldErrors": {
       "required": "This field is required.",
@@ -2992,7 +3006,10 @@
       "headNotActive": "Choose an active person.",
       "branchNotFound": "This branch no longer exists. Choose another one.",
       "parentNotFound": "The unit above no longer exists. Reload the page.",
-      "belowLastLevel": "There's no level below this one. Add a level first."
+      "belowLastLevel": "There's no level below this one. Add a level first.",
+      "costCentreInactive": "This cost centre is inactive. Choose an active one.",
+      "levelChanges": "A unit keeps its level. Choose a unit at the same level as its current parent.",
+      "moveIntoItself": "A unit can't move under itself or under a unit below it."
     },
     "status": {
       "deactivateTitle": "Deactivate {name}?",
@@ -3025,7 +3042,8 @@
       "deleted": "{name} deleted.",
       "levelAdded": "Level added.",
       "levelRenamed": "Level renamed.",
-      "levelRemoved": "Level removed."
+      "levelRemoved": "Level removed.",
+      "reordered": "{name} moved."
     },
     "levels": {
       "title": "Levels",
@@ -3052,13 +3070,152 @@
       "full": "Your structure has the most levels allowed (10).",
       "nameTaken": "Another level has this name.",
       "name": "The name needs visible letters, up to 60 characters.",
-      "unitCount": "{count, plural, =0 {No units} one {# unit} other {# units}}"
+      "unitCount": "{count, plural, =0 {No units} one {# unit} other {# units}}",
+      "locked": "People are placed in units, so levels can only be renamed now.",
+      "lockedTitle": "Levels are set",
+      "lockedText": "People are placed in your units, so levels can't be added, removed or reordered. You can still rename them.",
+      "lockedShort": "Levels set"
     },
     "expandAll": "Expand all",
     "collapseAll": "Collapse all",
     "guide": {
       "levels": "Name your levels",
       "first": "Add the first unit"
+    },
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "dragHint": "Drag to change the order",
+    "move": {
+      "menu": "Move to…",
+      "title": "Move {name}",
+      "description": "Pick the new place. {level} units stay at their level, so only units at the level of the current parent are offered.",
+      "reviewTitle": "Review the move",
+      "step": "Step {step} of {of}",
+      "search": "Search units",
+      "pickLegend": "New parent",
+      "none": "No other unit at this level. Add one first.",
+      "levelNote": "A {level} keeps its level: its new parent is a {parentLevel}, as now.",
+      "review": "Review",
+      "checking": "Checking…",
+      "back": "Back",
+      "confirm": "Move",
+      "moving": "Moving…",
+      "unitsMove": "Units that move (with everything under them)",
+      "peopleMove": "People placed in them",
+      "changesTitle": "Who sees more or less",
+      "noChanges": "No one gains or loses access with this move.",
+      "loses": "Stops seeing {name}",
+      "gains": "Starts seeing {name}",
+      "headOf": "Head of {unit}",
+      "roleFor": "{role} for {unit}",
+      "openCycle": "{name} is in the open planning cycle {cycles}. Its needs stay in the cycle and are reviewed under {parent} from now on.",
+      "done": "{name} moved."
+    },
+    "costCentres": {
+      "title": "Cost centres",
+      "description": "The finance codes that pay for training. Each person has one; a unit can give a default.",
+      "add": "Add cost centre",
+      "addTitle": "Add cost centre",
+      "editTitle": "Edit {code}",
+      "formDescription": "A code from your finance system and its name.",
+      "empty": "No cost centres yet",
+      "emptyBody": "Add the cost centres from your finance system. Then give each person one, or give units a default.",
+      "emptyViewOnly": "The HR Manager adds the cost centres.",
+      "columns": {
+        "code": "Code",
+        "name": "Name",
+        "people": "People",
+        "units": "Units",
+        "status": "Status",
+        "actions": "Actions"
+      },
+      "active": "Active",
+      "activeHint": "Only active cost centres can be picked. An inactive one stays on the people who have it.",
+      "codeHint": "As in your finance system: letters, digits, dots, hyphens or underscores; up to 32, unique.",
+      "nameHint": "Give the name in at least one language.",
+      "name": "Give a name in English or Arabic, with visible letters, up to 120 characters.",
+      "codeTaken": "Another cost centre has this code.",
+      "inUse": "This cost centre is in use. Deactivate it instead.",
+      "inUseDetail": "In use: {usage}. Deactivate it instead: it stays on the people who have it, and can't be picked any more.",
+      "usage": "{people, plural, =0 {No people} one {# person} other {# people}} · {units, plural, =0 {no units} one {# unit} other {# units}}",
+      "created": "{code} added.",
+      "activated": "{code} activated.",
+      "deactivated": "{code} deactivated.",
+      "deleted": "{code} deleted.",
+      "deleteTitle": "Delete {code}?",
+      "deleteText": "The cost centre is removed from the list. This works only while no person or unit uses it.",
+      "keep": "Keep it"
+    },
+    "import": {
+      "title": "Import units",
+      "intro": "Add or update many units at once from a spreadsheet. Every row is checked before anything changes.",
+      "templateTitle": "1. Get the template",
+      "templateText": "One row per unit, from the top level down. Fill it in Excel or any spreadsheet app.",
+      "templateDownload": "Download template",
+      "templateCsv": "Download as CSV",
+      "templateOther": "Template with Arabic headers",
+      "rule": {
+        "order": "Put a unit after its parent: the parent can be an existing unit or one in an earlier row.",
+        "update": "A row with an existing code updates that unit's names, branch, default cost centre and head. An empty cell clears the value; a column left out of the file changes nothing.",
+        "noMove": "The import never moves, deactivates or deletes a unit. Move units on the Structure page.",
+        "limits": "CSV or XLSX, up to 512 KB and 2,000 rows."
+      },
+      "fileTitle": "2. Check your file",
+      "fileText": "Nothing is saved until you import. The file itself is not kept.",
+      "choose": "Choose a file",
+      "check": "Check file",
+      "checking": "Checking…",
+      "resultsTitle": "Check results",
+      "summary": "Rows read: {read} · New: {created} · Updates: {updated} · Problems: {problems}",
+      "problemsOnly": "Show problems only",
+      "skipped": "{count, plural, one {# row has a problem and will be skipped} other {# rows have a problem and will be skipped}}. Fix them in the file and import it again.",
+      "apply": "Import {count, plural, one {# unit} other {# units}}",
+      "importing": "Importing…",
+      "done": "Import finished: {created} new, {updated} updated.",
+      "result": {
+        "new": "New",
+        "update": "Update",
+        "problem": "Problem"
+      },
+      "columns": {
+        "row": "Row",
+        "code": "Code",
+        "name": "Name",
+        "level": "Level",
+        "result": "Result",
+        "issue": "Note"
+      },
+      "file": {
+        "FILE_EMPTY": "The file has no rows under the headers.",
+        "FILE_COLUMNS": "The headers don't match the template. Download the template and use its headers.",
+        "FILE_TOO_MANY_ROWS": "The file has more than 2,000 rows. Split it into smaller files.",
+        "FILE_TOO_MANY_COLUMNS": "The file has too many columns. Use the template's columns.",
+        "FILE_TOO_MANY_SHEETS": "The workbook has too many sheets. Keep the units sheet only.",
+        "FILE_TOO_LARGE": "The file is larger than 512 KB. Split it into smaller files.",
+        "FILE_ENCODING": "Save the CSV file as UTF-8 and try again.",
+        "FILE_PROTECTED": "The file is password-protected. Remove the password and try again.",
+        "FILE_MACROS": "Files with macros can't be read. Save it as a normal .xlsx file.",
+        "FILE_UNREADABLE": "The file can't be read. Use a CSV or XLSX file made from the template.",
+        "NOTHING_TO_IMPORT": "No row can be imported. Fix the problems in the file and check it again.",
+        "STRUCTURE_CHANGED": "The structure changed since the check. Check the file again, then import."
+      },
+      "issues": {
+        "LEVEL_UNKNOWN": "The level is not one of your levels.",
+        "CODE_INVALID": "The code is missing or not valid.",
+        "CODE_REPEATED": "This code is used in an earlier row.",
+        "NAME_REQUIRED": "Both names are required.",
+        "NAME_TOO_LONG": "A name is longer than 200 characters.",
+        "PARENT_REQUIRED": "A unit below the top level needs a parent code.",
+        "PARENT_NOT_ALLOWED": "A top-level unit has no parent.",
+        "PARENT_NOT_FOUND": "The parent code is not a unit, nor a new unit in an earlier row.",
+        "PARENT_WRONG_LEVEL": "The parent is not at the level just above.",
+        "PARENT_CHANGE": "The parent differs from the unit's current parent. Move units on the Structure page.",
+        "LEVEL_CHANGE": "The level differs from the unit's current level.",
+        "BRANCH_NOT_FOUND": "No active branch has this code.",
+        "COST_CENTRE_NOT_FOUND": "No cost centre has this code.",
+        "COST_CENTRE_INACTIVE": "This cost centre is inactive.",
+        "HEAD_NOT_FOUND": "No active person has this e-mail: a new unit gets no head, an existing unit keeps its head."
+      }
     }
   },
   "branches": {
@@ -3114,7 +3271,21 @@
       "cancel": "Cancel",
       "close": "Close",
       "audited": "Every change is recorded in the audit log.",
-      "hqMoves": "Headquarters moves from {from} to {to} when you save."
+      "hqMoves": "Headquarters moves from {from} to {to} when you save.",
+      "addressEn": "Address in English",
+      "addressAr": "Address in Arabic",
+      "latitude": "Latitude",
+      "latitudeHint": "Decimal degrees, for example 24.7136.",
+      "longitude": "Longitude",
+      "longitudeHint": "Decimal degrees, for example 46.6753.",
+      "week": "Working week",
+      "weekSame": "Same as the organization",
+      "weekSameHint": "Untick to give this branch its own days and hours.",
+      "weekEmpty": "Pick at least one working day, or use the organization's week.",
+      "dayStart": "{day} start",
+      "dayEnd": "{day} end",
+      "dayOff": "Day off",
+      "halfDay": "Half day"
     },
     "fieldErrors": {
       "required": "This field is required.",
@@ -3123,7 +3294,10 @@
       "codeTaken": "Another branch has this code.",
       "city": "Up to 120 characters, with visible letters.",
       "timezone": "Choose a time zone from the list.",
-      "parent": "Choose another parent branch: a branch can't sit under itself or under its own sub-branches."
+      "parent": "Choose another parent branch: a branch can't sit under itself or under its own sub-branches.",
+      "address": "Up to 300 characters, with visible letters.",
+      "location": "Enter both latitude (−90 to 90) and longitude (−180 to 180), or neither.",
+      "hours": "Each working day ends after it starts."
     },
     "status": {
       "deactivateTitle": "Deactivate {name}?",

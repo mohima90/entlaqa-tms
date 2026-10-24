@@ -396,6 +396,12 @@ export async function classifyUserImport(
   id: string,
 ): Promise<Record<string, unknown>> {
   await tx.execute(sql`select private.user_import_classify(${id}::uuid)`);
+  // The cost-centre column (WP-HR-01, migration 20261103100400): matched once the step exists.
+  const [step] = await tx.execute<{ present: boolean }>(sql`
+    select to_regprocedure('private.user_import_classify_cost_centres(uuid)') is not null as present`);
+  if (step?.present === true) {
+    await tx.execute(sql`select private.user_import_classify_cost_centres(${id}::uuid)`);
+  }
   return userImportReviewCounts(tx, id);
 }
 

@@ -359,9 +359,11 @@ test.describe('invitations (admin side)', () => {
 /**
  * Organization → Structure built by an HR Manager (FR-ADM-05, T-M3-02; business flow EP-ORG; Kawadir's
  * Departments page): the Organization Admin invites an HR Manager, who signs up through the copied link and
- * maintains the structure — a level added, renamed and removed; a unit at the top, one under it through the
- * row menu («Add <next level>»), expand / collapse, deactivate, a delete refused while a unit sits under it,
- * then both deleted. Everything it creates is removed again (the seeded structure stays as it was).
+ * maintains the structure — the levels set (people are placed: renamed only, WP-HR-01); a cost centre; a unit
+ * at the top with it as default, one under it through the row menu («Add <next level>»), expand / collapse, a
+ * delete refused while a unit sits under it, «Move to…» with its preview, «Move up», deactivate and delete; the
+ * unit import; a branch with its address, location and own week. Everything it creates is removed again (the
+ * seeded structure stays as it was).
  */
 test.describe('organization structure (HR Manager)', () => {
   test.skip(!email || !password, 'SIGNED_IN_E2E_* not set');
@@ -402,31 +404,45 @@ test.describe('organization structure (HR Manager)', () => {
         .getByRole('link', { name: 'Structure' }),
     ).toBeVisible();
 
-    // Levels: the seeded Department and Section, then a third level added, renamed and (later) removed.
+    // Levels: the seeded Department and Section. People are placed in units, so the levels are set
+    // (WP-HR-01, BR-ORG-b): no level is added or removed, a level is still renamed.
     await hrPage.goto('/en/suite/admin/structure?view=levels');
     await expect(hrPage.getByTestId('level-row-1')).toContainText('Department');
     await expect(hrPage.getByTestId('level-row-2')).toContainText('Section');
-    await hrPage.getByTestId('level-add').click();
+    await expect(hrPage.getByTestId('levels-locked')).toContainText('Levels are set');
+    await expect(hrPage.getByTestId('level-add')).toHaveCount(0);
+    await expect(hrPage.getByTestId('level-remove')).toHaveCount(0);
     const levelDialog = hrPage.getByTestId('level-dialog');
-    await levelDialog.locator('#level-nameEn').fill(`Team ${run}`);
-    await levelDialog.locator('#level-nameAr').fill(`فريق ${run}`);
+    await hrPage.getByTestId('level-row-2').getByTestId('level-rename').click();
+    await levelDialog.locator('#level-nameEn').fill(`Section ${run}`);
     await levelDialog.getByTestId('level-dialog-submit').click();
     await expect(levelDialog).toBeHidden();
-    await expect(hrPage.getByTestId('level-row-3')).toContainText(`Team ${run}`);
-    await hrPage.getByTestId('level-row-3').getByTestId('level-rename').click();
-    await levelDialog.locator('#level-nameEn').fill(`Squad ${run}`);
+    await expect(hrPage.getByTestId('level-row-2')).toContainText(`Section ${run}`);
+    await hrPage.getByTestId('level-row-2').getByTestId('level-rename').click();
+    await levelDialog.locator('#level-nameEn').fill('Section');
     await levelDialog.getByTestId('level-dialog-submit').click();
     await expect(levelDialog).toBeHidden();
-    await expect(hrPage.getByTestId('level-row-3')).toContainText(`Squad ${run}`);
-    // Only the last level can be removed.
-    await expect(hrPage.getByTestId('level-row-2').getByTestId('level-remove')).toHaveCount(0);
+    await expect(hrPage.getByTestId('level-row-2').getByTestId('level-name')).toHaveText('Section');
+    await expectNoSeriousA11yViolations(hrPage);
+
+    // Cost centres (WP-HR-01, design screen 2): one added, used as a unit's default below, then deleted.
+    const costCentre = `CC-${run}`.slice(0, 32);
+    await hrPage.goto('/en/suite/admin/structure?view=costCentres');
+    await hrPage.getByTestId('cost-centre-add').first().click();
+    const costPanel = hrPage.getByTestId('cost-centre-dialog');
+    await costPanel.locator('#cost-centre-code').fill(costCentre);
+    await costPanel.locator('#cost-centre-nameEn').fill(`Sales ${run}`);
+    await costPanel.getByTestId('cost-centre-dialog-submit').click();
+    await expect(costPanel).toBeHidden();
+    const costRow = hrPage.getByTestId(`cost-centre-row-${costCentre}`);
+    await expect(costRow).toContainText('Active');
     await expectNoSeriousA11yViolations(hrPage);
 
     // Tree: the seeded Academy sits under Training and development.
     await hrPage.goto('/en/suite/admin/structure');
     const training = hrPage.getByTestId('unit-TRN');
     await expect(training.getByTestId('unit-ACD')).toContainText('Section');
-    // «Add Department» at the top.
+    // «Add Department» at the top, with the new cost centre as its default.
     const top = `TOP${run}`;
     await hrPage.getByTestId('unit-add-top').click();
     const unitDialog = hrPage.getByTestId('unit-dialog');
@@ -435,6 +451,9 @@ test.describe('organization structure (HR Manager)', () => {
     await unitDialog.locator('#unit-nameAr').fill(`المبيعات ${run}`);
     await unitDialog.locator('#unit-code').fill(top);
     await unitDialog.locator('#unit-head').selectOption({ index: 1 });
+    await unitDialog
+      .getByTestId('unit-cost-centre')
+      .selectOption({ label: `${costCentre} · Sales ${run}` });
     await unitDialog.getByTestId('unit-dialog-submit').click();
     await expect(unitDialog).toBeHidden();
     const sales = hrPage.getByTestId(`unit-${top}`);
@@ -469,22 +488,86 @@ test.describe('organization structure (HR Manager)', () => {
     await expect(deleteDialog.getByTestId('confirm-dialog-confirm')).toHaveCount(0);
     await deleteDialog.getByRole('button', { name: 'Keep the unit' }).click();
     await expect(deleteDialog).toBeHidden();
-    // Deactivate the team, then delete it and its parent.
+
+    // «Move to…» (WP-HR-01, design screens 4–5): the team moves under Training and development — only
+    // units at its parent's level are offered; the preview comes first, nothing changes until «Move».
     await team.getByTestId('unit-menu').click();
+    await hrPage.getByTestId('unit-menu-move').click();
+    const moveDialog = hrPage.getByTestId('move-unit-dialog');
+    await expect(moveDialog).toContainText('Step 1 of 2');
+    await expect(moveDialog.getByTestId('move-unit-option-ACD')).toHaveCount(0);
+    await moveDialog.getByTestId('move-unit-option-TRN').check();
+    await moveDialog.getByTestId('move-unit-review').click();
+    const preview = moveDialog.getByTestId('move-unit-preview');
+    await expect(preview).toBeVisible();
+    await expect(moveDialog).toContainText('Step 2 of 2');
+    await expectNoSeriousA11yViolations(hrPage);
+    await moveDialog.getByTestId('move-unit-confirm').click();
+    await expect(moveDialog).toBeHidden();
+    const moved = training.getByTestId(`unit-${child}`);
+    await expect(moved).toBeVisible();
+    await expect(sales.getByTestId(`unit-${child}`)).toHaveCount(0);
+    // «Move up» among the units at the top: the order is everyone's.
+    await sales.getByTestId('unit-menu').first().click();
+    await hrPage.getByTestId('unit-menu-up').click();
+    await expect(hrPage.getByText(`Sales ${run} moved.`)).toBeVisible();
+
+    // Deactivate the team, then delete it and Sales.
+    await moved.getByTestId('unit-menu').click();
     await hrPage.getByTestId('unit-menu-status').click();
     await expect(hrPage.getByTestId('unit-status-dialog')).toHaveCount(0);
     await expect(hrPage.getByTestId('toast-action')).toHaveText('Undo');
-    await expect(team.getByTestId('unit-inactive')).toHaveText('Inactive');
-    await team.getByTestId('unit-menu').click();
+    await expect(moved.getByTestId('unit-inactive')).toHaveText('Inactive');
+    await moved.getByTestId('unit-menu').click();
     await hrPage.getByTestId('unit-menu-delete').click();
     await deleteDialog.getByTestId('confirm-dialog-confirm').click();
-    await expect(team).toHaveCount(0);
+    await expect(moved).toHaveCount(0);
     await sales.getByTestId('unit-menu').first().click();
     await hrPage.getByTestId('unit-menu-delete').click();
     await deleteDialog.getByTestId('confirm-dialog-confirm').click();
     await expect(sales).toHaveCount(0);
 
-    // Branches (redesign package 2): add one in the side panel, deactivate it, Undo (Q2-9), delete it.
+    // Import units (WP-HR-01, design screen 7): a file with one good row and one problem row; the check
+    // writes nothing, «Import» writes the good row only.
+    const imported = `IMP${run}`.slice(0, 32);
+    await hrPage.goto('/en/suite/admin/structure');
+    await hrPage.getByTestId('unit-import-link').click();
+    await expect(hrPage).toHaveURL(/\/en\/suite\/admin\/structure\/import$/);
+    await hrPage.getByTestId('unit-import-file').setInputFiles({
+      name: 'units.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from(
+        `Level,Code,Name (English),Name (Arabic),Parent code,Default cost centre code\n` +
+          `Department,${imported},Imported ${run},مستورد ${run},,${costCentre}\n` +
+          `Section,BAD${run},Orphan,يتيم,NOPE${run},\n`,
+      ),
+    });
+    await hrPage.getByTestId('unit-import-check').click();
+    const results = hrPage.getByTestId('unit-import-results');
+    await expect(results).toContainText('New: 1');
+    await expect(results).toContainText('Problems: 1');
+    await expect(hrPage.getByTestId('unit-import-row-3')).toContainText('Problem');
+    await expectNoSeriousA11yViolations(hrPage);
+    await hrPage.getByTestId('unit-import-apply').click();
+    await expect(hrPage).toHaveURL(/\/en\/suite\/admin\/structure$/);
+    const importedUnit = hrPage.getByTestId(`unit-${imported}`);
+    await expect(importedUnit).toBeVisible();
+    await importedUnit.getByTestId('unit-menu').click();
+    await hrPage.getByTestId('unit-menu-delete').click();
+    await deleteDialog.getByTestId('confirm-dialog-confirm').click();
+    await expect(importedUnit).toHaveCount(0);
+    // The cost centre is unused again: deleted.
+    await hrPage.goto('/en/suite/admin/structure?view=costCentres');
+    await costRow.getByTestId('cost-centre-menu').click();
+    await hrPage.getByTestId('cost-centre-delete').click();
+    await hrPage
+      .getByTestId('cost-centre-delete-dialog')
+      .getByTestId('confirm-dialog-confirm')
+      .click();
+    await expect(costRow).toHaveCount(0);
+
+    // Branches (redesign package 2; WP-HR-01 screen 8): add one with its address, typed location and own
+    // week (Thursday a half-day), deactivate it, Undo (Q2-9), delete it.
     const branchCode = `BR${run}`.slice(0, 32);
     await hrPage.goto('/en/suite/admin/branches');
     await hrPage.getByTestId('branch-add').click();
@@ -492,10 +575,25 @@ test.describe('organization structure (HR Manager)', () => {
     await branchPanel.locator('#branch-nameEn').fill(`Smoke branch ${run}`);
     await branchPanel.locator('#branch-nameAr').fill(`فرع تجريبي ${run}`);
     await branchPanel.locator('#branch-code').fill(branchCode);
+    await branchPanel.locator('#branch-addressEn').fill('King Fahd Road');
+    await branchPanel.locator('#branch-latitude').fill('24.7136');
+    await branchPanel.locator('#branch-longitude').fill('46.6753');
+    await branchPanel.getByTestId('branch-week-same').uncheck();
+    await branchPanel.getByTestId('branch-day-4-endsAt').selectOption('12:00');
+    await expect(branchPanel.getByTestId('branch-day-4-half')).toHaveText('Half day');
+    await expectNoSeriousA11yViolations(hrPage);
     await branchPanel.getByTestId('branch-dialog-submit').click();
     await expect(branchPanel).toBeHidden();
     const branchRow = hrPage.getByTestId(`branch-row-${branchCode}`);
     await expect(branchRow).toContainText('Active');
+    // Saved: the edit panel shows the location and the branch's own week.
+    await branchRow.getByTestId('branch-menu').click();
+    await hrPage.getByRole('menuitem', { name: 'Edit' }).click();
+    await expect(branchPanel.locator('#branch-latitude')).toHaveValue('24.7136');
+    await expect(branchPanel.getByTestId('branch-week-same')).not.toBeChecked();
+    await expect(branchPanel.getByTestId('branch-day-4-endsAt')).toHaveValue('12:00');
+    await branchPanel.getByRole('button', { name: 'Cancel' }).click();
+    await expect(branchPanel).toBeHidden();
     await branchRow.getByTestId('branch-menu').click();
     await hrPage.getByTestId('branch-status').click();
     await expect(branchRow).toContainText('Inactive');
@@ -510,13 +608,14 @@ test.describe('organization structure (HR Manager)', () => {
     await hrPage.getByTestId('branch-delete-dialog').getByTestId('confirm-dialog-confirm').click();
     await expect(branchRow).toHaveCount(0);
 
-    // The third level is unused again: removed. Arabic, right to left.
+    // Arabic, right to left: the levels are set; the cost centres view.
     await hrPage.goto('/ar/suite/admin/structure?view=levels');
     await expect(hrPage.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(hrPage.getByTestId('level-row-1')).toContainText('المستوى 1');
-    await hrPage.getByTestId('level-row-3').getByTestId('level-remove').click();
-    await hrPage.getByTestId('level-remove-dialog').getByTestId('confirm-dialog-confirm').click();
-    await expect(hrPage.getByTestId('level-row-3')).toHaveCount(0);
+    await expect(hrPage.getByTestId('levels-locked')).toContainText('المستويات مثبتة');
+    await expectNoSeriousA11yViolations(hrPage);
+    await hrPage.goto('/ar/suite/admin/structure?view=costCentres');
+    await expect(hrPage.getByTestId('cost-centres')).toContainText('مراكز التكلفة');
     await expectNoSeriousA11yViolations(hrPage);
     await context.close();
   });

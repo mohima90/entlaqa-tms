@@ -221,7 +221,10 @@ begin
     'persons: triggers (persons_removal_guard: people removed by an import undo, T-M2-12)');
   perform tests.assert_eq(
     (select array_agg(tgname::text order by tgname::text) from pg_trigger where tgrelid = 'platform.person_employment'::regclass and not tgisinternal),
-    array['person_employment_guard_writer', 'person_employment_stamp_row', 'person_employment_validate'], 'person_employment: triggers');
+    -- WP-HR-01: the unit's default cost centre filled in, then checked active (after the writer guard).
+    array['person_employment_guard_writer', 'person_employment_stamp_row', 'person_employment_validate',
+          'person_employment_validate_cost_centre_1_default', 'person_employment_validate_cost_centre_2_ref'],
+    'person_employment: triggers');
   perform tests.assert((select bool_and(convalidated) from pg_constraint where conrelid = 'platform.persons'::regclass and contype = 'c'),
     'persons: every check constraint is validated');
 end $$;

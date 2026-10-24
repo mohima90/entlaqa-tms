@@ -10,6 +10,12 @@ import {
   refusalOf,
   updateUserDetails,
 } from './user-admin';
+import { setStructureCompletionForTests } from './custom-roles-present';
+
+// The database before WP-HR-01's migrations unless a test says otherwise (no presence query in the fakes).
+beforeEach(() => {
+  setStructureCompletionForTests(false);
+});
 
 const dialect = new PgDialect();
 
@@ -80,6 +86,7 @@ const change = (over: Partial<UserDetailsChange> = {}): UserDetailsChange => ({
   jobTitleAr: null,
   jobTitleEn: null,
   hireOn: null,
+  costCentreId: null,
   ...over,
 });
 

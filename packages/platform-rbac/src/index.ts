@@ -71,6 +71,7 @@ export * from './iam/branding';
 export * from './iam/email-integration';
 export * from './iam/structure';
 export * from './iam/branches';
+export * from './iam/cost-centres';
 export * from './iam/scope-units';
 export * from './iam/profile-photo';
 export * from './iam/grades';

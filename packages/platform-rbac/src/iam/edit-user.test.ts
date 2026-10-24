@@ -16,6 +16,7 @@ const db = vi.hoisted(() => ({
   getEditableUser: vi.fn(),
   listManagerOptions: vi.fn(),
   listOrgUnitOptions: vi.fn(),
+  listCostCentreOptions: vi.fn().mockResolvedValue([]),
   updateUserDetails: vi.fn(),
   getTenantDefaultLocale: vi.fn(),
   keepsUnsplitDisplayName: vi.fn(),

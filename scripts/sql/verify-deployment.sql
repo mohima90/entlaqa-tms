@@ -25,13 +25,15 @@ begin
     select rolname, rolcanlogin, rolinherit, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolreplication
     from pg_roles where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
                                     'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard',
-                                    'user_import_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard', 'plan_guard')
+                                    'user_import_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard', 'plan_guard',
+                                    'structure_guard')
   loop
     if r.rolname in ('app_server', 'app_worker', 'app_queue') and not r.rolcanlogin then
       failures := failures || format('%s must be LOGIN', r.rolname);
     end if;
     if r.rolname in ('tenant_guard', 'invitation_guard', 'account_mail_guard', 'membership_guard', 'rate_limit_guard',
-                     'file_guard', 'user_import_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard', 'plan_guard')
+                     'file_guard', 'user_import_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard', 'plan_guard',
+                     'structure_guard')
        and r.rolcanlogin then
       failures := failures || format('%s must be NOLOGIN', r.rolname);
     end if;
@@ -42,8 +44,9 @@ begin
   if (select count(*) from pg_roles
       where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
                         'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard',
-                        'user_import_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard', 'plan_guard')) <> 14 then
-    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard, invitation_guard, account_mail_guard, membership_guard, rate_limit_guard, file_guard, user_import_guard, platform_admin_guard, email_guard, inline_mail_guard and plan_guard must all exist'::text;
+                        'user_import_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard', 'plan_guard',
+                        'structure_guard')) <> 15 then
+    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard, invitation_guard, account_mail_guard, membership_guard, rate_limit_guard, file_guard, user_import_guard, platform_admin_guard, email_guard, inline_mail_guard, plan_guard and structure_guard must all exist'::text;
   end if;
   -- The job runner (ADR 0005 §2): member of nothing (never authenticated), owner of graphile_worker.
   if exists (select 1 from pg_auth_members m join pg_roles u on u.oid = m.member where u.rolname = 'app_queue') then
@@ -300,7 +303,7 @@ begin
     from (values
       ('private.user_session_is_valid(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'invitation_guard', 'platform_admin_guard', 'email_guard', 'plan_guard'], true),
       ('private.has_active_membership(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'rate_limit_guard'], true),
-      ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated', 'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard', 'invitation_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard', 'plan_guard'], true),
+      ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated', 'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard', 'invitation_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard', 'plan_guard', 'structure_guard'], true),
       ('private.switch_active_tenant(uuid)',        'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.session_tenants()',                 'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.discard_inactive_tenant_delivery(uuid)', 'tenant_guard', array['tenant_guard', 'authenticated'], true),
@@ -548,7 +551,9 @@ begin
       ('private.platform_save_plan(uuid, text, text, integer, integer, text[], integer)', 'plan_guard', array['plan_guard', 'authenticated'], true),
       ('private.platform_tenant_plans()', 'plan_guard', array['plan_guard', 'authenticated'], true),
       ('private.platform_set_tenant_plan(uuid, uuid, text, timestamp with time zone, integer, integer)', 'plan_guard', array['plan_guard', 'authenticated'], true),
-      ('private.expire_trials()', 'plan_guard', array['plan_guard', 'authenticated'], true)
+      ('private.expire_trials()', 'plan_guard', array['plan_guard', 'authenticated'], true),
+      -- structure_guard: the move preview's open planning cycles (20261103100300, WP-HR-01).
+      ('private.units_in_open_plan_cycles(uuid[])', 'structure_guard', array['structure_guard', 'authenticated'], true)
     ) as h(fn, owner, allowed, definer)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop
@@ -682,7 +687,8 @@ begin
         'private.current_tenant_features()', 'private.organization_plan()', 'private.platform_list_plans()',
         'private.platform_save_plan(uuid,text,text,integer,integer,text[],integer)', 'private.platform_tenant_plans()',
         'private.platform_set_tenant_plan(uuid,uuid,text,timestamp with time zone,integer,integer)',
-        'private.expire_trials()', 'private.paused_admin_tenants(uuid)', 'private.account_access_paused(uuid)')
+        'private.expire_trials()', 'private.paused_admin_tenants(uuid)', 'private.account_access_paused(uuid)',
+        'private.units_in_open_plan_cycles(uuid[])')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;
@@ -786,6 +792,41 @@ begin
         and att.attacl is not null and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'email_guard')
     loop
       failures := failures || format('%s must have no privilege on %s (WP-ADM-01)', r.grantee, r.t);
+    end loop;
+  end if;
+
+  -- structure_guard (WP-HR-01): the same rules; it owns no relation and reads three columns of tms.plan_cycles and
+  -- two of tms.plan_cycle_departments, nothing else of any schema.
+  if exists (select 1 from pg_roles where rolname = 'structure_guard') then
+    for r in select nspname from pg_namespace where nspname = any (module_schemas) loop
+      if has_schema_privilege('structure_guard', r.nspname, 'create') then
+        failures := failures || format('structure_guard must not have CREATE on schema %s', r.nspname);
+      end if;
+    end loop;
+    if exists (select 1 from pg_class c where c.relowner = (select oid from pg_roles where rolname = 'structure_guard')) then
+      failures := failures || 'structure_guard must own no relations'::text;
+    end if;
+    for r in
+      select distinct u.rolname from pg_auth_members m
+      join pg_roles g on g.oid = m.roleid join pg_roles u on u.oid = m.member
+      where g.rolname = 'structure_guard' and (m.inherit_option or m.set_option)
+        and not u.rolsuper and u.rolname <> current_user
+    loop
+      failures := failures || format('%s must not be a member of structure_guard', r.rolname);
+    end loop;
+    for r in
+      select distinct c.oid::regclass::text as t
+      from pg_class c join pg_namespace n on n.oid = c.relnamespace, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+      where n.nspname = any (module_schemas) and a.grantee = (select oid from pg_roles where rolname = 'structure_guard')
+      union
+      select distinct att.attrelid::regclass::text
+      from pg_attribute att join pg_class c on c.oid = att.attrelid join pg_namespace n on n.oid = c.relnamespace,
+           aclexplode(att.attacl) a
+      where n.nspname = any (module_schemas) and att.attacl is not null
+        and a.grantee = (select oid from pg_roles where rolname = 'structure_guard')
+        and att.attrelid not in (to_regclass('tms.plan_cycles'), to_regclass('tms.plan_cycle_departments'))
+    loop
+      failures := failures || format('structure_guard must have no privilege on %s (WP-HR-01)', r.t);
     end loop;
   end if;
 

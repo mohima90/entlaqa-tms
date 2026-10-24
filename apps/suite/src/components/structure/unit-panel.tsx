@@ -26,6 +26,11 @@ export interface UnitView {
   readonly branchId: string | null;
   readonly headPersonId: string | null;
   readonly headName: string | null;
+  /** The cost centre people placed in the unit get when HR picks none (WP-HR-01). */
+  readonly defaultCostCentreId: string | null;
+  /** The unit's level (= its depth; moves keep it, WP-HR-01), its order among its siblings. */
+  readonly levelOrdinal: number | null;
+  readonly sortOrder: number;
   readonly active: boolean;
   readonly version: number;
   readonly childCount: number;
@@ -48,6 +53,8 @@ export interface UnitPanelProps {
   readonly mode: UnitDialogMode;
   readonly branches: readonly Choice[];
   readonly people: readonly Choice[];
+  /** Active cost centres as default choices (WP-HR-01); none hides the field. */
+  readonly costCentres: readonly Choice[];
   /** Texts of the `structure` namespace (raw, flattened) plus `required` / `optional`. */
   readonly texts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
@@ -72,6 +79,7 @@ export function UnitPanel({
   mode,
   branches,
   people,
+  costCentres,
   texts,
   errors,
   locale,
@@ -92,6 +100,15 @@ export function UnitPanel({
   const unit = mode.kind === 'edit' ? mode.unit : null;
   const [branchId, setBranchId] = useState(unit?.branchId ?? '');
   const [headPersonId, setHeadPersonId] = useState(unit?.headPersonId ?? '');
+  const [defaultCostCentreId, setDefaultCostCentreId] = useState(unit?.defaultCostCentreId ?? '');
+  // A default that was deactivated since stays shown (it stays on the unit until changed).
+  const costCentreChoices =
+    unit?.defaultCostCentreId && !costCentres.some((c) => c.value === unit.defaultCostCentreId)
+      ? [
+          { value: unit.defaultCostCentreId, label: text('form.inactiveCostCentre') },
+          ...costCentres,
+        ]
+      : costCentres;
   // A current branch or head that is no longer offered (e.g. a person who left) stays selectable.
   const branchChoices =
     unit?.branchId && !branches.some((b) => b.value === unit.branchId)
@@ -132,6 +149,7 @@ export function UnitPanel({
       nameAr: field('nameAr'),
       branchId,
       headPersonId,
+      defaultCostCentreId,
     };
     setFailure({ fields: {}, message: null });
     startTransition(async () => {
@@ -287,6 +305,28 @@ export function UnitPanel({
             ))}
           </SelectField>
         </div>
+        {costCentreChoices.length > 0 ? (
+          <SelectField
+            id="unit-cost-centre"
+            label={text('form.defaultCostCentre')}
+            marker={text('optional')}
+            hint={text('form.defaultCostCentreHint')}
+            value={defaultCostCentreId}
+            onChange={(event) => {
+              setDefaultCostCentreId(event.target.value);
+            }}
+            error={failure.fields.defaultCostCentreId}
+            disabled={pending}
+            data-testid="unit-cost-centre"
+          >
+            <option value="">{text('form.noCostCentre')}</option>
+            {costCentreChoices.map((choice) => (
+              <option key={choice.value} value={choice.value}>
+                {choice.label}
+              </option>
+            ))}
+          </SelectField>
+        ) : null}
         {failure.message ? (
           <Alert tone="danger" data-testid="unit-dialog-message">
             {failure.message}

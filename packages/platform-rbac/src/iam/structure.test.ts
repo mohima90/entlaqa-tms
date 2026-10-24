@@ -31,6 +31,11 @@ const db = vi.hoisted(() => ({
   listStructureUnits: vi.fn(),
   listOrgUnitOptions: vi.fn(),
   listActivePersonOptions: vi.fn(),
+  listCostCentreOptions: vi.fn(),
+  structureLevelsLocked: vi.fn(),
+  moveStructureUnit: vi.fn(),
+  reorderStructureUnit: vi.fn(),
+  previewStructureUnitMove: vi.fn(),
   addStructureLevel: vi.fn(),
   renameStructureLevel: vi.fn(),
   removeStructureLevel: vi.fn(),
@@ -39,6 +44,8 @@ const db = vi.hoisted(() => ({
   setStructureUnitStatus: vi.fn(),
   deleteStructureUnit: vi.fn(),
   listBranches: vi.fn(),
+  getOrganizationProfile: vi.fn(),
+  structureCompletionExists: vi.fn(),
   createBranch: vi.fn(),
   updateBranch: vi.fn(),
   setBranchStatus: vi.fn(),
@@ -114,6 +121,7 @@ const unitForm = {
   nameAr: 'المبيعات',
   branchId: '',
   headPersonId: HEAD,
+  defaultCostCentreId: '',
 };
 
 beforeEach(() => {
@@ -122,6 +130,8 @@ beforeEach(() => {
   db.listStructureUnits.mockResolvedValue([unit()]);
   db.listOrgUnitOptions.mockResolvedValue({ departments: [], branches: [{ id: BRANCH }] });
   db.listActivePersonOptions.mockResolvedValue([{ id: HEAD, nameAr: 'منى' }]);
+  db.listCostCentreOptions.mockResolvedValue([]);
+  db.structureLevelsLocked.mockResolvedValue(true);
 });
 
 describe('inputs', () => {
@@ -133,6 +143,7 @@ describe('inputs', () => {
       nameAr: 'المبيعات',
       branchId: null,
       headPersonId: HEAD,
+      defaultCostCentreId: null,
     });
     for (const code of ['', 'with space', '-start', 'x'.repeat(33)]) {
       expect(CreateUnitInput.safeParse({ ...unitForm, code }).success, code).toBe(false);
@@ -159,6 +170,8 @@ describe('structure page (platform.org.read)', () => {
         units: [unit()],
         branches: [{ id: BRANCH }],
         people: [{ id: HEAD, nameAr: 'منى' }],
+        costCentres: [],
+        levelsLocked: true,
         canManage: true,
       }),
     );
@@ -289,6 +302,7 @@ describe('structure changes (platform.org.manage)', () => {
       nameAr: 'المبيعات',
       branchId: null,
       headPersonId: HEAD,
+      defaultCostCentreId: null,
     });
     db.updateStructureUnit.mockResolvedValue({
       ok: true,
@@ -387,6 +401,11 @@ const branchForm = {
   cityEn: 'Riyadh',
   timezone: 'Asia/Riyadh',
   isHeadquarters: true,
+  addressEn: '',
+  addressAr: '',
+  latitude: '',
+  longitude: '',
+  workingDays: null,
 };
 const branch = (over: Record<string, unknown> = {}) => ({
   id: BRANCH,
@@ -410,10 +429,23 @@ const branch = (over: Record<string, unknown> = {}) => ({
 describe('branches (FR-ADM-04)', () => {
   it('everyone who reads the structure sees the branches; only the HR Manager changes them', async () => {
     db.listBranches.mockResolvedValue([branch()]);
+    db.structureCompletionExists.mockResolvedValue(true);
+    db.getOrganizationProfile.mockResolvedValue({
+      workingDays: [0, 1, 2, 3, 4],
+      workStartsAt: '08:00',
+      workEndsAt: '16:00',
+    });
     const hr = await createDefineQuery(runtime(['hr_manager']).rt)(branchesPageQueryDefinition())(
       {},
     );
-    expect(hr).toEqual(ok({ branches: [branch()], canManage: true }));
+    expect(hr).toEqual(
+      ok({
+        branches: [branch()],
+        organizationWeek: { days: [0, 1, 2, 3, 4], startsAt: '08:00', endsAt: '16:00' },
+        detailsAvailable: true,
+        canManage: true,
+      }),
+    );
     const admin = await createDefineQuery(runtime(['tenant_admin']).rt)(
       branchesPageQueryDefinition(),
     )({});
@@ -441,6 +473,10 @@ describe('branches (FR-ADM-04)', () => {
       ...branchForm,
       parentBranchId: null,
       cityAr: null,
+      addressEn: null,
+      addressAr: null,
+      latitude: null,
+      longitude: null,
     });
     expect(writeAudit).toHaveBeenCalledWith(
       TX,

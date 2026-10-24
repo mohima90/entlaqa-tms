@@ -284,6 +284,8 @@ rollback;
 -- ---------------------------------------------------------------------------------------------------
 begin;
 insert into private.plans (id, name, max_storage_gb) values ('e1000000-0000-4000-8000-000000000004', 'One GB', 1);
+-- A member's uploads (the claims of tenant A's Organization Admin).
+select tests.set_claims(tests.ua_claims());
 do $$
 declare
   v_used bigint := private.tenant_storage_used('a0000000-0000-4000-8000-000000000001');
@@ -310,6 +312,11 @@ begin
   perform tests.assert_fails_state_like(
     $q$select tests.file_fixture('a8000000-0000-4000-8000-00000000e104', 'a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a1', 'pending_upload')$q$,
     'JL002', '%storage limit%', 'full: a new file is refused');
+  -- The worker's own file (no user: an import's report) is not refused.
+  perform tests.set_claims(tests.system_claims('a0000000-0000-4000-8000-000000000001'));
+  perform tests.file_fixture('a8000000-0000-4000-8000-00000000e105', 'a0000000-0000-4000-8000-000000000001',
+                             '00000000-0000-4000-8000-0000000000a1', 'pending_upload');
+  perform tests.set_claims(tests.ua_claims());
   perform tests.file_fixture('b8000000-0000-4000-8000-00000000e104', 'b0000000-0000-4000-8000-000000000001',
                              '00000000-0000-4000-8000-0000000000b1', 'pending_upload');
   update platform.tenants set max_storage_gb_override = 2 where id = 'a0000000-0000-4000-8000-000000000001';

@@ -134,3 +134,40 @@ describe('sessions the database refuses (T-M2-10)', () => {
     ]);
   });
 });
+
+describe('getSessionState × plans (WP-ADM-06)', () => {
+  it("reads the plan's features with the tenant; own branding only while the plan includes it", async () => {
+    const brand = { slug: 'raya', primaryColor: '#7A1F2B' };
+    const getTenantBrand = vi.fn(() => Promise.resolve(brand));
+    const withBranding = vi.fn(() => Promise.resolve(['courses', 'branding']));
+    const d = {
+      ...deps({ ...base, tenant_id: TENANT }, true),
+      getTenantBrand,
+      getOrganizationFeatures: withBranding,
+    };
+    const state = await getSessionState(configured, d as unknown as SessionStateDeps);
+    expect(state.kind === 'organization' && state.features).toEqual(['courses', 'branding']);
+    expect(state.kind === 'organization' && state.brand).toEqual(brand);
+    const without = {
+      ...d,
+      getOrganizationFeatures: vi.fn(() => Promise.resolve(['courses'])),
+    };
+    getTenantBrand.mockClear();
+    const plain = await getSessionState(configured, without as unknown as SessionStateDeps);
+    expect(plain.kind === 'organization' && plain.brand).toBeUndefined();
+    expect(getTenantBrand).not.toHaveBeenCalled();
+  });
+
+  it("a suspended organization's Organization Admin is paused: the paused page only", async () => {
+    const state = await getSessionState(
+      configured,
+      deps({ ...base, tenant_id: TENANT }, false, 'paused'),
+    );
+    expect(state.kind).toBe('paused');
+    expect(redirectFor('en', state, 'suite')).toBe('/en/paused');
+    expect(redirectFor('ar', state, 'sign-in')).toBe('/ar/paused');
+    expect(redirectFor('en', state, 'paused')).toBeNull();
+    // Anyone else on the paused page goes where they belong.
+    expect(redirectFor('en', { kind: 'signed-out' }, 'paused')).toBe('/en/sign-in');
+  });
+});

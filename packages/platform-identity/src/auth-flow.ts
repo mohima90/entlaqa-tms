@@ -48,6 +48,11 @@ export const IdentityErrors = defineErrorCodes({
   /** Signed in, but the account has no active membership in an active organization. */
   AUTH_NO_ORGANIZATION: { status: 403, messageKey: 'auth.errors.noOrganization' },
   /**
+   * The password (or code) was right, but the account's organization is suspended (WP-ADM-06): «Access
+   * paused». Its Organization Admin still signs in (to the plan page); Auth's hook refuses everyone else.
+   */
+  AUTH_ACCESS_PAUSED: { status: 403, messageKey: 'auth.errors.accessPaused' },
+  /**
    * Too many sign-in attempts for this account or from this client (T-M2-11). The same for unknown
    * accounts: the counters are kept per typed e-mail whether or not an account exists.
    */
@@ -76,22 +81,37 @@ export const SIGN_IN_REFUSAL_ANSWER_MS = 1_500;
  */
 export const SIGN_IN_REFUSAL_WARN_MS = 1_200;
 
+/**
+ * The message of Auth's access-token hook for a member of a suspended organization (private.custom_access_token_hook,
+ * migration 20261027100200). Given only after the password or code was accepted.
+ */
+export const ACCESS_PAUSED_MESSAGE = 'Access to this organization is paused.';
+
+/** Auth refused the sign-in because the account's organization is suspended (WP-ADM-06). */
+export function isAccessPaused(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { message?: unknown }).message === ACCESS_PAUSED_MESSAGE
+  );
+}
+
 /** The subset of the Supabase Auth client the flow uses (server-side, cookie-bound). */
 export interface AuthClientLike extends SupabaseAuthLike {
   readonly auth: SupabaseAuthLike['auth'] & {
-    signInWithPassword(credentials: {
-      email: string;
-      password: string;
-    }): Promise<{ data: unknown; error: { status?: number | undefined } | null }>;
+    signInWithPassword(credentials: { email: string; password: string }): Promise<{
+      data: unknown;
+      error: { status?: number | undefined; message?: string | undefined } | null;
+    }>;
     refreshSession(current?: { refresh_token: string }): Promise<{ data: unknown; error: unknown }>;
     /**
      * Redeems Auth's one-time token hash of an e-mailed sign-in (WP-ADM-05): only after OUR code was right
      * (private.verify_sign_in_code released the hash). Auth's own short OTP is never used or e-mailed.
      */
-    verifyOtp(params: {
-      token_hash: string;
-      type: 'magiclink';
-    }): Promise<{ data: unknown; error: { status?: number | undefined } | null }>;
+    verifyOtp(params: { token_hash: string; type: 'magiclink' }): Promise<{
+      data: unknown;
+      error: { status?: number | undefined; message?: string | undefined } | null;
+    }>;
     signOut(options: { scope: 'local' }): Promise<{ error: unknown }>;
   };
 }
@@ -267,6 +287,12 @@ export async function startPasswordSession(
     // for all of them (no account enumeration). The failure was counted before Auth was asked; the
     // attempt records the security events (keyed references only) and, when the account locks now,
     // requests the lockout e-mail. 5xx (thrown below): Auth could not answer — the failure stays counted.
+    // The password was right but the organization is suspended (WP-ADM-06): «Access paused» — not a
+    // credential failure, so the provisional failure is given back.
+    if (isAccessPaused(error)) {
+      await gate.attempt.notChecked();
+      return refuse(appError(IdentityErrors.AUTH_ACCESS_PAUSED));
+    }
     if (error.status !== undefined && error.status >= 400 && error.status < 500) {
       await gate.attempt.failed();
       return refuse(appError(IdentityErrors.AUTH_INVALID_CREDENTIALS));
@@ -382,6 +408,9 @@ export async function selectOrganization(
   if (access.state === 'mfa_challenge' || access.state === 'mfa_enrol') {
     return ok({ tenantId, next: 'mfa' });
   }
+  // A suspended organization's Organization Admin (WP-ADM-06): the session may see the plan page only; the
+  // organization is not served, so nothing is written in it (no sign-in record either).
+  if (access.state === 'paused') return ok({ tenantId, next: 'home' });
   await recordAudit(deps, tenantClaims.value, 'platform.auth.signed_in');
   const prompt = access.state === 'prompt_grace' || access.state === 'prompt_admin';
   // An app waits for its e-mailed code (re-review N1): the window that set it up enters the code; every

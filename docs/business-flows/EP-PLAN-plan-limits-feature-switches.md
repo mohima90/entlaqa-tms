@@ -16,6 +16,15 @@ Screens as in the artifact «Plans and Limits Design». The Organization Admin's
 
 **Suspension (PO, 24 Oct 2026):** the Organization Admin reaches the **Subscription** page only while suspended (not all settings); reactivation from that page comes with online payment later.
 
+## Built (24 Oct 2026) — how the rules were applied
+- **People** counted against the limit: everyone with an account (active or invited) and everyone with a pending, unexpired invitation, each person once. Deactivated people do not count; reactivating one takes a place again.
+- **Storage** counted: every stored or uploading file by its real size (deleted, rejected and infected files and abandoned uploads do not count). 1 GB = 1024³ bytes.
+- **Refused at the moment of the action** (the database decides, whoever acts): inviting, reactivating, a bulk-import row («people limit reached» on that row; the other rows go on), uploading a file.
+- **Features without a permission of their own** (bulk import, own branding, own e-mail provider): hidden in menus and pages and refused when saved; outside the plan the organization's e-mails go through the platform sender with the Jadarat look, and the product shows the Jadarat look. Data saved before is kept.
+- **Trial:** ends at the end of the chosen day (Riyadh time); a worker task checks every ten minutes and suspends the organization (audited). A new organization can start on a plan as a 30-day trial straight from «Create organization».
+- **Suspended:** the Organization Admin signs in and sees only the plan page (status, plan, contact ENTLAQA) — nothing else of the organization opens; everyone else is told «Access paused» at sign-in. **Cancelled:** nobody signs in.
+- **Audit:** every plan change and every change of an organization's plan or status is in the platform's trail; the organization's own trail records its plan and status changes and the end of its trial.
+
 ## 1. Goal
 Every organization is on a **plan** (edition) that decides which parts of Jadarat TMS it has and how big it may grow. ENTLAQA's Super Admin sets the plan, its limits and the organization's status. The Organization Admin sees the plan and how much of each limit is used, and can **switch off** parts its people should not use (for example, hide Planning until the organization is ready). Nothing here takes or shows payments: it decides what is available, not what it costs.
 

@@ -16,6 +16,7 @@ import {
   toClientError,
 } from '@jadarat/platform-core';
 import type { z } from 'zod';
+import { planRefusal } from './plan-features';
 import { type AuthorizationDecision, type Grant, authorize } from './authorize';
 import type { PermissionDefinition } from './permissions';
 import type { ResourceAttributes } from './scopes';
@@ -511,6 +512,9 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
           }
           return err(toClientError(error.error));
         }
+        // The organization's plan refused it (WP-ADM-06: a limit reached, a feature not in the plan).
+        const plan = planRefusal(error);
+        if (plan) return err(toClientError(plan));
         // Unexpected: log with a correlation id; the client gets INTERNAL_ERROR + the same id only.
         const correlationId = newCorrelationId();
         runtime.logError(error, { permission: definition.permission.code, correlationId });

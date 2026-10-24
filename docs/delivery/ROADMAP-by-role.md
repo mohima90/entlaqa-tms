@@ -67,7 +67,7 @@ Done 7 · Partly 4 · Not started 11
 | IAM-12 | MFA: TOTP + e-mail OTP; off / optional / required; grace; trusted-device duration | **Partly** | **Built in WP-ADM-05 (23 Oct 2026, awaiting merge):** «Email me a code» as a second way to sign in (not a setting, apart from MFA) and «Remember a trusted device» (Off / 1 / 7 / 14 / 30 days). The SMS code and password-reuse items stay «Coming soon» | EP-KAW-AUTH + EP-AUTH-signin-extras — Agreed | WP-ADM-05 |
 | IAM-13 | (R1 part) password policy, lockout, session rules, active sessions, force sign-out | **Done** | IP allow-list / access hours are R3 | EP-KAW-AUTH — Agreed | — |
 | AUD-01 | Immutable audit log, searchable and exportable, before/after, IP, device | **Partly** | Audit log screen («Coming soon»), search / filter / export, IP and device columns, a general before/after diff with field redaction (TM-0005 AA-03). Exists: append-only log, every admin action audited, recent activity on the profile | none | WP-ADM-03 |
-| ADM-13 | Feature toggles per organization within the edition | **Not started** | Everything (only `tenants.edition` exists) | none | WP-ADM-06 |
+| ADM-13 | Feature toggles per organization within the edition | **Built (PR pending)** | Super Admin plans decide the features; the Organization Admin sees them (no switches — PO 24 Oct 2026, BRD v3.4) | EP-PLAN — Agreed | WP-ADM-06 |
 | ADM-11 | Custom fields builder | **Not started** | Everything | none | WP-ADM-07 |
 | AUD-05 | Consent capture and withdrawal | **Not started** | Everything; legal questions open (security decision 13) | none | WP-ADM-08 |
 | STE-01 | Suite or standalone mode per organization | **Not started** | Everything (only `tenants.mode` exists) | none | WP-ADM-09 |
@@ -194,7 +194,7 @@ Done 0 · Partly 1 · Not started 1
 | ID | Feature (R1 part) | Status | What's missing | Business flow | WP |
 |---|---|---|---|---|---|
 | ADM-17 | Platform console: organizations, plan, limits, status, health, announcements, impersonation, platform e-mail settings; MFA | **Partly** | Platform e-mail settings (WP-ADM-01); organization status / plan / limits (WP-ADM-06); health, announcements, audited impersonation, console MFA (risk R-65) (WP-SA-01). Exists: Super Admin by user ID, Organizations list, create organization with an Org Admin code/link, reissue, platform audit | EP-KAW-AUTH — Agreed; e-mail part EP-EMAIL — In discussion | WP-ADM-01, WP-ADM-06, WP-SA-01 |
-| SUB-01 | Editions and add-ons decide features and limits | **Not started** | Everything (only `tenants.edition`) | none | WP-ADM-06 |
+| SUB-01 | Editions and add-ons decide features and limits | **Built (PR pending)** | Plans created by the Super Admin: people and storage limits, features; add-ons later | EP-PLAN — Agreed | WP-ADM-06 |
 
 ### 3.8 Platform / cross-cutting
 
@@ -230,7 +230,7 @@ Path shorthands: `app/` = `apps/suite/src/app/[locale]/` · `cmp/` = `apps/suite
 | **WP-ADM-03** Audit log screen | Search, filter and export who did what and when, with before/after values (personal data redacted) | AUD-01 | Yes — short flow (who sees it, filters, export, retention); **not written** | — | new `app/suite/admin/audit`, `cmp/audit`, `pkg/platform-db/src/audit.ts`, audit diff builder with field redaction (TM-0005 AA-03, T-AUD-21) | `202610241xxxxx` | |
 | **WP-ADM-04** People record completion | Profile photo (My profile and the person page); HR-only fields gender, date of birth, employment category, grade — seen and edited by HR / Compliance only, also in import | IAM-16 (photo), IAM-01 (photo), IAM-02; T-M2-15b, T-M2-25 | Yes — short flow (who sees the HR-only fields; legal flag for sensitive data); **not written** | WP-FIX-01 (same person forms) | `cmp/profile`, `cmp/users`, `act/{profile,users}.ts`, `lib/edit-user-form.ts`, `pkg/platform-import/src/users`, `pkg/platform-db/src/{my-profile,users,user-admin}.ts`, `pkg/platform-files` | `202610251xxxxx` | **Built 23 Oct 2026** (Claude engineering agent; local branch, not pushed; PR pending) — import columns parked |
 | **WP-ADM-05** Sign-in extras | E-mail one-time codes as a second sign-in method; «trust this device for N days» | IAM-12; T-M2-28 (= T-M2-10c without SMS) | Yes — addendum to EP-KAW-AUTH, **Agreed** (PO 21 Oct 2026; design answers 23 Oct 2026) | WP-ADM-01 | `pkg/platform-identity/src` (MFA), `cmp/security`, `cmp/mfa`, `app/mfa`, `act/security.ts` | `202610261xxxxx` | **Built 23 Oct 2026** (Claude engineering agent; local branch, not pushed; PR pending) |
-| **WP-ADM-06** Plan, limits and feature toggles | The Super Admin sets an organization's edition, limits and status; the Organization Admin sees the plan and its limits and switches features off for its users | ADM-13, SUB-01, ADM-17 (organization plan / limits / status); T-M2-27 | Yes — short flow (Super Admin vs. Org Admin split); **not written** | — | tenancy tables, new `app/suite/admin/subscription`, `app/platform`, `cmp/platform`, `lib/suite-navigation.ts` (toggles) | `202610271xxxxx` | |
+| **WP-ADM-06** Plan, limits and feature toggles | The Super Admin creates plans and sets an organization's plan, limits and status; the Organization Admin sees the plan and its limits (no switches, PO 24 Oct 2026) | ADM-13, SUB-01, ADM-17 (organization plan / limits / status); T-M2-27 | Yes — **agreed 24 Oct 2026**; design approved 24 Oct 2026 | — | tenancy tables, new `app/suite/admin/subscription`, `app/platform`, `cmp/platform`, `lib/suite-navigation.ts` (toggles) | `202610271xxxxx` | Claude — built, PR pending |
 | **WP-ADM-07** Custom fields | The organization adds its own fields to people (then courses, sessions, venues…) | ADM-11; T-M2-26 | Yes; **not written** | best after WP-LD-05, WP-LD-06, WP-LD-08 (the entities exist) — people fields can ship first | new `custom_fields` tables, `cmp/users`, forms, `pkg/platform-import` | `202610281xxxxx` | |
 | **WP-ADM-08** Consent settings | Which consents are asked (location at check-in, photos, WhatsApp, AI) and how people withdraw them | AUD-05; T-M2-31 | Yes; **not written**; legal answers first (security decision 13) | legal | new consent tables, `app/suite/admin/consent` | `202610291xxxxx` | |
 | **WP-ADM-09** Suite / standalone mode | Choose whether the organization runs TMS alone or inside the HR Suite (people data source) | STE-01; T-M2-32 (HR system CSV/SFTP sync is R2 in the feature list — §7 flag 5) | Yes; **not written**; security decision 7 | — | tenancy tables, `app/suite/admin/integrations` | `202610301xxxxx` | |
@@ -326,7 +326,7 @@ Role order (PO, 17 Oct 2026). Within a role, top to bottom. **A free account tak
 | 3 | WP-ADM-03 | Audit log screen | Flow to write |
 | 4 | WP-ADM-04 | Profile photo + HR-only person fields | Flow to write; after WP-FIX-01 |
 | 5 | WP-ADM-05 | Sign-in extras (e-mail codes, trusted devices) | After WP-ADM-01 |
-| 6 | WP-ADM-06 | Plan, limits and feature toggles | Flow to write |
+| 6 | WP-ADM-06 | Plan, limits and feature toggles | Built — PR pending |
 | 7 | WP-ADM-07 | Custom fields | Later (entities first) |
 | 8 | WP-ADM-08 | Consent settings | Legal answers first |
 | 9 | WP-ADM-09 | Suite / standalone mode | Flow to write |

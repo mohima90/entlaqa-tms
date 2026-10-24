@@ -77,7 +77,12 @@ interface CreatedOrganization {
  * same panel: the organization, the code in large type, Copy code / Copy invite link, Done (no e-mail is
  * sent). Same checks, action and audit as before (FR-ADM-17).
  */
-export function CreateOrganization(props: Shared) {
+export function CreateOrganization(
+  props: Shared & {
+    /** The plans to start on (WP-ADM-06); empty: none yet (every feature, no limits). */
+    readonly plans?: readonly { readonly planId: string; readonly name: string }[];
+  },
+) {
   const text = (key: string) => props.texts[key] ?? key;
   const router = useRouter();
   const formId = useId();
@@ -111,6 +116,9 @@ export function CreateOrganization(props: Shared) {
       adminFirstNameEn: value('adminFirstNameEn'),
       adminFamilyNameEn: value('adminFamilyNameEn'),
       locale: value('locale') === 'ar' ? ('ar' as const) : ('en' as const),
+      // The plan it starts on and a 30-day trial (WP-ADM-06).
+      planId: value('planId') === '' ? null : value('planId'),
+      trial: data.get('trial') === 'on',
     };
     const local: Partial<Record<Field, string>> = {};
     if (!isOrganizationSlug(input.slug)) local.slug = text('create.errors.slug');
@@ -298,6 +306,45 @@ export function CreateOrganization(props: Shared) {
                 <option value="en">{text('create.localeEn')}</option>
                 <option value="ar">{text('create.localeAr')}</option>
               </SelectField>
+            </fieldset>
+            {/* The plan and a 30-day trial (WP-ADM-06, business flow B1). */}
+            <fieldset className="m-0 flex flex-col gap-4 rounded-lg border border-border p-4">
+              <legend className="px-1 font-semibold">{text('create.planSection')}</legend>
+              <SelectField
+                id={`${formId}-planId`}
+                name="planId"
+                label={text('create.plan')}
+                defaultValue=""
+                disabled={pending}
+                data-testid="create-org-plan"
+              >
+                <option value="">{text('organizationPlan.noPlan')}</option>
+                {(props.plans ?? []).map((plan) => (
+                  <option key={plan.planId} value={plan.planId}>
+                    {plan.name}
+                  </option>
+                ))}
+              </SelectField>
+              <div className="flex items-start gap-3">
+                <input
+                  id={`${formId}-trial`}
+                  type="checkbox"
+                  name="trial"
+                  defaultChecked
+                  disabled={pending}
+                  aria-describedby={`${formId}-trial-hint`}
+                  className="mt-0.5 size-5 shrink-0 accent-primary"
+                  data-testid="create-org-trial"
+                />
+                <span className="flex flex-col gap-0.5">
+                  <label htmlFor={`${formId}-trial`} className="cursor-pointer font-semibold">
+                    {text('create.trial')}
+                  </label>
+                  <span id={`${formId}-trial-hint`} className="text-sm text-text-muted">
+                    {text('create.trialHint')}
+                  </span>
+                </span>
+              </div>
             </fieldset>
             {failure ? (
               <Alert tone="danger" data-testid="create-organization-error">

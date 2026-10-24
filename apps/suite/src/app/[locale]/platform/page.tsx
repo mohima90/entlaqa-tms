@@ -1,6 +1,10 @@
 import { getSystemRole } from '@jadarat/platform-rbac';
 import { routing } from '@jadarat/platform-i18n/routing';
-import { loadPlatformOrganizationsForRequest } from '@jadarat/platform-identity/auth';
+import {
+  loadPlatformOrganizationsForRequest,
+  loadPlatformPlansForRequest,
+  loadPlatformTenantPlansForRequest,
+} from '@jadarat/platform-identity/auth';
 import {
   Badge,
   type BadgeTone,
@@ -72,6 +76,16 @@ export default async function PlatformOrganizationsPage({
   if (!getConfigStatus().auth || !getConfigStatus().database) notFound();
   const organizations = await loadPlatformOrganizationsForRequest();
   if (!organizations.ok) notFound();
+  // Each organization's plan (WP-ADM-06); none shown while the plans are not in the database yet.
+  const tenantPlans = await loadPlatformTenantPlansForRequest();
+  const planOf = new Map(
+    (tenantPlans.ok ? tenantPlans.value : []).map((p) => [p.tenantId, p] as const),
+  );
+  const plans = await loadPlatformPlansForRequest();
+  const planChoices = (plans.ok ? plans.value : []).map((p) => ({
+    planId: p.planId,
+    name: p.name,
+  }));
 
   const query = await searchParams;
   const requestedView = first(query.view);
@@ -152,7 +166,7 @@ export default async function PlatformOrganizationsPage({
       <PageHeader
         title={t('title')}
         description={t('subtitle')}
-        actions={<CreateOrganization {...shared} />}
+        actions={<CreateOrganization {...shared} plans={planChoices} />}
       />
 
       <div className="flex flex-col gap-4">
@@ -220,6 +234,9 @@ export default async function PlatformOrganizationsPage({
                             {t('table.status')}
                           </th>
                           <th scope="col" className={tableClasses.head}>
+                            {t('table.plan')}
+                          </th>
+                          <th scope="col" className={tableClasses.head}>
                             {orgAdmin}
                           </th>
                           <th scope="col" className={tableClasses.head}>
@@ -253,7 +270,13 @@ export default async function PlatformOrganizationsPage({
                                   {initialsOf(nameOf(org))}
                                 </span>
                                 <span className="min-w-0">
-                                  <span className="block font-semibold">{nameOf(org)}</span>
+                                  <a
+                                    href={`/${locale}/platform/organizations/${org.tenantId}`}
+                                    className="block font-semibold text-text underline-offset-4 hover:underline"
+                                    data-testid="organization-link"
+                                  >
+                                    {nameOf(org)}
+                                  </a>
                                   <code dir="ltr" className="font-mono text-sm text-text-muted">
                                     {org.slug}
                                   </code>
@@ -264,6 +287,11 @@ export default async function PlatformOrganizationsPage({
                               <Badge tone={STATUS_TONE[org.status]} dot>
                                 {t(`statuses.${org.status}`)}
                               </Badge>
+                            </td>
+                            <td className={tableClasses.cell} data-testid="organization-plan">
+                              {planOf.get(org.tenantId)?.planName ?? (
+                                <span className="text-text-muted">{t('table.noPlan')}</span>
+                              )}
                             </td>
                             <td className={tableClasses.cell}>{adminPill(org)}</td>
                             <td className={`${tableClasses.cell} tabular-nums`}>
@@ -295,13 +323,20 @@ export default async function PlatformOrganizationsPage({
                           {initialsOf(nameOf(org))}
                         </span>
                       }
-                      title={nameOf(org)}
+                      title={
+                        <a
+                          href={`/${locale}/platform/organizations/${org.tenantId}`}
+                          className="text-text underline-offset-4 hover:underline"
+                        >
+                          {nameOf(org)}
+                        </a>
+                      }
                       detail={
                         <>
                           <code dir="ltr" className="font-mono">
                             {org.slug}
                           </code>
-                          {` · ${t('table.members')}: ${numbers.format(org.memberCount)} · ${dates.format(org.createdAt)}`}
+                          {` · ${planOf.get(org.tenantId)?.planName ?? t('table.noPlan')} · ${t('table.members')}: ${numbers.format(org.memberCount)} · ${dates.format(org.createdAt)}`}
                         </>
                       }
                       status={

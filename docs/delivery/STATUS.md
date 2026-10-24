@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Last updated** | 17 October 2026 |
+| **Last updated** | 24 October 2026 |
 | **Current phase** | **Work organized by role (PO, 17 Oct 2026)** — see «Current state by role» below and `ROADMAP-by-role.md`; M3 Planning core in progress (PR #64 merged: structure, course library, planning cycle set-up, needs form builder). Earlier: **New direction (PO, 15 Oct 2026): the core product is organization set-up + training planning.** M2 Platform core closes with `EP-OPS` (one production environment on a new Supabase Pro project, automatic DB deploy), `EP-ROLES` (six standard roles + custom role builder — set pending PO confirmation) and `EP-SHELL-K` (Kawadir ATS layout); then **M3 Planning core** (`EP-PLN`). Every epic starts with its **business flow agreed with the PO**. Remaining Organization Admin items paused · M2 Platform core in progress since 4 Oct 2026 · **M1 done** (staging live: sign-in, self-hosted stack, observability; estimation postponed and mock-up test cancelled by the PO) · **M0 done** (Gate G0 passed 3 Oct 2026) |
 | **Next gate** | G2 (Platform core) |
 | **Overall status** | 🟡 Re-planning (PO concern 15 Oct 2026: about 1% of the features after 2+ weeks — lighter process, planning-first order and Kawadir reuse decided; progress now reported weekly against the feature list, §7). No time plan (PO, 4 Oct 2026) |
@@ -23,7 +23,7 @@
 | Training Coordinator | 0 / 0 / 7 | Adds and edits courses; views cycles and needs forms | — | WP-TC-01 after scheduling (WP-LD-08) |
 | Department Head | 0 / 0 / 6 | Reads courses | — | Needs page (WP-LD-01) |
 | Employee | 0 / 1 / 7 | My profile (no photo yet) | **WP-ADM-04 built**: own photo, own grade and HR details read-only (local branch, PR pending) | WP-EMP-01 … 04 from M4 |
-| Platform Super Admin | 0 / 1 / 1 | Console: organizations, create one with an Org Admin code / link | — | Platform sender in WP-ADM-01; WP-SA-01 |
+| Platform Super Admin | 0 / 1 / 1 | Console: organizations, create one with an Org Admin code / link; platform sender | **WP-ADM-06 built** — Plans, an organization's plan / status / trial / limits (PR pending) | WP-SA-01 |
 | Platform / cross-cutting | 1 / 4 / 5 | Shared people directory; Kawadir shell; organization date display; production with automatic DB deploy | — | WP-PLT-01 in-app notifications (planning reminders) · WP-PLT-02 Hijri date picker |
 
 **Next 3 actions**
@@ -330,6 +330,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | Date | Summary |
 |---|---|
 | 24 Oct 2026 | PRs #88 (sign in with an e-mailed code + live-site crash fix) and #89 (every e-mail immediately) merged, DB deploys green. PO set up production: new `EMAIL_CREDENTIALS_KEY` (GitHub `production-jobs` + Vercel; platform and organization senders re-saved, tests arrived), Send Email hook + `SEND_EMAIL_HOOK_SECRET`, `PASSWORD_RESET_DELIVERY=auth`, `APP_BASE_URL` (was missing — the hook refused to send; production-setup now says it is required). Reset e-mail arrives in 3 s |
+| 24 Oct 2026 | **WP-ADM-06 built** (PR to open after its review): Super Admin Plans (create / edit, people + storage limits, features), an organization's plan / status / trial / special limits, new organizations on a plan as a 30-day trial; the Organization Admin's read-only Subscription page and 90% home notice; limits refused at the moment of the action; features outside the plan hidden and refused; worker ends trials; suspended organization → its Organization Admin sees the plan page only, everyone else «Access paused». Migrations `20261027100000`–`100200` (new role `plan_guard`); db:test and hosted-sim green locally |
 | 23 Oct 2026 | **Fix (live site):** WP-ADM-04 made `avatar.tsx` a client module while it still exported `initialsOf`, which the server-rendered suite and platform shells call — every signed-in /suite page errored (found by the hand-started nightly on PR #88). `initialsOf` moved to `packages/ui/src/initials.ts`; ships with PR #88 |
 | 23 Oct 2026 | PR #88: PO chose **A** for the code-screen test — 26 component tests (ar + en) on every change (`sign-in-code-step.test.tsx`, happy-dom), the full code journey in the nightly self-hosted run (`SIGN_IN_CODE_E2E=1`, smoke.sh); flaky idle-session integration test fixed (login lock vs the parallel purge); Storybook gate limit 20 → 30 min |
 | 23 Oct 2026 | PR #88: CI E2E red — `sign-in-code.spec.ts` needs a configured Auth the per-PR job lacks; PO keeps it on every change (A: component tests per PR + journey nightly, or B: Auth in per-PR CI — asked). Review rule tightened (PO) |

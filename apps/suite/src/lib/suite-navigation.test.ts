@@ -15,6 +15,9 @@ const NONE: SuiteNavigationAccess = {
   courses: false,
   planning: false,
   needsForms: false,
+  branding: true,
+  emailIntegration: true,
+  bulkImport: true,
 };
 
 /** `group: entry entry…`, links marked with their path, «Coming soon» entries with `(soon)`. */
@@ -41,11 +44,14 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
         courses: false,
         planning: false,
         needsForms: false,
+        branding: true,
+        emailIntegration: true,
+        bulkImport: true,
       }),
     ).toEqual([
       'main: home→/suite',
       'groupOrganization: teamMembers→/suite/admin/users branding→/suite/admin/branding roles→/suite/admin/roles',
-      'groupBilling: subscription(soon)',
+      'groupBilling: subscription→/suite/admin/subscription',
       'groupSettings: general→/suite/admin/settings emailIntegration→/suite/admin/settings/email integrations(soon) security→/suite/admin/security auditLog(soon)',
     ]);
   });
@@ -86,6 +92,9 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
         courses: false,
         planning: false,
         needsForms: false,
+        branding: true,
+        emailIntegration: true,
+        bulkImport: true,
       }),
     ).toEqual([
       'main: home→/suite calendar(soon) sessions(soon) courses(soon)',
@@ -151,6 +160,9 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
       courses: false,
       planning: false,
       needsForms: false,
+      branding: true,
+      emailIntegration: true,
+      bulkImport: true,
     }).flatMap((group) => group.entries);
     expect(all.length).toBe(16);
     expect(all.filter((entry) => !ICON_NAMES.includes(entry.icon))).toEqual([]);
@@ -183,12 +195,16 @@ describe('suiteHome (T-M2-21)', () => {
       courses: false,
       planning: false,
       needsForms: false,
+      branding: true,
+      emailIntegration: true,
+      bulkImport: true,
     });
     expect(home.kind).toBe('setup');
     expect(home.kind === 'setup' ? home.links.map((l) => l.link?.href) : []).toEqual([
       '/suite/admin/users',
       '/suite/admin/branding',
       '/suite/admin/roles',
+      '/suite/admin/subscription',
       '/suite/admin/settings',
       '/suite/admin/settings/email',
       '/suite/admin/security',
@@ -200,6 +216,7 @@ describe('suiteHome (T-M2-21)', () => {
     expect(home.kind === 'setup' ? home.links.map((l) => l.key) : []).toEqual([
       'teamMembers',
       'branding',
+      'subscription',
       'general',
       'emailIntegration',
     ]);
@@ -209,6 +226,21 @@ describe('suiteHome (T-M2-21)', () => {
       kind: 'training',
     });
     expect(suiteHome(NONE)).toEqual({ kind: 'training' });
+  });
+
+  it('hides own branding and own e-mail provider when the plan does not include them (WP-ADM-06)', () => {
+    const home = suiteHome({
+      ...NONE,
+      organizationSetup: true,
+      users: true,
+      branding: false,
+      emailIntegration: false,
+    });
+    expect(home.kind === 'setup' ? home.links.map((l) => l.key) : []).toEqual([
+      'teamMembers',
+      'subscription',
+      'general',
+    ]);
   });
 });
 
@@ -229,6 +261,9 @@ describe('commandPaletteItems (⌘K / Ctrl K, T-M2-43)', () => {
         courses: false,
         planning: false,
         needsForms: false,
+        branding: true,
+        emailIntegration: true,
+        bulkImport: true,
       },
       'ar',
       label,
@@ -238,6 +273,7 @@ describe('commandPaletteItems (⌘K / Ctrl K, T-M2-43)', () => {
       '«groupOrganization» «teamMembers» /ar/suite/admin/users',
       '«groupOrganization» «branding» /ar/suite/admin/branding',
       '«groupOrganization» «roles» /ar/suite/admin/roles',
+      '«groupBilling» «subscription» /ar/suite/admin/subscription',
       '«groupSettings» «general» /ar/suite/admin/settings',
       '«groupSettings» «emailIntegration» /ar/suite/admin/settings/email',
       '«groupSettings» «security» /ar/suite/admin/security',

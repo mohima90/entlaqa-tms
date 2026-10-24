@@ -140,7 +140,10 @@
     "planCycleNotDraft": "This planning cycle has been launched; its set-up can no longer change.",
     "planCycleOpenExists": "Another planning cycle is open. Only one cycle can be open at a time.",
     "planCycleNotReady": "This planning cycle isn't ready to launch yet. Check the list under Review & launch.",
-    "planCycleDeadlineRefused": "The deadline can only move later while the cycle is open and before the current deadline passes."
+    "planCycleDeadlineRefused": "The deadline can only move later while the cycle is open and before the current deadline passes.",
+    "planPeopleLimit": "Your organization's plan has reached its limit of people. Nobody new can be added until someone is deactivated or ENTLAQA raises the limit. Nothing else changes.",
+    "planStorageLimit": "Your organization's plan has reached its storage limit. No new file can be added until files are removed or ENTLAQA raises the limit.",
+    "planFeatureOff": "This part isn't in your organization's plan. To add it, contact ENTLAQA."
   },
   "auth": {
     "signInTitle": "Sign in",
@@ -169,7 +172,8 @@
       "tooManyAttempts": "Sign-in is paused for now after too many unsuccessful attempts. Try again later, or reset your password with “Forgot password?”.",
       "signInCodeInvalid": "That code isn’t right, or it has expired.",
       "signInCodeLocked": "Too many incorrect codes. This code no longer works, and code checks are paused for 15 minutes.",
-      "signInCodeTooSoon": "We just sent a code. You can ask for another in {seconds} seconds."
+      "signInCodeTooSoon": "We just sent a code. You can ask for another in {seconds} seconds.",
+      "accessPaused": "Your organization's access to Jadarat TMS is paused for now. Nothing has been deleted. Please contact your Organization Admin."
     },
     "sessionEnded": "Your sign-in session has ended. Sign in again to continue.",
     "welcomeBack": "Welcome back",
@@ -2329,7 +2333,9 @@
       "created": "Created",
       "members": "Members",
       "actions": "Actions",
-      "empty": "No organizations yet. Create the first one."
+      "empty": "No organizations yet. Create the first one.",
+      "plan": "Plan",
+      "noPlan": "No plan"
     },
     "statuses": {
       "active": "Active",
@@ -2378,7 +2384,11 @@
         "adminNamePair": "Enter the first name and the family name in this language, or leave both empty.",
         "locale": "Choose Arabic or English.",
         "form": "Check the details and try again."
-      }
+      },
+      "planSection": "Plan",
+      "plan": "Plan",
+      "trial": "Start with a 30-day trial",
+      "trialHint": "After 30 days the organization is suspended unless you make it active. You can change this later on its page."
     },
     "created": {
       "title": "Organization created",
@@ -2412,6 +2422,87 @@
       "title": "No organizations match your search",
       "body": "Check the spelling, or search by the short name.",
       "clear": "Clear search"
+    },
+    "plansNav": "Plans",
+    "plans": {
+      "title": "Plans",
+      "subtitle": "Each organization is on one plan. A plan decides which parts of Jadarat TMS the organization has and how big it may grow.",
+      "new": "New plan",
+      "newTitle": "New plan",
+      "edit": "Edit",
+      "editLabel": "Edit {name}",
+      "editTitle": "Edit plan",
+      "cancel": "Cancel",
+      "save": "Save plan",
+      "saving": "Saving…",
+      "required": "(required)",
+      "optional": "(optional)",
+      "name": "Plan name",
+      "description": "Short description",
+      "maxPeople": "People",
+      "maxStorageGb": "Storage (GB)",
+      "noLimitHint": "Leave empty for no limit.",
+      "features": "Included features",
+      "appliesTo": "Changes apply at once to the {count} organization(s) on this plan, except limits set specially for one organization.",
+      "toasts": {
+        "created": "Plan {name} created",
+        "saved": "Plan {name} saved"
+      },
+      "errors": {
+        "name": "Enter a name of up to 80 characters.",
+        "nameTaken": "Another plan already has this name. Choose another.",
+        "description": "Use up to 200 characters.",
+        "maxPeople": "Enter a whole number from 1, or leave it empty for no limit.",
+        "maxStorageGb": "Enter a whole number of GB from 1, or leave it empty for no limit.",
+        "features": "Choose from the listed features.",
+        "planId": "This plan no longer exists. Refresh the page.",
+        "stale": "Someone else changed this plan after you opened it. Close it, refresh the page and try again.",
+        "form": "Check the details and try again."
+      },
+      "empty": "No plans yet",
+      "emptyText": "Create the first plan. Organizations without a plan have every feature and no limits.",
+      "caption": "Plans",
+      "plan": "Plan",
+      "people": "People",
+      "storage": "Storage",
+      "featuresColumn": "Features",
+      "organizations": "Organizations",
+      "noLimit": "No limit",
+      "peopleCount": "{count} people",
+      "storageGb": "{count} GB",
+      "featuresCount": "{count} of {total}"
+    },
+    "organizationPlan": {
+      "breadcrumbLabel": "Breadcrumb",
+      "title": "Plan and status",
+      "plan": "Plan",
+      "noPlan": "No plan (every feature, no limits)",
+      "noPlansYet": "No plans yet. Create one under Plans.",
+      "status": "Status",
+      "trialEndsOn": "Trial ends on",
+      "trialHint": "At the end of this day (Riyadh time) the organization is suspended unless you change it.",
+      "trialDaysLeft": "Trial · {days} days left",
+      "suspendedWarning": "While suspended, the organization's people see «Access paused» instead of Jadarat TMS. Its Organization Admin can still open the Subscription page. Nothing is deleted.",
+      "cancelledWarning": "While cancelled, nobody in the organization can sign in. Nothing is deleted.",
+      "limits": "Limits",
+      "people": "People",
+      "storage": "Storage",
+      "peopleDetail": "Plan: {limit} · used {used}",
+      "storageDetail": "Plan: {limit} · used {used}",
+      "special": "Special limit",
+      "peopleSpecial": "People for this organization",
+      "storageSpecial": "GB for this organization",
+      "noLimit": "no limit",
+      "save": "Save changes",
+      "saving": "Saving…",
+      "saved": "Plan and status saved",
+      "errors": {
+        "planId": "Choose one of the plans.",
+        "status": "Choose a status.",
+        "trialEndsOn": "Choose a date after today, within a year.",
+        "limit": "Enter a whole number from 1.",
+        "form": "Check the details and try again."
+      }
     }
   },
   "roleBuilder": {
@@ -3451,6 +3542,76 @@
       "loadFailed": "The grades couldn’t be loaded. Reference: {correlationId}",
       "cancel": "Cancel",
       "close": "Close"
+    }
+  },
+  "plans": {
+    "alwaysIncluded": "Team members, Structure, Roles, Settings and My profile are always included.",
+    "features": {
+      "planning": {
+        "name": "Planning cycle",
+        "description": "Yearly training plan: needs, consolidation, budget check, approval"
+      },
+      "needs_forms": {
+        "name": "Needs forms",
+        "description": "The form each unit's head fills in during the planning cycle"
+      },
+      "courses": {
+        "name": "Course library",
+        "description": "Courses, categories and course details"
+      },
+      "bulk_import": {
+        "name": "Bulk import",
+        "description": "Add many people at once from a spreadsheet"
+      },
+      "branding": {
+        "name": "Own branding",
+        "description": "The organization's logo, colours and sign-in image"
+      },
+      "email_integration": {
+        "name": "Own e-mail provider",
+        "description": "Send e-mails through the organization's own provider"
+      }
+    },
+    "statuses": {
+      "trial": "Trial",
+      "active": "Active",
+      "suspended": "Suspended",
+      "cancelled": "Cancelled"
+    },
+    "page": {
+      "title": "Subscription",
+      "intro": "What your organization's plan includes and its limits. To change the plan, contact ENTLAQA.",
+      "notConfigured": "The plan is shown once sign-in and the database are set up in this environment.",
+      "yourPlan": "Your plan",
+      "noPlanName": "All features",
+      "people": "People",
+      "storage": "Storage",
+      "of": "of {limit}",
+      "ofGb": "of {limit} GB",
+      "noLimit": "no limit",
+      "gbNoLimit": "GB · no limit",
+      "peopleUsed": "{used} of {limit} people",
+      "storageUsed": "{used} of {limit} GB",
+      "peopleHint": "Everyone with an account and everyone invited.",
+      "trialDays": "Trial · {days} days left.",
+      "trialEnds": "Your trial ends on {date}.",
+      "featuresTitle": "Included features",
+      "included": "Included",
+      "notInPlan": "Not in your plan"
+    },
+    "notice": {
+      "people": "Your organization has used {used} of {limit} people ({percent}%). New invitations stop at {limit}. To raise the limit, contact ENTLAQA.",
+      "storage": "Your organization has used {used} of {limit} GB of storage ({percent}%). New files stop at {limit} GB. To raise the limit, contact ENTLAQA.",
+      "seePlan": "See plan"
+    },
+    "notInPlan": {
+      "title": "Not in your plan",
+      "body": "This part of Jadarat TMS isn't in your organization's plan. Anything saved before is kept. To add it, contact ENTLAQA."
+    },
+    "paused": {
+      "adminTitle": "Your organization's access is paused",
+      "adminText": "Your people see a notice instead of Jadarat TMS until ENTLAQA resumes the service. Nothing has been deleted.",
+      "contact": "To resume, contact ENTLAQA."
     }
   }
 }

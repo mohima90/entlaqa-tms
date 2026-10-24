@@ -162,7 +162,7 @@ export interface PlanInput {
 /** Every plan, by name. Throws NOT_ALLOWED. */
 export async function listPlans(tx: ClaimsTx): Promise<PlanRow[]> {
   const rows = await run(() =>
-    tx.execute<Record<string, unknown>>(sql`
+    tx.execute(sql`
       select plan_id, name, description, max_people, max_storage_gb, features, version, tenant_count
       from private.platform_list_plans()`),
   );
@@ -214,7 +214,7 @@ export interface TenantPlanRow {
 /** Every organization's plan and usage. Throws NOT_ALLOWED. */
 export async function listTenantPlans(tx: ClaimsTx): Promise<TenantPlanRow[]> {
   const rows = await run(() =>
-    tx.execute<Record<string, unknown>>(sql`
+    tx.execute(sql`
       select tenant_id, plan_id, plan_name, status, trial_ends_at, max_people_override,
              max_storage_gb_override, max_people, max_storage_gb, people_used, storage_used_bytes
       from private.platform_tenant_plans()`),
@@ -277,7 +277,7 @@ export interface OrganizationPlan {
 /** The caller's organization's plan (also while it is suspended: the paused admin). Throws NOT_ALLOWED. */
 export async function getOrganizationPlan(tx: ClaimsTx): Promise<OrganizationPlan> {
   const rows = await run(() =>
-    tx.execute<Record<string, unknown>>(sql`
+    tx.execute(sql`
       select has_plan, plan_name, plan_description, status, trial_ends_at, max_people, people_used,
              max_storage_gb, storage_used_bytes, features
       from private.organization_plan()`),

@@ -105,6 +105,10 @@ export interface NewPlatformTenant {
   readonly adminFamilyNameEn?: string | null | undefined;
   /** The invitation's language: the link opens the sign-up page in it. */
   readonly locale: 'ar' | 'en';
+  /** The plan the organization starts on (WP-ADM-06; null or absent: none — every feature, no limits). */
+  readonly planId?: string | null | undefined;
+  /** It starts as a 30-day trial (WP-ADM-06, business flow B1; absent: active). */
+  readonly trial?: boolean | undefined;
 }
 
 /** An Organization Admin invitation's current code, with what the link needs. */

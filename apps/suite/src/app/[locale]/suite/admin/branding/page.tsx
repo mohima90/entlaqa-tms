@@ -13,6 +13,7 @@ import {
   BrandingForm,
   type BrandingFormProps,
 } from '../../../../../components/branding/branding-form';
+import { NotInPlan } from '../../../../../components/plan/not-in-plan';
 import { SuiteShell } from '../../../../../components/suite-shell';
 import { brandingQuery } from '../../../../../lib/branding-queries';
 import { JADARAT_BRAND, brandAssetPath } from '../../../../../lib/branding-view';
@@ -56,6 +57,9 @@ export default async function BrandingPage({ params }: { params: Promise<{ local
         <Form locale={locale} context={context} record={null} editAccess="allowed" live={false} />
       </div>
     );
+  } else if (!context.navigation.branding) {
+    // Not in the organization's plan (WP-ADM-06): nothing to show or change.
+    content = <NotInPlan locale={locale} />;
   } else {
     const result = await brandingQuery({});
     if (!result.ok) {

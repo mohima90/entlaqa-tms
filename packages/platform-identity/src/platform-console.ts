@@ -13,6 +13,7 @@ import {
   type PlatformAdminCode,
   PlatformConsoleError,
   type PlatformTenantRow,
+  type TenantPlanInput,
   type UserTx,
   type WithUserTx,
 } from '@jadarat/platform-db';
@@ -49,7 +50,12 @@ export interface PlatformConsoleDeps {
     tenantId: string,
   ) => Promise<PlatformAdminCode>;
   readonly reissuePlatformAdminCode: (tx: UserTx, tenantId: string) => Promise<PlatformAdminCode>;
+  /** The new organization's plan and trial (WP-ADM-06), in the same transaction as its creation. */
+  readonly setTenantPlan?: (tx: UserTx, input: TenantPlanInput) => Promise<void>;
 }
+
+/** A trial's length when an organization is created (WP-ADM-06, PO 24 Oct 2026). */
+export const TRIAL_DAYS = 30;
 
 export const PlatformConsoleErrors = defineErrorCodes({
   /** The organization has no pending Organization Admin invitation from the console (it joined already). */
@@ -144,9 +150,22 @@ export async function createOrganizationFromConsole(
   if (!parsed.ok) return parsed;
   const input = parsed.value;
   try {
-    const created = await deps.withUserTx(access.value, (tx) =>
-      deps.createPlatformTenant(tx, input),
-    );
+    const created = await deps.withUserTx(access.value, async (tx) => {
+      const tenant = await deps.createPlatformTenant(tx, input);
+      // Its plan and a trial (WP-ADM-06): the same transaction — both happen, or neither.
+      const planId = input.planId ?? null;
+      if (deps.setTenantPlan && (planId !== null || input.trial === true)) {
+        await deps.setTenantPlan(tx, {
+          tenantId: tenant.tenantId,
+          planId,
+          status: input.trial === true ? 'trial' : 'active',
+          trialEndsAt: input.trial === true ? new Date(Date.now() + TRIAL_DAYS * 86_400_000) : null,
+          maxPeopleOverride: null,
+          maxStorageGbOverride: null,
+        });
+      }
+      return tenant;
+    });
     return ok({ tenantId: created.tenantId, inviteCode: created.inviteCode, locale: input.locale });
   } catch (error) {
     return refusal(error);

@@ -134,7 +134,9 @@ export async function loadPlatformOrganizationDetail(
   if (!access.ok) return access;
   try {
     const detail = await deps.withUserTx(access.value, async (tx) => {
-      const organization = (await deps.listPlatformTenants(tx)).find((o) => o.tenantId === tenantId);
+      const organization = (await deps.listPlatformTenants(tx)).find(
+        (o) => o.tenantId === tenantId,
+      );
       const plan = (await deps.listTenantPlans(tx)).find((p) => p.tenantId === tenantId);
       return organization && plan ? { organization, plan, plans: await deps.listPlans(tx) } : null;
     });

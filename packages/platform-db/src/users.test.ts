@@ -19,21 +19,21 @@ const dialect = new PgDialect();
 function fakeTx(...results: unknown[][]) {
   const executed: { sql: string; params: unknown[] }[] = [];
   const tx = {
-      // A savepoint (the plan's features, WP-ADM-06) runs on the same fake.
-      transaction: (fn: (savepoint: unknown) => unknown) => Promise.resolve(fn(tx)),
-      execute: (query: SQL) => {
-        const q = dialect.sqlToQuery(query);
-        // The custom-roles catalog check (deploy window): answered here, not recorded — unless the test
-        // queued its own answer ({ present }).
-        if (q.sql.includes('to_regclass(')) {
-          const queued = results[0]?.[0] as Record<string, unknown> | undefined;
-          return Promise.resolve(
-            queued && 'present' in queued ? (results.shift() ?? []) : [{ present: true }],
-          );
-        }
-        executed.push({ sql: q.sql, params: q.params });
-        return Promise.resolve(results.shift() ?? []);
-      },
+    // A savepoint (the plan's features, WP-ADM-06) runs on the same fake.
+    transaction: (fn: (savepoint: unknown) => unknown) => Promise.resolve(fn(tx)),
+    execute: (query: SQL) => {
+      const q = dialect.sqlToQuery(query);
+      // The custom-roles catalog check (deploy window): answered here, not recorded — unless the test
+      // queued its own answer ({ present }).
+      if (q.sql.includes('to_regclass(')) {
+        const queued = results[0]?.[0] as Record<string, unknown> | undefined;
+        return Promise.resolve(
+          queued && 'present' in queued ? (results.shift() ?? []) : [{ present: true }],
+        );
+      }
+      executed.push({ sql: q.sql, params: q.params });
+      return Promise.resolve(results.shift() ?? []);
+    },
   };
   return { executed, tx: tx as never };
 }

@@ -3,7 +3,9 @@ import { type TenantClaims, hasTenant } from '@jadarat/platform-core';
 import {
   type CurrentTenant,
   type TenantBrand,
+  type PlanFeature,
   getCurrentTenant,
+  getOrganizationFeatures,
   getSessionAccess,
   getTenantBrand,
   withUserTx,
@@ -22,6 +24,8 @@ import type { ConfigStatus } from './config-status';
  *  - mfa-required     the organization's MFA policy wants an authenticator code first (challenge) or
  *                     an app set up (enrolment) — the /mfa page
  *  - no-organization  a session without a selected organization (tenant claim)
+ *  - paused           the organization is suspended and the session is its Organization Admin's (WP-ADM-06):
+ *                     the plan page only (/paused); everyone else of a suspended organization is signed out
  *  - organization     a session in an organization; `tenant` is null only when no database is configured
  */
 export type SessionState =
@@ -29,6 +33,7 @@ export type SessionState =
   | { readonly kind: 'session-ended' }
   | { readonly kind: 'mfa-required' }
   | { readonly kind: 'no-organization' }
+  | { readonly kind: 'paused'; readonly claims: TenantClaims }
   | {
       readonly kind: 'organization';
       readonly claims: TenantClaims;
@@ -38,6 +43,11 @@ export type SessionState =
        * database (the Jadarat look).
        */
       readonly brand?: TenantBrand;
+      /**
+       * The features the organization's plan includes (WP-ADM-06), read in the same transaction; absent
+       * without a database (every feature).
+       */
+      readonly features?: readonly PlanFeature[];
     };
 
 export interface SessionStateDeps {
@@ -47,6 +57,8 @@ export interface SessionStateDeps {
   readonly getSessionAccess: typeof getSessionAccess;
   /** The organization's look (WP-ADM-02); without it, none is read. */
   readonly getTenantBrand?: typeof getTenantBrand;
+  /** The plan's features (WP-ADM-06); without it, none are read (every feature). */
+  readonly getOrganizationFeatures?: typeof getOrganizationFeatures;
 }
 
 const defaultDeps: SessionStateDeps = {
@@ -55,6 +67,7 @@ const defaultDeps: SessionStateDeps = {
   getCurrentTenant,
   getSessionAccess,
   getTenantBrand,
+  getOrganizationFeatures,
 };
 
 export async function getSessionState(
@@ -68,12 +81,28 @@ export async function getSessionState(
   if (!hasTenant(verified)) return { kind: 'no-organization' };
   if (!status.database) return { kind: 'organization', claims: verified, tenant: null };
   const readBrand = deps.getTenantBrand;
-  const { tenant, brand } = await deps.withUserTx(verified, async (tx) => {
+  const readFeatures = deps.getOrganizationFeatures;
+  const { tenant, brand, features } = await deps.withUserTx(verified, async (tx) => {
     const current = await deps.getCurrentTenant(tx);
-    return { tenant: current, brand: current && readBrand ? await readBrand(tx) : null };
+    const included = current && readFeatures ? await readFeatures(tx) : null;
+    return {
+      tenant: current,
+      // Own branding only while the plan includes it (WP-ADM-06): otherwise the Jadarat look.
+      brand:
+        current && readBrand && (included === null || included.includes('branding'))
+          ? await readBrand(tx)
+          : null,
+      features: included,
+    };
   });
   if (tenant) {
-    return { kind: 'organization', claims: verified, tenant, ...(brand ? { brand } : {}) };
+    return {
+      kind: 'organization',
+      claims: verified,
+      tenant,
+      ...(brand ? { brand } : {}),
+      ...(features ? { features } : {}),
+    };
   }
   // Refused: ask the database why (only on this path, so every other request stays one read).
   const access = await deps.withUserTx(verified, (tx) => deps.getSessionAccess(tx));
@@ -83,6 +112,8 @@ export async function getSessionState(
     case 'mfa_challenge':
     case 'mfa_enrol':
       return { kind: 'mfa-required' };
+    case 'paused':
+      return { kind: 'paused', claims: verified };
     default:
       return { kind: 'signed-out' };
   }
@@ -92,9 +123,11 @@ export async function getSessionState(
 export function redirectFor(
   locale: string,
   state: SessionState,
-  page: 'suite' | 'sign-in' | 'select-organization' | 'mfa',
+  page: 'suite' | 'sign-in' | 'select-organization' | 'mfa' | 'paused',
 ): string | null {
   switch (state.kind) {
+    case 'paused':
+      return page === 'paused' ? null : `/${locale}/paused`;
     case 'session-ended':
       // The sign-in page says why and signs the session out at Auth (a POST server action, never a GET).
       return page === 'sign-in' ? null : `/${locale}/sign-in?notice=session-ended`;

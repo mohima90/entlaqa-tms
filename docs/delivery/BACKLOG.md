@@ -81,12 +81,12 @@ Order: E-mail sending → Branding → Audit log → people record completion �
 
 #### WP-ADM-06 Plan, limits and feature toggles
 
-**Claimed by:** — · **Business flow:** to write (T-M2-53) · **Depends on:** —
+**Claimed by:** Claude (`claude/youthful-davinci-00yhgl`) · **Business flow:** [EP-PLAN](../business-flows/EP-PLAN-plan-limits-feature-switches.md) — agreed 24 Oct 2026; design approved 24 Oct 2026 · **Depends on:** —
 
 | ID | Task | WP | Owner | Status | Notes / PR |
 |---|---|---|---|---|---|
-| T-M2-53 | **Business flow agreed with the PO**: editions and limits set by the Super Admin, organization status, plan view and feature toggles for the Organization Admin | WP-ADM-06 | Claude → PO | ⚪ | FR-SUB-01, FR-ADM-13, FR-ADM-17 |
-| T-M2-27 | Feature toggles + plan and limits overview (#5, #49) | WP-ADM-06 | Claude | ⚪ | Paused until after the planning core (PO, 15 Oct 2026); resumes in the Kawadir layout. FR-ADM-13, FR-SUB-01 **17 Oct 2026 (re-organization by role):** resumed → WP-ADM-06 (with SUB-01 editions and the Super Admin's plan / limits / status). |
+| T-M2-53 | **Business flow agreed with the PO**: editions and limits set by the Super Admin, organization status, plan view and feature toggles for the Organization Admin | WP-ADM-06 | Claude → PO | 🟢 | FR-SUB-01, FR-ADM-13, FR-ADM-17. Agreed 24 Oct 2026 (Super Admin creates plans; the Organization Admin only sees them — no switches); design approved 24 Oct 2026 |
+| T-M2-27 | Feature toggles + plan and limits overview (#5, #49) | WP-ADM-06 | Claude | 🔵 | **Built 24 Oct 2026 (PR to open):** Platform → Plans (create / edit: people and storage limits, features), an organization's page (plan, status, trial end, special limits), new organizations start on a plan as a 30-day trial; Subscription page for the Organization Admin (read-only), 90% notice on the home page, people / storage limits refused at the moment of the action (invite, reactivation, import row, upload), features outside the plan hidden and refused; trials end by a worker task; a suspended organization: its Organization Admin sees the plan page only, everyone else «Access paused». Migrations `20261027100000`–`100200` (role `plan_guard`). Not built: online payment / reactivation by the Organization Admin (later, PO 24 Oct 2026); the sign-in page of an organization whose plan dropped own branding still shows its saved look (inside the product and in e-mails the Jadarat look applies). | Paused until after the planning core (PO, 15 Oct 2026); resumes in the Kawadir layout. FR-ADM-13, FR-SUB-01 **17 Oct 2026 (re-organization by role):** resumed → WP-ADM-06 (with SUB-01 editions and the Super Admin's plan / limits / status). |
 
 #### WP-ADM-07 Custom fields
 

@@ -24,3 +24,17 @@ describe('plan features (WP-ADM-06): the database mapping, on the app side', () 
     expect(grantsWithinPlan(grants, []).map((g) => g.permission)).toEqual(['platform.user.read']);
   });
 });
+
+describe('planRefusal (WP-ADM-06): the database refuses at the moment of the action', () => {
+  it('maps JL001–JL003 (also wrapped as a cause) to the client errors; anything else to null', async () => {
+    const { planRefusal } = await import('./plan-features');
+    expect(planRefusal({ code: 'JL001' })?.code).toBe('PLAN_PEOPLE_LIMIT');
+    expect(planRefusal(new Error('query failed', { cause: { code: 'JL002' } }))?.code).toBe(
+      'PLAN_STORAGE_LIMIT',
+    );
+    expect(planRefusal({ code: 'JL003' })?.code).toBe('PLAN_FEATURE_OFF');
+    expect(planRefusal({ code: '23505' })).toBeNull();
+    expect(planRefusal(new Error('x'))).toBeNull();
+    expect(planRefusal(null)).toBeNull();
+  });
+});

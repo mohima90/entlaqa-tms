@@ -17,6 +17,7 @@ import type { ReactNode } from 'react';
 import { EmailIntegrationForm } from '../../../../../../components/email/email-integration-form';
 import { EmailTestLine } from '../../../../../../components/email/email-test-line';
 import { RefreshWhileTesting } from '../../../../../../components/email/sender-status';
+import { NotInPlan } from '../../../../../../components/plan/not-in-plan';
 import { SuiteShell } from '../../../../../../components/suite-shell';
 import { authErrorTexts } from '../../../../../../lib/auth-texts';
 import { emailIntegrationQuery } from '../../../../../../lib/email-queries';
@@ -58,6 +59,9 @@ export default async function EmailIntegrationPage({
         {t('integration.notConfigured')}
       </Alert>
     );
+  } else if (!context.navigation.emailIntegration) {
+    // Not in the organization's plan (WP-ADM-06): nothing to show or change.
+    content = <NotInPlan locale={locale} />;
   } else {
     const result = await emailIntegrationQuery({});
     if (!result.ok) {

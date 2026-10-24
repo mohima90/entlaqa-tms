@@ -226,6 +226,7 @@ export async function UsersScreen({
             canCopyPrivileged={invitations?.ok ? invitations.value.canCopyPrivileged : false}
             banners={banners?.ok ? banners.value : null}
             dates={pageDates(locale, context)}
+            bulkImport={context.navigation.bulkImport}
           />
         </>
       );
@@ -255,14 +256,17 @@ export async function UsersScreen({
         actions={
           canInvite ? (
             <>
-              <Link
-                href={`/${locale}/suite/admin/users/import`}
-                className={buttonClasses({ variant: 'secondary', size: 'md' })}
-                data-testid="import-users-link"
-              >
-                <Icon name="upload" className="size-4" />
-                {importTexts('entry')}
-              </Link>
+              {/* Bulk import only when the organization's plan includes it (WP-ADM-06). */}
+              {context.navigation.bulkImport ? (
+                <Link
+                  href={`/${locale}/suite/admin/users/import`}
+                  className={buttonClasses({ variant: 'secondary', size: 'md' })}
+                  data-testid="import-users-link"
+                >
+                  <Icon name="upload" className="size-4" />
+                  {importTexts('entry')}
+                </Link>
+              ) : null}
               <Link
                 id="invite-user-link"
                 href={usersInviteHref(locale, current)}
@@ -336,10 +340,13 @@ async function UsersList({
   canCopyPrivileged,
   banners,
   dates,
+  bulkImport,
 }: {
   locale: AppLocale;
   /** Dates as the organization shows them (T-M2-22: Gregorian / Hijri / both, its time zone). */
   dates: DisplayDateFormatter;
+  /** The organization's plan includes bulk import (WP-ADM-06). */
+  bulkImport: boolean;
   view: UsersListView;
   params: UsersListParams;
   /** Open invitations (null: the member may not invite, or they did not load). */
@@ -536,19 +543,21 @@ async function UsersList({
                   {invitationTexts('inviteUser')}
                 </Link>
               </div>
-              <div className="flex flex-col items-start gap-3 rounded-lg border border-border p-5">
-                <h3 className="m-0 flex items-center gap-2 text-lg font-bold">
-                  <Icon name="upload" />
-                  {importTexts('title')}
-                </h3>
-                <p className="m-0 text-sm text-text-muted">{importTexts('intro')}</p>
-                <Link
-                  href={`/${locale}/suite/admin/users/import`}
-                  className={buttonClasses({ variant: 'secondary', size: 'md' })}
-                >
-                  {importTexts('entry')}
-                </Link>
-              </div>
+              {bulkImport ? (
+                <div className="flex flex-col items-start gap-3 rounded-lg border border-border p-5">
+                  <h3 className="m-0 flex items-center gap-2 text-lg font-bold">
+                    <Icon name="upload" />
+                    {importTexts('title')}
+                  </h3>
+                  <p className="m-0 text-sm text-text-muted">{importTexts('intro')}</p>
+                  <Link
+                    href={`/${locale}/suite/admin/users/import`}
+                    className={buttonClasses({ variant: 'secondary', size: 'md' })}
+                  >
+                    {importTexts('entry')}
+                  </Link>
+                </div>
+              ) : null}
             </div>
           </div>
         </Card>

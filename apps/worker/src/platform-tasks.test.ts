@@ -61,7 +61,11 @@ describe('worker platform tasks (T-M2-17, T-M2-10)', () => {
 
     recoveryLinksFor.mockClear();
     const tasks = platformTasks({ ...deps, authAdmin: undefined, recoveryLinksFor });
-    expect(tasks.map((t) => t.name)).toEqual(['platform.account_mail', 'platform.session_purge', 'platform.trial_expiry']);
+    expect(tasks.map((t) => t.name)).toEqual([
+      'platform.account_mail',
+      'platform.session_purge',
+      'platform.trial_expiry',
+    ]);
     expect(recoveryLinksFor).not.toHaveBeenCalled();
   });
 

@@ -379,6 +379,11 @@ as $$
 declare
   v_max integer;
 begin
+  -- A member's upload is checked; a file the worker makes for an action already taken (an import's report)
+  -- is not, so a job never fails half-way.
+  if private.request_user_id() is null then
+    return new;
+  end if;
   select l.max_storage_gb into v_max from private.tenant_limits(new.tenant_id) l;
   if v_max is null then
     return new;
@@ -391,7 +396,7 @@ begin
 end
 $$;
 comment on function private.enforce_storage_limit() is
-  'SECURITY-RELEVANT (WP-ADM-06, BR-PLAN-6). Refuses a new file that would take the organization over its storage limit (JL002).';
+  'SECURITY-RELEVANT (WP-ADM-06, BR-PLAN-6). Refuses a member''s new file that would take the organization over its storage limit (JL002); the worker''s own files (reports) are not refused.';
 
 create trigger files_storage_limit
   before insert on platform.files

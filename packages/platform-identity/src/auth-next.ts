@@ -1219,6 +1219,7 @@ function platformConsoleDeps(): PlatformConsoleDeps {
     createPlatformTenant,
     platformAdminInvitationCode,
     reissuePlatformAdminCode,
+    setTenantPlan,
   };
 }
 

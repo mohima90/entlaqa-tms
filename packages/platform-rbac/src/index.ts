@@ -59,6 +59,7 @@ export * from './iam/my-profile';
 export * from './iam/sign-in-lock';
 export * from './iam/edit-user';
 export * from './iam/edit-roles';
+export * from './iam/plan';
 export * from './iam/roles-page';
 export * from './iam/role-catalogue';
 export * from './iam/custom-roles';

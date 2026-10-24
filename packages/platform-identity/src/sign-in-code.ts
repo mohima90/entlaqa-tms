@@ -15,6 +15,7 @@ import {
   type PasswordSession,
   type SignInOutcome,
   continueAfterFirstStep,
+  isAccessPaused,
   sessionTokens,
 } from './auth-flow';
 import type { SignInCodeLimiter } from './sign-in-code-limits';
@@ -170,6 +171,10 @@ async function openSession(
   });
   if (error) {
     if (error.status === 429) return { kind: 'limited' };
+    // The code was right but the organization is suspended (WP-ADM-06): «Access paused».
+    if (isAccessPaused(error)) {
+      return { kind: 'failed', error: appError(IdentityErrors.AUTH_ACCESS_PAUSED) };
+    }
     if (error.status !== undefined && error.status >= 400 && error.status < 500) {
       return { kind: 'wrong', killed: false };
     }

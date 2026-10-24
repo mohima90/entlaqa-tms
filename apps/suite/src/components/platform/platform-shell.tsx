@@ -20,8 +20,8 @@ import { LanguageToggle } from '../language-toggle';
 
 /**
  * The Platform Super Admin console's frame (FR-ADM-17; Kawadir ATS's (admin) layout): the suite's
- * AppShell with the platform's own navigation — «المنظمات» / Organizations and «إعدادات المنصة» / Platform
- * settings → «البريد الإلكتروني» / Email (WP-ADM-01) — and «مشرف المنصة» /
+ * AppShell with the platform's own navigation — «المنظمات» / Organizations, «الخطط» / Plans (WP-ADM-06)
+ * and «إعدادات المنصة» / Platform settings → «البريد الإلكتروني» / Email (WP-ADM-01) — and «مشرف المنصة» /
  * Platform Super Admin where an organization's name would be. No organization context, no idle warning
  * (no organization's session rules apply). Render it only after the page checked the Super Admin.
  *
@@ -60,6 +60,16 @@ export async function PlatformShell({
                 icon={<Icon name="building" />}
               >
                 {t('organizationsNav')}
+              </NavItem>
+            </li>
+            {/* Plans (WP-ADM-06): the plans the Super Admin creates. */}
+            <li>
+              <NavItem
+                href={`/${locale}/platform/plans`}
+                current={path === '/platform/plans'}
+                icon={<Icon name="billing" />}
+              >
+                {t('plansNav')}
               </NavItem>
             </li>
           </NavGroup>

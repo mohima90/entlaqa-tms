@@ -13,7 +13,11 @@ function setup() {
   const withPlatformTx = vi.fn((_actor: { jobId: string }, fn: (tx: SystemTx) => unknown) =>
     Promise.resolve(fn(platformTx)),
   );
-  const task = createTrialExpiry({ withPlatformTx: withPlatformTx as never, log, now: () => clock });
+  const task = createTrialExpiry({
+    withPlatformTx: withPlatformTx as never,
+    log,
+    now: () => clock,
+  });
   return {
     task,
     log,

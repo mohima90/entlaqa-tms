@@ -4,7 +4,7 @@
 |---|---|
 | **Epic** | WP-HR-01 (HR Manager) — addendum to [EP-ORG](EP-ORG-organization-structure.md) (agreed 17 Oct 2026, unchanged) |
 | **Requirements** | FR-ADM-05 (cost centre, drag-and-drop order, CSV import, moving a unit), FR-ADM-04 (branch address, GPS, working week with half-days, working hours), BR-ADM-3; TM-0004 T-PEO-07 / SR-STE02-04 (a move shows the affected role assignments first) |
-| **Status** | Draft — in discussion with the PO. **PO answers 24 Oct 2026:** the levels are locked once people are placed (rename only — EP-ORG BR-ORG-b changed); cost centres belong to the **person** (A rewritten, Q1 agreed) |
+| **Status** | **Agreed (PO, 24 Oct 2026)** — levels locked once people are placed (rename only; EP-ORG BR-ORG-b changed); one cost centre per **person** (unit default; no split, no cost-centre approver); session cost by participants or to one cost centre (FR-FIN-03); a moved unit keeps its level; the import creates and updates, never moves; branch location typed in. Next: Mobbin design |
 | **Reference** | Kawadir ATS has none of these (checked in its code, 24 Oct 2026), so this flow follows the BRD. The screens will come from Mobbin after this flow is agreed |
 
 ## 1. Goal
@@ -110,5 +110,5 @@ No approval by another person is needed (as for the rest of the structure — TM
 |---|---|---|---|
 | Q1 | Cost centres as a **list the HR Manager keeps**? | **Yes** | **Agreed (24 Oct 2026), on the person** (unit default only to save typing) — §3 A |
 | Q2 | A move keeps the unit at its level (only under a unit of the same level as its current parent)? | **Yes** — the levels themselves are locked once people are placed (PO, 24 Oct 2026) | **Agreed (24 Oct 2026)** — to change a unit's level, create a unit at the other level, move the people, deactivate the old one |
-| Q3 | The import also **updates** existing units found by code (names, branch, cost centre, head), but never moves them? | **Yes** | |
+| Q3 | The import also **updates** existing units found by code (names, branch, cost centre, head), but never moves them? | **Yes** | **Agreed (24 Oct 2026)** |
 | Q4 | Location typed or pasted from a map link, with «Open in map», and **no map inside the page** for now? | **Yes** — a built-in map needs an outside map service; in-country hosting comes first | **Typed only** — no map, no map link (24 Oct 2026) |

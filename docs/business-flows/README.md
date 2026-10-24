@@ -17,7 +17,7 @@
 | Sign-in extras (codes by e-mail, remember this device) | WP-ADM-05 (EP-AUTH, addendum to EP-KAW-AUTH) | [EP-AUTH-signin-extras.md](EP-AUTH-signin-extras.md) | **Agreed (PO, 21 Oct 2026)** |
 | Plan, limits and feature switches | WP-ADM-06 | [EP-PLAN-plan-limits-feature-switches.md](EP-PLAN-plan-limits-feature-switches.md) | **Agreed (PO, 24 Oct 2026)** |
 | Suite mode and standalone mode | WP-ADM-09 | [EP-MODE-suite-standalone.md](EP-MODE-suite-standalone.md) | On hold (PO, 24 Oct 2026) |
-| Structure completion (cost centres, move, order, import, branch details) | WP-HR-01 (addendum to EP-ORG) | [EP-ORG-structure-completion.md](EP-ORG-structure-completion.md) | In discussion with the PO |
+| Structure completion (cost centres, move, order, import, branch details) | WP-HR-01 (addendum to EP-ORG) | [EP-ORG-structure-completion.md](EP-ORG-structure-completion.md) | **Agreed (PO, 24 Oct 2026)** |
 | Custom fields | WP-ADM-07 | [EP-CF-custom-fields.md](EP-CF-custom-fields.md) | On hold until the whole product is built (PO, 24 Oct 2026) |
 
 Status values: Draft · In discussion with the PO · **Agreed (PO, date)** · Changed after agreement (date, reason).

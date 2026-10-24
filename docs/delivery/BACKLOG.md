@@ -148,11 +148,11 @@ IAM-02 (HR-only person fields) is built in WP-ADM-04 ([roadmap §4.2](ROADMAP-by
 
 #### WP-HR-01 Structure completion
 
-**Claimed by:** Claude (branch `claude/youthful-davinci-00yhgl`) · **Business flow:** addendum to EP-ORG drafted 24 Oct 2026 (`EP-ORG-structure-completion.md`, T-M3-12) · **Depends on:** WP-FIX-01 (same structure pages — done)
+**Claimed by:** Claude (branch `claude/youthful-davinci-00yhgl`) · **Business flow:** addendum to EP-ORG **agreed 24 Oct 2026** (`EP-ORG-structure-completion.md`, T-M3-12); next: Mobbin design · **Depends on:** WP-FIX-01 (same structure pages — done)
 
 | ID | Task | WP | Owner | Status | Notes / PR |
 |---|---|---|---|---|---|
-| T-M3-12 | **Business flow agreed with the PO**: structure completion — cost centres, moving a unit to another parent (preview of the units and role assignments affected), drag-and-drop order, CSV import of units; GPS and working week / hours per branch (addendum to EP-ORG) | WP-HR-01 | Claude → PO | 🔵 | FR-ADM-04, FR-ADM-05; TM-0004 T-PEO-07. Drafted 24 Oct 2026: cost centre list (inherited from the parent), move with preview (same level only), drag + Move up/down, unit import (create + update by code, never moves), branch address / location / own working week with half-days; open Q1–Q4 |
+| T-M3-12 | **Business flow agreed with the PO**: structure completion — cost centres, moving a unit to another parent (preview of the units and role assignments affected), drag-and-drop order, CSV import of units; GPS and working week / hours per branch (addendum to EP-ORG) | WP-HR-01 | Claude → PO | 🟢 | FR-ADM-04, FR-ADM-05; TM-0004 T-PEO-07. **Agreed 24 Oct 2026** (levels locked once people are placed; cost centre on the person, no split, no approver; a move keeps the level; import creates + updates; location typed). Drafted: cost centre list (inherited from the parent), move with preview (same level only), drag + Move up/down, unit import (create + update by code, never moves), branch address / location / own working week with half-days; open Q1–Q4 |
 | T-M3-13 | **Build structure completion** per T-M3-12 (remember T-M3-02's C-8 note: the move cascade bumps `version` of every unit below) | WP-HR-01 | Claude | ⚪ | Migrations `202611031xxxxx` |
 
 #### WP-HR-02 Compliance

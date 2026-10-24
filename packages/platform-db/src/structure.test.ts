@@ -1,6 +1,6 @@
 import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { forgetSchemaPresenceForTests } from './custom-roles-present';
 import {
   addStructureLevel,
@@ -17,6 +17,12 @@ import {
   structureRefusalOf,
   updateStructureUnit,
 } from './structure';
+import { setStructureCompletionForTests } from './custom-roles-present';
+
+// The database before WP-HR-01's migrations unless a test says otherwise (no presence query in the fakes).
+beforeEach(() => {
+  setStructureCompletionForTests(false);
+});
 
 const dialect = new PgDialect();
 
@@ -183,7 +189,7 @@ describe('reads', () => {
 
 describe('levels', () => {
   it('adds a level below the last one, after the hierarchy lock', async () => {
-    const fake = fakeTx([[], [levelRow(1)], [{ id: 'l2' }], [levelRow(1), levelRow(2)]]);
+    const fake = fakeTx([[], [{ locked: false }], [levelRow(1)], [{ id: 'l2' }], [levelRow(1), levelRow(2)]]);
     const outcome = await addStructureLevel(fake.tx, { nameEn: 'Team', nameAr: 'فريق' });
     expect(outcome).toMatchObject({ ok: true, before: null, after: { id: 'l2', ordinal: 2 } });
     expect(isLock(fake.executed[0] ?? { sql: '' })).toBe(true);
@@ -192,7 +198,7 @@ describe('levels', () => {
   });
 
   it('refuses an eleventh level before writing; maps database refusals', async () => {
-    const full = fakeTx([[], Array.from({ length: 10 }, (_, i) => levelRow(i + 1))]);
+    const full = fakeTx([[], [{ locked: false }], Array.from({ length: 10 }, (_, i) => levelRow(i + 1))]);
     expect(await addStructureLevel(full.tx, { nameEn: 'X', nameAr: 'س' })).toEqual({
       ok: false,
       refusal: 'too_many_levels',
@@ -200,6 +206,7 @@ describe('levels', () => {
     expect(full.executed.some(isWrite)).toBe(false);
     const taken = fakeTx([
       [],
+      [{ locked: false }],
       [levelRow(1)],
       pgError('23505', { constraint_name: 'structure_levels_tenant_name_en_uq' }),
     ]);
@@ -207,6 +214,26 @@ describe('levels', () => {
       ok: false,
       refusal: 'name_en_taken',
     });
+  });
+
+  it('adds or removes no level once people are placed in units (WP-HR-01)', async () => {
+    const add = fakeTx([[], [{ locked: true }]]);
+    expect(await addStructureLevel(add.tx, { nameEn: 'Team', nameAr: 'فريق' })).toEqual({
+      ok: false,
+      refusal: 'levels_locked',
+    });
+    expect(add.executed.some(isWrite)).toBe(false);
+    const two = [levelRow(1), levelRow(2)];
+    expect(await removeStructureLevel(fakeTx([[], two, [{ locked: true }]]).tx, 'l2', 1)).toEqual({
+      ok: false,
+      refusal: 'levels_locked',
+    });
+    expect(
+      await addStructureLevel(fakeTx([[], [{ locked: false }], [levelRow(1)], pgError('JO004')]).tx, {
+        nameEn: 'Team',
+        nameAr: 'فريق',
+      }),
+    ).toEqual({ ok: false, refusal: 'levels_locked' });
   });
 
   it('renames a level (version checked), refuses an unknown or changed one', async () => {
@@ -237,29 +264,29 @@ describe('levels', () => {
 
   it('removes only the last level, never the only one, never one in use', async () => {
     const two = [levelRow(1), levelRow(2)];
-    expect(await removeStructureLevel(fakeTx([[], two]).tx, 'l1', 1)).toEqual({
+    expect(await removeStructureLevel(fakeTx([[], two, [{ locked: false }]]).tx, 'l1', 1)).toEqual({
       ok: false,
       refusal: 'only_level',
     });
     const three = [levelRow(1), levelRow(2), levelRow(3)];
-    expect(await removeStructureLevel(fakeTx([[], three]).tx, 'l2', 1)).toEqual({
+    expect(await removeStructureLevel(fakeTx([[], three, [{ locked: false }]]).tx, 'l2', 1)).toEqual({
       ok: false,
       refusal: 'not_last_level',
     });
     const used = [levelRow(1), levelRow(2, { unit_count: 4 })];
-    expect(await removeStructureLevel(fakeTx([[], used]).tx, 'l2', 1)).toEqual({
+    expect(await removeStructureLevel(fakeTx([[], used, [{ locked: false }]]).tx, 'l2', 1)).toEqual({
       ok: false,
       refusal: 'level_in_use',
       usage: { units: 4, people: 0, roles: 0 },
     });
-    const fine = fakeTx([[], two, [{ id: 'l2' }]]);
+    const fine = fakeTx([[], two, [{ locked: false }], [{ id: 'l2' }]]);
     expect(await removeStructureLevel(fine.tx, 'l2', 1)).toMatchObject({
       ok: true,
       before: { id: 'l2' },
       after: null,
     });
     expect(fine.executed.find(isWrite)?.sql).toContain('delete from platform.structure_levels');
-    const raced = fakeTx([[], two, pgError('JO002')]);
+    const raced = fakeTx([[], two, [{ locked: false }], pgError('JO002')]);
     expect(await removeStructureLevel(raced.tx, 'l2', 1)).toEqual({
       ok: false,
       refusal: 'level_in_use',
@@ -277,6 +304,7 @@ describe('units', () => {
       nameAr: 'فرعي',
       branchId: null,
       headPersonId: 'h',
+      defaultCostCentreId: null,
     });
     expect(outcome).toMatchObject({ ok: true, after: { id: 'c2', parentId: 'p' } });
     expect(fake.executed.find(isWrite)?.params).toEqual(['C2', 'فرعي', 'Child', 'p', null, 'h', 5]);
@@ -287,6 +315,7 @@ describe('units', () => {
         nameAr: 'س',
         branchId: null,
         headPersonId: null,
+        defaultCostCentreId: null,
       }),
     ).toEqual({ ok: false, refusal: 'parent_not_found' });
     const below = fakeTx([[], units, pgError('JO001')]);
@@ -297,12 +326,20 @@ describe('units', () => {
         nameAr: 'س',
         branchId: null,
         headPersonId: null,
+        defaultCostCentreId: null,
       }),
     ).toEqual({ ok: false, refusal: 'below_last_level' });
   });
 
   it('updates, deactivates and deletes with the version checked', async () => {
-    const input = { code: 'A', nameEn: 'A', nameAr: 'أ', branchId: null, headPersonId: 'h2' };
+    const input = {
+      code: 'A',
+      nameEn: 'A',
+      nameAr: 'أ',
+      branchId: null,
+      headPersonId: 'h2',
+      defaultCostCentreId: null,
+    };
     const updated = fakeTx([
       [],
       [unitRow('a')],

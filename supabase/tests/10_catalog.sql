@@ -242,7 +242,7 @@ begin
   foreach v_role in array array['anon', 'authenticated', 'app_server', 'app_worker', 'app_queue', 'tenant_guard',
                                 'invitation_guard', 'account_mail_guard', 'membership_guard',
                                 'rate_limit_guard', 'file_guard', 'user_import_guard', 'platform_admin_guard',
-                                'email_guard', 'inline_mail_guard', 'plan_guard'] loop
+                                'email_guard', 'inline_mail_guard', 'plan_guard', 'structure_guard'] loop
     perform tests.assert(not has_database_privilege(v_role, current_database(), 'TEMPORARY'),
       format('%s must not create temporary objects', v_role));
   end loop;
@@ -384,6 +384,7 @@ begin
     and p.proowner <> 'email_guard'::regrole          -- checked in 99_email_1_owner.sql (WP-ADM-01)
     and p.proowner <> 'inline_mail_guard'::regrole    -- checked in 99_inline_mail_1_owner.sql (WP-ADM-05 follow-up)
     and p.proowner <> 'plan_guard'::regrole           -- checked in 99_plans_1_owner.sql (WP-ADM-06)
+    and p.proowner <> 'structure_guard'::regrole      -- checked in 99_structure_5_open_planning_owner.sql (WP-HR-01)
     and p.oid <> 'private.storage_request_tenant()'::regprocedure;  -- files block below (T-M2-18)
   perform tests.assert_eq(v_list,
     'private.accept_invitation_as_caller(bytea,text,text) (owner invitation_guard), '

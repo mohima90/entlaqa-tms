@@ -1,5 +1,6 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
+import { structureCompletionExists } from './custom-roles-present';
 import { pgError } from './user-admin';
 import type { UserTx } from './with-user-tx';
 
@@ -14,6 +15,13 @@ import type { UserTx } from './with-user-tx';
  */
 export type BranchStatus = 'active' | 'inactive';
 
+/** One working day of a branch's own week (WP-HR-01): 0 = Sunday … 6 = Saturday, hours as HH:MM. */
+export interface BranchWorkingDay {
+  readonly day: number;
+  readonly startsAt: string;
+  readonly endsAt: string;
+}
+
 export interface BranchRow {
   readonly id: string;
   readonly code: string;
@@ -25,6 +33,13 @@ export interface BranchRow {
   readonly cityEn: string | null;
   readonly timezone: string;
   readonly isHeadquarters: boolean;
+  /** WP-HR-01 (null before the migration): the address, the typed location, … */
+  readonly addressEn: string | null;
+  readonly addressAr: string | null;
+  readonly latitude: number | null;
+  readonly longitude: number | null;
+  /** … and the branch's own working week, by day; null = «Same as the organization». */
+  readonly workingDays: readonly BranchWorkingDay[] | null;
   readonly status: BranchStatus;
   readonly version: number;
   /** What keeps the branch from being deleted: live sub-branches, live units, active people. */
@@ -43,6 +58,13 @@ export interface BranchInput {
   readonly cityEn: string | null;
   readonly timezone: string;
   readonly isHeadquarters: boolean;
+  /** WP-HR-01: written only once the columns exist (deploy window). */
+  readonly addressEn: string | null;
+  readonly addressAr: string | null;
+  readonly latitude: number | null;
+  readonly longitude: number | null;
+  /** Null: «Same as the organization» (the branch's own week removed). */
+  readonly workingDays: readonly BranchWorkingDay[] | null;
 }
 
 export type BranchRefusal =
@@ -52,7 +74,12 @@ export type BranchRefusal =
   | 'timezone_unknown'
   | 'parent_not_found'
   | 'branch_tree'
-  | 'branch_in_use';
+  | 'branch_in_use'
+  /** WP-HR-01: both coordinates or neither, within range. */
+  | 'location_invalid'
+  /** WP-HR-01: a working day's end after its start, whole minutes. */
+  | 'hours_invalid'
+  | 'address_invalid';
 
 export interface BranchUsage {
   readonly branches: number;
@@ -72,6 +99,15 @@ export type BranchOutcome =
 
 /** The live branches, headquarters first, then by Arabic name. */
 export async function listBranches(tx: UserTx): Promise<readonly BranchRow[]> {
+  const completed = await structureCompletionExists(tx);
+  const details = completed
+    ? sql`b.address_en, b.address_ar, b.latitude::text as latitude, b.longitude::text as longitude,
+          (select jsonb_agg(jsonb_build_object('day', w.day, 'startsAt', to_char(w.starts_at, 'HH24:MI'),
+                                               'endsAt', to_char(w.ends_at, 'HH24:MI')) order by w.day)
+           from platform.branch_working_days w
+           where w.tenant_id = b.tenant_id and w.branch_id = b.id) as working_days`
+    : sql`null::text as address_en, null::text as address_ar, null::text as latitude, null::text as longitude,
+          null::jsonb as working_days`;
   const rows = await tx.execute<{
     id: string;
     code: string;
@@ -83,6 +119,11 @@ export async function listBranches(tx: UserTx): Promise<readonly BranchRow[]> {
     city_en: string | null;
     timezone: string;
     is_headquarters: boolean;
+    address_en: string | null;
+    address_ar: string | null;
+    latitude: string | null;
+    longitude: string | null;
+    working_days: BranchWorkingDay[] | null;
     status: BranchStatus;
     version: number;
     child_count: number | string;
@@ -90,7 +131,7 @@ export async function listBranches(tx: UserTx): Promise<readonly BranchRow[]> {
     people_count: number | string;
   }>(sql`
     select b.id, b.code, b.name_ar, b.name_en, b.parent_branch_id, b.country_code, b.city_ar, b.city_en,
-           b.timezone, b.is_headquarters, b.status, b.version,
+           b.timezone, b.is_headquarters, ${details}, b.status, b.version,
            (select count(*) from platform.branches c
             where c.tenant_id = b.tenant_id and c.parent_branch_id = b.id and c.deleted_at is null) as child_count,
            (select count(*) from platform.departments d
@@ -112,6 +153,11 @@ export async function listBranches(tx: UserTx): Promise<readonly BranchRow[]> {
     cityEn: r.city_en,
     timezone: r.timezone,
     isHeadquarters: r.is_headquarters,
+    addressEn: r.address_en,
+    addressAr: r.address_ar,
+    latitude: r.latitude === null ? null : Number(r.latitude),
+    longitude: r.longitude === null ? null : Number(r.longitude),
+    workingDays: r.working_days,
     status: r.status,
     version: r.version,
     childCount: Number(r.child_count),
@@ -126,6 +172,9 @@ export function branchRefusalOf(error: unknown): BranchRefusal {
   if (pg?.code === '23505' && pg.constraint === 'branches_tenant_code_uq') return 'code_taken';
   if (pg?.code === '23503') return 'parent_not_found';
   if (pg?.code === '23514') {
+    if (pg.constraint === 'branches_location_check') return 'location_invalid';
+    if (pg.constraint === 'branches_address_check') return 'address_invalid';
+    if (pg.constraint?.startsWith('branch_working_days_') === true) return 'hours_invalid';
     if (pg.message.includes('unknown time zone')) return 'timezone_unknown';
     if (pg.message.includes('still')) return 'branch_in_use';
     if (pg.message.includes('deleted parent')) return 'parent_not_found';
@@ -141,6 +190,29 @@ async function lockBranches(tx: UserTx): Promise<void> {
     pg_catalog.hashtextextended('platform.departments:' || private.current_tenant_id()::text, 0))`);
   await tx.execute(sql`select pg_catalog.pg_advisory_xact_lock(
     pg_catalog.hashtextextended('platform.branches:' || private.current_tenant_id()::text, 0))`);
+}
+
+/** Writes a branch's address, location and own working week (WP-HR-01), once the columns exist. */
+async function writeBranchDetails(tx: UserTx, id: string, input: BranchInput): Promise<void> {
+  if (!(await structureCompletionExists(tx))) return;
+  await tx.execute(sql`update platform.branches
+    set address_en = ${input.addressEn}, address_ar = ${input.addressAr},
+        latitude = ${input.latitude}::numeric, longitude = ${input.longitude}::numeric
+    where id = ${id}::uuid and deleted_at is null
+      and (address_en, address_ar, latitude, longitude) is distinct from
+          (${input.addressEn}, ${input.addressAr}, ${input.latitude}::numeric, ${input.longitude}::numeric)`);
+  const days = input.workingDays ?? [];
+  const keep = days.length > 0 ? sql.join(days.map((d) => sql`${d.day}::smallint`), sql`, `) : sql`null`;
+  await tx.execute(sql`delete from platform.branch_working_days
+    where branch_id = ${id}::uuid and day not in (${keep})`);
+  for (const d of days) {
+    await tx.execute(sql`insert into platform.branch_working_days (branch_id, day, starts_at, ends_at)
+      values (${id}::uuid, ${d.day}, ${d.startsAt}::time, ${d.endsAt}::time)
+      on conflict (tenant_id, branch_id, day) do update
+        set starts_at = excluded.starts_at, ends_at = excluded.ends_at
+        where (platform.branch_working_days.starts_at, platform.branch_working_days.ends_at)
+              is distinct from (excluded.starts_at, excluded.ends_at)`);
+  }
 }
 
 async function branchById(tx: UserTx, id: string): Promise<BranchRow | null> {
@@ -171,6 +243,7 @@ export async function createBranch(tx: UserTx, input: BranchInput): Promise<Bran
       returning id`);
     if (!row) throw new Error('createBranch: no row returned');
     id = row.id;
+    await writeBranchDetails(tx, id, input);
   } catch (error) {
     return { ok: false, refusal: branchRefusalOf(error) };
   }
@@ -215,7 +288,10 @@ export function updateBranch(
           city_ar = ${input.cityAr}, city_en = ${input.cityEn}, timezone = ${input.timezone},
           is_headquarters = ${input.isHeadquarters}
       where id = ${id}::uuid and version = ${version} and deleted_at is null
-      returning id`);
+      returning id`).then(async (rows) => {
+      if (rows.length > 0) await writeBranchDetails(tx, id, input);
+      return rows;
+    });
   });
   return written.then((outcome) =>
     outcome.ok && movedFrom !== null ? { ...outcome, headquartersMovedFrom: movedFrom } : outcome,

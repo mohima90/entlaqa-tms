@@ -1,6 +1,6 @@
 import 'server-only';
 import { type SQL, sql } from 'drizzle-orm';
-import { storableArabicDisplayName } from './custom-roles-present';
+import { storableArabicDisplayName, structureCompletionExists } from './custom-roles-present';
 import { keepUnsplitDisplayNames } from './names';
 import { pgError } from './pg-error';
 import type { UserTx } from './with-user-tx';
@@ -40,6 +40,8 @@ export interface EditableUser {
   readonly jobTitleAr: string | null;
   readonly jobTitleEn: string | null;
   readonly hireOn: string | null;
+  /** The person's one cost centre (WP-HR-01; null before the migration). */
+  readonly costCentreId: string | null;
   /** Names of the current department and branch, and whether they were deleted since (kept as is). */
   readonly department: CurrentUnit | null;
   readonly branch: CurrentUnit | null;
@@ -50,6 +52,7 @@ export interface EditableUser {
 }
 
 export async function getEditableUser(tx: UserTx, personId: string): Promise<EditableUser | null> {
+  const costCentre = (await structureCompletionExists(tx)) ? sql`e.cost_centre_id` : sql`null::uuid`;
   const [row] = await tx.execute(sql`
     select p.id, p.first_name_ar, p.father_name_ar, p.grandfather_name_ar, p.family_name_ar,
            p.first_name_en, p.father_name_en, p.grandfather_name_en, p.family_name_en,
@@ -58,7 +61,7 @@ export async function getEditableUser(tx: UserTx, personId: string): Promise<Edi
            exists (select 1 from platform.tenant_memberships m
                    where m.tenant_id = p.tenant_id and m.person_id = p.id) as has_login,
            e.department_id, e.branch_id, e.manager_person_id, e.job_title_ar, e.job_title_en,
-           e.hire_on::text as hire_on, coalesce(e.version, 0) as employment_version,
+           e.hire_on::text as hire_on, ${costCentre} as cost_centre_id, coalesce(e.version, 0) as employment_version,
            private.actor_may_manage_person(p.tenant_id, p.id) as may_manage,
            d.name_ar as department_name_ar, d.name_en as department_name_en,
            d.deleted_at is not null as department_deleted,
@@ -100,6 +103,7 @@ export async function getEditableUser(tx: UserTx, personId: string): Promise<Edi
     jobTitleAr: text('job_title_ar'),
     jobTitleEn: text('job_title_en'),
     hireOn: text('hire_on'),
+    costCentreId: text('cost_centre_id'),
     department: unit('department'),
     branch: unit('branch'),
     version: `${String(row.person_version)}:${String(row.employment_version)}`,
@@ -193,6 +197,8 @@ export interface UserDetailsChange {
   readonly jobTitleAr: string | null;
   readonly jobTitleEn: string | null;
   readonly hireOn: string | null;
+  /** WP-HR-01: written only once the column exists (deploy window). */
+  readonly costCentreId: string | null;
 }
 
 /** Why a change was refused, as a field the form can point at. */
@@ -207,6 +213,7 @@ export type UserDetailsRefusal =
   | 'branch_deleted'
   | 'hire_date_invalid'
   | 'name_required'
+  | 'cost_centre_inactive'
   | 'not_allowed';
 
 export type UserDetailsOutcome =
@@ -237,6 +244,7 @@ const EMPLOYMENT_FIELDS = [
   ['jobTitleAr', 'job_title_ar'],
   ['jobTitleEn', 'job_title_en'],
   ['hireOn', 'hire_on'],
+  ['costCentreId', 'cost_centre_id'],
 ] as const;
 
 /** SQLSTATE, constraint and message of a postgres.js error (moved to ./pg-error; re-exported). */
@@ -257,6 +265,12 @@ export function refusalOf(error: unknown): UserDetailsRefusal {
     return 'department_deleted';
   }
   if (pg?.code === '23514' && pg.message.includes('deleted branch')) return 'branch_deleted';
+  if (pg?.code === '23514' && pg.message.includes('cost centre must be active')) {
+    return 'cost_centre_inactive';
+  }
+  if (pg?.code === '23503' && pg.constraint === 'person_employment_cost_centre_fkey') {
+    return 'cost_centre_inactive';
+  }
   if (pg?.code === '23514' && pg.constraint === 'person_employment_dates_check') {
     return 'hire_date_invalid';
   }
@@ -305,7 +319,11 @@ export async function updateUserDetails(
   };
 
   const personChanges = PERSON_FIELDS.filter(([field]) => before[field] !== next[field]);
-  const employmentChanges = EMPLOYMENT_FIELDS.filter(([field]) => before[field] !== next[field]);
+  // The cost centre only once its column exists (deploy window, expand-first).
+  const completed = await structureCompletionExists(tx);
+  const employmentChanges = EMPLOYMENT_FIELDS.filter(
+    ([field]) => before[field] !== next[field] && (completed || field !== 'costCentreId'),
+  );
   const [personVersion = '', employmentVersion = '0'] = before.version.split(':');
   const hasEmployment = employmentVersion !== '0';
   // The version check is repeated in each UPDATE, so a concurrent edit cannot slip in between.
@@ -335,12 +353,15 @@ export async function updateUserDetails(
         conflict ||= updated.length === 0;
       } else {
         // A concurrent first placement wins the unique key: this edit is then a version conflict.
+        const costCentreColumn = completed ? sql`, cost_centre_id` : sql``;
+        const costCentreValue = completed ? sql`, ${next.costCentreId}::uuid` : sql``;
         const inserted = await tx.execute(sql`
           insert into platform.person_employment
-            (person_id, department_id, branch_id, manager_person_id, job_title_ar, job_title_en, hire_on)
+            (person_id, department_id, branch_id, manager_person_id, job_title_ar, job_title_en, hire_on
+             ${costCentreColumn})
           values (${personId}::uuid, ${next.departmentId}::uuid, ${next.branchId}::uuid,
                   ${next.managerPersonId}::uuid, ${next.jobTitleAr}, ${next.jobTitleEn},
-                  ${next.hireOn}::date)
+                  ${next.hireOn}::date ${costCentreValue})
           on conflict (tenant_id, person_id) do nothing returning id`);
         conflict ||= inserted.length === 0;
       }

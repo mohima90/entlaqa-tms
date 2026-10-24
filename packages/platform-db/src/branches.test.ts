@@ -1,6 +1,6 @@
 import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
   branchRefusalOf,
   createBranch,
@@ -9,6 +9,12 @@ import {
   setBranchStatus,
   updateBranch,
 } from './branches';
+import { setStructureCompletionForTests } from './custom-roles-present';
+
+// The database before WP-HR-01's migrations unless a test says otherwise (no presence query in the fakes).
+beforeEach(() => {
+  setStructureCompletionForTests(false);
+});
 
 const dialect = new PgDialect();
 
@@ -43,6 +49,11 @@ const row = (id: string, over: Record<string, unknown> = {}) => ({
   city_en: 'Riyadh',
   timezone: 'Asia/Riyadh',
   is_headquarters: false,
+  address_en: null,
+  address_ar: null,
+  latitude: null,
+  longitude: null,
+  working_days: null,
   status: 'active',
   version: 1,
   child_count: '0',
@@ -60,6 +71,11 @@ const input = {
   cityEn: 'Jeddah',
   timezone: 'Asia/Riyadh',
   isHeadquarters: false,
+  addressEn: null,
+  addressAr: null,
+  latitude: null,
+  longitude: null,
+  workingDays: null,
 };
 /** The two hierarchy locks every write takes first (units, then branches). */
 const LOCKS: unknown[][] = [[], []];
@@ -81,6 +97,11 @@ describe('listBranches', () => {
         cityEn: 'Riyadh',
         timezone: 'Asia/Riyadh',
         isHeadquarters: true,
+        addressEn: null,
+        addressAr: null,
+        latitude: null,
+        longitude: null,
+        workingDays: null,
         status: 'active',
         version: 1,
         childCount: 0,

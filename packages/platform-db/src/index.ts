@@ -346,7 +346,26 @@ export {
   getTenantDefaultLocale,
 } from './tenants';
 export { NAME_PART_MAX, keepsUnsplitDisplayName } from './names';
-export { englishOnlyNamesExist, forgetSchemaPresenceForTests } from './custom-roles-present';
+export {
+  englishOnlyNamesExist,
+  forgetSchemaPresenceForTests,
+  setStructureCompletionForTests,
+  structureCompletionExists,
+} from './custom-roles-present';
+export {
+  type CostCentreInput,
+  type CostCentreOption,
+  type CostCentreOutcome,
+  type CostCentreRefusal,
+  type CostCentreRow,
+  type CostCentreStatus,
+  costCentreRefusalOf,
+  createCostCentre,
+  deleteCostCentre,
+  listCostCentreOptions,
+  listCostCentres,
+  updateCostCentre,
+} from './cost-centres';
 export {
   type OrganizationProfile,
   type OrganizationProfileRecord,
@@ -396,9 +415,16 @@ export {
   type UnitInput,
   type UnitStatus,
   type UnitUsage,
+  type MovePreviewOutcome,
+  type MoveVisibilityChange,
+  type UnitMovePreview,
   addStructureLevel,
   createStructureUnit,
   deleteStructureUnit,
+  moveStructureUnit,
+  previewStructureUnitMove,
+  reorderStructureUnit,
+  structureLevelsLocked,
   hasUnitsBelowFirstLevel,
   listActivePersonOptions,
   listStructureLevelLabels,
@@ -418,6 +444,7 @@ export {
   type BranchRow,
   type BranchStatus,
   type BranchUsage,
+  type BranchWorkingDay,
   branchRefusalOf,
   createBranch,
   deleteBranch,

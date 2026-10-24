@@ -81,6 +81,7 @@ describe.skipIf(!configured)('editing a user against PostgreSQL', () => {
         jobTitleAr: null,
         jobTitleEn: null,
         hireOn: null,
+        costCentreId: null,
       };
     }
     return {
@@ -104,6 +105,7 @@ describe.skipIf(!configured)('editing a user against PostgreSQL', () => {
       jobTitleAr: u.jobTitleAr,
       jobTitleEn: u.jobTitleEn,
       hireOn: u.hireOn,
+      costCentreId: u.costCentreId,
     };
   };
 

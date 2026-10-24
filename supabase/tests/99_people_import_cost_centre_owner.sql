@@ -48,9 +48,14 @@ insert into platform.cost_centres (tenant_id, code, name_en, status) values
   ('a0000000-0000-4000-8000-000000000001', 'CC-OLD', 'Old', 'inactive'),
   ('a0000000-0000-4000-8000-000000000001', 'CC-S1', 'Shared', 'active'),
   ('a0000000-0000-4000-8000-000000000001', 'CC-S2', 'Shared', 'active');
--- The unit TD gives CC-100 by default.
+-- The unit TD gives CC-100 by default; OPS (exist@imp.test's unit, who has no cost centre) gives CC-S2.
 update platform.departments set default_cost_centre_id = 'a7000000-0000-4000-8000-0000000000cc'
   where tenant_id = 'a0000000-0000-4000-8000-000000000001' and code = 'TD';
+update platform.departments set default_cost_centre_id = (select id from platform.cost_centres where code = 'CC-S2')
+  where id = 'a3000000-0000-4000-8000-000000000003';
+-- mgr@imp.test is placed in SAL, without a cost centre.
+insert into platform.person_employment (tenant_id, person_id, department_id)
+  values ('a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000e06', 'a3000000-0000-4000-8000-000000000e01');
 
 select tests.import_file('a5000000-0000-4000-8000-0000000000c1', 'a0000000-0000-4000-8000-000000000001',
                          '00000000-0000-4000-8000-0000000000a1', 'f0a00000-0000-4000-8000-0000000000c1');
@@ -61,11 +66,14 @@ values ('a5000000-0000-4000-8000-0000000000c1', 'a0000000-0000-4000-8000-0000000
         '[{"name": "", "rows": 10, "columns": 4}]', 0,
         '{"0": "email", "1": "first_name_ar", "2": "family_name_ar", "3": "cost_centre"}', now() + interval '1 day');
 select pg_temp.stage(2, '{"email": "cc-new@imp.test", "first_name_ar": "جديد", "family_name_ar": "بمركز", "cost_centre": "cc-100"}');
-select pg_temp.stage(3, '{"email": "exist@imp.test", "first_name_ar": "موجود", "family_name_ar": "قديم", "cost_centre": "CC-100"}');
+select pg_temp.stage(3, '{"email": "exist@imp.test", "first_name_ar": "موجود", "family_name_ar": "قديم", "department": "TD",
+                          "cost_centre": "CC-S1"}');
 select pg_temp.stage(4, '{"email": "cc-old@imp.test", "first_name_ar": "مركز", "family_name_ar": "موقوف", "cost_centre": "CC-OLD",
                           "department": "TD"}');
 select pg_temp.stage(5, '{"email": "cc-amb@imp.test", "first_name_ar": "اسم", "family_name_ar": "مكرر", "cost_centre": "shared"}');
 select pg_temp.stage(6, '{"email": "cc-none@imp.test", "first_name_ar": "مركز", "family_name_ar": "مجهول", "cost_centre": "NOPE"}');
+-- An existing member moved to TD without a cost centre in the file: TD's default (and the undo takes it away).
+select pg_temp.stage(7, '{"email": "mgr@imp.test", "first_name_ar": "مدير", "family_name_ar": "القسم", "department": "TD"}');
 
 select pg_temp.become_worker();
 select private.user_import_classify('a5000000-0000-4000-8000-0000000000c1');
@@ -82,7 +90,7 @@ begin
   perform tests.assert((select count(*) = 0 from platform.user_import_rows
                         where import_id = 'a5000000-0000-4000-8000-0000000000c1' and row_number in (4, 5, 6)
                           and cost_centre_id is not null), 'warnings give no cost centre');
-  perform tests.assert((select changes @> '[{"f": "cost_centre", "to": "CC-100"}]' from platform.user_import_rows
+  perform tests.assert((select changes @> '[{"f": "cost_centre", "to": "CC-S1"}]' from platform.user_import_rows
                         where import_id = 'a5000000-0000-4000-8000-0000000000c1' and row_number = 3),
     'the review shows the existing member''s new cost centre');
   perform tests.assert((select review_kind = 'existing' from platform.user_import_rows
@@ -112,9 +120,12 @@ do $$
 begin
   perform tests.assert_eq((select string_agg(row_number || ':' || result, ',' order by row_number) from platform.user_import_rows
                            where import_id = 'a5000000-0000-4000-8000-0000000000c1'),
-    '2:added,3:updated,4:added,5:added,6:added', 'every row is written');
+    '2:added,3:updated,4:added,5:added,6:added,7:updated', 'every row is written');
   perform tests.assert_eq(pg_temp.person_cc('cc-new@imp.test'), 'CC-100', 'a new person gets the file''s cost centre');
-  perform tests.assert_eq(pg_temp.person_cc('exist@imp.test'), 'CC-100', 'an existing member''s cost centre is changed');
+  perform tests.assert_eq(pg_temp.person_cc('exist@imp.test'), 'CC-S1',
+    'an existing member moved to a unit with a default gets the file''s cost centre');
+  perform tests.assert_eq(pg_temp.person_cc('mgr@imp.test'), 'CC-100',
+    'an existing member moved without a cost centre in the file gets the new unit''s default');
   perform tests.assert_eq(pg_temp.person_cc('cc-old@imp.test'), 'CC-100',
     'an inactive cost centre in the file: the person gets the unit''s default');
   perform tests.assert(pg_temp.person_cc('cc-none@imp.test') is null, 'not found, no unit: no cost centre');
@@ -138,7 +149,15 @@ begin
   perform tests.assert_eq((select undo_result from platform.user_import_rows
                            where import_id = 'a5000000-0000-4000-8000-0000000000c1' and row_number = 3), 'restored',
     'the member''s record is restored');
-  perform tests.assert(pg_temp.person_cc('exist@imp.test') is null, 'the member has no cost centre again');
+  perform tests.assert(pg_temp.person_cc('exist@imp.test') is null,
+    'the member has no cost centre again (not the default of the unit they are back in)');
+  perform tests.assert((select department_id = 'a3000000-0000-4000-8000-000000000003' from platform.person_employment
+                        where person_id = 'a1000000-0000-4000-8000-000000000e01'), 'and is back in their unit');
+  perform tests.assert_eq((select undo_result from platform.user_import_rows
+                           where import_id = 'a5000000-0000-4000-8000-0000000000c1' and row_number = 7), 'restored',
+    'row 7 is restored');
+  perform tests.assert(pg_temp.person_cc('mgr@imp.test') is null,
+    'the default the new unit gave is taken away with the move');
   perform tests.assert(pg_temp.person_cc('cc-new@imp.test') is null, 'the person the import added is removed');
 end $$;
 rollback;

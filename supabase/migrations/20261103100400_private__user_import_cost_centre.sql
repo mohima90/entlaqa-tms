@@ -7,8 +7,10 @@
 --   private.user_import_classify_cost_centres   NEW dry-run step (the job runs it after user_import_classify):
 --                                               by code, else by name; inactive / not found / ambiguous are
 --                                               warnings; the review's «what changes» shows it.
---   private.user_import_person_before           also the cost centre (what undo restores).
---   private.user_import_write_person            writes / restores the cost centre of the placement.
+--   private.user_import_person_before           also the cost centre (what undo restores) — given by the file,
+--                                               or kept when the unit changes (the new unit's default).
+--   private.user_import_write_person            writes / restores the cost centre of the placement exactly as
+--                                               given (undo puts back «none», not the old unit's default).
 --   private.user_import_apply_batch             checks the cost centre is still active, writes it with the
 --                                               rest of the row (new people: the unit's default when none).
 -- Everything else in these functions is as in 20261021090200, 20261016090200 and 20261027100100.
@@ -140,6 +142,11 @@ as $$
   from (
     select col, current_value from changed
     union all
+    -- WP-HR-01: a new unit may give its default cost centre (trigger): the current one is kept for the undo.
+    select 'cost_centre_id', coalesce(to_jsonb((select cost_centre_id from e)), 'null'::jsonb)
+    where exists (select 1 from changed where col = 'department_id')
+      and not exists (select 1 from changed where col = 'cost_centre_id')
+    union all
     select 'display_name_ar', to_jsonb((select display_name_ar from p))
     where exists (select 1 from changed where col like '%\_name\_ar')
     union all
@@ -161,6 +168,7 @@ declare
   v_person_values jsonb := p_values - array['job_title_ar', 'job_title_en', 'department_id', 'branch_id',
     'manager_person_id', 'hire_on', 'cost_centre_id'];
   v_employment_version integer;
+  v_exact_version integer;
 begin
   if v_person_values <> '{}'::jsonb or p_status is not null then
     update platform.persons p
@@ -225,6 +233,16 @@ begin
   else
     select e.version into v_employment_version
     from platform.person_employment e where e.tenant_id = p_tenant_id and e.person_id = p_person_id;
+  end if;
+  -- WP-HR-01: the cost centre exactly as given — a default the trigger filled for a new unit is replaced, so the
+  -- undo puts back «none» too. The unit does not change here, so the trigger fills nothing.
+  if v_employment_values ? 'cost_centre_id' then
+    update platform.person_employment e
+    set cost_centre_id = (v_employment_values ->> 'cost_centre_id')::uuid
+    where e.tenant_id = p_tenant_id and e.person_id = p_person_id
+      and e.cost_centre_id is distinct from (v_employment_values ->> 'cost_centre_id')::uuid
+    returning e.version into v_exact_version;
+    v_employment_version := coalesce(v_exact_version, v_employment_version);
   end if;
   return jsonb_build_object('person', v_person.version, 'employment', v_employment_version);
 end
@@ -409,7 +427,9 @@ begin
                      when 'manager_person_id' then to_jsonb(v_manager) else d -> k.key end), '{}'::jsonb)
               into v_values
             from jsonb_object_keys(v_values) k(key)
-            where k.key not like 'display\_name\_%';
+            where k.key not like 'display\_name\_%'
+              -- No cost centre to give: the record's stays (or the new unit's default).
+              and (k.key <> 'cost_centre_id' or v_cost_centre is not null);
             v_versions := private.user_import_write_person(v_tenant, v_person, v_values, 'active');
           end if;
           -- The trigger makes the importer the inviter (checked: may still invite; no privileged role).
@@ -464,12 +484,16 @@ begin
                        when 'manager_person_id' then to_jsonb(v_manager) else d -> k.key end), '{}'::jsonb)
                 into v_values
               from jsonb_object_keys(v_before) k(key)
-              where k.key not like 'display\_name\_%';
+              where k.key not like 'display\_name\_%'
+                -- No cost centre to give: the record's stays (or the new unit's default).
+                and (k.key <> 'cost_centre_id' or v_cost_centre is not null);
               v_versions := private.user_import_write_person(v_tenant, v_person, v_values, null);
               insert into platform.audit_events (action, entity_type, entity_id, data)
               values ('platform.user.updated', 'person', v_person::text,
                       jsonb_build_object('changed', (select jsonb_agg(k order by k) from jsonb_object_keys(v_before) k
-                                                     where k not like 'display\_name\_%'),
+                                                     where k not like 'display\_name\_%'
+                                                       -- Kept for the undo only (not given): not a change.
+                                                       and (k <> 'cost_centre_id' or v_cost_centre is not null)),
                                          'importId', p_import_id, 'job', private.request_claims() ->> 'job_id'));
               update platform.user_import_rows r
               set result = 'updated', result_issues = v_warnings, person_id = v_person, before = v_before,

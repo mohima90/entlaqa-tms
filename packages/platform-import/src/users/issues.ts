@@ -301,8 +301,8 @@ export const ISSUES: Catalogue = {
     severity: 'w',
     review: (issue, locale) =>
       locale === 'ar'
-        ? `مركز التكلفة «${text(issue.p?.name)}» غير موجود. يأخذ الشخص مركز التكلفة الافتراضي لوحدته، أو يبقى على مركزه الحالي.`
-        : `Cost centre “${text(issue.p?.name)}” wasn’t found. The person gets their unit’s default cost centre, or keeps their current one.`,
+        ? `مركز التكلفة «${text(issue.p?.name)}» غير موجود. يبقى الشخص على مركزه الحالي، أو يأخذ مركز التكلفة الافتراضي لوحدته إن وُجد.`
+        : `Cost centre “${text(issue.p?.name)}” wasn’t found. The person keeps their current cost centre, or gets their unit’s default if it has one.`,
   },
   COST_CENTRE_AMBIGUOUS: {
     severity: 'w',
@@ -315,8 +315,8 @@ export const ISSUES: Catalogue = {
     severity: 'w',
     review: (issue, locale) =>
       locale === 'ar'
-        ? `مركز التكلفة «${text(issue.p?.name)}» غير نشط، فلا يُعطى لأحد. يأخذ الشخص مركز التكلفة الافتراضي لوحدته، أو يبقى على مركزه الحالي.`
-        : `Cost centre “${text(issue.p?.name)}” is inactive, so it isn’t given to anyone. The person gets their unit’s default cost centre, or keeps their current one.`,
+        ? `مركز التكلفة «${text(issue.p?.name)}» غير نشط، فلا يُعطى لأحد. يبقى الشخص على مركزه الحالي، أو يأخذ مركز التكلفة الافتراضي لوحدته إن وُجد.`
+        : `Cost centre “${text(issue.p?.name)}” is inactive, so it isn’t given to anyone. The person keeps their current cost centre, or gets their unit’s default if it has one.`,
   },
   MANAGER_NOT_FOUND: {
     severity: 'w',

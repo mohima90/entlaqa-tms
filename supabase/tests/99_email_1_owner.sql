@@ -72,7 +72,9 @@ begin
     'private.auth_mail_route(uuid) (definer), '
     'private.claim_email_tests(integer) (definer), private.email_credentials_public_key() (definer), '
     'private.email_route() (definer), private.email_tenants_waiting() (definer), '
-    'private.finish_email_test(uuid,integer,boolean,text) (definer), private.invitation_mail_skipped_ids() (definer), '
+    'private.finish_email_test(uuid,integer,boolean,text) (definer), '
+    'private.inline_email_test_claim(text,bytea) (definer), private.inline_email_test_finish(bytea,integer,boolean,text) (definer), '
+    'private.invitation_mail_skipped_ids() (definer), '
     'private.note_invitation_mail_skipped(uuid) (definer), private.platform_email_settings_view() (definer), '
     'private.platform_save_email_settings(text,jsonb,text,text,text,text,integer) (definer), '
     'private.publish_email_credentials_key(text,text) (definer), private.request_tenant_email_test(text) (definer), '
@@ -89,8 +91,8 @@ begin
     into v_list
   from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
   where p.proowner = 'email_guard'::regrole and a.privilege_type = 'EXECUTE' and a.grantee <> p.proowner;
-  perform tests.assert_eq(v_list, 'account_mail_guard, authenticated',
-    'EXECUTE: authenticated (checked inside) and, for the sender-settings read of the sign-in code, account_mail_guard');
+  perform tests.assert_eq(v_list, 'account_mail_guard, authenticated, inline_mail_guard',
+    'EXECUTE: authenticated (checked inside) and, for the sender-settings read of the immediate e-mails, account_mail_guard and inline_mail_guard');
   perform tests.assert(not has_function_privilege('authenticated', 'private.auth_mail_route(uuid)', 'execute')
                        and has_function_privilege('account_mail_guard', 'private.auth_mail_route(uuid)', 'execute'),
     'the sender settings of the Send Email hook are reachable only through private.auth_mail_issue (re-review M-B)');

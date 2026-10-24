@@ -39,6 +39,11 @@ export interface PlatformEmailConsoleDeps extends Pick<
     input: SaveSenderInput & { readonly testTo: string },
   ) => Promise<number>;
   readonly getEmailCredentialsPublicKey: (tx: UserTx) => Promise<CredentialsPublicKey | null>;
+  /**
+   * Once the sender is saved and its test queued, in the same transaction: sends that test the moment the
+   * action commits (WP-ADM-05 follow-up, "every e-mail arrives immediately"). Never throws.
+   */
+  readonly afterSave?: (tx: UserTx) => Promise<void>;
 }
 
 /** «حفظ وإرسال رسالة تجريبية»: what the Super Admin typed (validated by apps/suite lib). */
@@ -135,6 +140,7 @@ export async function savePlatformEmailSettingsFromConsole(
         testTo: input.testTo,
         version: input.version,
       });
+      await deps.afterSave?.(tx);
       return ok({ version });
     });
   } catch (error) {

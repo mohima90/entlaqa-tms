@@ -210,7 +210,18 @@ export function saveTenantEmailSettingsActionDefinition(): ActionDefinition<
   };
 }
 
-export function requestTenantEmailTestActionDefinition(): ActionDefinition<
+/** What the test e-mail action needs from the web app. */
+export interface TenantEmailTestOptions {
+  /**
+   * Called in the action's transaction once the test is queued: sends it the moment the action commits
+   * (WP-ADM-05 follow-up, "every e-mail arrives immediately"). Never throws; without it the worker sends it.
+   */
+  readonly startTest?: (tx: UserTx) => Promise<void>;
+}
+
+export function requestTenantEmailTestActionDefinition(
+  options: TenantEmailTestOptions = {},
+): ActionDefinition<
   typeof TenantEmailTestInput,
   { readonly tenantId: string; readonly provider: string },
   UserTx
@@ -223,6 +234,7 @@ export function requestTenantEmailTestActionDefinition(): ActionDefinition<
     handler: async ({ ctx, input }) => {
       try {
         const provider = await requestTenantEmailTest(ctx.tx, input.recipient);
+        await options.startTest?.(ctx.tx);
         return ok({ tenantId: ctx.claims.tenant_id, provider });
       } catch (error) {
         return emailSettingsRefusal(error);

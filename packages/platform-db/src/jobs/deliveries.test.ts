@@ -6,7 +6,10 @@ import {
   discardInactiveTenantDelivery,
   finishEmailDelivery,
   getEmailDeliveryTemplate,
+  inlineDeliveryExists,
   insertEmailDelivery,
+  listTenantsToRescueInline,
+  takeInlineRescue,
 } from './deliveries';
 
 const dialect = new PgDialect();
@@ -150,5 +153,53 @@ describe('message delivery helpers', () => {
     expect(fake.executed[0]?.sql).toContain("status in ('queued', 'sending')");
     expect(fake.executed[0]?.params).toEqual([ID]);
     expect(await getEmailDeliveryTemplate(fakeTx([]).tx, ID)).toBeNull();
+  });
+});
+
+describe("immediate sending: the worker's side (WP-ADM-05 follow-up)", () => {
+  it('a message the web app already queued for a source is found by its key', async () => {
+    const fake = fakeTx([{ found: true }]);
+    const tx = { transaction: (fn: (t: unknown) => Promise<unknown>) => fn(fake.tx) } as never;
+    expect(await inlineDeliveryExists(tx, 'invitation:i1:1')).toBe(true);
+    expect(fake.executed[0]?.params).toEqual(['invitation:i1:1']);
+    const none = fakeTx([{ found: false }]);
+    expect(
+      await inlineDeliveryExists(
+        { transaction: (fn: (t: unknown) => Promise<unknown>) => fn(none.tx) } as never,
+        'k',
+      ),
+    ).toBe(false);
+  });
+
+  it('before the migration (no such column) nothing was queued by the web app', async () => {
+    const tx = {
+      transaction: () => Promise.reject(Object.assign(new Error('x'), { code: '42703' })),
+    } as never;
+    expect(await inlineDeliveryExists(tx, 'k')).toBe(false);
+    const other = {
+      transaction: () => Promise.reject(Object.assign(new Error('x'), { code: '08006' })),
+    } as never;
+    await expect(inlineDeliveryExists(other, 'k')).rejects.toThrow();
+  });
+
+  it('lists the organizations with unfinished web-queued messages; none before the migration', async () => {
+    const fake = fakeTx([{ tenant_id: 't1' }, { tenant_id: 't2' }]);
+    const tx = { transaction: (fn: (t: unknown) => Promise<unknown>) => fn(fake.tx) } as never;
+    expect(await listTenantsToRescueInline(tx)).toEqual(['t1', 't2']);
+    expect(fake.executed[0]?.sql).toContain('private.inline_mail_tenants_to_rescue()');
+    const missing = {
+      transaction: () => Promise.reject(Object.assign(new Error('x'), { code: '42883' })),
+    } as never;
+    expect(await listTenantsToRescueInline(missing)).toEqual([]);
+  });
+
+  it('takes over the unfinished messages of an organization: not those waiting for a sender, each once an hour', async () => {
+    const fake = fakeTx([{ id: 'd1' }, { id: 'd2' }]);
+    expect(await takeInlineRescue(fake.tx, 200)).toEqual(['d1', 'd2']);
+    const q = fake.executed[0];
+    expect(q?.sql).toContain('inline_claim_hash is not null');
+    expect(q?.sql).toContain('email_waiting_codes()');
+    expect(q?.sql).toContain("interval '1 hour'");
+    expect(q?.params).toContain(200);
   });
 });

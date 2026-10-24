@@ -92,6 +92,24 @@ export const defaultActionRuntime: ActionRuntime<UserTx> = {
     const { kickWorkerAfterResponse } = await import('@jadarat/platform-jobs/kick/next');
     kickWorkerAfterResponse(`action:${permission}`);
   },
+  // WP-ADM-05 follow-up (PO 23 Oct 2026): account e-mails the action queued (policy-change and unlock notices, an
+  // admin's authenticator reset) are e-mailed at once after the response; the worker is the safety net.
+  async tagInlineAccountMail(tx) {
+    try {
+      const { inlineAccountMailer } =
+        await import('@jadarat/platform-identity/inline-account-mail');
+      return await inlineAccountMailer.tagTicket(tx);
+    } catch {
+      return null;
+    }
+  },
+  sendInlineAccountMail(ticket) {
+    void import('@jadarat/platform-identity/inline-account-mail')
+      .then(({ inlineAccountMailer }) => {
+        inlineAccountMailer.schedule(ticket as never);
+      })
+      .catch(() => undefined);
+  },
   logAfterCommitRefusal({ permission, code }) {
     // An expected refusal after the commit (e.g. Storage unavailable while signing a file URL): a warning
     // with the permission and the code — not an error-tracker event (integration review L-b).

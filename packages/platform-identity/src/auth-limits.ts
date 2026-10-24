@@ -214,6 +214,8 @@ export const LIMIT_BUCKETS = {
   signInCodeHookSend: 'sign_in_code.hook_send',
   signInCodeHookSendDaily: 'sign_in_code.hook_send_daily',
   signInCodeHookReplay: 'sign_in_code.hook_replay',
+  passwordResetHookSend: 'password_reset.hook_send',
+  passwordResetHookSendDaily: 'password_reset.hook_send_daily',
 } as const;
 
 /**

@@ -11,6 +11,7 @@ const db = vi.hoisted(() => ({
   invitationCodeForMail: vi.fn(),
   invitationActorMayManage: vi.fn(),
   noteInvitationMailSkipped: vi.fn(),
+  inlineDeliveryExists: vi.fn(() => Promise.resolve(false)),
 }));
 const mail = vi.hoisted(() => ({ queueEmail: vi.fn() }));
 vi.mock('@jadarat/platform-db/jobs', () => db);

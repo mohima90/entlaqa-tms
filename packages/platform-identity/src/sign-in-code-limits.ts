@@ -258,8 +258,11 @@ export interface SendEmailHookLimiter {
   claimWebhook(webhookId: string): Promise<boolean>;
   /** Gives the webhook id back (the call failed, so a retry of it must be handled). Never throws. */
   releaseWebhook(webhookId: string): Promise<void>;
-  /** May another code be e-mailed to this account now? Counts it. Throws when the limiter fails. */
-  allowSend(userId: string): Promise<boolean>;
+  /**
+   * May another e-mail of this kind (a sign-in code, a password reset) be sent to this account now? Counts it.
+   * Throws when the limiter fails.
+   */
+  allowSend(userId: string, kind?: 'sign_in_code' | 'password_reset'): Promise<boolean>;
 }
 
 export function createSendEmailHookLimiter(
@@ -299,36 +302,37 @@ export function createSendEmailHookLimiter(
         });
       }
     },
-    allowSend(userId) {
+    allowSend(userId, kind = 'sign_in_code') {
+      const reset = kind === 'password_reset';
+      const shortBucket = reset ? B.passwordResetHookSend : B.signInCodeHookSend;
+      const dailyBucket = reset ? B.passwordResetHookSendDaily : B.signInCodeHookSendDaily;
+      const shortLimit = reset
+        ? deps.limits.passwordReset.hookSendsPerAccount
+        : limits.hookSendsPerAccount;
+      const dailyLimit = reset
+        ? deps.limits.passwordReset.hookSendsPerAccountDaily
+        : limits.hookSendsPerAccountDaily;
       return failClosed(deps, deps.action, async () => {
         const account = userSubject(userId);
-        const recent = await deps.store.hit(
-          B.signInCodeHookSend,
-          account,
-          limits.hookSendsPerAccount,
-        );
+        const recent = await deps.store.hit(shortBucket, account, shortLimit);
         if (!recent.allowed) {
           deps.log({
             event: 'auth.rate_limited',
             action: deps.action,
-            reason: B.signInCodeHookSend,
-            limit: B.signInCodeHookSend,
+            reason: shortBucket,
+            limit: shortBucket,
             retryAfterS: recent.retryAfterSeconds,
             subjectRef: recent.ref,
           });
           return false;
         }
-        const daily = await deps.store.hit(
-          B.signInCodeHookSendDaily,
-          account,
-          limits.hookSendsPerAccountDaily,
-        );
+        const daily = await deps.store.hit(dailyBucket, account, dailyLimit);
         if (!daily.allowed) {
           deps.log({
             event: 'auth.rate_limited',
             action: deps.action,
-            reason: B.signInCodeHookSendDaily,
-            limit: B.signInCodeHookSendDaily,
+            reason: dailyBucket,
+            limit: dailyBucket,
             retryAfterS: daily.retryAfterSeconds,
             subjectRef: daily.ref,
           });

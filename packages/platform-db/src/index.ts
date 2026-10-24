@@ -33,6 +33,57 @@ export {
 } from './auth-mail';
 export type { EmailRouteRow } from './email-route';
 export {
+  type InlineEmailTest,
+  type InlineEmailTestApi,
+  type InlineEmailTestOutcome,
+  type InlineEmailTestScope,
+  type InlineEmailTestTicket,
+  claimInlineEmailTest,
+  createInlineEmailTestApi,
+  inlineEmailTestApi,
+} from './inline-email-test';
+export {
+  type ClaimedInlineMail,
+  type InlineClaim,
+  type InlineInvitationFacts,
+  type InlineMailApi,
+  type InlineMailKind,
+  type InlineMailTicket,
+  type InlineMailToQueue,
+  type InlineOutcome,
+  createInlineMailApi,
+  inlineMailApi,
+  prepareInlineInvitation,
+  queueInlineEmail,
+} from './inline-mail';
+export {
+  INLINE_ACCOUNT_MAIL_KINDS,
+  type InlineAccountMailApi,
+  type InlineAccountMailClaim,
+  type InlineAccountMailKind,
+  type InlineAccountMailSend,
+  type InlineAccountMailSkip,
+  type InlineAccountMailTicket,
+  type InlineAccountMailToQueue,
+  type InlineRecoveryApi,
+  type InlineRecoveryFacts,
+  type InlineRecoveryToQueue,
+  createInlineAccountMailApi,
+  createInlineRecoveryApi,
+  inlineAccountMailApi,
+  inlineRecoveryApi,
+  tagInlineAccountMail,
+} from './inline-account-mail';
+export type { InlineOption } from './account-mail';
+export {
+  MFA_REMOVAL_REASONS,
+  type MfaRemovalReason,
+  type PolicyChange,
+  type SecurityDigest,
+  policyChangeOf,
+  securityDigestOf,
+} from './account-mail-detail';
+export {
   type KeptSession,
   forgetKeptSessions,
   keepSession,
@@ -482,4 +533,5 @@ export {
   withUserTx,
 } from './with-user-tx';
 export { assertNoDatabaseTransaction, inDatabaseTransaction } from './claims-tx';
+export type { ClaimsTx } from './claims-tx';
 export * as schema from './schema';

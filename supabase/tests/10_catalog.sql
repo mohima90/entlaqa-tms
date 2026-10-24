@@ -242,7 +242,7 @@ begin
   foreach v_role in array array['anon', 'authenticated', 'app_server', 'app_worker', 'app_queue', 'tenant_guard',
                                 'invitation_guard', 'account_mail_guard', 'membership_guard',
                                 'rate_limit_guard', 'file_guard', 'user_import_guard', 'platform_admin_guard',
-                                'email_guard'] loop
+                                'email_guard', 'inline_mail_guard'] loop
     perform tests.assert(not has_database_privilege(v_role, current_database(), 'TEMPORARY'),
       format('%s must not create temporary objects', v_role));
   end loop;
@@ -382,6 +382,7 @@ begin
     and p.proowner <> 'user_import_guard'::regrole    -- checked in its own block below (T-M2-12)
     and p.proowner <> 'platform_admin_guard'::regrole -- checked in 95_platform_admin_owner.sql (FR-ADM-17)
     and p.proowner <> 'email_guard'::regrole          -- checked in 99_email_1_owner.sql (WP-ADM-01)
+    and p.proowner <> 'inline_mail_guard'::regrole    -- checked in 99_inline_mail_1_owner.sql (WP-ADM-05 follow-up)
     and p.oid <> 'private.storage_request_tenant()'::regprocedure;  -- files block below (T-M2-18)
   perform tests.assert_eq(v_list,
     'private.accept_invitation_as_caller(bytea,text,text) (owner invitation_guard), '
@@ -409,6 +410,8 @@ begin
     'private.issue_mfa_factor_tokens(uuid,uuid,bytea,bytea) (owner tenant_guard), '
     'private.keep_session() (owner tenant_guard), '
     'private.kept_until_effective(uuid,timestamp with time zone,timestamp with time zone) (owner tenant_guard), '
+    'private.mfa_setup_issue(uuid,uuid,bytea,bytea) (owner tenant_guard), '
+    'private.mfa_setup_peek(uuid,uuid) (owner tenant_guard), '
     'private.my_kept_sessions() (owner tenant_guard), '
     'private.my_mfa_apps() (owner tenant_guard), '
     'private.my_sessions() (owner tenant_guard), '
@@ -436,6 +439,7 @@ begin
     'private.tenant_member_sessions(uuid) (owner tenant_guard), '
     'private.touch_session() (owner tenant_guard), '
     'private.unused_invitation_code() (owner invitation_guard), '
+    'private.user_has_totp_app(uuid) (owner tenant_guard), '
     'private.user_session_is_valid(uuid,uuid) (owner tenant_guard)',
     'SECURITY DEFINER functions and owners (security review for any change)');
   select string_agg(p.oid::regprocedure::text, ', ' order by p.oid::regprocedure::text collate "C") into v_list
@@ -522,10 +526,14 @@ begin
                     order by p.oid::regprocedure::text collate "C") into v_list
   from pg_proc p where p.proowner = 'account_mail_guard'::regrole;
   perform tests.assert_eq(v_list,
+    'private.account_mail_base_template(text) (INVOKER), private.account_mail_claim_core(bytea), '
+    'private.account_mail_consume(bytea,uuid,text,bytea,bytea), '
     'private.account_needs_platform_sender(uuid), private.account_sender_is_platform(uuid), '
     'private.audit_sign_in_code_refused(text,boolean), private.audit_sign_in_code_sent(uuid,uuid), '
     'private.auth_mail_account(uuid), private.auth_mail_issue(uuid,text,text,text), private.claim_account_mail_request(), '
     'private.finish_account_mail_request(uuid), '
+    'private.inline_account_mail_claim(bytea,integer), private.inline_account_mail_done(bytea,uuid), '
+    'private.inline_account_mail_tag(bytea), private.inline_recovery_facts(uuid), private.recovery_target(uuid,text,text), '
     'private.request_account_locked_mail(text,integer), private.request_mfa_code_locked_mail(uuid,integer), '
     'private.request_password_changed_mail(uuid), private.request_password_reset_mail(text), '
     'private.request_sign_in_unlocked_mail(uuid), private.retry_account_mail_request(uuid), '
@@ -601,7 +609,10 @@ begin
     where p.proowner = 'account_mail_guard'::regrole and a.privilege_type = 'EXECUTE' and a.grantee <> p.proowner
       and (a.grantee = 0
            or pg_get_userbyid(a.grantee) <> case when p.oid = 'private.request_sign_in_unlocked_mail(uuid)'::regprocedure
-                                                 then 'rate_limit_guard' else 'authenticated' end)
+                                                 then 'rate_limit_guard'
+                                                 when p.oid in ('private.account_mail_consume(bytea,uuid,text,bytea,bytea)'::regprocedure,
+                                                                'private.recovery_target(uuid,text,text)'::regprocedure)
+                                                 then 'inline_mail_guard' else 'authenticated' end)
   loop
     perform tests.assert(false, format('unexpected EXECUTE: %s', v_list));
   end loop;

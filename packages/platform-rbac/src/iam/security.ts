@@ -129,6 +129,7 @@ export function updateSecurityPolicyActionDefinition(): ActionDefinition<
 > {
   return {
     permission: p['platform.security.manage'],
+    queuesAccountMail: true,
     input: SecuritySettingsInput,
     handler: async ({ ctx, input }) => {
       const { version, ...settings } = input;
@@ -426,6 +427,7 @@ export function resetMemberMfaActionDefinition(): ActionDefinition<
 > {
   return {
     permission: p['platform.user.reset_mfa'],
+    queuesAccountMail: true,
     input: ResetMemberMfaInput,
     resource: (input) => ({ type: 'person', id: input.personId }),
     handler: async ({ ctx, input }) => {

@@ -34,7 +34,7 @@ describe('worker platform tasks (T-M2-17, T-M2-10)', () => {
     expect(db.purgeUnconfirmedMfaApps).toHaveBeenCalledTimes(2);
   });
 
-  it('registers the e-mail tasks (WP-ADM-01: tests, waiting messages, housekeeping) when given', () => {
+  it('registers the e-mail tasks (WP-ADM-01: tests, waiting messages, housekeeping; the inline rescue) when given', () => {
     const router = {
       resolve: () => Promise.resolve({ kind: 'wait' as const, code: 'NO_SENDER' as const }),
       close: () => Promise.resolve(),
@@ -46,6 +46,7 @@ describe('worker platform tasks (T-M2-17, T-M2-10)', () => {
       'platform.email_tests',
       'platform.email_resume',
       'platform.email_housekeeping',
+      'platform.email_inline_rescue',
     ]);
   });
 

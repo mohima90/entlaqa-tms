@@ -266,6 +266,20 @@ describe('saving the organization provider', () => {
     expect(await save(SAVE)).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
   });
 
+  it('starts the immediate send in its transaction once the test is queued, and not for a refused request', async () => {
+    const startTest = vi.fn(() => Promise.resolve());
+    const { rt } = runtime(forRoles('tenant_admin'));
+    const action = createDefineAction(rt)(requestTenantEmailTestActionDefinition({ startTest }));
+    expect(await action({ recipient: 'it@raya.example' })).toMatchObject({ ok: true });
+    expect(startTest).toHaveBeenCalledTimes(1);
+    startTest.mockClear();
+    db.requestTenantEmailTest.mockRejectedValueOnce(
+      new FakeEmailSettingsError('EMAIL_SETTINGS_TOO_SOON'),
+    );
+    expect(await action({ recipient: 'it@raya.example' })).toMatchObject({ ok: false });
+    expect(startTest).not.toHaveBeenCalled();
+  });
+
   it('a test e-mail too soon after the last one is RATE_LIMITED (one a minute, 20 a day)', async () => {
     const { rt, writeAudit } = runtime(forRoles('tenant_admin'));
     db.requestTenantEmailTest.mockRejectedValueOnce(

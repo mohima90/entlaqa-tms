@@ -31,7 +31,7 @@ import {
 } from '../../lib/role-builder';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
-import { DiscardDialog } from '../users/person-panels';
+import { DiscardDialog } from '../users/discard-dialog';
 import { SelectField } from '../select-field';
 
 export interface RoleBuilderFormProps {

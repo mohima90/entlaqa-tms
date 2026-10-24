@@ -13,6 +13,8 @@ export type SuitePage =
   | 'branding'
   // Organization → Grades (WP-ADM-04).
   | 'grades'
+  // Subscription (WP-ADM-06): the plan, its limits and usage.
+  | 'subscription'
   | 'users'
   | 'structure'
   | 'branches'
@@ -72,6 +74,7 @@ export const SUITE_PATHS = {
   emailIntegration: '/suite/admin/settings/email',
   branding: '/suite/admin/branding',
   grades: '/suite/admin/grades',
+  subscription: '/suite/admin/subscription',
   security: '/suite/admin/security',
   profile: '/suite/profile',
   planningCycles: '/suite/planning/cycles',
@@ -101,8 +104,8 @@ const when = (allowed: boolean, ...entries: NavEntry[]): NavEntry[] => (allowed 
  * soon" (not links, not focusable). Deny by default: a group appears only with at least one entry the
  * member's grants allow.
  *
- * Organization Admin (PO, 15–16 Oct 2026): Home · Organization (Team members, Branding*, Roles &
- * permissions) · Billing (Subscription*) · Settings (General, Email integration, Integrations*,
+ * Organization Admin (PO, 15–16 Oct 2026): Home · Organization (Team members, Branding, Roles &
+ * permissions) · Billing (Subscription — the plan, WP-ADM-06) · Settings (General, Email integration, Integrations*,
  * Security, Audit log*) — no training entries (BR-IAM-4). Other roles: Home and the training module's
  * entries, then the built pages their grants open, in the same groups.
  */
@@ -144,13 +147,17 @@ export function suiteNavigation(access: SuiteNavigationAccess): NavGroupModel[] 
         ),
         // Organization → Branding (WP-ADM-02): the Organization Admin edits it, a tenant.read holder (e.g.
         // the Auditor) reads it.
-        ...when(access.organizationProfile || setup, page('branding', 'palette', 'branding')),
+        ...when(
+          (access.organizationProfile || setup) && access.branding,
+          page('branding', 'palette', 'branding'),
+        ),
         ...when(access.roles, page('roles', 'key', 'roles')),
         // Organization → Grades (WP-ADM-04): HR Manager and Organization Admin keep the list of grade codes.
         ...when(access.grades, page('grades', 'star', 'grades')),
       ],
     },
-    { key: 'groupBilling', entries: when(setup, soon('subscription', 'billing')) },
+    // Subscription (WP-ADM-06; the menu item keeps its name, PO 24 Oct 2026): the plan, read-only.
+    { key: 'groupBilling', entries: when(setup, page('subscription', 'billing', 'subscription')) },
     {
       key: 'groupSettings',
       entries: [
@@ -160,7 +167,7 @@ export function suiteNavigation(access: SuiteNavigationAccess): NavGroupModel[] 
         // Settings → Email integration (WP-ADM-01): the Organization Admin edits it, a tenant.read holder
         // (e.g. the Auditor) reads it.
         ...when(
-          access.organizationProfile || setup,
+          (access.organizationProfile || setup) && access.emailIntegration,
           page('emailIntegration', 'mail', 'emailIntegration'),
         ),
         ...when(setup, soon('integrations', 'plug')),

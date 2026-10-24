@@ -25,8 +25,11 @@ const TEXTS = {
       'General',
       'Email integration',
       'Security',
+      // Subscription is a page since WP-ADM-06 (the plan, read-only).
+      'Subscription',
     ],
-    soon: ['Integrations', 'Subscription', 'Audit log'],
+    soon: ['Integrations', 'Audit log'],
+    billingEntry: 'Subscription',
     comingSoon: 'Coming soon',
     collapse: 'Collapse menu',
     expand: 'Expand menu',
@@ -60,8 +63,10 @@ const TEXTS = {
       'الإعدادات العامة',
       'تكامل البريد الإلكتروني',
       'الأمان',
+      'الاشتراك',
     ],
-    soon: ['التكاملات', 'الاشتراك', 'سجل التدقيق'],
+    soon: ['التكاملات', 'سجل التدقيق'],
+    billingEntry: 'الاشتراك',
     comingSoon: 'قريبًا',
     collapse: 'طيّ القائمة',
     expand: 'توسيع القائمة',
@@ -122,9 +127,9 @@ for (const locale of ['en', 'ar'] as const) {
     await expect(heading).toHaveAttribute('aria-expanded', 'true');
     await heading.click();
     await expect(heading).toHaveAttribute('aria-expanded', 'false');
-    await expect(nav.getByText(t.soon[1], { exact: true })).toBeHidden();
+    await expect(nav.getByRole('link', { name: t.billingEntry, exact: true })).toBeHidden();
     await heading.click();
-    await expect(nav.getByText(t.soon[1], { exact: true })).toBeVisible();
+    await expect(nav.getByRole('link', { name: t.billingEntry, exact: true })).toBeVisible();
   });
 
   test(`${locale}: the desktop menu collapses to icons with the keyboard and stays so on this device`, async ({

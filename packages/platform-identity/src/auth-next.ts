@@ -36,6 +36,12 @@ import {
   listPlatformTenants,
   createPlatformTenant,
   type NewPlatformTenant,
+  listPlans,
+  listTenantPlans,
+  type PlanInput,
+  savePlan,
+  setTenantPlan,
+  type TenantPlanInput,
   platformAdminInvitationCode,
   reissuePlatformAdminCode,
   listSessionTenants,
@@ -150,6 +156,13 @@ import {
   loadPlatformEmailSettings,
   savePlatformEmailSettingsFromConsole,
 } from './platform-email-console';
+import {
+  loadPlatformOrganizationDetail,
+  loadPlatformPlans,
+  loadPlatformTenantPlans,
+  savePlanFromConsole,
+  setOrganizationPlanFromConsole,
+} from './platform-plans-console';
 import {
   type InvitationAcceptDeps,
   type InvitationCodeGuard,
@@ -1206,6 +1219,7 @@ function platformConsoleDeps(): PlatformConsoleDeps {
     createPlatformTenant,
     platformAdminInvitationCode,
     reissuePlatformAdminCode,
+    setTenantPlan,
   };
 }
 
@@ -1265,4 +1279,47 @@ export async function savePlatformEmailSettingsForRequest(
   parse: ConsoleInputParser<PlatformEmailInput>,
 ) {
   return savePlatformEmailSettingsFromConsole(platformEmailConsoleDeps(), raw, parse);
+}
+
+// Plans and an organization's plan and status (WP-ADM-06; platform-plans-console.ts): the same access rule.
+function platformPlansConsoleDeps() {
+  return {
+    getClaims: ({ strict }: { readonly strict: boolean }) =>
+      strict ? getVerifiedClaimsStrict() : getVerifiedClaims(),
+    withUserTx,
+    isPlatformAdmin,
+    listPlatformTenants,
+    listPlans,
+    savePlan,
+    listTenantPlans,
+    setTenantPlan,
+  };
+}
+
+export async function loadPlatformPlansForRequest() {
+  return loadPlatformPlans(platformPlansConsoleDeps());
+}
+
+export async function loadPlatformTenantPlansForRequest() {
+  return loadPlatformTenantPlans(platformPlansConsoleDeps());
+}
+
+export async function loadPlatformOrganizationDetailForRequest(tenantId: string) {
+  return loadPlatformOrganizationDetail(platformPlansConsoleDeps(), tenantId);
+}
+
+/** «حفظ الخطة» / Save plan: untrusted input, parsed only after the access check (review L6). */
+export async function savePlanFromConsoleForRequest(
+  raw: unknown,
+  parse: ConsoleInputParser<PlanInput>,
+) {
+  return savePlanFromConsole(platformPlansConsoleDeps(), raw, parse);
+}
+
+/** An organization's plan and status: untrusted input, parsed only after the access check (review L6). */
+export async function setOrganizationPlanFromConsoleForRequest(
+  raw: unknown,
+  parse: ConsoleInputParser<TenantPlanInput>,
+) {
+  return setOrganizationPlanFromConsole(platformPlansConsoleDeps(), raw, parse);
 }

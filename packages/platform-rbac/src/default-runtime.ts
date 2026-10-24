@@ -3,6 +3,7 @@ import { type UserTx } from '@jadarat/platform-db';
 import { log, reportError } from '@jadarat/platform-observability';
 import type { ActionRuntime } from './define-action';
 import { personResourceAttributes } from './person-scope';
+import { grantsWithinPlan } from './plan-features';
 import { MEMBER_GRANTS } from './member-permissions';
 import { grantsForAssignments } from './role-grants';
 
@@ -52,8 +53,9 @@ export const defaultActionRuntime: ActionRuntime<UserTx> = {
       // Custom roles as stored now (EP-ROLES): a change applies at the holder's next request.
       { headedDepartmentIds: facts.headedDepartmentIds, customRoles: facts.customRoles },
     );
-    // Every member manages their own profile (FR-IAM-16), whatever their roles.
-    return [...roleGrants, ...MEMBER_GRANTS];
+    // A feature the organization's plan does not include is held by nobody (WP-ADM-06; the database does
+    // the same in private.member_permissions). Every member manages their own profile (FR-IAM-16).
+    return [...grantsWithinPlan(roleGrants, facts.features), ...MEMBER_GRANTS];
   },
   // Resource attributes for scope checks (ADR 0003 §4). Platform types are resolved here; module
   // resolvers register by type as modules gain resources (TODO with the first module resource).

@@ -14,6 +14,7 @@ import { createDatabase } from './client';
 import { insertAuditEvent } from './audit';
 import { createWithSystemTx } from './jobs';
 import { auditEvents, persons, tenantMemberships } from './schema';
+import { PLAN_FEATURES } from './plans';
 import { getMyPrimaryRole, loadMemberAuthorizationFacts } from './roles';
 import { getCurrentTenant } from './tenants';
 import { createWithUserTx, listSessionTenants, switchActiveTenant } from './with-user-tx';
@@ -350,6 +351,8 @@ describe.skipIf(!configured)('withUserTx / withSystemTx against PostgreSQL', () 
       roles: [{ roleCode: 'hr_manager', validFrom: null, validUntil: null, scopeUnitId: null }],
       headedDepartmentIds: [department],
       customRoles: [],
+      // An organization on no plan has every feature (WP-ADM-06).
+      features: [...PLAN_FEATURES],
     });
     expect(await withUserTx(claimsFor(ids.tenantA), (tx) => getMyPrimaryRole(tx))).toEqual({
       code: 'hr_manager',
@@ -387,6 +390,7 @@ describe.skipIf(!configured)('withUserTx / withSystemTx against PostgreSQL', () 
         customRoles: [
           { code: custom.code, dataScope: 'departments', permissions: ['platform.user.read'] },
         ],
+        features: [...PLAN_FEATURES],
       });
       expect(await withUserTx(claimsFor(ids.tenantA), (tx) => getMyPrimaryRole(tx))).toEqual({
         code: custom.code,
@@ -410,6 +414,7 @@ describe.skipIf(!configured)('withUserTx / withSystemTx against PostgreSQL', () 
       roles: [],
       headedDepartmentIds: [],
       customRoles: [],
+      features: [...PLAN_FEATURES],
     });
     expect(await withUserTx(claimsForUserB(), (tx) => getMyPrimaryRole(tx))).toBeNull();
   });

@@ -44,6 +44,14 @@ const db = vi.hoisted(() => ({
           permissions: ['platform.org.read', 'platform.role.read', 'platform.user.read'],
         },
       ],
+      features: [
+        'planning',
+        'needs_forms',
+        'courses',
+        'bulk_import',
+        'branding',
+        'email_integration',
+      ],
     }),
   ),
 }));

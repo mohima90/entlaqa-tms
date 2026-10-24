@@ -8,6 +8,7 @@ import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
+import { NotInPlan } from '../../../../../../../components/plan/not-in-plan';
 import { FocusedShell } from '../../../../../../../components/focused-shell';
 import { ImportPoller } from '../../../../../../../components/user-import/import-poller';
 import {
@@ -95,6 +96,9 @@ export default async function UserImportStatusPage({
         {users('notConfigured')}
       </Alert>
     );
+  } else if (!context.navigation.bulkImport) {
+    // Not in the organization's plan (WP-ADM-06): nothing to show or change.
+    body = <NotInPlan locale={locale} />;
   } else {
     const result = await userImportQuery({ importId });
     if (!result.ok) {

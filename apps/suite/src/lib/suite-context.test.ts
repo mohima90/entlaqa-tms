@@ -39,6 +39,9 @@ describe('navigationFor', () => {
       courses: false,
       planning: false,
       needsForms: false,
+      branding: true,
+      emailIntegration: true,
+      bulkImport: true,
     });
     expect(
       navigationFor([{ permission: 'platform.user.read', scope: { type: 'tenant' } }]),
@@ -54,6 +57,9 @@ describe('navigationFor', () => {
       courses: false,
       planning: false,
       needsForms: false,
+      branding: true,
+      emailIntegration: true,
+      bulkImport: true,
     });
   });
 
@@ -83,6 +89,9 @@ describe('navigationFor', () => {
       courses: false,
       planning: false,
       needsForms: false,
+      branding: true,
+      emailIntegration: true,
+      bulkImport: true,
     });
     expect(navigationFor([{ permission: 'platform.org.read', scope: { type: 'tenant' } }])).toEqual(
       {
@@ -97,6 +106,9 @@ describe('navigationFor', () => {
         courses: false,
         planning: false,
         needsForms: false,
+        branding: true,
+        emailIntegration: true,
+        bulkImport: true,
       },
     );
     expect(navigationFor([])).toEqual({
@@ -111,6 +123,9 @@ describe('navigationFor', () => {
       courses: false,
       planning: false,
       needsForms: false,
+      branding: true,
+      emailIntegration: true,
+      bulkImport: true,
     });
   });
 
@@ -132,6 +147,9 @@ describe('navigationFor', () => {
       courses: false,
       planning: false,
       needsForms: false,
+      branding: true,
+      emailIntegration: true,
+      bulkImport: true,
     });
     expect(
       navigationFor([{ permission: 'platform.role.read', scope: { type: 'direct_reports' } }]),
@@ -147,6 +165,9 @@ describe('navigationFor', () => {
       courses: false,
       planning: false,
       needsForms: false,
+      branding: true,
+      emailIntegration: true,
+      bulkImport: true,
     });
   });
 
@@ -165,6 +186,9 @@ describe('navigationFor', () => {
       courses: false,
       planning: false,
       needsForms: false,
+      branding: true,
+      emailIntegration: true,
+      bulkImport: true,
     });
     expect(navigationFor([{ permission: 'platform.tenant.read', scope: { type: 'own' } }])).toEqual(
       {
@@ -179,6 +203,9 @@ describe('navigationFor', () => {
         courses: false,
         planning: false,
         needsForms: false,
+        branding: true,
+        emailIntegration: true,
+        bulkImport: true,
       },
     );
   });
@@ -232,6 +259,9 @@ describe('navigationFor', () => {
       courses: true,
       planning: true,
       needsForms: true,
+      branding: true,
+      emailIntegration: true,
+      bulkImport: true,
     });
   });
 
@@ -271,6 +301,9 @@ describe('navigationFor', () => {
       courses: false,
       planning: false,
       needsForms: false,
+      branding: true,
+      emailIntegration: true,
+      bulkImport: true,
     });
     // Any narrower scope is not enough (deny by default).
     const narrower: Grant['scope'][] = [
@@ -284,6 +317,9 @@ describe('navigationFor', () => {
         training: true,
         courses: false,
         needsForms: false,
+        branding: true,
+        emailIntegration: true,
+        bulkImport: true,
       });
     }
   });
@@ -330,5 +366,14 @@ describe('getSuiteContext: organization name and regional settings (T-M2-22)', (
       timeZone: 'Asia/Riyadh',
       defaultLocale: 'en',
     });
+  });
+});
+
+describe('navigationFor × the plan (WP-ADM-06)', () => {
+  it('shows own branding, own e-mail provider and bulk import only when the plan includes them', () => {
+    const all = navigationFor([]);
+    expect([all.branding, all.emailIntegration, all.bulkImport]).toEqual([true, true, true]);
+    const some = navigationFor([], ['courses', 'bulk_import']);
+    expect([some.branding, some.emailIntegration, some.bulkImport]).toEqual([false, false, true]);
   });
 });

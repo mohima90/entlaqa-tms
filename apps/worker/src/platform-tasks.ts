@@ -14,6 +14,7 @@ import {
   type RecoveryLinks,
   createAccountMailer,
   createSessionPurger,
+  createTrialExpiry,
 } from '@jadarat/platform-identity/jobs';
 import { createUserImportTask } from '@jadarat/platform-import/jobs';
 import type { PlatformTask, WorkerLogLevel } from '@jadarat/platform-jobs/jobs';
@@ -94,7 +95,8 @@ function workerStore(settings: { url: string; secretKey: string }): FileObjectSt
 
 /**
  * Work without a tenant (ADR 0005 §4), run on every wake-up and every minute: account e-mails (reset
- * links, lock notices), ended sessions removed from Auth (T-M2-10, at most once a minute), the e-mail tasks
+ * links, lock notices), ended sessions removed from Auth (T-M2-10, at most once a minute), ended trials
+ * (WP-ADM-06, at most every ten minutes), the e-mail tasks
  * (WP-ADM-01: test e-mails of the sender settings, messages waiting for a sender, the delivery log's
  * housekeeping), and — with
  * Storage configured — file housekeeping, bulk user imports (T-M2-12: they read scanned files and write
@@ -123,6 +125,8 @@ export function platformTasks(deps: PlatformTaskDependencies): readonly Platform
         }
       : mailer,
     purger,
+    // Trials end on their date (WP-ADM-06): at most every ten minutes.
+    createTrialExpiry({ withPlatformTx: deps.withPlatformTx, log: deps.log }),
   ];
   if (deps.email) {
     const { keys, router, allowPrivatePlatformSmtp } = deps.email;

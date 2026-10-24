@@ -104,6 +104,12 @@ export const PlatformErrors = defineErrorCodes({
   PRECONDITION_FAILED: { status: 412, messageKey: 'errors.preconditionFailed' },
   VALIDATION_FAILED: { status: 422, messageKey: 'errors.validationFailed' },
   RATE_LIMITED: { status: 429, messageKey: 'errors.rateLimited' },
+  /** The organization's plan (WP-ADM-06): its people limit is reached (no new person until there is room). */
+  PLAN_PEOPLE_LIMIT: { status: 409, messageKey: 'errors.planPeopleLimit' },
+  /** The organization's plan: its storage limit is reached (no new file until there is room). */
+  PLAN_STORAGE_LIMIT: { status: 409, messageKey: 'errors.planStorageLimit' },
+  /** The organization's plan does not include this feature. */
+  PLAN_FEATURE_OFF: { status: 403, messageKey: 'errors.planFeatureOff' },
   INTERNAL_ERROR: { status: 500, messageKey: 'errors.internalError', expose: false },
   NOT_CONFIGURED: { status: 503, messageKey: 'errors.notConfigured', expose: true },
 });

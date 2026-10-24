@@ -95,7 +95,25 @@ export interface SuiteNavigationAccess {
    * organization-wide, i.e. the HR Manager and the Organization Admin.
    */
   readonly grades: boolean;
+  /**
+   * What the organization's plan includes beyond permissions (WP-ADM-06): own branding, own e-mail provider
+   * and bulk import — a feature not in the plan is not shown (the training features follow the grants, which
+   * the plan already filtered).
+   */
+  readonly branding: boolean;
+  readonly emailIntegration: boolean;
+  readonly bulkImport: boolean;
 }
+
+/** Every feature (no plan, the preview). */
+const ALL_FEATURES: readonly string[] = [
+  'planning',
+  'needs_forms',
+  'courses',
+  'bulk_import',
+  'branding',
+  'email_integration',
+];
 
 /**
  * Navigation from the member's permissions (T-M2-04; menus per role T-M2-21). Display only: every page
@@ -105,7 +123,10 @@ export interface SuiteNavigationAccess {
  * role is held alone and has no training features (BR-IAM-4, BRD Appendix B): such a member gets the
  * organization set-up sections and no training entries.
  */
-export function navigationFor(grants: readonly Grant[] | null): SuiteNavigationAccess {
+export function navigationFor(
+  grants: readonly Grant[] | null,
+  features: readonly string[] = ALL_FEATURES,
+): SuiteNavigationAccess {
   // Preview without data (local development, CI): every entry, so every pattern renders.
   if (grants === null) {
     return {
@@ -120,6 +141,9 @@ export function navigationFor(grants: readonly Grant[] | null): SuiteNavigationA
       planning: true,
       needsForms: true,
       grades: true,
+      branding: true,
+      emailIntegration: true,
+      bulkImport: true,
     };
   }
   const tenantWide = (code: string) =>
@@ -140,6 +164,9 @@ export function navigationFor(grants: readonly Grant[] | null): SuiteNavigationA
     planning: tenantWide(tmsPlanningPermissions['tms.plan_cycle.read'].code),
     needsForms: !organizationSetup && tenantWide(tmsPermissions['tms.needs_form.read'].code),
     grades: tenantWide(platformPermissions['platform.user.update'].code),
+    branding: features.includes('branding'),
+    emailIntegration: features.includes('email_integration'),
+    bulkImport: features.includes('bulk_import'),
   };
 }
 
@@ -185,7 +212,7 @@ export async function getSuiteContext(locale: AppLocale): Promise<SuiteContext> 
   return {
     live: true,
     organizationName,
-    navigation: navigationFor(grants.ok ? grants.value : []),
+    navigation: navigationFor(grants.ok ? grants.value : [], session.features ?? ALL_FEATURES),
     me: identity.ok
       ? {
           nameAr: identity.value.displayNameAr,

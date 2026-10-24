@@ -164,6 +164,8 @@ export const SESSION_ACCESS_STATES = [
   'mfa_enrol',
   'prompt_grace',
   'prompt_admin',
+  // A suspended organization's Organization Admin: the plan page only (WP-ADM-06, 20261027100200).
+  'paused',
 ] as const;
 export type SessionAccessState = (typeof SESSION_ACCESS_STATES)[number];
 

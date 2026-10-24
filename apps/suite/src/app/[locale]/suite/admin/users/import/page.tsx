@@ -13,6 +13,7 @@ import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { FocusedActions } from '../../../../../../components/focused-actions';
+import { NotInPlan } from '../../../../../../components/plan/not-in-plan';
 import { FocusedShell } from '../../../../../../components/focused-shell';
 import { CancelDraftButton } from '../../../../../../components/user-import/cancel-draft-button';
 import { Stepper } from '../../../../../../components/user-import/stepper';
@@ -74,6 +75,9 @@ export default async function UserImportPage({ params }: { params: Promise<{ loc
         {users('notConfigured')}
       </Alert>
     );
+  } else if (!context.navigation.bulkImport) {
+    // Not in the organization's plan (WP-ADM-06): nothing to show or change.
+    body = <NotInPlan locale={locale} />;
   } else {
     const result = await userImportStartQuery({});
     if (!result.ok) {

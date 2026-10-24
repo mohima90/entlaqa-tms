@@ -35,3 +35,9 @@ export {
   type SessionPurgerOptions,
   createSessionPurger,
 } from './session-purger';
+export {
+  TRIAL_EXPIRY_INTERVAL_MS,
+  TRIAL_EXPIRY_TASK,
+  type TrialExpiryOptions,
+  createTrialExpiry,
+} from './trial-expiry';

@@ -34,6 +34,9 @@ export const CreateOrganizationInput = z
     adminFamilyNameEn: personName,
     // English is the default language for now (PO, 14 Oct 2026).
     locale: z.enum(['ar', 'en']).default('en'),
+    // The plan it starts on and a 30-day trial (WP-ADM-06, business flow B1).
+    planId: z.uuid().nullable().default(null),
+    trial: z.boolean().default(false),
   })
   .superRefine((value, ctx) => {
     // The admin's names are optional (they set their own on the sign-up page), but each language's are all

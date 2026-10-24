@@ -11,8 +11,10 @@ import {
 import {
   type NewPlatformTenant,
   type PlatformAdminCode,
+  PlanError,
   PlatformConsoleError,
   type PlatformTenantRow,
+  type TenantPlanInput,
   type UserTx,
   type WithUserTx,
 } from '@jadarat/platform-db';
@@ -49,7 +51,12 @@ export interface PlatformConsoleDeps {
     tenantId: string,
   ) => Promise<PlatformAdminCode>;
   readonly reissuePlatformAdminCode: (tx: UserTx, tenantId: string) => Promise<PlatformAdminCode>;
+  /** The new organization's plan and trial (WP-ADM-06), in the same transaction as its creation. */
+  readonly setTenantPlan?: (tx: UserTx, input: TenantPlanInput) => Promise<void>;
 }
+
+/** A trial's length when an organization is created (WP-ADM-06, PO 24 Oct 2026). */
+export const TRIAL_DAYS = 30;
 
 export const PlatformConsoleErrors = defineErrorCodes({
   /** The organization has no pending Organization Admin invitation from the console (it joined already). */
@@ -75,6 +82,12 @@ const FIELD_PATHS = {
 
 /** A console refusal as the action's answer; anything else is thrown (an internal error). */
 function refusal(error: unknown): Result<never, AppError> {
+  // The new organization's plan (WP-ADM-06): a plan that no longer exists, or a refused trial.
+  if (error instanceof PlanError) {
+    return error.code === 'NOT_ALLOWED'
+      ? notFound()
+      : err(fieldError(error.field === 'plan' ? 'planId' : 'form', 'INVALID'));
+  }
   if (!(error instanceof PlatformConsoleError)) throw error;
   switch (error.code) {
     case 'NOT_PLATFORM_ADMIN':
@@ -144,9 +157,22 @@ export async function createOrganizationFromConsole(
   if (!parsed.ok) return parsed;
   const input = parsed.value;
   try {
-    const created = await deps.withUserTx(access.value, (tx) =>
-      deps.createPlatformTenant(tx, input),
-    );
+    const created = await deps.withUserTx(access.value, async (tx) => {
+      const tenant = await deps.createPlatformTenant(tx, input);
+      // Its plan and a trial (WP-ADM-06): the same transaction — both happen, or neither.
+      const planId = input.planId ?? null;
+      if (deps.setTenantPlan && (planId !== null || input.trial === true)) {
+        await deps.setTenantPlan(tx, {
+          tenantId: tenant.tenantId,
+          planId,
+          status: input.trial === true ? 'trial' : 'active',
+          trialEndsAt: input.trial === true ? new Date(Date.now() + TRIAL_DAYS * 86_400_000) : null,
+          maxPeopleOverride: null,
+          maxStorageGbOverride: null,
+        });
+      }
+      return tenant;
+    });
     return ok({ tenantId: created.tenantId, inviteCode: created.inviteCode, locale: input.locale });
   } catch (error) {
     return refusal(error);

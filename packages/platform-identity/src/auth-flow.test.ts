@@ -30,7 +30,7 @@ const tokenClaims: Record<string, Record<string, unknown>> = {
 };
 
 interface FakeOptions {
-  signInError?: { status?: number | undefined };
+  signInError?: { status?: number | undefined; message?: string | undefined };
   /** private.is_platform_admin's answer (FR-ADM-17). */
   platformAdmin?: boolean;
   tenants?: { tenantId: string; nameAr: string; nameEn: string | null }[];
@@ -207,6 +207,23 @@ describe('signInWithPassword', () => {
     );
     expect(guard.failed).toHaveBeenCalledTimes(1);
     expect(guard.succeeded).not.toHaveBeenCalled();
+  });
+
+  it('a right password in a suspended organization: «Access paused», not counted as a failure (WP-ADM-06)', async () => {
+    const { deps, guard } = setup({
+      signInError: { status: 403, message: 'Access to this organization is paused.' },
+    });
+    const result = await signInWithPassword(deps, credentials);
+    expect(!result.ok && result.error.code).toBe('AUTH_ACCESS_PAUSED');
+    expect(!result.ok && result.error.status).toBe(403);
+    expect(guard.failed).not.toHaveBeenCalled();
+    expect(guard.notChecked).toHaveBeenCalledTimes(1);
+    // Any other refusal by the hook stays the one neutral answer.
+    const neutral = setup({
+      signInError: { status: 403, message: 'Sign-in is not available for this account.' },
+    });
+    const other = await signInWithPassword(neutral.deps, credentials);
+    expect(!other.ok && other.error.code).toBe('AUTH_INVALID_CREDENTIALS');
   });
 
   it('warns (codes only) when a refusal took longer than the padding allows', async () => {

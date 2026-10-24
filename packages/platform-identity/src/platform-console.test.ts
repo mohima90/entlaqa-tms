@@ -189,6 +189,32 @@ describe('platform console: the Super Admin', () => {
     });
   });
 
+  it('starts the organization on its plan as a 30-day trial, in the same transaction (WP-ADM-06)', async () => {
+    const { deps } = setup();
+    const setTenantPlan = vi.fn(() => Promise.resolve());
+    const before = Date.now();
+    await createOrganizationFromConsole(
+      { ...deps, setTenantPlan },
+      { ...INPUT, planId: '9b0e7c39-6d4c-4d36-9d0a-1f0d1d6c0f11', trial: true },
+    );
+    expect(setTenantPlan).toHaveBeenCalledWith('tx', {
+      tenantId: TENANT,
+      planId: '9b0e7c39-6d4c-4d36-9d0a-1f0d1d6c0f11',
+      status: 'trial',
+      trialEndsAt: expect.any(Date),
+      maxPeopleOverride: null,
+      maxStorageGbOverride: null,
+    });
+    const calls = setTenantPlan.mock.calls as unknown as [string, { trialEndsAt: Date }][];
+    const ends = calls[0]?.[1].trialEndsAt.getTime() ?? 0;
+    expect(ends - before).toBeGreaterThanOrEqual(30 * 86_400_000);
+    expect(ends - Date.now()).toBeLessThanOrEqual(30 * 86_400_000);
+    // No plan and no trial: nothing more than before.
+    const plain = vi.fn(() => Promise.resolve());
+    await createOrganizationFromConsole({ ...deps, setTenantPlan: plain }, INPUT);
+    expect(plain).not.toHaveBeenCalled();
+  });
+
   it('maps the database refusals to the form', async () => {
     const taken = await createOrganizationFromConsole(
       setup({ refuse: new PlatformConsoleError('SLUG_TAKEN') }).deps,

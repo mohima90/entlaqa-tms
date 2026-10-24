@@ -1,12 +1,14 @@
 import { displayDateFormatter } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
-import { EmptyState, Icon, PageHeader } from '@jadarat/ui';
+import { Alert, EmptyState, Icon, PageHeader, buttonClasses } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { type HomeTileGroup, HomeTiles } from '../../../components/home-tiles';
 import { SuiteShell } from '../../../components/suite-shell';
 import { TeamStats } from '../../../components/users/team-stats';
+import { planNotices } from '../../../lib/plan-notices';
+import { organizationPlanQuery } from '../../../lib/plan-queries';
 import { getSuiteContext } from '../../../lib/suite-context';
 import {
   type NavLabelKey,
@@ -61,6 +63,10 @@ export default async function SuiteHomePage({ params }: { params: Promise<{ loca
   const home = suiteHome(context.navigation);
   // Kawadir dashboard: the team's figures on the brand gradient above the set-up card (live data only).
   const counts = home.kind === 'setup' && context.live ? await homeTeamCounts() : null;
+  // The plan's limits (WP-ADM-06): from 90% used, the Organization Admin is told on the home page.
+  const plan = home.kind === 'setup' && context.live ? await organizationPlanQuery({}) : null;
+  const notices = plan?.ok ? planNotices(plan.value, locale) : [];
+  const plans = await getTranslations({ locale, namespace: 'plans' });
   const users = await getTranslations({ locale, namespace: 'users' });
   const format = await getFormatter({ locale });
 
@@ -149,6 +155,27 @@ export default async function SuiteHomePage({ params }: { params: Promise<{ loca
       />
       {home.kind === 'setup' ? (
         <div className="flex flex-col gap-5.5">
+          {notices.map((notice) => (
+            <Alert
+              key={notice.kind}
+              tone={notice.reached ? 'danger' : 'warning'}
+              data-testid={`home-plan-notice-${notice.kind}`}
+              action={
+                <a
+                  href={`/${locale}${SUITE_PATHS.subscription}`}
+                  className={buttonClasses({ variant: 'secondary', size: 'sm' })}
+                >
+                  {plans('notice.seePlan')}
+                </a>
+              }
+            >
+              {plans(`notice.${notice.kind}`, {
+                used: notice.used,
+                limit: notice.limit,
+                percent: notice.percent,
+              })}
+            </Alert>
+          ))}
           {counts ? (
             <TeamStats
               locale={locale}

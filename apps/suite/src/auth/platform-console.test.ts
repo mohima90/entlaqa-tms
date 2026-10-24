@@ -83,6 +83,9 @@ describe('createOrganizationAction', () => {
         adminFirstNameAr: 'سارة',
         adminFamilyNameAr: 'العتيبي',
         locale: 'ar',
+        // No plan chosen and no trial (WP-ADM-06): created as before.
+        planId: null,
+        trial: false,
       },
     });
   });

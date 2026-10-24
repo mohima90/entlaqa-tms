@@ -106,12 +106,15 @@ begin
   perform tests.assert_eq(v_list,
     format('private.grant_platform_admin(uuid,text,text) → %1$s, private.is_platform_admin() → authenticated, '
            'private.is_platform_invitation(uuid) → invitation_guard, private.list_platform_admins() → %1$s, '
-           -- The Super Admin's e-mail settings functions (WP-ADM-01) use the console's caller check.
+           -- The Super Admin's e-mail settings functions (WP-ADM-01) and plans (WP-ADM-06) use the console's
+           -- caller check.
            'private.platform_admin_caller() → email_guard, '
+           'private.platform_admin_caller() → plan_guard, '
            'private.platform_admin_invitation_code(uuid) → authenticated, '
            'private.platform_admin_is_active(uuid) → account_mail_guard, '
            'private.platform_admin_is_active(uuid) → email_guard, '
            'private.platform_admin_is_active(uuid) → invitation_guard, '
+           'private.platform_admin_is_active(uuid) → plan_guard, '
            'private.platform_create_tenant(text,text,text,text,text,text,text,text,text) → authenticated, '
            'private.platform_list_tenants() → authenticated, private.platform_reissue_admin_code(uuid) → authenticated, '
            'private.revoke_platform_admin(uuid,text,text) → %1$s', current_user),

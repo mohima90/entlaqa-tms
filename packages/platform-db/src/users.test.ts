@@ -18,24 +18,24 @@ const dialect = new PgDialect();
 /** Fake transaction: records each statement and returns the queued results in order. */
 function fakeTx(...results: unknown[][]) {
   const executed: { sql: string; params: unknown[] }[] = [];
-  return {
-    executed,
-    tx: {
-      execute: (query: SQL) => {
-        const q = dialect.sqlToQuery(query);
-        // The custom-roles catalog check (deploy window): answered here, not recorded — unless the test
-        // queued its own answer ({ present }).
-        if (q.sql.includes('to_regclass(')) {
-          const queued = results[0]?.[0] as Record<string, unknown> | undefined;
-          return Promise.resolve(
-            queued && 'present' in queued ? (results.shift() ?? []) : [{ present: true }],
-          );
-        }
-        executed.push({ sql: q.sql, params: q.params });
-        return Promise.resolve(results.shift() ?? []);
-      },
-    } as never,
+  const tx = {
+    // A savepoint (the plan's features, WP-ADM-06) runs on the same fake.
+    transaction: (fn: (savepoint: unknown) => unknown) => Promise.resolve(fn(tx)),
+    execute: (query: SQL) => {
+      const q = dialect.sqlToQuery(query);
+      // The custom-roles catalog check (deploy window): answered here, not recorded — unless the test
+      // queued its own answer ({ present }).
+      if (q.sql.includes('to_regclass(')) {
+        const queued = results[0]?.[0] as Record<string, unknown> | undefined;
+        return Promise.resolve(
+          queued && 'present' in queued ? (results.shift() ?? []) : [{ present: true }],
+        );
+      }
+      executed.push({ sql: q.sql, params: q.params });
+      return Promise.resolve(results.shift() ?? []);
+    },
   };
+  return { executed, tx: tx as never };
 }
 
 const ME = '11111111-1111-4111-8111-111111111111';
@@ -452,6 +452,7 @@ describe('loadMemberAuthorizationFacts', () => {
         },
         { code: 'custom_a00000000002', data_scope: 'own', permissions: null },
       ],
+      [{ features: ['courses', 'planning', 'unknown'] }],
     );
     expect(await loadMemberAuthorizationFacts(fake.tx)).toEqual({
       roles: [
@@ -467,6 +468,8 @@ describe('loadMemberAuthorizationFacts', () => {
         { code: 'custom_a00000000001', dataScope: 'team', permissions: ['platform.user.read'] },
         { code: 'custom_a00000000002', dataScope: 'own', permissions: [] },
       ],
+      // The plan's features (WP-ADM-06), in the product's order, known ones only.
+      features: ['planning', 'courses'],
     });
     expect(fake.executed[0]?.sql).toContain("m.status = 'active'");
     // The unit counts only while it is live and active (EP-ORG exception: a deactivated unit grants nothing).
@@ -484,10 +487,11 @@ describe('loadMemberAuthorizationFacts', () => {
       roles: [{ roleCode: 'hr_manager', validFrom: null, validUntil: null, scopeUnitId: null }],
       headedDepartmentIds: [],
       customRoles: [],
+      features: [],
     });
-    // Two reads: the custom-role read is skipped (the catalog checks are answered by the fake), and no unit
-    // is read before its column exists (EP-ORG deploy window).
-    expect(fake.executed).toHaveLength(2);
+    // Three reads: the custom-role read is skipped (the catalog checks are answered by the fake), and no unit
+    // is read before its column exists (EP-ORG deploy window); the plan's features.
+    expect(fake.executed).toHaveLength(3);
     expect(fake.executed[0]?.sql).toContain('null::uuid as scope_unit_id');
   });
 });

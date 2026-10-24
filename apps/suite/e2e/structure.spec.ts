@@ -34,6 +34,9 @@ const TEXTS = {
     branches: 'Branches',
     noBranches: 'No branches yet',
     breadcrumb: 'Breadcrumb',
+    costCentres: 'Cost centres',
+    noCostCentres: 'No cost centres yet',
+    importTitle: 'Import units',
   },
   ar: {
     title: 'الهيكل التنظيمي',
@@ -47,6 +50,9 @@ const TEXTS = {
     branches: 'الفروع',
     noBranches: 'لا توجد فروع بعد',
     breadcrumb: 'مسار التنقل',
+    costCentres: 'مراكز التكلفة',
+    noCostCentres: 'لا توجد مراكز تكلفة بعد',
+    importTitle: 'استيراد الوحدات',
   },
 } as const;
 
@@ -98,6 +104,37 @@ for (const locale of ['en', 'ar'] as const) {
     await expect(page.getByTestId('level-connector')).toHaveCount(0);
     await expect(page.getByTestId('level-add')).toHaveCount(0);
     await expect(page.getByTestId('level-rename')).toHaveCount(0);
+    await expectNoSeriousA11yViolations(page);
+  });
+
+  test(`${locale}: cost centres view and the unit import page (WP-HR-01)`, async ({ page }) => {
+    await page.goto(`/${locale}/suite/admin/structure`);
+    const views = page.getByTestId('structure-views');
+    await views.getByRole('link', { name: t.costCentres }).click();
+    await expect(page).toHaveURL(
+      new RegExp(`/${locale}/suite/admin/structure\\?view=costCentres$`),
+    );
+    await expect(views.getByRole('link', { name: t.costCentres })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    const list = page.getByTestId('cost-centres');
+    await expect(list.getByRole('heading', { level: 2 })).toHaveText(t.costCentres);
+    await expect(list.getByRole('heading', { level: 3 })).toHaveText(t.noCostCentres);
+    // Without the database nobody adds one here.
+    await expect(page.getByTestId('cost-centre-add')).toHaveCount(0);
+    await expectNoSeriousA11yViolations(page);
+
+    await page.goto(`/${locale}/suite/admin/structure/import`);
+    await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(t.importTitle);
+    await expect(page.getByTestId('structure-not-configured')).toBeVisible();
+    // The breadcrumb leads back to the structure.
+    await expect(
+      page
+        .getByRole('navigation', { name: t.breadcrumb })
+        .locator(`a[href="/${locale}/suite/admin/structure"]`),
+    ).toBeVisible();
     await expectNoSeriousA11yViolations(page);
   });
 

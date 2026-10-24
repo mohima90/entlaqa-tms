@@ -131,7 +131,14 @@ export default async function StructurePage({
       path={view === 'tree' ? PATH : `${PATH}?view=${view}`}
     >
       {data ? (
-        <Structure locale={locale} view={view} data={data} header={header} notice={content} />
+        <Structure
+          locale={locale}
+          view={view}
+          data={data}
+          header={header}
+          notice={content}
+          live={context.live}
+        />
       ) : (
         <>
           <PageHeader {...header} />
@@ -148,10 +155,13 @@ async function Structure({
   data,
   header,
   notice,
+  live,
 }: {
   locale: AppLocale;
   view: View;
   data: StructurePageView;
+  /** Connected to the database (else the cost centres view shows its empty state, read-only). */
+  live: boolean;
   header: Parameters<typeof StructureTree>[0]['header'];
   notice: ReactNode;
 }) {
@@ -336,7 +346,7 @@ async function Structure({
         <>
           <PageHeader {...header} />
           <div className="mb-5 flex flex-col gap-5">{top}</div>
-          <CostCentresSection locale={locale} />
+          <CostCentresSection locale={locale} live={live} />
         </>
       )}
     </>
@@ -344,10 +354,12 @@ async function Structure({
 }
 
 /** Structure → Cost centres (WP-HR-01, design screen 2): its own query (the list with what uses each one). */
-async function CostCentresSection({ locale }: { locale: AppLocale }) {
+async function CostCentresSection({ locale, live }: { locale: AppLocale; live: boolean }) {
   const t = await getTranslations({ locale, namespace: 'structure' });
   const common = await getTranslations({ locale, namespace: 'common' });
-  const result = await costCentresPageQuery({});
+  const result = live
+    ? await costCentresPageQuery({})
+    : ({ ok: true, value: { costCentres: [], canManage: false } } as const);
   if (!result.ok) {
     const error = toClientError(result.error);
     if (error.code === 'UNAUTHENTICATED') redirect(`/${locale}/sign-in`);

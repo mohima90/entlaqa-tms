@@ -60,7 +60,7 @@ A cost centre is the finance department's accounting code that says **which budg
 **E. A branch's address, location and working week**
 1. On a branch's form, three new parts:
    - **Address** in English and Arabic.
-   - **Location**: latitude and longitude, typed in or taken from a pasted map link, with «Open in map» to check it (proposal — §9 Q4).
+   - **Location**: latitude and longitude, **typed in** (PO, 24 Oct 2026 — no map, no map link).
    - **Working week**: «Same as the organization» (from Settings → General) is on by default. Turning it off sets the branch's own days and hours, including a **half-day** (for example, Thursday 8:00–12:00).
 2. Where the product needs a working week (scheduling warnings, reminders, quiet hours), it uses the **branch's** own week if it has one, else the **organization's** (BR-ADM-3; legal entities come in R2).
 
@@ -109,4 +109,4 @@ No approval by another person is needed (as for the rest of the structure — TM
 | Q1 | Cost centres as a **list the HR Manager keeps**? | **Yes** | **Agreed (24 Oct 2026), on the person** (unit default only to save typing) — §3 A |
 | Q2 | A move keeps the unit at its level (only under a unit of the same level as its current parent)? | **Yes** — the levels themselves are locked once people are placed (PO, 24 Oct 2026) | |
 | Q3 | The import also **updates** existing units found by code (names, branch, cost centre, head), but never moves them? | **Yes** | |
-| Q4 | Location typed or pasted from a map link, with «Open in map», and **no map inside the page** for now? | **Yes** — a built-in map needs an outside map service; in-country hosting comes first | |
+| Q4 | Location typed or pasted from a map link, with «Open in map», and **no map inside the page** for now? | **Yes** — a built-in map needs an outside map service; in-country hosting comes first | **Typed only** — no map, no map link (24 Oct 2026) |

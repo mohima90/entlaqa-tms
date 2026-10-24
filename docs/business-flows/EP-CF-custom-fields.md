@@ -4,7 +4,7 @@
 |---|---|
 | **Epic** | WP-ADM-07 (Organization Admin) |
 | **Requirements** | FR-ADM-11 (custom fields builder), FR-IAM-01 (custom fields on a person's profile) |
-| **Status** | Draft — for discussion with the PO |
+| **Status** | **On hold until the whole product is built (PO, 24 Oct 2026)** — drafted, not discussed |
 | **Reference** | Kawadir ATS has no custom fields (checked in its code, 24 Oct 2026), so this flow follows the BRD. The screens will come from Mobbin after this flow is agreed |
 
 ## 1. Goal

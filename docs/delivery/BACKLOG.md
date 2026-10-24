@@ -90,7 +90,7 @@ Order: E-mail sending → Branding → Audit log → people record completion �
 
 #### WP-ADM-07 Custom fields
 
-**Claimed by:** Claude (branch `claude/youthful-davinci-00yhgl`) · **Business flow:** drafted 24 Oct 2026 (`EP-CF-custom-fields.md`, T-M2-54) · **Depends on:** best after WP-LD-05, WP-LD-06, WP-LD-08 — people and courses can ship first
+**Claimed by:** Claude (branch `claude/youthful-davinci-00yhgl`) · **Business flow:** drafted 24 Oct 2026, **on hold until the whole product is built (PO, 24 Oct 2026)** (`EP-CF-custom-fields.md`, T-M2-54) · **Depends on:** best after WP-LD-05, WP-LD-06, WP-LD-08 — people and courses can ship first
 
 | ID | Task | WP | Owner | Status | Notes / PR |
 |---|---|---|---|---|---|

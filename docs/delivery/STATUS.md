@@ -82,6 +82,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | ID | Decision |
 |---|---|---|
+| 24 Oct 2026 | PO | **Structure levels are set once (EP-ORG BR-ORG-b changed):** as soon as any person is placed in a unit, levels can no longer be added, removed or reordered; everything can still be renamed. **Cost centres belong to the person** (a list kept by HR; a unit may give a default to people placed in it), as in SAP SuccessFactors, Cornerstone and Workday; a cost centre (who pays, accounting code) is not a training budget (how much may be spent) |
 | 24 Oct 2026 | PO | **Move to the HR Manager role: WP-HR-01 structure completion next** (the remaining Organization Admin packages wait on legal answers, the Jadarat LMS APIs, a PO decision on self-service sign-up, or held packages) |
 | 24 Oct 2026 | PO | **WP-ADM-07 custom fields on hold until the whole product is built** (flow drafted, not discussed) |
 | 24 Oct 2026 | PO | **WP-ADM-09 suite / standalone on hold** (flow drafted, not discussed); next: WP-ADM-07 custom fields |

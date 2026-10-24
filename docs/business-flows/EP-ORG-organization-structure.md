@@ -26,7 +26,7 @@ Every organization draws its own structure — its own number of levels with its
 
 ## 4. Business rules
 - BR-ORG-a: Levels are per organization; a unit always sits directly under a unit of the level above (no skipping).
-- BR-ORG-b: A level can be renamed at any time; added at the bottom at any time; removed only when no unit uses it.
+- BR-ORG-b: A level can be renamed at any time; added at the bottom at any time; removed only when no unit uses it. **Changed after agreement (PO, 24 Oct 2026): the levels are set once.** As soon as any person is placed in any unit, the levels are **locked**: no level can be added, removed or reordered. Renaming stays allowed — levels, units and everything else can be renamed at any time (a name changes no data).
 - BR-ORG-c: A unit with units under it, or people or a role scope pointing at it, cannot be deleted (the refusal says what is left); it can be deactivated.
 - BR-ORG-d: One unit per role assignment (Kawadir); choosing a higher unit covers everything under it.
 - BR-ORG-e: Moving a unit to another parent moves everything under it; access follows at once.

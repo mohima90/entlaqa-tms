@@ -4,7 +4,7 @@
 |---|---|
 | **Epic** | WP-HR-01 (HR Manager) — addendum to [EP-ORG](EP-ORG-organization-structure.md) (agreed 17 Oct 2026, unchanged) |
 | **Requirements** | FR-ADM-05 (cost centre, drag-and-drop order, CSV import, moving a unit), FR-ADM-04 (branch address, GPS, working week with half-days, working hours), BR-ADM-3; TM-0004 T-PEO-07 / SR-STE02-04 (a move shows the affected role assignments first) |
-| **Status** | Draft — for discussion with the PO |
+| **Status** | Draft — in discussion with the PO. **PO answers 24 Oct 2026:** the levels are locked once people are placed (rename only — EP-ORG BR-ORG-b changed); cost centres belong to the **person** (A rewritten, Q1 agreed) |
 | **Reference** | Kawadir ATS has none of these (checked in its code, 24 Oct 2026), so this flow follows the BRD. The screens will come from Mobbin after this flow is agreed |
 
 ## 1. Goal
@@ -24,11 +24,13 @@ The HR Manager can keep the structure true to the organization:
 
 ## 3. Step-by-step flow
 
-**A. Cost centres**
-1. **Structure → Cost centres** (new tab): the HR Manager adds cost centres. Each has a code, a name in English and Arabic, and active / inactive.
-2. On a unit's form, an optional **Cost centre** field picks one from the list.
-3. A unit without its own cost centre **uses its parent's**. The form shows «From Sales (CC-100)». Clearing the field goes back to the parent's.
-4. A cost centre in use cannot be deleted, only deactivated. A deactivated one stays on the units that have it and cannot be picked again.
+**A. Cost centres (PO, 24 Oct 2026 — as SAP SuccessFactors, Cornerstone and Workday do)**
+A cost centre is the finance department's accounting code that says **which budget pays** (for example «CC-4100 Riyadh Sales»). It is not a unit of the structure: one unit can be split across several cost centres, several units can share one, and a person can be paid from a cost centre other than their unit's.
+1. **Structure → Cost centres** (new tab): the HR Manager keeps the list. Each has a code, a name in English and Arabic, and active / inactive.
+2. Each **person** has one cost centre (on the person's form and in the people bulk import).
+3. To save typing, a unit can have a **default cost centre**: a person placed in that unit gets it unless HR picks another one for them. Changing a unit's default later does not change people who already have a cost centre.
+4. A cost centre in use cannot be deleted, only deactivated. A deactivated one stays on the people who have it and cannot be picked again.
+5. Training costs are charged to the **participants' cost centres** when session costs are built (FR-FIN-03). Splitting one person across several cost centres, a cost-centre approver and budgets by cost centre come later (FR-FIN-01, R2; chargeback reports FR-FIN-07, R3).
 
 **B. Moving a unit**
 1. In the tree, a unit's menu has **Move to…**. The HR Manager picks the new parent from the tree.
@@ -51,8 +53,8 @@ The HR Manager can keep the structure true to the organization:
    - fill it in and upload it;
    - the file is **checked first** and every row's problem is listed;
    - **Import** applies the good rows.
-2. Columns: level, code, name (EN), name (AR), parent code, branch code, cost centre code, head (e-mail).
-3. A row with a **new code** creates a unit. A row with an **existing code** updates its names, branch, cost centre and head (proposal — §9 Q3). The parent is never changed by the import: moving stays on screen with its preview (B).
+2. Columns: level, code, name (EN), name (AR), parent code, branch code, default cost centre code, head (e-mail).
+3. A row with a **new code** creates a unit. A row with an **existing code** updates its names, branch, default cost centre and head (proposal — §9 Q3). The parent is never changed by the import: moving stays on screen with its preview (B).
 4. Rows are read top to bottom, so a parent can be in an earlier row of the same file.
 
 **E. A branch's address, location and working week**
@@ -63,7 +65,7 @@ The HR Manager can keep the structure true to the organization:
 2. Where the product needs a working week (scheduling warnings, reminders, quiet hours), it uses the **branch's** own week if it has one, else the **organization's** (BR-ADM-3; legal entities come in R2).
 
 ## 4. Business rules
-- BR-ORG-h: a unit has at most one cost centre; without one it uses its parent's (and so on up the tree).
+- BR-ORG-h: a person has at most one cost centre; a unit has at most one default cost centre, used only when a person is placed in it without one.
 - BR-ORG-i: a unit can only move under a unit of the **same level as its current parent**, or to the top if it is at the first level. Its level, and the levels of everything under it, never change (EP-ORG BR-ORG-a). Moving under itself or anything below it is refused.
 - BR-ORG-j: a move is never applied without its preview; if something changed while the preview was open (another person edited the tree), the move is refused and the preview is shown again.
 - BR-ORG-k: the import never deletes, deactivates or moves a unit.
@@ -87,7 +89,7 @@ No approval by another person is needed (as for the rest of the structure — TM
 ## 7. Inputs and outputs
 | Input (from where) | Output (to where) |
 |---|---|
-| Cost centres, units, moves, order (HR Manager) | The structure used by roles, planning, approvals and later reports by cost centre (FR-FIN) |
+| Cost centres (people), units, moves, order (HR Manager) | The structure used by roles, planning and approvals; each participant's cost centre for session costs (FR-FIN-03) and later budgets and chargeback (FR-FIN-01, 07) |
 | Unit file (HR Manager) | New and updated units; a results list |
 | Branch address, location, working week | Scheduling warnings (FR-SCH), check-in near the branch (FR-ATT-03 uses the venue), reminders and quiet hours (FR-NTF-07) |
 
@@ -95,7 +97,7 @@ No approval by another person is needed (as for the rest of the structure — TM
 | # | Screen | Role | Main actions |
 |---|---|---|---|
 | 1 | Structure → Cost centres (list + side panel) | HR Manager | Add, edit, deactivate |
-| 2 | Unit form: Cost centre field («From …» when inherited) | HR Manager | Pick, clear |
+| 2 | Person form + people import: Cost centre; unit form: Default cost centre | HR Manager | Pick, clear |
 | 3 | Move to… (tree picker) + preview dialog | HR Manager | Pick a parent, read the preview, move or cancel |
 | 4 | Structure tree: drag handle, Move up / down | HR Manager | Reorder |
 | 5 | Structure → Import (template, upload, check, results) | HR Manager | Import units |
@@ -104,7 +106,7 @@ No approval by another person is needed (as for the rest of the structure — TM
 ## 9. Open questions
 | # | Question | Proposed answer | PO answer |
 |---|---|---|---|
-| Q1 | Cost centres as a **list the HR Manager keeps**, with a unit using its parent's when it has none? | **Yes** — a list keeps reports clean (no typing differences) | |
-| Q2 | A move keeps the unit at its level (only under a unit of the same level as its current parent)? | **Yes** — changing a unit's level later would need its own rules | |
+| Q1 | Cost centres as a **list the HR Manager keeps**? | **Yes** | **Agreed (24 Oct 2026), on the person** (unit default only to save typing) — §3 A |
+| Q2 | A move keeps the unit at its level (only under a unit of the same level as its current parent)? | **Yes** — the levels themselves are locked once people are placed (PO, 24 Oct 2026) | |
 | Q3 | The import also **updates** existing units found by code (names, branch, cost centre, head), but never moves them? | **Yes** | |
 | Q4 | Location typed or pasted from a map link, with «Open in map», and **no map inside the page** for now? | **Yes** — a built-in map needs an outside map service; in-country hosting comes first | |

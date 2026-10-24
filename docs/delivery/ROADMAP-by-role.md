@@ -242,7 +242,7 @@ Path shorthands: `app/` = `apps/suite/src/app/[locale]/` · `cmp/` = `apps/suite
 
 | WP | Goal (plain language) | Features | Flow needed? | Depends on | Code areas | Migrations | Claimed by |
 |---|---|---|---|---|---|---|---|
-| **WP-HR-01** Structure completion | Finish the structure: cost centres, move a unit under another parent (with a preview of what changes), order units by drag-and-drop, import units from CSV; GPS and working week / hours per branch | ADM-05 (rest), ADM-04 (rest) | Yes — addendum to EP-ORG (cost centres, CSV, move); **not written** | WP-FIX-01 (same structure pages) | `cmp/structure`, `act/{structure,branches}.ts`, `app/suite/admin/{structure,branches}`, `pkg/platform-db/src/branches.ts` (+ units), `pkg/platform-import` | `202611031xxxxx` | |
+| **WP-HR-01** Structure completion | Finish the structure: cost centres, move a unit under another parent (with a preview of what changes), order units by drag-and-drop, import units from CSV; GPS and working week / hours per branch | ADM-05 (rest), ADM-04 (rest) | Yes — addendum to EP-ORG (cost centres, CSV, move); **drafted 24 Oct 2026** (`EP-ORG-structure-completion.md`) | WP-FIX-01 (same structure pages) | `cmp/structure`, `act/{structure,branches}.ts`, `app/suite/admin/{structure,branches}`, `pkg/platform-db/src/branches.ts` (+ units), `pkg/platform-import` | `202611031xxxxx` | |
 | **WP-HR-02** Compliance | Rules for who must take what by when, compliance dashboards with overdue alerts, regulator frameworks | CRT-07, CRT-08, REG-01 | Yes; **not written**; regulatory content from BRD Appendix E only | WP-LD-05, WP-LD-12, WP-EMP-04 | new `tms/compliance`, `app/suite/compliance` | `202611041xxxxx` | |
 
 IAM-02 (HR-only fields) is in **WP-ADM-04**.

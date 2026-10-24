@@ -4,7 +4,7 @@
 |---|---|
 | **Epic** | WP-HR-01 (HR Manager) — addendum to [EP-ORG](EP-ORG-organization-structure.md) (agreed 17 Oct 2026, unchanged) |
 | **Requirements** | FR-ADM-05 (cost centre, drag-and-drop order, CSV import, moving a unit), FR-ADM-04 (branch address, GPS, working week with half-days, working hours), BR-ADM-3; TM-0004 T-PEO-07 / SR-STE02-04 (a move shows the affected role assignments first) |
-| **Status** | **Agreed (PO, 24 Oct 2026)** — levels locked once people are placed (rename only; EP-ORG BR-ORG-b changed); one cost centre per **person** (unit default; no split, no cost-centre approver); session cost by participants or to one cost centre (FR-FIN-03); a moved unit keeps its level; the import creates and updates, never moves; branch location typed in. Next: Mobbin design |
+| **Status** | **Agreed (PO, 24 Oct 2026)** — levels locked once people are placed (rename only; EP-ORG BR-ORG-b changed); one cost centre per **person** (unit default; no split, no cost-centre approver); session cost by participants or to one cost centre (FR-FIN-03); a moved unit keeps its level; the import creates and updates, never moves; branch location typed in. **Design approved (PO, 24 Oct 2026)** — artifact «Structure Completion Design» |
 | **Reference** | Kawadir ATS has none of these (checked in its code, 24 Oct 2026), so this flow follows the BRD. The screens will come from Mobbin after this flow is agreed |
 
 ## 1. Goal

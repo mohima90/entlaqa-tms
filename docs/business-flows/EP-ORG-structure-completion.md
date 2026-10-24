@@ -30,7 +30,8 @@ A cost centre is the finance department's accounting code that says **which budg
 2. Each **person** has one cost centre (on the person's form and in the people bulk import).
 3. To save typing, a unit can have a **default cost centre**: a person placed in that unit gets it unless HR picks another one for them. Changing a unit's default later does not change people who already have a cost centre.
 4. A cost centre in use cannot be deleted, only deactivated. A deactivated one stays on the people who have it and cannot be picked again.
-5. Training costs are charged to the **participants' cost centres** when session costs are built (FR-FIN-03). Splitting one person across several cost centres, a cost-centre approver and budgets by cost centre come later (FR-FIN-01, R2; chargeback reports FR-FIN-07, R3).
+5. Training costs are charged to the **participants' cost centres** when session costs are built (FR-FIN-03).
+6. **One cost centre per person, never split by percentage** (PO, 24 Oct 2026): a participant's whole share of a cost goes to their one cost centre.
 
 **B. Moving a unit**
 1. In the tree, a unit's menu has **Move to…**. The HR Manager picks the new parent from the tree.

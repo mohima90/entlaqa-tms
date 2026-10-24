@@ -18,6 +18,11 @@ do $$
 declare
   v_id uuid;
 begin
+  -- Levels are added or removed only while nobody is placed in a unit (WP-HR-01, JO004): the Organization Admin
+  -- unplaces tenant A's people first (rolled back with the block).
+  perform tests.set_claims(tests.ua_claims());
+  update platform.person_employment set department_id = null where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+  perform tests.set_claims(tests.uab_claims());
   perform tests.assert_eq((select string_agg(ordinal || ':' || name_en || ':' || name_ar, ',' order by ordinal)
                            from platform.structure_levels),
     '1:Department:إدارة,2:Section:قسم', 'tenant A: its own levels only (the default one and the fixture''s second)');
@@ -67,6 +72,8 @@ select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1'
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
 do $$
 begin
+  -- (Nobody placed, so the level lock does not answer first — WP-HR-01.)
+  update platform.person_employment set department_id = null where tenant_id = 'a0000000-0000-4000-8000-000000000001';
   perform tests.assert_eq((select count(*) from platform.structure_levels), 2::bigint, 'the Organization Admin reads the levels');
   perform tests.assert_rls_violation($q$insert into platform.structure_levels (ordinal, name_en, name_ar) values (3, 'Team', 'فريق')$q$,
     'the Organization Admin cannot add a level');
@@ -90,12 +97,17 @@ declare
   v_levels constant text := $q$select string_agg(code || ':' || level_ordinal, ',' order by code) from platform.departments where deleted_at is null and code in ('OPS', 'TD', 'TD-PRG', 'PRG-1')$q$;
   v_got text;
 begin
+  -- Levels are added or removed only while nobody is placed in a unit (WP-HR-01, JO004): the Organization Admin
+  -- unplaces tenant A's people first (rolled back with the block).
+  perform tests.set_claims(tests.ua_claims());
+  update platform.person_employment set department_id = null where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+  perform tests.set_claims(tests.uab_claims());
   execute v_levels into v_got;
   perform tests.assert_eq(v_got, 'OPS:1,TD:1,TD-PRG:2', 'each unit''s level is its depth in the tree');
   perform tests.assert_fails($q$insert into platform.departments (code, name_ar, parent_id) values ('PRG-1', 'برنامج', 'a3000000-0000-4000-8000-000000000002')$q$,
     array['JO001'], 'the last level has no units under it');
   perform tests.assert_fails($q$update platform.departments set parent_id = 'a3000000-0000-4000-8000-000000000003' where code = 'TD'$q$,
-    array['JO001'], 'a move counts the units below (TD with TD-PRG under OPS needs three levels)');
+    array['JO003'], 'a move never changes a unit''s level (TD, a top unit, under OPS) — WP-HR-01');
   perform tests.assert_eq(tests.rows_affected($q$update platform.departments set level_ordinal = 7 where code = 'OPS'$q$),
     1::bigint, 'a written level is accepted as a request …');
   perform tests.assert_eq((select level_ordinal from platform.departments where code = 'OPS'), 1::smallint,
@@ -103,13 +115,15 @@ begin
 
   insert into platform.structure_levels (ordinal, name_en, name_ar) values (3, 'Team', 'فريق');
   insert into platform.departments (code, name_ar, parent_id) values ('PRG-1', 'برنامج', 'a3000000-0000-4000-8000-000000000002');
-  -- TD-PRG to the top: it and PRG-1 move up one level each.
-  update platform.departments set parent_id = null where code = 'TD-PRG';
-  execute v_levels into v_got;
-  perform tests.assert_eq(v_got, 'OPS:1,PRG-1:2,TD:1,TD-PRG:1', 'a move carries the units below to their new levels');
+  -- A moved unit keeps its level (WP-HR-01, BR-ORG-i): TD-PRG (level 2) never goes to the top, PRG-1 (level 3)
+  -- never under a top unit; under OPS (level 1, like its parent TD) TD-PRG moves with PRG-1, both at their levels.
+  perform tests.assert_fails($q$update platform.departments set parent_id = null where code = 'TD-PRG'$q$,
+    array['JO003'], 'a unit never moves to another level (to the top)');
+  perform tests.assert_fails($q$update platform.departments set parent_id = 'a3000000-0000-4000-8000-000000000003' where code = 'PRG-1'$q$,
+    array['JO003'], 'a unit never moves to another level (one level up)');
   update platform.departments set parent_id = 'a3000000-0000-4000-8000-000000000003' where code = 'TD-PRG';
   execute v_levels into v_got;
-  perform tests.assert_eq(v_got, 'OPS:1,PRG-1:3,TD:1,TD-PRG:2', 'and down again under OPS');
+  perform tests.assert_eq(v_got, 'OPS:1,PRG-1:3,TD:1,TD-PRG:2', 'a move under a unit of its parent''s level keeps every level below');
 
   -- A deleted unit keeps its level; restoring it checks the levels again.
   update platform.departments set deleted_at = now() where code = 'PRG-1';

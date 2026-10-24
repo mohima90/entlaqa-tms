@@ -40,7 +40,10 @@ begin
     'platform.tenant_branding', 'platform.brand_assets', 'platform.brand_asset_attempts',
     -- Profile photo, HR-only fields, grades (WP-ADM-04): cross-tenant, FK, privilege and permission tests in
     -- 99_people_*.sql.
-    'platform.grades', 'platform.person_grades', 'platform.person_hr_details', 'platform.person_photos')
+    'platform.grades', 'platform.person_grades', 'platform.person_hr_details', 'platform.person_photos',
+    -- Cost centres, branches' own working weeks (WP-HR-01): cross-tenant, FK and permission tests in
+    -- 99_structure_4_completion_app_server.sql.
+    'platform.cost_centres', 'platform.branch_working_days')
     and t.table_name not in (select table_name from tests.job_only_tables());
   perform tests.assert(v_missing is null, format('isolation tests missing for: %s', v_missing));
   perform tests.assert(session_user = 'app_server', 'this file must run connected as app_server');

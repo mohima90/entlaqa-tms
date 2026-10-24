@@ -81,7 +81,12 @@ begin
   perform tests.assert_fails($q$update platform.branches set parent_branch_id = 'a2000000-0000-4000-8000-000000000001' where code = 'JED'$q$,
     array['23514'], 'branches: cycles are rejected too');
 
-  -- OPS is level 1; add levels 2..10 under it → allowed (the organization defines ten levels, EP-ORG).
+  -- OPS is level 1; add levels 2..10 under it → allowed (the organization defines ten levels, EP-ORG). Levels
+  -- are added only while nobody is placed in a unit (WP-HR-01, JO004): the Organization Admin uA unplaces
+  -- tenant A's people first (uA's own placement is a privileged member's record).
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+    'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+  update platform.person_employment set department_id = null where tenant_id = 'a0000000-0000-4000-8000-000000000001';
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
     'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
   insert into platform.structure_levels (ordinal, name_en, name_ar)
@@ -99,8 +104,8 @@ begin
   perform tests.assert_fails(format($q$update platform.departments set parent_id = %L where code = 'TD'$q$, v_id),
     array['23514'], 'departments: moving a subtree may not exceed 10 levels');
   select id into v_id from platform.departments where code = 'L8';
-  perform tests.assert_eq(tests.rows_affected(format($q$update platform.departments set parent_id = %L where code = 'TD'$q$, v_id)),
-    1::bigint, 'departments: moving the subtree to exactly 10 levels is allowed');
+  perform tests.assert_fails(format($q$update platform.departments set parent_id = %L where code = 'TD'$q$, v_id),
+    array['JO003'], 'departments: within 10 levels, a move that changes a unit''s level is refused (WP-HR-01)');
 
   -- Live children block a soft delete; a deleted parent cannot receive (or restore) children.
   -- (People placed in TD / TD-PRG move to OPS first: active people also block a delete — 23_people.sql.)
@@ -131,8 +136,9 @@ begin
   update platform.departments set deleted_at = now() where code = 'LEAF';
   perform tests.assert_fails(format($q$update platform.departments set parent_id = %L where code = 'LEAF'$q$, v_id),
     array['23514'], 'departments: a deleted department cannot be moved past 10 levels');
-  insert into platform.departments (code, name_ar) values ('D1', 'محذوف 1'), ('D2', 'محذوف 2');
-  update platform.departments set parent_id = (select id from platform.departments where code = 'D1') where code = 'D2';
+  insert into platform.departments (code, name_ar) values ('D1', 'محذوف 1');
+  insert into platform.departments (code, name_ar, parent_id)
+  values ('D2', 'محذوف 2', (select id from platform.departments where code = 'D1'));
   update platform.departments set deleted_at = now() where code = 'D2';
   update platform.departments set deleted_at = now() where code = 'D1';
   perform tests.assert_fails($q$update platform.departments set parent_id = (select id from platform.departments where code = 'D2') where code = 'D1'$q$,
@@ -247,7 +253,8 @@ begin
     -- S-M1: the writer guard first (it compares the row as the statement sent it).
     array['departments_guard_writer', 'departments_soft_delete', 'departments_stamp_row', 'departments_tree', 'departments_tree_levels',
           'departments_tree_levels_cascade', 'departments_until_people_moved', 'departments_until_role_scopes_moved',
-          'departments_validate_refs'],
+          -- WP-HR-01: the default cost centre is active (after the writer guard).
+          'departments_validate_cost_centre', 'departments_validate_refs'],
     'departments: trigger order');
   perform tests.assert_eq(
     (select array_agg(tgname::text order by tgname::text) from pg_trigger

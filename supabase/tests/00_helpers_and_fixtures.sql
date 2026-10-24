@@ -581,6 +581,14 @@ insert into platform.person_hr_details (tenant_id, person_id, gender, birth_date
   ('a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1', 'male', date '1980-01-15', 'management'),
   ('a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab', 'female', date '1992-05-14', 'technical'),
   ('b0000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-0000000000b1', 'female', date '1985-03-03', 'professional');
+-- Cost centres and a branch's own working week (WP-HR-01): one of each per tenant (20_isolation.sql's generic
+-- checks; rules in 99_structure_4_completion_app_server.sql).
+insert into platform.cost_centres (id, tenant_id, code, name_en, name_ar) values
+  ('a7000000-0000-4000-8000-0000000000cc', 'a0000000-0000-4000-8000-000000000001', 'CC-100', 'Head office', 'المكتب الرئيسي'),
+  ('b7000000-0000-4000-8000-0000000000cc', 'b0000000-0000-4000-8000-000000000001', 'CC-100', 'Head office', 'المكتب الرئيسي');
+insert into platform.branch_working_days (tenant_id, branch_id, day, starts_at, ends_at) values
+  ('a0000000-0000-4000-8000-000000000001', 'a2000000-0000-4000-8000-000000000001', 0, '08:00', '16:00'),
+  ('b0000000-0000-4000-8000-000000000001', 'b2000000-0000-4000-8000-000000000001', 0, '08:00', '16:00');
 insert into platform.person_photos (tenant_id, person_id, file_id, content_type, content, byte_size, sha256) values
   ('a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1', 'f0a00000-0000-4000-8000-000000000001',
    'image/png', '\x89504e47'::bytea, 4, repeat('e', 64)),

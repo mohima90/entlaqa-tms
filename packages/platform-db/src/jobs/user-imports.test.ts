@@ -274,9 +274,20 @@ describe('user imports, worker side', () => {
     expect(
       await loadUserImportHeaders(fakeTx([{ column_index: '1', header: 'Email' }]).tx, ID, 0),
     ).toEqual(new Map([[1, 'Email']]));
-    const classify = fakeTx([], [{ counts: { total: 2 } }]);
+    const classify = fakeTx([], [{ present: true }], [], [{ counts: { total: 2 } }]);
     expect(await classifyUserImport(classify.tx, ID)).toEqual({ total: 2 });
     expect(classify.executed[0]?.sql).toContain('private.user_import_classify');
+    // The cost-centre step once its migration is applied (WP-HR-01), not before.
+    expect(classify.executed[2]?.sql).toMatch(
+      /select private\.user_import_classify_cost_centres\(/,
+    );
+    const before = fakeTx([], [{ present: false }], [{ counts: { total: 1 } }]);
+    expect(await classifyUserImport(before.tx, ID)).toEqual({ total: 1 });
+    expect(
+      before.executed.some((q) =>
+        q.sql.includes('select private.user_import_classify_cost_centres('),
+      ),
+    ).toBe(false);
     expect(await userImportReviewCounts(fakeTx([]).tx, ID)).toEqual({});
     expect(await recheckUserImport(fakeTx([{ changed: '4' }]).tx, ID)).toBe(4);
     expect(await recheckUserImport(fakeTx([]).tx, ID)).toBe(0);

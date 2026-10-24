@@ -203,8 +203,8 @@ export function normalizeRow(
     else data[field] = value;
   }
 
-  // Department and branch: matched by code or name by the dry run.
-  for (const field of ['department', 'branch'] as const) {
+  // Department, branch and cost centre: matched by code or name by the dry run.
+  for (const field of ['department', 'branch', 'cost_centre'] as const) {
     const value = values[field];
     if (value === undefined) continue;
     if (value.length > 200 || tooLong(field)) issues.push(issue('TEXT_TOO_LONG', field));

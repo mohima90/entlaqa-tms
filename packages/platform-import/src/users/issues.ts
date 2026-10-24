@@ -295,6 +295,29 @@ export const ISSUES: Catalogue = {
         ? `يوجد أكثر من فرع باسم «${text(issue.p?.name)}». يُضاف الشخص دون فرع؛ يمكنك كتابة رمز الفرع بدلًا من اسمه.`
         : `More than one branch is called “${text(issue.p?.name)}”. The person is added without a branch; use the branch code instead.`,
   },
+  // WP-HR-01: the person's cost centre (an empty cell or a cost centre not found keeps what they have; a new
+  // person then gets their unit's default).
+  COST_CENTRE_NOT_FOUND: {
+    severity: 'w',
+    review: (issue, locale) =>
+      locale === 'ar'
+        ? `مركز التكلفة «${text(issue.p?.name)}» غير موجود. يأخذ الشخص مركز التكلفة الافتراضي لوحدته، أو يبقى على مركزه الحالي.`
+        : `Cost centre “${text(issue.p?.name)}” wasn’t found. The person gets their unit’s default cost centre, or keeps their current one.`,
+  },
+  COST_CENTRE_AMBIGUOUS: {
+    severity: 'w',
+    review: (issue, locale) =>
+      locale === 'ar'
+        ? `يوجد أكثر من مركز تكلفة باسم «${text(issue.p?.name)}». اكتب رمز مركز التكلفة بدلًا من اسمه.`
+        : `More than one cost centre is called “${text(issue.p?.name)}”. Use the cost centre code instead.`,
+  },
+  COST_CENTRE_INACTIVE: {
+    severity: 'w',
+    review: (issue, locale) =>
+      locale === 'ar'
+        ? `مركز التكلفة «${text(issue.p?.name)}» غير نشط، فلا يُعطى لأحد. يأخذ الشخص مركز التكلفة الافتراضي لوحدته، أو يبقى على مركزه الحالي.`
+        : `Cost centre “${text(issue.p?.name)}” is inactive, so it isn’t given to anyone. The person gets their unit’s default cost centre, or keeps their current one.`,
+  },
   MANAGER_NOT_FOUND: {
     severity: 'w',
     review: (issue, locale) =>

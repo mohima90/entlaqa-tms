@@ -86,6 +86,11 @@ cleanup() {
                    where g.rolname = 'inline_mail_guard' and u.rolname = '$MIGRATOR' and gr.rolname = '$MIGRATOR') then
           execute 'revoke inline_mail_guard from $MIGRATOR granted by $MIGRATOR';
         end if;
+        if exists (select 1 from pg_auth_members m join pg_roles g on g.oid = m.roleid
+                     join pg_roles u on u.oid = m.member join pg_roles gr on gr.oid = m.grantor
+                   where g.rolname = 'plan_guard' and u.rolname = '$MIGRATOR' and gr.rolname = '$MIGRATOR') then
+          execute 'revoke plan_guard from $MIGRATOR granted by $MIGRATOR';
+        end if;
         -- The supautils.policy_grants simulation below (T-M2-18).
         if pg_has_role('$MIGRATOR', 'supabase_storage_admin', 'MEMBER') then
           execute 'revoke supabase_storage_admin from $MIGRATOR';
@@ -158,7 +163,8 @@ declare r text;
 begin
   foreach r in array array['app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
                           'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard',
-                          'user_import_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard'] loop
+                          'user_import_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard',
+                          'plan_guard'] loop
     if exists (select 1 from pg_roles where rolname = r) then
       execute format('grant %I to $MIGRATOR with admin option, inherit false, set false', r);
     end if;

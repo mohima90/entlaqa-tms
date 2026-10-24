@@ -128,11 +128,11 @@ begin
     'private.actor_may_manage_person_with(uuid,uuid,text[]), '
     'private.actor_role_codes(uuid,uuid), private.current_tenant_id(), private.has_active_membership(uuid,uuid), '
     'private.member_has_permission(uuid,uuid,text), private.member_permissions(uuid,uuid), '
-    'private.membership_is_privileged(uuid,uuid), '
+    'private.membership_is_privileged(uuid,uuid), private.permission_feature(text), '
     'private.request_aal2(), private.request_claims(), private.request_code_fresh(), '
     'private.request_sign_in_unlocked_mail(uuid), private.request_user_id(), private.role_is_privileged(uuid,text), '
-    'private.try_uuid(text)',
-    'rate_limit_guard may call exactly these other functions');
+    'private.tenant_plan_features(uuid), private.try_uuid(text)',
+    'rate_limit_guard may call exactly these other functions (the plan filter inside member_permissions, WP-ADM-06)');
 
   -- The keys, the counters and the trusted browsers: RLS forced, reachable by rate_limit_guard alone (no
   -- application role, no Supabase role, no other guard has any privilege, table or column).

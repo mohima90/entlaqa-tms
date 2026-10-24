@@ -25,13 +25,13 @@ begin
     select rolname, rolcanlogin, rolinherit, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolreplication
     from pg_roles where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
                                     'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard',
-                                    'user_import_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard')
+                                    'user_import_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard', 'plan_guard')
   loop
     if r.rolname in ('app_server', 'app_worker', 'app_queue') and not r.rolcanlogin then
       failures := failures || format('%s must be LOGIN', r.rolname);
     end if;
     if r.rolname in ('tenant_guard', 'invitation_guard', 'account_mail_guard', 'membership_guard', 'rate_limit_guard',
-                     'file_guard', 'user_import_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard')
+                     'file_guard', 'user_import_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard', 'plan_guard')
        and r.rolcanlogin then
       failures := failures || format('%s must be NOLOGIN', r.rolname);
     end if;
@@ -42,8 +42,8 @@ begin
   if (select count(*) from pg_roles
       where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
                         'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard',
-                        'user_import_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard')) <> 13 then
-    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard, invitation_guard, account_mail_guard, membership_guard, rate_limit_guard, file_guard, user_import_guard, platform_admin_guard, email_guard and inline_mail_guard must all exist'::text;
+                        'user_import_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard', 'plan_guard')) <> 14 then
+    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard, invitation_guard, account_mail_guard, membership_guard, rate_limit_guard, file_guard, user_import_guard, platform_admin_guard, email_guard, inline_mail_guard and plan_guard must all exist'::text;
   end if;
   -- The job runner (ADR 0005 §2): member of nothing (never authenticated), owner of graphile_worker.
   if exists (select 1 from pg_auth_members m join pg_roles u on u.oid = m.member where u.rolname = 'app_queue') then
@@ -298,9 +298,9 @@ begin
   for r in
     select h.fn, h.owner, h.allowed, h.definer, p.oid as poid, p.proowner, p.prosecdef, p.proconfig, p.proacl
     from (values
-      ('private.user_session_is_valid(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'invitation_guard', 'platform_admin_guard', 'email_guard'], true),
+      ('private.user_session_is_valid(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'invitation_guard', 'platform_admin_guard', 'email_guard', 'plan_guard'], true),
       ('private.has_active_membership(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'rate_limit_guard'], true),
-      ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated', 'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard', 'invitation_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard'], true),
+      ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated', 'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard', 'invitation_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard', 'plan_guard'], true),
       ('private.switch_active_tenant(uuid)',        'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.session_tenants()',                 'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.discard_inactive_tenant_delivery(uuid)', 'tenant_guard', array['tenant_guard', 'authenticated'], true),
@@ -345,10 +345,11 @@ begin
       -- The workflow's allow-list and audit data (review L3, L5): SECURITY INVOKER, called by the above.
       ('private.platform_admin_operator()', 'platform_admin_guard', array['platform_admin_guard'], false),
       ('private.platform_admin_workflow_data(text, text)', 'platform_admin_guard', array['platform_admin_guard'], false),
-      ('private.platform_admin_is_active(uuid)', 'platform_admin_guard', array['platform_admin_guard', 'invitation_guard', 'email_guard', 'account_mail_guard'], true),
+      ('private.platform_admin_is_active(uuid)', 'platform_admin_guard', array['platform_admin_guard', 'invitation_guard', 'email_guard', 'account_mail_guard', 'plan_guard'], true),
       ('private.is_platform_invitation(uuid)', 'platform_admin_guard', array['platform_admin_guard', 'invitation_guard'], true),
-      -- email_guard: the Super Admin's e-mail settings functions (20261022100100, WP-ADM-01) use the same check.
-      ('private.platform_admin_caller()', 'platform_admin_guard', array['platform_admin_guard', 'email_guard'], false),
+      -- email_guard: the Super Admin's e-mail settings functions (20261022100100, WP-ADM-01) use the same check;
+      -- plan_guard: the console's plans (20261027100000, WP-ADM-06).
+      ('private.platform_admin_caller()', 'platform_admin_guard', array['platform_admin_guard', 'email_guard', 'plan_guard'], false),
       ('private.platform_pending_admin_invitation(uuid)', 'platform_admin_guard', array['platform_admin_guard'], false),
       ('private.platform_reserved_slug(text)', 'platform_admin_guard', array['platform_admin_guard'], false),
       -- Account e-mails (T-M2-17): the web app queues requests (app_server, checked inside), the worker
@@ -524,7 +525,26 @@ begin
       -- Profile photos (WP-ADM-04, 20261025100300): the web app (app_server, the caller's own photo, checked
       -- inside) publishes and removes. Reading is SECURITY INVOKER (row policy private.actor_sees_person).
       ('private.publish_profile_photo(uuid, text, bigint, text, bytea)', 'file_guard', array['file_guard', 'authenticated'], true),
-      ('private.remove_profile_photo()', 'file_guard', array['file_guard', 'authenticated'], true)
+      ('private.remove_profile_photo()', 'file_guard', array['file_guard', 'authenticated'], true),
+      -- Plans and limits (WP-ADM-06, 20261027100000): the plan filter inside member_permissions (every role
+      -- that may call it), the e-mail routes' feature check, the limit and feature triggers (their owner only),
+      -- what a member's organization has and the Organization Admin's view (app_server, checked inside), the
+      -- console (a signed-in Super Admin, checked inside) and the trial expiry (worker system claims).
+      ('private.tenant_plan_features(uuid)', 'plan_guard', array['plan_guard', 'authenticated', 'email_guard', 'file_guard', 'invitation_guard', 'membership_guard', 'rate_limit_guard', 'tenant_guard'], true),
+      ('private.tenant_has_feature(uuid, text)', 'plan_guard', array['plan_guard', 'email_guard'], true),
+      ('private.tenant_limits(uuid)', 'plan_guard', array['plan_guard'], false),
+      ('private.tenant_people_used(uuid)', 'plan_guard', array['plan_guard'], false),
+      ('private.tenant_storage_used(uuid)', 'plan_guard', array['plan_guard'], false),
+      ('private.enforce_people_limit()', 'plan_guard', array['plan_guard'], true),
+      ('private.enforce_storage_limit()', 'plan_guard', array['plan_guard'], true),
+      ('private.enforce_plan_feature()', 'plan_guard', array['plan_guard'], true),
+      ('private.current_tenant_features()', 'plan_guard', array['plan_guard', 'authenticated'], true),
+      ('private.organization_plan()', 'plan_guard', array['plan_guard', 'authenticated'], true),
+      ('private.platform_list_plans()', 'plan_guard', array['plan_guard', 'authenticated'], true),
+      ('private.platform_save_plan(uuid, text, text, integer, integer, text[], integer)', 'plan_guard', array['plan_guard', 'authenticated'], true),
+      ('private.platform_tenant_plans()', 'plan_guard', array['plan_guard', 'authenticated'], true),
+      ('private.platform_set_tenant_plan(uuid, uuid, text, timestamp with time zone, integer, integer)', 'plan_guard', array['plan_guard', 'authenticated'], true),
+      ('private.expire_trials()', 'plan_guard', array['plan_guard', 'authenticated'], true)
     ) as h(fn, owner, allowed, definer)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop
@@ -651,7 +671,14 @@ begin
         'private.mfa_setup_peek(uuid,uuid)', 'private.mfa_setup_issue(uuid,uuid,bytea,bytea)',
         'private.user_has_totp_app(uuid)',
         'private.sign_in_code_hmac(uuid,text)', 'private.verify_sign_in_code(text,text)', 'private.kept_until_effective(uuid,timestamp with time zone,timestamp with time zone)',
-        'private.audit_sign_in_code_sent(uuid,uuid)', 'private.audit_sign_in_code_refused(text,boolean)')
+        'private.audit_sign_in_code_sent(uuid,uuid)', 'private.audit_sign_in_code_refused(text,boolean)',
+        -- Plans and limits (WP-ADM-06)
+        'private.tenant_plan_features(uuid)', 'private.tenant_has_feature(uuid,text)',
+        'private.enforce_people_limit()', 'private.enforce_storage_limit()', 'private.enforce_plan_feature()',
+        'private.current_tenant_features()', 'private.organization_plan()', 'private.platform_list_plans()',
+        'private.platform_save_plan(uuid,text,text,integer,integer,text[],integer)', 'private.platform_tenant_plans()',
+        'private.platform_set_tenant_plan(uuid,uuid,text,timestamp with time zone,integer,integer)',
+        'private.expire_trials()')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;
@@ -707,9 +734,10 @@ begin
       where att.attrelid in (to_regclass('private.platform_admins'), to_regclass('private.platform_invitations'),
                              to_regclass('private.platform_audit_events'))
         and att.attacl is not null and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'platform_admin_guard')
-        -- email_guard records the platform sender's changes and verification (WP-ADM-01): INSERT only.
+        -- email_guard records the platform sender's changes and verification (WP-ADM-01), plan_guard the plans
+        -- and the organizations' plans (WP-ADM-06): INSERT only.
         and not (att.attrelid = to_regclass('private.platform_audit_events') and a.grantee <> 0
-                 and pg_get_userbyid(a.grantee) = 'email_guard' and a.privilege_type = 'INSERT')
+                 and pg_get_userbyid(a.grantee) in ('email_guard', 'plan_guard') and a.privilege_type = 'INSERT')
     loop
       failures := failures || format('%s must have no privilege on %s (FR-ADM-17)', r.grantee, r.t);
     end loop;
@@ -754,6 +782,50 @@ begin
         and att.attacl is not null and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'email_guard')
     loop
       failures := failures || format('%s must have no privilege on %s (WP-ADM-01)', r.grantee, r.t);
+    end loop;
+  end if;
+
+  -- plan_guard (WP-ADM-06): the same rules; it owns no relation, and the plans are reachable by it alone.
+  if exists (select 1 from pg_roles where rolname = 'plan_guard') then
+    for r in select nspname from pg_namespace where nspname = any (module_schemas) loop
+      if has_schema_privilege('plan_guard', r.nspname, 'create') then
+        failures := failures || format('plan_guard must not have CREATE on schema %s', r.nspname);
+      end if;
+    end loop;
+    if exists (select 1 from pg_class c where c.relowner = (select oid from pg_roles where rolname = 'plan_guard')) then
+      failures := failures || 'plan_guard must own no relations'::text;
+    end if;
+    for r in
+      select distinct u.rolname from pg_auth_members m
+      join pg_roles g on g.oid = m.roleid join pg_roles u on u.oid = m.member
+      where g.rolname = 'plan_guard' and (m.inherit_option or m.set_option)
+        and not u.rolsuper and u.rolname <> current_user
+    loop
+      failures := failures || format('%s must not be a member of plan_guard', r.rolname);
+    end loop;
+    for r in
+      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end as grantee
+      from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+      where c.oid = to_regclass('private.plans') and a.grantee <> c.relowner
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'plan_guard')
+      union
+      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
+      from pg_attribute att, aclexplode(att.attacl) a
+      where att.attrelid = to_regclass('private.plans') and att.attacl is not null
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'plan_guard')
+    loop
+      failures := failures || format('%s must have no privilege on private.plans (WP-ADM-06)', r.grantee);
+    end loop;
+    -- Only plan_guard changes an organization's plan, status, trial and special limits.
+    for r in
+      select distinct att.attname::text as col, case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end as grantee
+      from pg_attribute att, aclexplode(att.attacl) a
+      where att.attrelid = 'platform.tenants'::regclass and att.attacl is not null
+        and att.attname in ('plan_id', 'status', 'trial_ends_at', 'max_people_override', 'max_storage_gb_override')
+        and a.privilege_type = 'UPDATE' and a.grantee <> (select relowner from pg_class where oid = 'platform.tenants'::regclass)
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'plan_guard')
+    loop
+      failures := failures || format('%s must not update platform.tenants.%s (WP-ADM-06)', r.grantee, r.col);
     end loop;
   end if;
 
@@ -1123,6 +1195,10 @@ begin
             -- tenant_id, status only — checked in the user_import_guard block), for user_import_guard alone.
             or (r.relname = 'files' and r.polname = 'files_user_import_guard_read' and r.polcmd = 'r'
                 and r.roles = array['user_import_guard'] and r.qual = 'true' and r.chk = '')
+            -- WP-ADM-06: the storage limit counts an organization's files (column privileges tenant_id, id,
+            -- status and the sizes only — checked in 10_catalog.sql), for plan_guard alone.
+            or (r.relname = 'files' and r.polname = 'files_plan_guard_read' and r.polcmd = 'r'
+                and r.roles = array['plan_guard'] and r.qual = 'true' and r.chk = '')
             or (r.relname = 'file_download_grants' and r.polname = 'file_download_grants_guard' and r.polcmd = '*'
                 and r.roles = array['file_guard'] and r.qual = 'true' and r.chk = 'true')
             or (r.relname = 'file_download_grants' and r.polname = 'file_download_grants_read' and r.polcmd = 'r'

@@ -17,6 +17,7 @@ import {
   type TenantPlanInput,
   type UserTx,
   type WithUserTx,
+  pgRefusalDetail,
 } from '@jadarat/platform-db';
 
 /**
@@ -61,6 +62,18 @@ export const TRIAL_DAYS = 30;
 export const PlatformConsoleErrors = defineErrorCodes({
   /** The organization has no pending Organization Admin invitation from the console (it joined already). */
   PLATFORM_NO_PENDING_ADMIN: { status: 409, messageKey: 'platform.errors.noPendingAdmin' },
+  /**
+   * The database refused a step although the caller passed the Super Admin check just before: not a visitor
+   * to hide the console from, but a fault to report — the message carries the technical reason
+   * (pgRefusalDetail: SQLSTATE, message, functions; no values) for the engineers. A deliberate exception to
+   * ADR 0011's «no SQL internals to the client»: no SQL text or values, and only a verified Super Admin —
+   * the platform's operator — ever gets it.
+   */
+  PLATFORM_DATABASE_REFUSED: {
+    status: 500,
+    messageKey: 'platform.errors.databaseRefused',
+    expose: true,
+  },
 });
 
 /** The answer to everyone who is not a Super Admin: the console does not exist. */
@@ -80,18 +93,32 @@ const FIELD_PATHS = {
   locale: 'locale',
 } as const;
 
-/** A console refusal as the action's answer; anything else is thrown (an internal error). */
+/**
+ * A refusal the database gave a caller who passed the Super Admin check (every caller of refusal()): its
+ * technical reason for the operator instead of NOT_FOUND, which would hide the fault (26 Oct 2026: «Create
+ * organization» answered «not found» in production only). A Super Admin removed between the check and the
+ * transaction sees this too, instead of NOT_FOUND: they were one a moment before, so it reveals nothing.
+ */
+function databaseRefused(error: unknown): Result<never, AppError> {
+  return err(
+    appError(PlatformConsoleErrors.PLATFORM_DATABASE_REFUSED, {
+      params: { detail: pgRefusalDetail(error) ?? 'unknown' },
+    }),
+  );
+}
+
+/** A console refusal as the action's answer (after the access check); anything else is thrown. */
 function refusal(error: unknown): Result<never, AppError> {
   // The new organization's plan (WP-ADM-06): a plan that no longer exists, or a refused trial.
   if (error instanceof PlanError) {
     return error.code === 'NOT_ALLOWED'
-      ? notFound()
+      ? databaseRefused(error)
       : err(fieldError(error.field === 'plan' ? 'planId' : 'form', 'INVALID'));
   }
   if (!(error instanceof PlatformConsoleError)) throw error;
   switch (error.code) {
     case 'NOT_PLATFORM_ADMIN':
-      return notFound();
+      return databaseRefused(error);
     case 'SLUG_TAKEN':
       return err(fieldError('slug', 'SLUG_TAKEN'));
     case 'PLATFORM_INVALID_INPUT':

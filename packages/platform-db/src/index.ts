@@ -119,7 +119,7 @@ export {
   saveBranding,
 } from './branding';
 /** SQLSTATE and constraint of a database error, for module services that map expected refusals. */
-export { pgError } from './pg-error';
+export { pgError, pgRefusalDetail } from './pg-error';
 export {
   type DownloadGrant,
   type DownloadGrantRequest,

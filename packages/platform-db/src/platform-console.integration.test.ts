@@ -21,6 +21,8 @@ import {
   platformAdminInvitationCode,
   reissuePlatformAdminCode,
 } from './platform-console';
+import { pgRefusalDetail } from './pg-error';
+import { savePlan, setTenantPlan } from './plans';
 import { createWithUserTx } from './with-user-tx';
 
 const ownerUrl = process.env.TEST_DATABASE_URL;
@@ -89,6 +91,20 @@ describe.skipIf(!configured)('platform console against PostgreSQL', () => {
     ]) {
       await expect(failureOf(call)).resolves.toMatchObject({ code: 'NOT_PLATFORM_ADMIN' });
     }
+    // The technical reason the console shows a Super Admin when the database refuses (pgRefusalDetail).
+    const refused = await failureOf(
+      withUserTx(claimsOf(stranger), (tx) =>
+        createPlatformTenant(tx, {
+          slug: `denied-${tag}`,
+          nameAr: 'منشأة',
+          adminEmail: 'a@denied.test',
+          locale: 'en',
+        }),
+      ),
+    );
+    expect(pgRefusalDetail(refused)).toMatch(
+      /^42501 the platform console needs a signed-in Super Admin @ private\.platform_admin_caller:\d+ < private\.platform_create_tenant:\d+$/,
+    );
   });
 
   it('create → link valid for that e-mail → the new account accepts → active Organization Admin', async () => {
@@ -178,5 +194,44 @@ describe.skipIf(!configured)('platform console against PostgreSQL', () => {
         ),
       ),
     ).resolves.toMatchObject({ code: 'PLATFORM_INVALID_INPUT', field: 'admin_email' });
+  });
+  it('creates an organization on a plan in one transaction, as the console does (WP-ADM-06)', async () => {
+    const claims = claimsOf(superAdmin);
+    const plan = await withUserTx(claims, (tx) =>
+      savePlan(tx, {
+        planId: null,
+        name: `Plan ${tag}`,
+        description: null,
+        maxPeople: 10,
+        maxStorageGb: 1,
+        features: [],
+        version: null,
+      }),
+    );
+    for (const trial of [false, true]) {
+      const created = await withUserTx(claims, async (tx) => {
+        const tenant = await createPlatformTenant(tx, {
+          slug: `planned-${trial ? 't' : 'a'}-${tag}`,
+          nameAr: 'منظمة بخطة',
+          nameEn: 'Planned',
+          adminEmail: `planned-${trial ? 't' : 'a'}-${tag}@example.test`,
+          adminFirstNameEn: 'Mona',
+          adminFamilyNameEn: 'Ahmed',
+          locale: 'en',
+        });
+        await setTenantPlan(tx, {
+          tenantId: tenant.tenantId,
+          planId: plan.planId,
+          status: trial ? 'trial' : 'active',
+          trialEndsAt: trial ? new Date(Date.now() + 30 * 86_400_000) : null,
+          maxPeopleOverride: null,
+          maxStorageGbOverride: null,
+        });
+        return tenant;
+      });
+      const [row] = await owner<{ plan_id: string; status: string }[]>`
+        select plan_id, status from platform.tenants where id = ${created.tenantId}`;
+      expect(row).toEqual({ plan_id: plan.planId, status: trial ? 'trial' : 'active' });
+    }
   });
 });

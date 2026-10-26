@@ -1,5 +1,5 @@
 import { appError, err, ok } from '@jadarat/platform-core';
-import { PlatformConsoleError } from '@jadarat/platform-db';
+import { PlanError, PlatformConsoleError } from '@jadarat/platform-db';
 import { describe, expect, it, vi } from 'vitest';
 import {
   type PlatformConsoleDeps,
@@ -111,10 +111,29 @@ describe('platform console: deny by default', () => {
       expect(deps.reissuePlatformAdminCode).not.toHaveBeenCalled();
     });
 
-    it(`${name}: the database's own refusal (42501) is a 404 too`, async () => {
-      const { deps } = setup({ refuse: new PlatformConsoleError('NOT_PLATFORM_ADMIN') });
+    it(`${name}: the database's own refusal (42501) after the access check is reported, with its reason`, async () => {
+      const cause = Object.assign(
+        new Error('new row violates row-level security policy for table "x"'),
+        {
+          code: '42501',
+          where:
+            'PL/pgSQL function private.platform_create_tenant(text,text) line 58 at SQL statement',
+        },
+      );
+      const { deps } = setup({ refuse: new PlatformConsoleError('NOT_PLATFORM_ADMIN', { cause }) });
       const result = await call(deps);
-      if (name !== 'access') expect(result).toEqual(notFound);
+      if (name !== 'access')
+        expect(result).toEqual({
+          ok: false,
+          error: expect.objectContaining({
+            code: 'PLATFORM_DATABASE_REFUSED',
+            expose: true,
+            params: {
+              detail:
+                '42501 new row violates row-level security policy for table "x" @ private.platform_create_tenant:58',
+            },
+          }),
+        });
     });
   }
 
@@ -213,6 +232,24 @@ describe('platform console: the Super Admin', () => {
     const plain = vi.fn(() => Promise.resolve());
     await createOrganizationFromConsole({ ...deps, setTenantPlan: plain }, INPUT);
     expect(plain).not.toHaveBeenCalled();
+  });
+
+  it('reports a refused plan step with its reason, not as «not found» (WP-ADM-06)', async () => {
+    const { deps } = setup();
+    const cause = Object.assign(new Error('permission denied for table plans'), { code: '42501' });
+    const setTenantPlan = vi.fn(() => Promise.reject(new PlanError('NOT_ALLOWED', { cause })));
+    expect(
+      await createOrganizationFromConsole(
+        { ...deps, setTenantPlan },
+        { ...INPUT, planId: '9b0e7c39-6d4c-4d36-9d0a-1f0d1d6c0f11' },
+      ),
+    ).toEqual({
+      ok: false,
+      error: expect.objectContaining({
+        code: 'PLATFORM_DATABASE_REFUSED',
+        params: { detail: '42501 permission denied for table plans' },
+      }),
+    });
   });
 
   it('maps the database refusals to the form', async () => {

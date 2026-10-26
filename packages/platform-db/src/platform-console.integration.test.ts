@@ -21,6 +21,7 @@ import {
   platformAdminInvitationCode,
   reissuePlatformAdminCode,
 } from './platform-console';
+import { pgRefusalDetail } from './pg-error';
 import { savePlan, setTenantPlan } from './plans';
 import { createWithUserTx } from './with-user-tx';
 
@@ -90,6 +91,20 @@ describe.skipIf(!configured)('platform console against PostgreSQL', () => {
     ]) {
       await expect(failureOf(call)).resolves.toMatchObject({ code: 'NOT_PLATFORM_ADMIN' });
     }
+    // The technical reason the console shows a Super Admin when the database refuses (pgRefusalDetail).
+    const refused = await failureOf(
+      withUserTx(claimsOf(stranger), (tx) =>
+        createPlatformTenant(tx, {
+          slug: `denied-${tag}`,
+          nameAr: 'منشأة',
+          adminEmail: 'a@denied.test',
+          locale: 'en',
+        }),
+      ),
+    );
+    expect(pgRefusalDetail(refused)).toMatch(
+      /^42501 the platform console needs a signed-in Super Admin @ private\.platform_admin_caller:\d+ < private\.platform_create_tenant:\d+$/,
+    );
   });
 
   it('create → link valid for that e-mail → the new account accepts → active Organization Admin', async () => {

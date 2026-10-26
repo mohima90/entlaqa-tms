@@ -111,10 +111,29 @@ describe('platform console: deny by default', () => {
       expect(deps.reissuePlatformAdminCode).not.toHaveBeenCalled();
     });
 
-    it(`${name}: the database's own refusal (42501) is a 404 too`, async () => {
-      const { deps } = setup({ refuse: new PlatformConsoleError('NOT_PLATFORM_ADMIN') });
+    it(`${name}: the database's own refusal (42501) after the access check is reported, with its reason`, async () => {
+      const cause = Object.assign(
+        new Error('new row violates row-level security policy for table "x"'),
+        {
+          code: '42501',
+          where:
+            'PL/pgSQL function private.platform_create_tenant(text,text) line 58 at SQL statement',
+        },
+      );
+      const { deps } = setup({ refuse: new PlatformConsoleError('NOT_PLATFORM_ADMIN', { cause }) });
       const result = await call(deps);
-      if (name !== 'access') expect(result).toEqual(notFound);
+      if (name !== 'access')
+        expect(result).toEqual({
+          ok: false,
+          error: expect.objectContaining({
+            code: 'PLATFORM_DATABASE_REFUSED',
+            expose: true,
+            params: {
+              detail:
+                '42501 new row violates row-level security policy for table "x" @ private.platform_create_tenant:58',
+            },
+          }),
+        });
     });
   }
 

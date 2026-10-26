@@ -2418,7 +2418,8 @@
       "needsNewCode": "The Super Admin who issued this invitation no longer has access, so its link no longer works. Issue a new code to send the Organization Admin a working one."
     },
     "errors": {
-      "noPendingAdmin": "The Organization Admin of this organization has already joined."
+      "noPendingAdmin": "The Organization Admin of this organization has already joined.",
+      "databaseRefused": "The database refused this step. Send this technical detail to the Jadarat team: {detail}"
     },
     "chooser": {
       "title": "Platform console",

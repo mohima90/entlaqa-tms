@@ -21,6 +21,7 @@ import {
   platformAdminInvitationCode,
   reissuePlatformAdminCode,
 } from './platform-console';
+import { savePlan, setTenantPlan } from './plans';
 import { createWithUserTx } from './with-user-tx';
 
 const ownerUrl = process.env.TEST_DATABASE_URL;
@@ -178,5 +179,44 @@ describe.skipIf(!configured)('platform console against PostgreSQL', () => {
         ),
       ),
     ).resolves.toMatchObject({ code: 'PLATFORM_INVALID_INPUT', field: 'admin_email' });
+  });
+  it('creates an organization on a plan in one transaction, as the console does (WP-ADM-06)', async () => {
+    const claims = claimsOf(superAdmin);
+    const plan = await withUserTx(claims, (tx) =>
+      savePlan(tx, {
+        planId: null,
+        name: `Plan ${tag}`,
+        description: null,
+        maxPeople: 10,
+        maxStorageGb: 1,
+        features: [],
+        version: null,
+      }),
+    );
+    for (const trial of [false, true]) {
+      const created = await withUserTx(claims, async (tx) => {
+        const tenant = await createPlatformTenant(tx, {
+          slug: `planned-${trial ? 't' : 'a'}-${tag}`,
+          nameAr: 'منظمة بخطة',
+          nameEn: 'Planned',
+          adminEmail: `planned-${trial ? 't' : 'a'}-${tag}@example.test`,
+          adminFirstNameEn: 'Mona',
+          adminFamilyNameEn: 'Ahmed',
+          locale: 'en',
+        });
+        await setTenantPlan(tx, {
+          tenantId: tenant.tenantId,
+          planId: plan.planId,
+          status: trial ? 'trial' : 'active',
+          trialEndsAt: trial ? new Date(Date.now() + 30 * 86_400_000) : null,
+          maxPeopleOverride: null,
+          maxStorageGbOverride: null,
+        });
+        return tenant;
+      });
+      const [row] = await owner<{ plan_id: string; status: string }[]>`
+        select plan_id, status from platform.tenants where id = ${created.tenantId}`;
+      expect(row).toEqual({ plan_id: plan.planId, status: trial ? 'trial' : 'active' });
+    }
   });
 });

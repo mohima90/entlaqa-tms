@@ -65,7 +65,9 @@ export const PlatformConsoleErrors = defineErrorCodes({
   /**
    * The database refused a step although the caller passed the Super Admin check just before: not a visitor
    * to hide the console from, but a fault to report — the message carries the technical reason
-   * (pgRefusalDetail: SQLSTATE, message, functions; no values) for the Jadarat team.
+   * (pgRefusalDetail: SQLSTATE, message, functions; no values) for the engineers. A deliberate exception to
+   * ADR 0011's «no SQL internals to the client»: no SQL text or values, and only a verified Super Admin —
+   * the platform's operator — ever gets it.
    */
   PLATFORM_DATABASE_REFUSED: {
     status: 500,
@@ -94,7 +96,8 @@ const FIELD_PATHS = {
 /**
  * A refusal the database gave a caller who passed the Super Admin check (every caller of refusal()): its
  * technical reason for the operator instead of NOT_FOUND, which would hide the fault (26 Oct 2026: «Create
- * organization» answered «not found» in production only).
+ * organization» answered «not found» in production only). A Super Admin removed between the check and the
+ * transaction sees this too, instead of NOT_FOUND: they were one a moment before, so it reveals nothing.
  */
 function databaseRefused(error: unknown): Result<never, AppError> {
   return err(

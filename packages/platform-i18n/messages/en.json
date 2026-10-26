@@ -2419,7 +2419,7 @@
     },
     "errors": {
       "noPendingAdmin": "The Organization Admin of this organization has already joined.",
-      "databaseRefused": "The database refused this step. Send this technical detail to the Jadarat team: {detail}"
+      "databaseRefused": "The database refused this step. Share this technical detail with the engineers: {detail}"
     },
     "chooser": {
       "title": "Platform console",

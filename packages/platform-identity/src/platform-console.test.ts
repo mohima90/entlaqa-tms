@@ -1,5 +1,5 @@
 import { appError, err, ok } from '@jadarat/platform-core';
-import { PlatformConsoleError } from '@jadarat/platform-db';
+import { PlanError, PlatformConsoleError } from '@jadarat/platform-db';
 import { describe, expect, it, vi } from 'vitest';
 import {
   type PlatformConsoleDeps,
@@ -232,6 +232,24 @@ describe('platform console: the Super Admin', () => {
     const plain = vi.fn(() => Promise.resolve());
     await createOrganizationFromConsole({ ...deps, setTenantPlan: plain }, INPUT);
     expect(plain).not.toHaveBeenCalled();
+  });
+
+  it('reports a refused plan step with its reason, not as «not found» (WP-ADM-06)', async () => {
+    const { deps } = setup();
+    const cause = Object.assign(new Error('permission denied for table plans'), { code: '42501' });
+    const setTenantPlan = vi.fn(() => Promise.reject(new PlanError('NOT_ALLOWED', { cause })));
+    expect(
+      await createOrganizationFromConsole(
+        { ...deps, setTenantPlan },
+        { ...INPUT, planId: '9b0e7c39-6d4c-4d36-9d0a-1f0d1d6c0f11' },
+      ),
+    ).toEqual({
+      ok: false,
+      error: expect.objectContaining({
+        code: 'PLATFORM_DATABASE_REFUSED',
+        params: { detail: '42501 permission denied for table plans' },
+      }),
+    });
   });
 
   it('maps the database refusals to the form', async () => {

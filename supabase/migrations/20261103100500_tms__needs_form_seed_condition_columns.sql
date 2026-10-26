@@ -10,6 +10,6 @@
 -- on a pooled connection) the subquery stays in the plan and its column privileges are checked: 42501
 -- «permission denied for table needs_form_fields», which the console showed as «not found» (production only).
 -- platform_admin_guard reads the two columns the guard reads; the rows stay its own read policy's
--- (needs_form_fields_platform_admin_guard_read). Test: supabase/tests/96_platform_admin_generic_plans_app_server.sql.
+-- (needs_form_fields_platform_admin_guard_read). Test: supabase/tests/96_platform_admin_generic_plans_owner.sql.
 
 grant select (condition_field_id, condition_value) on tms.needs_form_fields to platform_admin_guard;

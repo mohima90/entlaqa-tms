@@ -18,6 +18,14 @@
 
 ### In flight
 
+#### WP-FIX-02 Clean-up pass (role-play feedback, 27 Oct 2026)
+
+**Claimed by:** tech lead session (27 Oct 2026) · **Business flow:** not needed — the PO's decision «Both» (`test-feedback-2026-10-27.md`); the PO approves the word list and the screens before the build · **Depends on:** —
+
+| ID | Task | WP | Owner | Status | Notes / PR |
+|---|---|---|---|---|---|
+| T-M3-17 | **Clean-up pass** (role play, 27 Oct 2026): one word per thing (word list approved by the PO, applied EN + AR, «unit» → the level's own name); wider dialogs and panels, needed fields first; brand colours on every page for every role (stylesheet instead of the nonce'd inline style — bug); logo without the box; bigger 2FA QR; searchable country list; a new unit takes its parent's branch; Grades placement and the delivery-type list as the PO decides | WP-FIX-02 | Claude | 🔵 | FR-ADM-07, FR-ADM-05, FR-CAT-01, FR-IAM-11. One PR; no data changes; migration only if the delivery-type check changes (`202611031xxxxx`) |
+
 #### WP-FIX-01 Test feedback fixes 1–3
 
 **Claimed by:** tech lead session (17 Oct 2026) · **Business flow:** not needed — fixes approved by the PO (`test-feedback-2026-10-17.md` #1–3) · **Depends on:** —

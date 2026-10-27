@@ -7,6 +7,7 @@ import {
   DEFAULT_REMINDER_DAYS,
   type StoredFormStatus,
   canonicalAmount,
+  latestDeadline,
 } from './model';
 
 /**
@@ -72,6 +73,8 @@ export interface CycleSummaryRow {
   readonly periodStart: string;
   readonly periodEnd: string;
   readonly deadline: string;
+  /** The latest deadline of the cycle or any department's extension (WP-LD-01): decides Open/Closed. */
+  readonly latestDeadline: string;
   readonly status: CycleStatus;
   readonly departmentCount: number;
   readonly submittedCount: number;
@@ -83,6 +86,8 @@ export async function listCycles(tx: UserTx): Promise<CycleSummaryRow[]> {
   const rows = await tx.execute(sql`
     select c.id, c.name_ar, c.name_en, c.period_start_on, c.period_end_on, c.deadline_on, c.status,
            c.launched_at, c.created_at,
+           (select greatest(c.deadline_on, max(d.deadline_on)) from tms.plan_cycle_departments d
+            where d.tenant_id = c.tenant_id and d.cycle_id = c.id) as latest_deadline,
            (select count(*) from tms.plan_cycle_departments d where d.tenant_id = c.tenant_id and d.cycle_id = c.id)
              as department_count,
            (select count(*) from tms.plan_cycle_departments d
@@ -97,6 +102,7 @@ export async function listCycles(tx: UserTx): Promise<CycleSummaryRow[]> {
     periodStart: day(r.period_start_on),
     periodEnd: day(r.period_end_on),
     deadline: day(r.deadline_on),
+    latestDeadline: day(r.latest_deadline ?? r.deadline_on),
     status: r.status as CycleStatus,
     departmentCount: Number(r.department_count),
     submittedCount: Number(r.submitted_count),
@@ -112,6 +118,8 @@ export interface CycleRecord {
   readonly periodStart: string;
   readonly periodEnd: string;
   readonly deadline: string;
+  /** The latest deadline of the cycle or any department's extension (WP-LD-01). */
+  readonly latestDeadline: string;
   readonly instructionsAr: string | null;
   readonly instructionsEn: string | null;
   readonly needsFormId: string | null;
@@ -130,6 +138,8 @@ export interface CycleRecord {
     readonly departmentId: string;
     readonly budgetAmount: string | null;
     readonly status: StoredFormStatus;
+    /** The department's own extension (WP-LD-01), or null. */
+    readonly deadline: string | null;
   }[];
   readonly steps: readonly ApprovalStep[];
 }
@@ -143,7 +153,7 @@ export async function getCycle(tx: UserTx, id: string): Promise<CycleRecord | nu
   const scope = await tx.execute(sql`
     select department_id, branch_id from tms.plan_cycle_scope where cycle_id = ${id} order by created_at, id`);
   const departments = await tx.execute(sql`
-    select department_id, budget_amount::text as budget_amount, status
+    select department_id, budget_amount::text as budget_amount, status, deadline_on
     from tms.plan_cycle_departments where cycle_id = ${id} order by created_at, id`);
   const steps = await tx.execute(sql`
     select kind, name_ar, name_en, approver_person_id from tms.plan_cycle_steps
@@ -155,6 +165,10 @@ export async function getCycle(tx: UserTx, id: string): Promise<CycleRecord | nu
     periodStart: day(row.period_start_on),
     periodEnd: day(row.period_end_on),
     deadline: day(row.deadline_on),
+    latestDeadline: latestDeadline(
+      day(row.deadline_on),
+      departments.map((d: Row) => (d.deadline_on ? day(d.deadline_on) : null)),
+    ),
     instructionsAr: text(row.instructions_ar),
     instructionsEn: text(row.instructions_en),
     needsFormId: text(row.needs_form_id),
@@ -175,6 +189,7 @@ export async function getCycle(tx: UserTx, id: string): Promise<CycleRecord | nu
       departmentId: String(d.department_id),
       budgetAmount: normalizeAmount(text(d.budget_amount)),
       status: d.status as StoredFormStatus,
+      deadline: d.deadline_on ? day(d.deadline_on) : null,
     })),
     steps: steps.map((s: Row) => ({
       kind: s.kind === 'department_heads' ? 'department_heads' : 'person',
@@ -401,12 +416,18 @@ export async function updateReminders(
   return Number(row?.version);
 }
 
-/** Closes open cycles whose deadline has passed (allowed by the guard); returns their ids. */
+/**
+ * Closes open cycles whose every deadline has passed — the cycle's and any department's extension (WP-LD-01,
+ * Q3; the guard refuses it earlier); returns their ids.
+ */
 export async function closeDueCycles(tx: UserTx): Promise<string[]> {
   const rows = await tx.execute(sql`
-    update tms.plan_cycles set status = 'closed'
-    where status = 'open' and deadline_on < private.plan_cycle_today(tenant_id)
-    returning id`);
+    update tms.plan_cycles c set status = 'closed'
+    where c.status = 'open' and c.deadline_on < private.plan_cycle_today(c.tenant_id)
+      and not exists (select 1 from tms.plan_cycle_departments d
+                      where d.tenant_id = c.tenant_id and d.cycle_id = c.id
+                        and d.deadline_on >= private.plan_cycle_today(c.tenant_id))
+    returning c.id`);
   return rows.map((r: Row) => String(r.id));
 }
 
@@ -475,4 +496,450 @@ export async function saveSettings(
   await tx.execute(sql`delete from tms.planning_default_steps`);
   await insertSteps(tx, 'defaults', null, steps);
   return Number(row?.version);
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Department needs (WP-LD-01, T-M3-05; migration 20261105100100). Row-level security lets the department's
+// effective head (private.may_submit_plan_needs) and the cycle readers see the rows; only the head writes
+// needs, only the L&D Manager returns or extends; the guards enforce the state model.
+// ---------------------------------------------------------------------------------------------------
+
+const timestamp = (value: unknown): Date | null =>
+  value instanceof Date ? value : typeof value === 'string' ? new Date(value) : null;
+const uuids = (value: unknown): string[] => {
+  if (Array.isArray(value)) return value.map(String);
+  const raw = typeof value === 'string' ? value.replace(/[{}\s]/g, '') : '';
+  return raw ? raw.split(',') : [];
+};
+const jsonObject = (value: unknown): Record<string, unknown> => {
+  const parsed: unknown = typeof value === 'string' ? JSON.parse(value) : value;
+  return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : {};
+};
+
+export interface DepartmentRecord {
+  readonly cycleId: string;
+  readonly departmentId: string;
+  readonly budgetAmount: string | null;
+  readonly status: StoredFormStatus;
+  /** The department's own extension, or null. */
+  readonly deadline: string | null;
+  readonly submittedAt: Date | null;
+  readonly submittedBy: string | null;
+  readonly returnedAt: Date | null;
+  readonly returnedBy: string | null;
+  readonly returnNote: string | null;
+  /** Department-level answers `{ sectionId: [{ fieldId: answer }] }`. */
+  readonly answers: Record<string, unknown>;
+  readonly version: number;
+}
+
+const departmentRecord = (r: Row): DepartmentRecord => ({
+  cycleId: String(r.cycle_id),
+  departmentId: String(r.department_id),
+  budgetAmount: normalizeAmount(text(r.budget_amount)),
+  status: r.status as StoredFormStatus,
+  deadline: r.deadline_on ? day(r.deadline_on) : null,
+  submittedAt: timestamp(r.submitted_at),
+  submittedBy: text(r.submitted_by),
+  returnedAt: timestamp(r.returned_at),
+  returnedBy: text(r.returned_by),
+  returnNote: text(r.return_note),
+  answers: jsonObject(r.answers),
+  version: Number(r.version),
+});
+
+const DEPARTMENT_COLUMNS = sql`cycle_id, department_id, budget_amount::text as budget_amount, status, deadline_on,
+  submitted_at, submitted_by, returned_at, returned_by, return_note, answers, version`;
+
+/** One department of a cycle (null: unknown, or not visible to the caller). */
+export async function getDepartment(
+  tx: UserTx,
+  cycleId: string,
+  departmentId: string,
+): Promise<DepartmentRecord | null> {
+  const [row] = await tx.execute(sql`
+    select ${DEPARTMENT_COLUMNS} from tms.plan_cycle_departments
+    where cycle_id = ${cycleId}::uuid and department_id = ${departmentId}::uuid`);
+  return row ? departmentRecord(row) : null;
+}
+
+export interface NeedRecord {
+  readonly id: string;
+  readonly topic: string;
+  readonly courseId: string | null;
+  readonly peopleCount: number;
+  readonly estimatedCost: string | null;
+  readonly answers: Record<string, unknown>;
+  readonly personIds: readonly string[];
+  readonly version: number;
+  readonly updatedAt: Date;
+}
+
+const needRecord = (r: Row): NeedRecord => ({
+  id: String(r.id),
+  topic: String(r.topic),
+  courseId: text(r.course_id),
+  peopleCount: Number(r.people_count),
+  estimatedCost: normalizeAmount(text(r.estimated_cost)),
+  answers: jsonObject(r.answers),
+  personIds: uuids(r.person_ids),
+  version: Number(r.version),
+  updatedAt: timestamp(r.updated_at) ?? new Date(0),
+});
+
+const NEED_COLUMNS = sql`n.id, n.topic, n.course_id, n.people_count, n.estimated_cost::text as estimated_cost, n.answers,
+  n.version, n.updated_at,
+  coalesce((select array_agg(p.person_id order by p.created_at, p.person_id) from tms.plan_need_people p
+            where p.tenant_id = n.tenant_id and p.need_id = n.id), '{}'::uuid[]) as person_ids`;
+
+/** The needs of a department in a cycle, in entry order. */
+export async function listNeeds(
+  tx: UserTx,
+  cycleId: string,
+  departmentId: string,
+): Promise<NeedRecord[]> {
+  const rows = await tx.execute(sql`
+    select ${NEED_COLUMNS} from tms.plan_needs n
+    where n.cycle_id = ${cycleId}::uuid and n.department_id = ${departmentId}::uuid
+    order by n.sort_order, n.created_at, n.id`);
+  return rows.map((r: Row) => needRecord(r));
+}
+
+export async function getNeed(tx: UserTx, needId: string): Promise<NeedRecord | null> {
+  const [row] = await tx.execute(
+    sql`select ${NEED_COLUMNS} from tms.plan_needs n where n.id = ${needId}::uuid`,
+  );
+  return row ? needRecord(row) : null;
+}
+
+export interface NeedValues {
+  readonly topic: string;
+  readonly courseId: string | null;
+  readonly peopleCount: number;
+  readonly estimatedCost: string | null;
+  readonly answers: Record<string, unknown>;
+}
+
+/** Why the database refused a change of a department's needs. */
+export type NeedsRefusal = 'closed' | 'submitted' | 'limit' | 'not_allowed' | 'refused';
+
+export type NeedWriteOutcome =
+  | { readonly outcome: 'ok'; readonly id: string; readonly version: number }
+  | { readonly outcome: 'not_found' | 'conflict' }
+  | { readonly outcome: NeedsRefusal };
+
+/** The guards' refusals (JK005 closed / submitted, JK007 limits, JK001 / 42501 not allowed) as outcomes. */
+export function needsRefusalOf(error: unknown): NeedsRefusal | null {
+  const pg = dbError(error);
+  switch (pg?.code) {
+    case 'JK005':
+      return pg.message.includes('submitted') ? 'submitted' : 'closed';
+    case 'JK007':
+      return 'limit';
+    case '42501':
+      return 'not_allowed';
+    case 'JK001':
+    case 'JK004':
+    case 'JK006':
+    case '23514':
+    case '23503':
+      return 'refused';
+    default:
+      return null;
+  }
+}
+
+async function replaceNeedPeople(
+  tx: UserTx,
+  needId: string,
+  departmentId: string,
+  personIds: readonly string[],
+): Promise<void> {
+  await tx.execute(sql`delete from tms.plan_need_people where need_id = ${needId}::uuid`);
+  if (personIds.length === 0) return;
+  await tx.execute(sql`
+    insert into tms.plan_need_people (need_id, department_id, person_id)
+    select ${needId}::uuid, ${departmentId}::uuid, unnest(${`{${personIds.join(',')}}`}::uuid[])`);
+}
+
+/** A new need at the end of the department's list, with its named people. */
+export async function insertNeed(
+  tx: UserTx,
+  cycleId: string,
+  departmentId: string,
+  values: NeedValues,
+  personIds: readonly string[],
+): Promise<NeedWriteOutcome> {
+  try {
+    const [row] = await tx.execute(sql`
+      insert into tms.plan_needs (cycle_id, department_id, topic, course_id, people_count, estimated_cost, answers, sort_order)
+      values (${cycleId}::uuid, ${departmentId}::uuid, ${values.topic}, ${values.courseId}::uuid, ${values.peopleCount},
+              ${values.estimatedCost}::numeric, ${JSON.stringify(values.answers)}::jsonb,
+              coalesce((select max(sort_order) + 1 from tms.plan_needs
+                        where cycle_id = ${cycleId}::uuid and department_id = ${departmentId}::uuid), 0))
+      returning id, version`);
+    if (!row) return { outcome: 'not_allowed' };
+    await replaceNeedPeople(tx, String(row.id), departmentId, personIds);
+    return { outcome: 'ok', id: String(row.id), version: Number(row.version) };
+  } catch (error) {
+    const refusal = needsRefusalOf(error);
+    if (refusal) return { outcome: refusal };
+    throw error;
+  }
+}
+
+/** Changes a need at `version` (optimistic concurrency) and replaces its named people. */
+export async function updateNeed(
+  tx: UserTx,
+  needId: string,
+  departmentId: string,
+  version: number,
+  values: NeedValues,
+  personIds: readonly string[],
+): Promise<NeedWriteOutcome> {
+  try {
+    const [row] = await tx.execute(sql`
+      update tms.plan_needs set topic = ${values.topic}, course_id = ${values.courseId}::uuid,
+             people_count = ${values.peopleCount}, estimated_cost = ${values.estimatedCost}::numeric,
+             answers = ${JSON.stringify(values.answers)}::jsonb
+      where id = ${needId}::uuid and department_id = ${departmentId}::uuid and version = ${version}
+      returning id, version`);
+    if (!row) {
+      const [exists] = await tx.execute(
+        sql`select 1 from tms.plan_needs where id = ${needId}::uuid and department_id = ${departmentId}::uuid`,
+      );
+      return { outcome: exists ? 'conflict' : 'not_found' };
+    }
+    await replaceNeedPeople(tx, needId, departmentId, personIds);
+    return { outcome: 'ok', id: needId, version: Number(row.version) };
+  } catch (error) {
+    const refusal = needsRefusalOf(error);
+    if (refusal) return { outcome: refusal };
+    throw error;
+  }
+}
+
+export async function deleteNeed(
+  tx: UserTx,
+  needId: string,
+  departmentId: string,
+  version: number,
+): Promise<NeedWriteOutcome> {
+  try {
+    const [row] = await tx.execute(sql`
+      delete from tms.plan_needs where id = ${needId}::uuid and department_id = ${departmentId}::uuid and version = ${version}
+      returning id`);
+    if (!row) {
+      const [exists] = await tx.execute(
+        sql`select 1 from tms.plan_needs where id = ${needId}::uuid and department_id = ${departmentId}::uuid`,
+      );
+      return { outcome: exists ? 'conflict' : 'not_found' };
+    }
+    return { outcome: 'ok', id: needId, version };
+  } catch (error) {
+    const refusal = needsRefusalOf(error);
+    if (refusal) return { outcome: refusal };
+    throw error;
+  }
+}
+
+export type DepartmentOutcome =
+  | { readonly outcome: 'ok'; readonly version: number }
+  | { readonly outcome: 'not_found' | 'conflict' | 'closed' | 'submitted' | 'empty' | 'refused' };
+
+function departmentRefusal(error: unknown): DepartmentOutcome | null {
+  const pg = dbError(error);
+  switch (pg?.code) {
+    case 'JK005':
+      return { outcome: pg.message.includes('submitted') ? 'submitted' : 'closed' };
+    case 'JK006':
+      return { outcome: 'empty' };
+    case 'JK001':
+    case 'JK004':
+    case '42501':
+    case '23514':
+      return { outcome: 'refused' };
+    default:
+      return null;
+  }
+}
+
+async function departmentUpdate(
+  tx: UserTx,
+  cycleId: string,
+  departmentId: string,
+  version: number,
+  assignment: SQL,
+): Promise<DepartmentOutcome> {
+  try {
+    const [row] = await tx.execute(sql`
+      update tms.plan_cycle_departments set ${assignment}
+      where cycle_id = ${cycleId}::uuid and department_id = ${departmentId}::uuid and version = ${version}
+      returning version`);
+    if (!row) {
+      const current = await getDepartment(tx, cycleId, departmentId);
+      return { outcome: current ? 'conflict' : 'not_found' };
+    }
+    return { outcome: 'ok', version: Number(row.version) };
+  } catch (error) {
+    const refusal = departmentRefusal(error);
+    if (refusal) return refusal;
+    throw error;
+  }
+}
+
+/** Submit (→ submitted), recall (submitted → draft) or return (submitted → returned, with the note). */
+export async function setDepartmentStatus(
+  tx: UserTx,
+  cycleId: string,
+  departmentId: string,
+  version: number,
+  status: 'submitted' | 'draft' | 'returned',
+  note: string | null = null,
+): Promise<DepartmentOutcome> {
+  return departmentUpdate(
+    tx,
+    cycleId,
+    departmentId,
+    version,
+    status === 'returned'
+      ? sql`status = ${status}, return_note = ${note}`
+      : sql`status = ${status}`,
+  );
+}
+
+/** Department-level answers of the cycle's form (the head; the guard moves Not started to Draft). */
+export async function updateDepartmentAnswers(
+  tx: UserTx,
+  cycleId: string,
+  departmentId: string,
+  answers: Record<string, unknown>,
+): Promise<DepartmentOutcome> {
+  try {
+    const [row] = await tx.execute(sql`
+      update tms.plan_cycle_departments set answers = ${JSON.stringify(answers)}::jsonb
+      where cycle_id = ${cycleId}::uuid and department_id = ${departmentId}::uuid
+      returning version`);
+    return row ? { outcome: 'ok', version: Number(row.version) } : { outcome: 'not_found' };
+  } catch (error) {
+    const refusal = departmentRefusal(error);
+    if (refusal) return refusal;
+    throw error;
+  }
+}
+
+/** A later deadline for one department (the L&D Manager; the guard checks the day, JK004). */
+export async function extendDepartmentDeadline(
+  tx: UserTx,
+  cycleId: string,
+  departmentId: string,
+  version: number,
+  deadline: string,
+): Promise<DepartmentOutcome> {
+  return departmentUpdate(tx, cycleId, departmentId, version, sql`deadline_on = ${deadline}::date`);
+}
+
+export interface DepartmentProgressRow {
+  readonly departmentId: string;
+  readonly status: StoredFormStatus;
+  readonly deadline: string | null;
+  readonly submittedAt: Date | null;
+  readonly needsCount: number;
+  readonly seats: number;
+  readonly named: number;
+  readonly cost: string | null;
+  /** The last change of a need, else the submission; null when nothing happened yet. */
+  readonly lastActivityAt: Date | null;
+  readonly version: number;
+}
+
+/** The progress figures of every department of a cycle (design screen 5). */
+export async function listDepartmentProgress(
+  tx: UserTx,
+  cycleId: string,
+): Promise<DepartmentProgressRow[]> {
+  const rows = await tx.execute(sql`
+    select d.department_id, d.status, d.deadline_on, d.submitted_at, d.version,
+           coalesce(a.needs_count, 0) as needs_count, coalesce(a.seats, 0) as seats, coalesce(a.named, 0) as named,
+           a.cost::text as cost, greatest(a.last_change, d.submitted_at, d.returned_at) as last_activity_at
+    from tms.plan_cycle_departments d
+    left join lateral (
+      select count(*) as needs_count, sum(n.people_count) as seats,
+             sum(least(n.people_count, (select count(*) from tms.plan_need_people p
+                                        where p.tenant_id = n.tenant_id and p.need_id = n.id))) as named,
+             sum(n.estimated_cost) as cost, max(n.updated_at) as last_change
+      from tms.plan_needs n
+      where n.tenant_id = d.tenant_id and n.cycle_id = d.cycle_id and n.department_id = d.department_id) a on true
+    where d.cycle_id = ${cycleId}::uuid`);
+  return rows.map((r: Row) => ({
+    departmentId: String(r.department_id),
+    status: r.status as StoredFormStatus,
+    deadline: r.deadline_on ? day(r.deadline_on) : null,
+    submittedAt: timestamp(r.submitted_at),
+    needsCount: Number(r.needs_count),
+    seats: Number(r.seats),
+    named: Number(r.named),
+    cost: normalizeAmount(text(r.cost)),
+    lastActivityAt: timestamp(r.last_activity_at),
+    version: Number(r.version),
+  }));
+}
+
+export interface MyDepartmentRow {
+  readonly cycleId: string;
+  readonly cycleNameAr: string;
+  readonly cycleNameEn: string;
+  readonly cycleDeadline: string;
+  readonly periodStart: string;
+  readonly periodEnd: string;
+  readonly currency: string;
+  readonly departmentId: string;
+  readonly status: StoredFormStatus;
+  readonly deadline: string | null;
+  readonly budgetAmount: string | null;
+  readonly needsCount: number;
+  readonly seats: number;
+  readonly cost: string | null;
+  readonly returnNote: string | null;
+}
+
+/**
+ * The departments whose needs the signed-in head enters in the OPEN cycle (the database's
+ * private.may_submit_plan_needs — the effective head, Department Head role): the Home task card and the
+ * «My team's needs» list.
+ */
+export async function listMyDepartments(tx: UserTx): Promise<MyDepartmentRow[]> {
+  const rows = await tx.execute(sql`
+    select c.id as cycle_id, c.name_ar, c.name_en, c.deadline_on as cycle_deadline, c.period_start_on, c.period_end_on,
+           c.currency, d.department_id, d.status, d.deadline_on, d.budget_amount::text as budget_amount, d.return_note,
+           (select count(*) from tms.plan_needs n where n.tenant_id = d.tenant_id and n.cycle_id = d.cycle_id
+             and n.department_id = d.department_id) as needs_count,
+           (select coalesce(sum(n.people_count), 0) from tms.plan_needs n where n.tenant_id = d.tenant_id
+             and n.cycle_id = d.cycle_id and n.department_id = d.department_id) as seats,
+           (select sum(n.estimated_cost) from tms.plan_needs n where n.tenant_id = d.tenant_id
+             and n.cycle_id = d.cycle_id and n.department_id = d.department_id)::text as cost
+    from tms.plan_cycle_departments d
+    join tms.plan_cycles c on c.tenant_id = d.tenant_id and c.id = d.cycle_id
+    where c.status = 'open' and private.may_submit_plan_needs(d.tenant_id, d.department_id)
+    order by c.deadline_on, c.id, d.created_at, d.id
+    limit 100`);
+  return rows.map((r: Row) => ({
+    cycleId: String(r.cycle_id),
+    cycleNameAr: String(r.name_ar),
+    cycleNameEn: String(r.name_en),
+    cycleDeadline: day(r.cycle_deadline),
+    periodStart: day(r.period_start_on),
+    periodEnd: day(r.period_end_on),
+    currency: String(r.currency),
+    departmentId: String(r.department_id),
+    status: r.status as StoredFormStatus,
+    deadline: r.deadline_on ? day(r.deadline_on) : null,
+    budgetAmount: normalizeAmount(text(r.budget_amount)),
+    needsCount: Number(r.needs_count),
+    seats: Number(r.seats),
+    cost: normalizeAmount(text(r.cost)),
+    returnNote: text(r.return_note),
+  }));
 }

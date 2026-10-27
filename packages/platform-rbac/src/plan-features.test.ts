@@ -4,6 +4,7 @@ import { grantsWithinPlan, permissionFeature } from './plan-features';
 describe('plan features (WP-ADM-06): the database mapping, on the app side', () => {
   it('maps the training permissions to their feature; the platform ones are always included', () => {
     expect(permissionFeature('tms.plan_cycle.manage')).toBe('planning');
+    expect(permissionFeature('tms.plan_needs.submit')).toBe('planning');
     expect(permissionFeature('tms.needs_form.read')).toBe('needs_forms');
     expect(permissionFeature('tms.course.archive')).toBe('courses');
     expect(permissionFeature('tms.course_cost.read')).toBe('courses');

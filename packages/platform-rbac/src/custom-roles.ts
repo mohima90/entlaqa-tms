@@ -163,6 +163,9 @@ export const CUSTOM_ROLE_PERMISSIONS: readonly CustomRolePermission[] = [
  */
 export const STANDARD_ONLY_PERMISSIONS: readonly Omit<CustomRolePermission, 'use'>[] = [
   { permission: p['platform.org.manage'], group: 'organization' },
+  // Needs entry (WP-LD-01) belongs to the department's effective head — a fact of the structure, not a role's
+  // data scope — so no custom role can carry it (the database checks the head either way).
+  { permission: tmsRolePermissions['tms.plan_needs.submit'], group: 'planning' },
 ];
 
 const PERMISSIONS_BY_CODE: ReadonlyMap<string, PermissionDefinition> = new Map(

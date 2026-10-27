@@ -11,7 +11,10 @@ export type PlanFeatureCode =
   'planning' | 'needs_forms' | 'courses' | 'bulk_import' | 'branding' | 'email_integration';
 
 export function permissionFeature(permission: string): PlanFeatureCode | null {
-  if (permission.startsWith('tms.plan_cycle.')) return 'planning';
+  // Needs entry (WP-LD-01) belongs to planning: no planning in the plan, no needs to enter.
+  if (permission.startsWith('tms.plan_cycle.') || permission.startsWith('tms.plan_needs.')) {
+    return 'planning';
+  }
   if (permission.startsWith('tms.needs_form.')) return 'needs_forms';
   if (permission.startsWith('tms.course.') || permission.startsWith('tms.course_cost.')) {
     return 'courses';

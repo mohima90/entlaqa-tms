@@ -44,6 +44,7 @@ const CATALOGUE_MIGRATIONS = [
   '_platform__add_needs_form_permissions.sql',
   '_platform__who_can_give_what.sql',
   '_platform__add_person_hr_permissions.sql',
+  '_platform__add_plan_needs_permission.sql',
 ];
 
 /** The one rewrite of the catalogue the parsers understand: a permission's custom_role_use. */
@@ -182,6 +183,7 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
     expect(Object.keys(tmsRolePermissions)).toEqual([
       'tms.needs_form.read',
       'tms.needs_form.manage',
+      'tms.plan_needs.submit',
     ]);
     // The Organization Admin builds roles with permissions it does not hold (it holds no training one).
     expect(customRolePermission('tms.needs_form.read')).toMatchObject({
@@ -196,6 +198,8 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
       expect(permissionMakesPrivileged(code), code).toBe(false);
     }
     expect(customRoleIsPrivileged(['tms.needs_form.manage'])).toBe(false);
+    // Needs entry (WP-LD-01) is the effective head's by the structure: standard roles only, no custom use.
+    expect(customRolePermission('tms.plan_needs.submit')).toBeUndefined();
   });
 
   it('keeps the admin-only permissions out of custom roles (BR-IAM-4; PO, 17 Oct 2026)', () => {
@@ -205,6 +209,7 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
     expect(customRolePermission('platform.org.manage')).toBeUndefined();
     expect(STANDARD_ONLY_PERMISSIONS.map((e) => e.permission.code)).toEqual([
       'platform.org.manage',
+      'tms.plan_needs.submit',
     ]);
     // …which still makes a role privileged (a role copied from the HR Manager, a platform operation).
     expect(permissionMakesPrivileged('platform.org.manage')).toBe(true);
@@ -214,7 +219,8 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
         3 +
         Object.keys(coursePermissions).length +
         Object.keys(tmsPlanningPermissions).length +
-        Object.keys(tmsRolePermissions).length,
+        Object.keys(tmsRolePermissions).length -
+        1, // tms.plan_needs.submit: standard roles only (above)
     );
     expect(new Set(CUSTOM_ROLE_PERMISSIONS.map((e) => e.permission.code)).size).toBe(
       CUSTOM_ROLE_PERMISSIONS.length,

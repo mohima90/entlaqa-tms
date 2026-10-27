@@ -45,6 +45,7 @@ const repo = vi.hoisted(() => ({
   replaceSteps: vi.fn(),
   updateReminders: vi.fn(),
   closeDueCycles: vi.fn(),
+  listDepartmentProgress: vi.fn(),
   launch: vi.fn(),
   extendDeadline: vi.fn(),
   deleteDraft: vi.fn(),
@@ -151,6 +152,7 @@ const record = (over: Record<string, unknown> = {}) => ({
   periodStart: '2027-01-01',
   periodEnd: '2027-12-31',
   deadline: '2026-11-30',
+  latestDeadline: '2026-11-30',
   instructionsAr: null,
   instructionsEn: 'Old words',
   needsFormId: FORM,
@@ -163,8 +165,8 @@ const record = (over: Record<string, unknown> = {}) => ({
   version: 3,
   scope: { departmentIds: [SALES], branchIds: [] },
   departments: [
-    { departmentId: SALES, budgetAmount: '50000', status: 'not_started' },
-    { departmentId: EAST, budgetAmount: null, status: 'not_started' },
+    { departmentId: SALES, budgetAmount: '50000', status: 'not_started', deadline: null },
+    { departmentId: EAST, budgetAmount: null, status: 'not_started', deadline: null },
   ],
   steps: chain,
   ...over,
@@ -181,6 +183,7 @@ beforeEach(() => {
   repo.openCycle.mockResolvedValue(null);
   repo.touchCycle.mockResolvedValue({ outcome: 'ok', version: 4 });
   repo.closeDueCycles.mockResolvedValue([]);
+  repo.listDepartmentProgress.mockResolvedValue([]);
   db.listOrgStructure.mockResolvedValue(structure);
   db.listStructureLevelLabels.mockResolvedValue(LEVELS);
   db.getMemberOptionsByIds.mockResolvedValue(members);
@@ -276,6 +279,7 @@ describe('L&D Manager: list, new cycle, cycle view', () => {
       periodStart: '2027-01-01',
       periodEnd: '2027-12-31',
       deadline: '2026-10-01',
+      latestDeadline: '2026-10-01',
       status: 'open',
       departmentCount: 4,
       submittedCount: 0,
@@ -328,7 +332,9 @@ describe('L&D Manager: list, new cycle, cycle view', () => {
   });
 
   it('shows the progress of an open cycle; Late after the deadline; not-ready problems of a draft', async () => {
-    repo.getCycle.mockResolvedValue(record({ status: 'open', deadline: '2026-10-10' }));
+    repo.getCycle.mockResolvedValue(
+      record({ status: 'open', deadline: '2026-10-10', latestDeadline: '2026-10-10' }),
+    );
     const { query } = runtime('training_manager');
     const open = await query(defs.planCycleQueryDefinition())({ id: CYCLE });
     expect(open.ok && open.value.status).toBe('closed');
@@ -668,7 +674,9 @@ describe('L&D Manager: launch, extend, delete, settings', () => {
       }),
     ]);
     // C-7: an open cycle whose deadline has passed (shown as Closed) is extended, to today or later.
-    repo.getCycle.mockResolvedValue(record({ status: 'open', deadline: '2026-10-10' }));
+    repo.getCycle.mockResolvedValue(
+      record({ status: 'open', deadline: '2026-10-10', latestDeadline: '2026-10-10' }),
+    );
     const past = await action(defs.extendPlanCycleDeadlineActionDefinition())({
       id: CYCLE,
       version: 3,

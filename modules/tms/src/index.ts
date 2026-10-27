@@ -1,6 +1,7 @@
 export { tmsPermissions } from './permissions';
 export * from './planning/model';
 export * from './planning/definitions';
+export * from './planning/needs-definitions';
 export { SessionDraftInput, type SessionDraft, buildSessionDraft } from './services/session-draft';
 export * from './courses/model';
 

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { PLAN_LIMITS, STEP_KINDS, budgetAmountText, isCalendarDay } from './rules';
+import { NEEDS_LIMITS, PLAN_LIMITS, STEP_KINDS, budgetAmountText, isCalendarDay } from './rules';
 
 export * from './rules';
 
@@ -128,3 +128,53 @@ export const SaveSettingsInput = z.strictObject({ reminderDays: ReminderDays, st
 export type SaveSettingsInput = z.output<typeof SaveSettingsInput>;
 
 export const CyclesListInput = z.strictObject({});
+
+// ---------------------------------------------------------------------------------------------------
+// Department needs (WP-LD-01, T-M3-05)
+// ---------------------------------------------------------------------------------------------------
+
+export const DepartmentRef = z.strictObject({ cycleId: Id, departmentId: Id });
+export type DepartmentRef = z.output<typeof DepartmentRef>;
+export const DepartmentVersionRef = DepartmentRef.extend({ version: Version });
+export type DepartmentVersionRef = z.output<typeof DepartmentVersionRef>;
+
+/** The needs section's other answers: `{ fieldId: answer }` (validated against the cycle's form). */
+const Answers = z.record(z.string().max(80), z.unknown());
+
+const needFields = {
+  topic: name(NEEDS_LIMITS.topicMax),
+  /** A course of the library the topic was taken from (null: free text). */
+  courseId: Id.nullable(),
+  /** Seats (Q1): how many people need it. */
+  peopleCount: z.int().min(1).max(NEEDS_LIMITS.peopleMax),
+  /** Candidates named from the team (optional; never more than the seats). */
+  personIds: z.array(Id).max(NEEDS_LIMITS.maxNamed),
+  /** Estimated cost in the cycle's currency ('' = not estimated). */
+  estimatedCost: BudgetAmount,
+  answers: Answers,
+};
+
+export const AddNeedInput = DepartmentRef.extend(needFields);
+export type AddNeedInput = z.output<typeof AddNeedInput>;
+export const UpdateNeedInput = AddNeedInput.extend({ needId: Id, version: Version });
+export type UpdateNeedInput = z.output<typeof UpdateNeedInput>;
+export const NeedRef = DepartmentRef.extend({ needId: Id, version: Version });
+export type NeedRef = z.output<typeof NeedRef>;
+
+/** Department-level answers: the cycle form's sections other than the needs section. */
+export const SaveDepartmentAnswersInput = DepartmentRef.extend({
+  answers: z.record(z.string().max(80), z.unknown()),
+});
+export type SaveDepartmentAnswersInput = z.output<typeof SaveDepartmentAnswersInput>;
+
+/** «Return for changes» (business flow D14): the note tells the head what to change. */
+export const ReturnNeedsInput = DepartmentVersionRef.extend({
+  note: name(NEEDS_LIMITS.returnNoteMax),
+});
+export type ReturnNeedsInput = z.output<typeof ReturnNeedsInput>;
+
+/** An extension for one department (Q3): a later day within the planning period. */
+export const ExtendDepartmentDeadlineInput = DepartmentVersionRef.extend({ deadline: CalendarDay });
+export type ExtendDepartmentDeadlineInput = z.output<typeof ExtendDepartmentDeadlineInput>;
+
+export const MyNeedsInput = z.strictObject({});

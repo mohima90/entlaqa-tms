@@ -196,6 +196,8 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       // The library and its estimated costs (they choose courses and see their needs' cost, EP-PLN).
       { permission: c['tms.course.read'], scope: 'tenant' },
       { permission: c['tms.course_cost.read'], scope: 'tenant' },
+      // Enters the needs of the departments they head (WP-LD-01; business flow EP-PLN C6–8).
+      { permission: tms['tms.plan_needs.submit'], scope: 'headed_departments' },
     ],
   },
   {

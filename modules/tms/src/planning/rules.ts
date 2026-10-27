@@ -400,3 +400,126 @@ export function budgetAmountText(value: string): string | null | undefined {
   if (plain === '') return null;
   return /^\d{1,12}(\.\d{1,3})?$/.test(plain) ? plain : undefined;
 }
+
+// ---------------------------------------------------------------------------------------------------
+// Department needs (WP-LD-01, T-M3-05; FR-PLN-03, FR-MGR-05 — PO decisions Q1–Q3, 27 Oct 2026)
+// ---------------------------------------------------------------------------------------------------
+
+/** Limits of a department's needs; the database repeats them (migration 20261105100100). */
+export const NEEDS_LIMITS = {
+  topicMax: 500,
+  peopleMax: 100_000,
+  /** Needs per department and cycle. */
+  maxNeeds: 200,
+  /** Named people per need. */
+  maxNamed: 500,
+  returnNoteMax: 500,
+  /** Estimated cost: up to 12 digits before the decimal point (as the envelope). */
+  costMax: 999_999_999_999,
+} as const;
+
+/** The later of two calendar days (null: none). */
+function laterDay(a: string, b: string | null): string {
+  return b !== null && b > a ? b : a;
+}
+
+/** A department's effective deadline: the cycle's, or its own extension when later (business flow §6, Q3). */
+export function departmentDeadline(cycleDeadline: string, ownDeadline: string | null): string {
+  return laterDay(cycleDeadline, ownDeadline);
+}
+
+/**
+ * The latest deadline of a cycle — its own or any department's extension. An open cycle stays Open (and is
+ * not closed) until it has passed; `effectiveCycleStatus` takes it.
+ */
+export function latestDeadline(
+  cycleDeadline: string,
+  departmentDeadlines: readonly (string | null)[],
+): string {
+  return departmentDeadlines.reduce<string>((latest, d) => laterDay(latest, d), cycleDeadline);
+}
+
+/** May a department's head still enter and change needs? The cycle is open and its effective deadline not passed. */
+export function entryOpen(cycleStatus: CycleStatus, deadline: string, today: string): boolean {
+  return cycleStatus === 'open' && today <= deadline;
+}
+
+/** The stored status a head may move a department to, from its current one (the database guard agrees). */
+export function canSubmitNeeds(status: StoredFormStatus, needsCount: number): boolean {
+  return status !== 'submitted' && needsCount > 0;
+}
+
+export function canRecallNeeds(status: StoredFormStatus): boolean {
+  return status === 'submitted';
+}
+
+export interface NeedLine {
+  readonly peopleCount: number;
+  readonly namedCount: number;
+  /** Canonical amount text, or null when not estimated. */
+  readonly estimatedCost: string | null;
+}
+
+export interface NeedsTotals {
+  readonly needs: number;
+  /** Seats: the sum of «how many people» (Q1: the plan's unit). */
+  readonly seats: number;
+  readonly named: number;
+  readonly unnamed: number;
+  /** The sum of the estimated costs (needs without one count as nothing); null when none has one. */
+  readonly cost: string | null;
+  /** How many needs carry an estimated cost. */
+  readonly costed: number;
+}
+
+/** The figures of the needs page and the submit summary (design screens 2 and 4). */
+export function needsTotals(needs: readonly NeedLine[]): NeedsTotals {
+  let seats = 0;
+  let named = 0;
+  let cost = 0;
+  let costed = 0;
+  for (const need of needs) {
+    seats += need.peopleCount;
+    named += Math.min(need.namedCount, need.peopleCount);
+    if (need.estimatedCost !== null) {
+      cost += Number(need.estimatedCost);
+      costed += 1;
+    }
+  }
+  return {
+    needs: needs.length,
+    seats,
+    named,
+    unnamed: seats - named,
+    cost: costed > 0 ? amountText(cost) : null,
+    costed,
+  };
+}
+
+/** A number as a canonical amount text (up to 3 decimals, no trailing zeros). */
+export function amountText(value: number): string {
+  return canonicalAmount(value.toFixed(3)) ?? '0';
+}
+
+export type EnvelopeState =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'within'; readonly left: string }
+  | { readonly kind: 'over'; readonly overBy: string };
+
+/**
+ * The envelope line of the needs page (Q2: shown, never a block): nothing without an envelope; otherwise
+ * what is left, or by how much the estimates exceed it.
+ */
+export function envelopeState(cost: string | null, envelope: string | null): EnvelopeState {
+  if (envelope === null) return { kind: 'none' };
+  const spent = cost === null ? 0 : Number(cost);
+  const limit = Number(envelope);
+  return spent > limit
+    ? { kind: 'over', overBy: amountText(spent - limit) }
+    : { kind: 'within', left: amountText(limit - spent) };
+}
+
+/** Days from today to a deadline (negative once passed). */
+export function daysUntil(today: string, deadline: string): number {
+  return daysBetween(today, deadline);
+}

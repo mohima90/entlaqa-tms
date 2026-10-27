@@ -267,3 +267,168 @@ describe('writes', () => {
     expect(repo.dbError('x')).toBeNull();
   });
 });
+
+describe('department needs (WP-LD-01)', () => {
+  it('maps a department row, its needs with their named people, and the head’s tasks', async () => {
+    const dept = fakeTx([
+      {
+        cycle_id: ID,
+        department_id: 'd1',
+        budget_amount: '50000.0000',
+        status: 'returned',
+        deadline_on: '2026-12-05',
+        submitted_at: null,
+        submitted_by: null,
+        returned_at: '2026-10-26T09:00:00Z',
+        returned_by: 'p9',
+        return_note: 'More detail',
+        answers: '{"s1":[{"f1":"x"}]}',
+        version: 3,
+      },
+    ]);
+    expect(await repo.getDepartment(dept.tx, ID, 'd1')).toMatchObject({
+      budgetAmount: '50000',
+      status: 'returned',
+      deadline: '2026-12-05',
+      returnNote: 'More detail',
+      answers: { s1: [{ f1: 'x' }] },
+      version: 3,
+    });
+    expect(await repo.getDepartment(fakeTx([]).tx, ID, 'd1')).toBeNull();
+    const needs = fakeTx([
+      {
+        id: 'n1',
+        topic: 'Excel',
+        course_id: null,
+        people_count: '5',
+        estimated_cost: '1200.5000',
+        answers: {},
+        version: 1,
+        updated_at: '2026-10-25T10:00:00Z',
+        person_ids: '{p1,p2}',
+      },
+    ]);
+    const [need] = await repo.listNeeds(needs.tx, ID, 'd1');
+    expect(need).toMatchObject({
+      id: 'n1',
+      peopleCount: 5,
+      estimatedCost: '1200.5',
+      personIds: ['p1', 'p2'],
+    });
+    expect(needs.executed[0]?.params).toEqual([ID, 'd1']);
+    const mine = fakeTx([
+      {
+        cycle_id: ID,
+        name_ar: 'خطة',
+        name_en: 'Plan',
+        cycle_deadline: '2026-11-30',
+        period_start_on: '2027-01-01',
+        period_end_on: '2027-12-31',
+        currency: 'SAR',
+        department_id: 'd1',
+        status: 'draft',
+        deadline_on: null,
+        budget_amount: null,
+        return_note: null,
+        needs_count: '2',
+        seats: '8',
+        cost: null,
+      },
+    ]);
+    expect(await repo.listMyDepartments(mine.tx)).toEqual([
+      expect.objectContaining({
+        cycleId: ID,
+        departmentId: 'd1',
+        needsCount: 2,
+        seats: 8,
+        cost: null,
+      }),
+    ]);
+  });
+
+  it('writes a need with its people and turns the guards’ refusals into outcomes', async () => {
+    const values = {
+      topic: 'Excel',
+      courseId: null,
+      peopleCount: 5,
+      estimatedCost: null,
+      answers: {},
+    };
+    const inserted = fakeTx([{ id: 'n1', version: 1 }], [], []);
+    expect(await repo.insertNeed(inserted.tx, ID, 'd1', values, ['p1'])).toEqual({
+      outcome: 'ok',
+      id: 'n1',
+      version: 1,
+    });
+    // insert, delete the names, insert the names
+    expect(inserted.executed).toHaveLength(3);
+    expect(inserted.executed[2]?.params).toContain('{p1}');
+    const stale = fakeTx([], [{ '?column?': 1 }]);
+    expect(await repo.updateNeed(stale.tx, 'n1', 'd1', 1, values, [])).toEqual({
+      outcome: 'conflict',
+    });
+    const gone = fakeTx([], []);
+    expect(await repo.deleteNeed(gone.tx, 'n1', 'd1', 1)).toEqual({ outcome: 'not_found' });
+    expect(
+      await repo.insertNeed(
+        fakeTx(pgError('JK005', 'needs entry is closed')).tx,
+        ID,
+        'd1',
+        values,
+        [],
+      ),
+    ).toEqual({ outcome: 'closed' });
+    expect(
+      await repo.insertNeed(
+        fakeTx(pgError('JK005', 'the needs are submitted')).tx,
+        ID,
+        'd1',
+        values,
+        [],
+      ),
+    ).toEqual({ outcome: 'submitted' });
+    expect(await repo.insertNeed(fakeTx(pgError('JK007')).tx, ID, 'd1', values, [])).toEqual({
+      outcome: 'limit',
+    });
+    expect(await repo.insertNeed(fakeTx(pgError('42501')).tx, ID, 'd1', values, [])).toEqual({
+      outcome: 'not_allowed',
+    });
+    await expect(
+      repo.insertNeed(fakeTx(new Error('network')).tx, ID, 'd1', values, []),
+    ).rejects.toThrow('network');
+  });
+
+  it('moves a department’s status and deadline, reporting conflicts and refusals', async () => {
+    const submitted = fakeTx([{ version: 4 }]);
+    expect(await repo.setDepartmentStatus(submitted.tx, ID, 'd1', 3, 'submitted')).toEqual({
+      outcome: 'ok',
+      version: 4,
+    });
+    expect(submitted.executed[0]?.params).toEqual(['submitted', ID, 'd1', 3]);
+    const returned = fakeTx([{ version: 5 }]);
+    await repo.setDepartmentStatus(returned.tx, ID, 'd1', 4, 'returned', 'Please add X');
+    expect(returned.executed[0]?.params).toEqual(['returned', 'Please add X', ID, 'd1', 4]);
+    const conflict = fakeTx(
+      [],
+      [{ cycle_id: ID, department_id: 'd1', status: 'draft', version: 9, answers: {} }],
+    );
+    expect(await repo.setDepartmentStatus(conflict.tx, ID, 'd1', 3, 'submitted')).toEqual({
+      outcome: 'conflict',
+    });
+    expect(
+      await repo.setDepartmentStatus(
+        fakeTx(pgError('JK006', 'nothing to submit')).tx,
+        ID,
+        'd1',
+        3,
+        'submitted',
+      ),
+    ).toEqual({ outcome: 'empty' });
+    expect(
+      await repo.extendDepartmentDeadline(fakeTx(pgError('JK004')).tx, ID, 'd1', 3, '2026-12-05'),
+    ).toEqual({ outcome: 'refused' });
+    expect(
+      await repo.extendDepartmentDeadline(fakeTx([{ version: 6 }]).tx, ID, 'd1', 3, '2026-12-05'),
+    ).toEqual({ outcome: 'ok', version: 6 });
+  });
+});

@@ -185,10 +185,11 @@ for (const locale of ['en', 'ar'] as const) {
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
     await expect(trigger).toBeFocused();
-    // Ctrl+K from anywhere; type, Enter opens the page.
+    // Ctrl+K from anywhere; type, Enter opens the page («team» alone also finds «My team's needs» since
+    // WP-LD-01, so the whole name is typed).
     await page.keyboard.press('Control+k');
     await expect(dialog).toBeVisible();
-    await input.fill(t.team.slice(0, 5));
+    await input.fill(t.team);
     await expect(dialog.getByRole('option', { name: new RegExp(t.team) })).toBeVisible();
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(new RegExp(`/${locale}/suite/admin/users$`));

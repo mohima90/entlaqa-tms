@@ -1,0 +1,35 @@
+# M3 — Department Head enters the team's training needs (design for approval)
+
+> **Status:** Shown to the PO on 27 Oct 2026 (Arabic design page «تصميم: إدخال احتياجات الإدارة», five screens) — **waiting for approval**, then built in **WP-LD-01** (T-M3-05) · Roles: Department Head (filling), L&D Manager / Training Coordinator (progress)
+> **Requirements:** FR-PLN-03, FR-MGR-05, FR-PLN-02 (progress), FR-PLN-06 (envelope) · **Business flow:** `docs/business-flows/EP-PLN-planning-cycle.md` §3 C6–9 as amended 27 Oct 2026 · **Proposal and decisions:** `docs/product/proposals/step-10-needs-entry.md`
+> **Source:** Mobbin references listed below (links only; no images in the repository), applied in Direction C (`docs/design/redesign-direction-c.md`) with the forms standard (`docs/design/forms-standard.md`).
+
+## The five screens
+
+| # | Screen | Who | Pattern and its Mobbin reference |
+|---|---|---|---|
+| 1 | **Home: one clear task** — amber banner «Training needs 2027 are due in 12 days» + a task card (status pill, team size, deadline, needs so far, «Enter needs») | Department Head | Task card + banner: Kawadir (pending scorecards); «Things to do» lists with a date per item: [Remote](https://mobbin.com/screens/425014d9-aea0-4c7e-a217-d062da016d7f), [Gusto](https://mobbin.com/screens/1a6001a9-476b-4011-8e29-c2b84efbf2fb), [Aboard](https://mobbin.com/screens/cb9fecf9-7bac-4677-9510-0125393cce8a) |
+| 2 | **Needs page** — deadline + instructions, big numbers (needs, seats named/unnamed, cost vs envelope with a meter, status), the needs table (topic, who, priority, quarter, cost, ⋯), «Add a need», «Submit» (disabled until one need) | Department Head | View cards (ours); line items with a running total: [Navan](https://mobbin.com/screens/97e613ac-a435-471d-92b4-b30132ecf71d), [Airwallex](https://mobbin.com/screens/423f0ec0-457f-4e61-8c89-18438f51b9f7); contributor page with period, window and requests: Cornerstone |
+| 3 | **Add a need** side panel (560 px) — *Training topic* (required; or pick a course from the library), *How many people* (required), *Who* (optional people picker from the team, «Everyone (14)»), «More» (priority, reason, quarter, delivery type, estimated cost from the organization's form), «Save and add another» / «Save» | Department Head | [Sweatpals](https://mobbin.com/screens/74ab232f-2d17-4586-84fb-a77f277bc60e), [Airwallex add line item](https://mobbin.com/screens/19606310-d267-49ff-a60d-7526ae6828a9); seats or named learners: Oracle Learning |
+| 4 | **Submit summary** dialog — needs, seats, of which named, cost / envelope with a pill (within / over by X, never a block); «Recall until {deadline}» after | Department Head | [Frame.io](https://mobbin.com/screens/745782a2-690d-4c1b-9c11-ec041d2864c8), [Emergent](https://mobbin.com/screens/dbaa002c-0bcb-493d-8588-77ac4bce8727); lock the set, recall until the window closes: Cornerstone / SAP |
+| 5 | **Cycle progress** — view cards (in scope, submitted, in progress, not started, no head), table per department (head, status, needs, seats, cost / envelope, last activity, action), «Send reminder» per row and for the selection (bulk bar), «Extend» for all or one, «View» → read-only needs with «Return for changes», «Assign a head» | L&D Manager, Training Coordinator | [Fresha](https://mobbin.com/screens/77260bad-dd3d-4ba6-8db8-cd9fefa57982), [Wrike](https://mobbin.com/screens/c86b8eb7-d680-4505-a337-9c88d994254f); bulk action bar: [Hex](https://mobbin.com/screens/301409ca-c27b-4fa6-9b28-d1014d9babe0); remind in bulk: Skillup; daily nudge capped at 14 days: Kawadir |
+
+## Rules the screens carry (from the 27 Oct decisions)
+
+- **Seats are the unit** (Q1): *How many people* is required, names optional; choosing more names than the number raises the number; unnamed seats are shown as such and are named at scheduling.
+- **The envelope is visible** (Q2): one line with a meter; over the envelope the meter turns amber and the text says by how much; submitting is never blocked.
+- **Late stays with L&D** (Q3): after the deadline an unsubmitted department shows *Late · N days* on the progress page and a «Late» banner on its own page; entry stays open until the L&D Manager extends (all or one) or proceeds; nothing auto-submits.
+- States: *Not started · In progress · Submitted · Returned · Late*, plus the *No head* warning (assign a head from the row).
+- Submit locks the set; **Recall** until the deadline; after it only L&D returns or edits on behalf (audited).
+- Notifications: cycle opened, reminders (7 and 2 days), returned, extended, late summary to L&D; no e-mail per saved need. Full in-app delivery needs WP-PLT-01; until then e-mail + the Home card.
+- Phones: tables become cards; the panel is full-screen.
+
+## Effects elsewhere
+
+- Needs form builder: the two fixed fields become *Training topic* and *How many people (+ who)*; other fields are shown under «appear under More».
+- Consolidation (WP-LD-02): a plan line = topic + seats + cost; unnamed seats counted per line.
+- Employee profile: «needs requested for you» appears read-only only after the plan is approved.
+
+## Open points for the PO
+
+None pending beyond the approval itself; changes are taken per screen number.

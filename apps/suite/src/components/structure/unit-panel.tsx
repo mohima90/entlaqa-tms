@@ -210,7 +210,18 @@ export function UnitPanel({
       const next = failureOf(result.error, text, errors, unitFieldText);
       setFailure(next);
       // A refused field under «More options» is shown, not hidden.
-      if (next.fields.code || next.fields.branchId || next.fields.headPersonId) setMore(true);
+      const hidden = next.fields.code
+        ? 'unit-code'
+        : next.fields.branchId
+          ? 'unit-branch'
+          : next.fields.headPersonId
+            ? 'unit-head'
+            : null;
+      if (hidden) {
+        setMore(true);
+        // Focus the refused field once «More options» has rendered it.
+        requestAnimationFrame(() => document.getElementById(hidden)?.focus());
+      }
       if (next.fields.code && !codeTouched) {
         setCode(fields.code);
         setCodeTouched(true);

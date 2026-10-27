@@ -46,8 +46,7 @@ export type NavLabelKey =
   | 'needsForms';
 
 /** Message keys (namespace `shell`) of the group headings; `main` has none. */
-export type NavGroupKey =
-  'main' | 'groupPlanning' | 'groupOrganization' | 'groupBilling' | 'groupSettings';
+export type NavGroupKey = 'main' | 'groupPlanning' | 'groupOrganization' | 'groupSettings';
 
 export interface NavEntry {
   readonly key: NavLabelKey;

@@ -44,8 +44,8 @@ const TEXTS = {
   ar: {
     nav: 'التنقل الرئيسي',
     menu: 'القائمة',
-    integration: 'تكامل البريد الإلكتروني',
-    notConfigured: 'يتطلب تكامل البريد الإلكتروني منظمة مُعدّة.',
+    integration: 'إعدادات البريد',
+    notConfigured: 'تتطلب إعدادات البريد منظمة مُعدّة.',
     platformTitle: 'مرسِل البريد',
     platformNav: 'البريد الإلكتروني',
     platformStatus: 'الحالة الحالية',

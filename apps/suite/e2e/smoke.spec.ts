@@ -63,7 +63,7 @@ const pages = [
     path: '/ar/suite/admin/settings/email',
     lang: 'ar',
     dir: 'rtl',
-    heading: 'تكامل البريد الإلكتروني',
+    heading: 'إعدادات البريد',
   },
   // A standard role's page (EP-ROLES): view only, without a database too.
   { path: '/en/suite/admin/roles/hr_manager', lang: 'en', dir: 'ltr', heading: 'HR Manager' },

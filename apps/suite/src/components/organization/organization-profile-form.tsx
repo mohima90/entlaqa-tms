@@ -352,6 +352,7 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
               id="org-countryCode"
               name="countryCode"
               label={t('organization.country')}
+              required
               marker={props.common.required}
               tag={suggested('countryCode')}
               hint={t('organization.countryHint')}

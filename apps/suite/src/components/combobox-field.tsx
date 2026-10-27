@@ -1,6 +1,6 @@
 'use client';
 import { FieldError, Icon, cn, fieldInputClasses } from '@jadarat/ui';
-import { type ReactNode, useId, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 
 export interface ComboboxOption {
   readonly value: string;
@@ -32,6 +32,7 @@ export function ComboboxField({
   value,
   options,
   disabled,
+  required,
   texts,
   onChange,
   className,
@@ -47,6 +48,7 @@ export function ComboboxField({
   readonly value: string;
   readonly options: readonly ComboboxOption[];
   readonly disabled?: boolean | undefined;
+  readonly required?: boolean | undefined;
   readonly texts: ComboboxTexts;
   readonly onChange: (value: string) => void;
   readonly className?: string | undefined;
@@ -69,6 +71,11 @@ export function ComboboxField({
       ? options.filter((option) => option.label.toLocaleLowerCase().includes(needle))
       : options;
   const activeOption = matches[Math.min(active, Math.max(matches.length - 1, 0))] ?? null;
+  const activeId = open && activeOption ? `${listId}-${activeOption.value}` : null;
+  // The list scrolls; the highlighted choice stays in view for keyboard and screen-reader users.
+  useEffect(() => {
+    if (activeId) document.getElementById(activeId)?.scrollIntoView({ block: 'nearest' });
+  }, [activeId]);
 
   const pick = (option: ComboboxOption) => {
     onChange(option.value);
@@ -103,9 +110,8 @@ export function ComboboxField({
           aria-expanded={open}
           aria-controls={listId}
           aria-autocomplete="list"
-          aria-activedescendant={
-            open && activeOption ? `${listId}-${activeOption.value}` : undefined
-          }
+          aria-activedescendant={activeId ?? undefined}
+          aria-required={required ? true : undefined}
           aria-invalid={error ? true : undefined}
           aria-describedby={describedBy || undefined}
           placeholder={texts.typeToSearch}
@@ -137,6 +143,12 @@ export function ComboboxField({
             } else if (event.key === 'ArrowUp') {
               event.preventDefault();
               setActive((current) => Math.max(current - 1, 0));
+            } else if (event.key === 'Home' && open) {
+              event.preventDefault();
+              setActive(0);
+            } else if (event.key === 'End' && open) {
+              event.preventDefault();
+              setActive(Math.max(matches.length - 1, 0));
             } else if (event.key === 'Enter' && open) {
               event.preventDefault();
               if (activeOption) pick(activeOption);

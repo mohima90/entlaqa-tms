@@ -163,7 +163,6 @@ export function CourseForm(props: CourseFormProps) {
       lang={options.lang}
       inputMode={options.numeric ? 'decimal' : undefined}
       autoComplete="off"
-      className={undefined}
       data-testid={`course-field-${name}`}
     />
   );
@@ -236,7 +235,7 @@ export function CourseForm(props: CourseFormProps) {
           {field('titleAr', { label: text('form.titleAr'), required: true, lang: 'ar' })}
           {textarea('descriptionEn', text('form.descriptionEn'), 'en')}
           {textarea('descriptionAr', text('form.descriptionAr'), 'ar')}
-          <div className="">
+          <div>
             <SelectField
               id={`${idPrefix}-category`}
               label={text('form.category')}
@@ -278,7 +277,7 @@ export function CourseForm(props: CourseFormProps) {
       {group(
         text('form.sectionDelivery'),
         <>
-          <div className="">
+          <div>
             <SelectField
               id={`${idPrefix}-deliveryType`}
               label={text('form.deliveryType')}

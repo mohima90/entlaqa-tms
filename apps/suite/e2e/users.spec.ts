@@ -308,9 +308,9 @@ test.describe('users pages', () => {
       'No direct manager',
       'Mona Saeed Alzahrani',
     ]);
-    await form.getByRole('button', { name: /Show managers of all units/ }).click();
+    await form.getByRole('button', { name: /Show managers of all departments/ }).click();
     await expect(manager.getByRole('option')).toHaveCount(3); // + the Organization Admin (heads TRN)
-    await form.getByRole('button', { name: /unit's managers only/ }).click();
+    await form.getByRole('button', { name: /department's managers only/ }).click();
     await form.getByRole('combobox', { name: /^Department/ }).selectOption({
       label: 'Training and development · Department',
     });
@@ -364,7 +364,7 @@ test.describe('users pages', () => {
     await expect(
       page.getByRole('heading', { name: 'تعديل بيانات سارة عبدالله القحطاني' }),
     ).toBeVisible();
-    await expect(page.getByRole('combobox', { name: /الوحدة/ })).toHaveValue(/.+/);
+    await expect(page.getByRole('combobox', { name: /الإدارة/ })).toHaveValue(/.+/);
     // Hire date: Gregorian field, Hijri equivalent shown under it
     await expect(page.getByText('يوافق 22 شعبان 1445 هـ')).toBeVisible();
     await expectNoSeriousA11yViolations(page);
@@ -658,7 +658,7 @@ test.describe('users pages', () => {
     await panel.getByRole('radio', { name: new RegExp(`^${name}`) }).check();
     await expect(unit).toBeVisible();
     await panel.getByRole('button', { name: 'Save role' }).click();
-    await expect(panel.getByText('Choose the unit this role covers.').first()).toBeVisible();
+    await expect(panel.getByText('Choose the department this role covers.').first()).toBeVisible();
     // Tree order with the level's name: the Academy sits under Training and development.
     await expect(unit.locator('option')).toContainText([
       'Training and development (Department)',

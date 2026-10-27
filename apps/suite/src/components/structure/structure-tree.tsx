@@ -101,6 +101,9 @@ export function StructureTree(props: StructureTreeProps) {
   // next panel is derived from the units once it is there (Kawadir: enter a department, then the next
   // level if you wish). Cleared when that panel closes.
   const [followUp, setFollowUp] = useState<UnitFollowUp | null>(null);
+  // A follow-up replaces one open panel by the next in the same event (close, then open): the key makes
+  // it a fresh panel, not the closed one kept with its state.
+  const [panelSeq, setPanelSeq] = useState(0);
   const followUpParent =
     followUp?.kind === 'child' ? (units.find((u) => u.id === followUp.parentId) ?? null) : null;
   const dialog: DialogState | null =
@@ -618,6 +621,7 @@ export function StructureTree(props: StructureTreeProps) {
 
       {dialog?.kind === 'unit' ? (
         <UnitPanel
+          key={`unit-panel-${panelSeq}`}
           mode={dialog.mode}
           branches={props.branches}
           people={props.people}
@@ -632,6 +636,7 @@ export function StructureTree(props: StructureTreeProps) {
             setFollowUp(null);
           }}
           onFollowUp={(next) => {
+            setPanelSeq((n) => n + 1);
             if (next.kind === 'sibling') {
               const current = dialog.mode.kind === 'create' ? dialog.mode : null;
               setDialog(current ? { kind: 'unit', mode: { ...current } } : null);

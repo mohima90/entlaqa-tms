@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Sent to the PO 27 Oct 2026 (Arabic page «اقتراح: إدخال احتياجات الإدارة»); waiting for the PO's suggestions |
+| **Status** | Sent to the PO 27 Oct 2026 (Arabic page «اقتراح: إدخال احتياجات الإدارة»). **Q1 decided (PO, 27 Oct 2026): the number of people is required, names optional; the plan counts seats** (see below). Q2–Q3 open |
 | **Builds on** | `docs/business-flows/EP-PLN-planning-cycle.md` §3 C6–9, §9, §12 (agreed 17 Oct 2026); `docs/design/forms-standard.md`; product map step 10 |
 | **Work package** | WP-LD-01 (PLN-03 filling, MGR-05, PLN-02 progress; T-M3-05) |
 | **Research** | Kawadir ATS code (dashboard task card, banner, bell, cron nudges), Cornerstone Training Demand Forecasting, SAP SuccessFactors Training Planner, Skillup, Oracle Learning (research brief kept in the session; sources in the Arabic page's footer) |
@@ -45,8 +45,17 @@ Progress table: one row per department — head, status (*Not started · In prog
 
 Co-planners (Cornerstone), budget lock by L&D after review (SAP), pre-fill from last year / expiring certificates, escalation to the head's manager.
 
+## Decisions (27 Oct 2026)
+
+**Q1 — «Who needs it»: the number of people is required, names optional; the plan counts seats (PO, «ممتاز»).** The PO's reasoning: turnover and new hires are not known at planning time, and nobody must train everyone right after approval, so the unit of the plan is the **seat**, as in Oracle Learning / Cornerstone demand forecasting. Names stay allowed because some needs are personal by nature (a safety licence before March) and forbidding them pushes the head to remember them outside the system. Consequences across features (the PO asked for this kind of cross-feature thinking every time):
+- Needs form (default): fixed fields are *Training topic* and *How many people* (required) with *Who* (optional names from the team); priority, reason, quarter, delivery type, cost stay optional and removable in the builder. The builder (T-M3-10) stays; most organizations never touch it.
+- Consolidation (WP-LD-02): a plan line = topic + **seats** + cost; named people are candidates for the seats, not the plan's unit; the L&D Manager sees how many seats are unnamed.
+- Approval (WP-LD-03): Finance and management approve seats and money, not people.
+- Scheduling / enrollment (M4): seats are filled or re-filled freely (a leaver's seat stays, a new hire takes one); candidates pre-fill the invitation list.
+- Reports: planned seats vs. trained people becomes the natural «plan vs. actual» (R2).
+
 ## Questions to the PO (A = proposed)
 
-1. «Who needs it»: **A** names from the team or a number, both accepted · B names always required.
+1. ~~«Who needs it»~~ — decided above (number required, names optional, seats in the plan).
 2. Does the head see the envelope? **A** yes, one quiet line with a warning when over · B no, L&D only.
 3. Deadline passed and not submitted: **A** shown to L&D as *Late* with what was saved; L&D extends or proceeds · B auto-submitted as is.

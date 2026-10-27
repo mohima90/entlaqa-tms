@@ -114,14 +114,17 @@ export function NeedsPage(props: NeedsPageProps) {
 
   const isHead = view.role === 'head';
   const closedByCycle = view.cycle.status !== 'open';
+  const submittedByName = view.submittedBy
+    ? personDisplayName(locale, view.submittedBy.ar, view.submittedBy.en)
+    : '';
+  const returnedBanner =
+    view.returnNote && view.status !== 'submitted' ? (
+      <Alert tone="warning" data-testid="needs-returned">
+        {t('page.returnedBanner', { note: view.returnNote })}
+      </Alert>
+    ) : null;
   const banner: ReactNode = (() => {
-    if (view.status === 'returned' && view.returnNote) {
-      return (
-        <Alert tone="warning" data-testid="needs-returned">
-          {t('page.returnedBanner', { note: view.returnNote })}
-        </Alert>
-      );
-    }
+    if (view.status === 'returned' && returnedBanner) return returnedBanner;
     if (
       closedByCycle &&
       view.cycle.status === 'closed' &&
@@ -132,9 +135,12 @@ export function NeedsPage(props: NeedsPageProps) {
     }
     if (view.status === 'late') {
       return (
-        <Alert tone="danger" data-testid="needs-late">
-          {t('page.lateBanner', { date: day(view.deadline) })}
-        </Alert>
+        <>
+          <Alert tone="danger" data-testid="needs-late">
+            {t('page.lateBanner', { date: day(view.deadline) })}
+          </Alert>
+          {returnedBanner}
+        </>
       );
     }
     if (view.status === 'submitted' && isHead) {
@@ -189,6 +195,7 @@ export function NeedsPage(props: NeedsPageProps) {
         {isHead && view.can.edit ? (
           <Button
             onClick={() => {
+              setNotice(null);
               setSubmitting(true);
             }}
             disabled={!view.can.submit}
@@ -203,6 +210,7 @@ export function NeedsPage(props: NeedsPageProps) {
           <Button
             variant="secondary"
             onClick={() => {
+              setNotice(null);
               setRecalling(true);
             }}
             data-testid="needs-recall"
@@ -392,6 +400,7 @@ export function NeedsPage(props: NeedsPageProps) {
                               className="text-danger hover:bg-danger-subtle"
                               aria-label={t('page.remove', { topic: need.topic })}
                               onClick={() => {
+                                setNotice(null);
                                 setRemoving(need);
                               }}
                               data-testid="need-remove"
@@ -456,12 +465,9 @@ export function NeedsPage(props: NeedsPageProps) {
 
       {view.submittedAt ? (
         <p className="m-0 text-sm text-text-muted" data-testid="needs-submitted-on">
-          {t('page.submittedOn', {
-            date: when(view.submittedAt),
-            by: view.submittedBy
-              ? personDisplayName(locale, view.submittedBy.ar, view.submittedBy.en) || 'none'
-              : 'none',
-          })}
+          {submittedByName
+            ? t('page.submittedOnBy', { date: when(view.submittedAt), by: submittedByName })
+            : t('page.submittedOn', { date: when(view.submittedAt) })}
         </p>
       ) : null}
 
@@ -674,6 +680,7 @@ export function NeedsPage(props: NeedsPageProps) {
       ) : null}
       {view.can.extend ? (
         <ExtendDialog
+          key={view.deadline}
           open={extending}
           onClose={() => {
             setExtending(false);
@@ -701,7 +708,7 @@ function answerText(value: unknown): string {
   if (value === undefined || value === null || value === '') return '—';
   if (typeof value === 'string' || typeof value === 'number') return String(value);
   if (typeof value === 'boolean') return value ? '✓' : '—';
-  if (Array.isArray(value)) return value.map((v) => answerText(v)).join('، ');
+  if (Array.isArray(value)) return value.map((v) => answerText(v)).join(', ');
   if (typeof value === 'object') {
     const people = value as { count?: unknown; personIds?: unknown };
     const parts: string[] = [];
@@ -718,7 +725,7 @@ function PeopleCell({ need, locale, t }: { need: NeedView; locale: 'ar' | 'en'; 
   const names = need.people
     .slice(0, 3)
     .map((p) => personDisplayName(locale, p.name.ar, p.name.en))
-    .join('، ');
+    .join(locale === 'ar' ? '، ' : ', ');
   return (
     <span className="flex flex-col">
       <span>{t('page.namedCell', { named, count: need.peopleCount })}</span>

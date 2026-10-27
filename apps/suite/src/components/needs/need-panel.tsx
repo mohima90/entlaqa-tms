@@ -365,16 +365,19 @@ export function NeedPanel(props: NeedPanelProps) {
                     ? t('panel.nobody')
                     : t('panel.chosen', { count: chosen.size })}
                 </span>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={chooseEveryone}
-                  disabled={pending || chosen.size === props.team.length}
-                  data-testid="need-everyone"
-                >
-                  <Icon name="people" />
-                  {t('panel.everyone', { count: props.team.length })}
-                </Button>
+                {/* At most 500 names per need (NEEDS_LIMITS.maxNamed): no «Everyone» for a larger team. */}
+                {props.team.length <= 500 ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={chooseEveryone}
+                    disabled={pending || chosen.size === props.team.length}
+                    data-testid="need-everyone"
+                  >
+                    <Icon name="people" />
+                    {t('panel.everyone', { count: props.team.length })}
+                  </Button>
+                ) : null}
                 {chosen.size > 0 ? (
                   <Button
                     variant="ghost"

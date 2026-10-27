@@ -59,6 +59,24 @@ begin
   update tms.plan_cycles set status = 'closed' where id = 'ae000000-0000-4000-8000-000000000002';
   insert into tms.plan_cycle_scope (cycle_id, department_id) values (c, sal);
   insert into tms.plan_cycle_departments (cycle_id, department_id, budget_amount) values (c, sal, 60000);
+end $$;
+-- uH sees the draft's row but changes nothing of the set-up (review F1): the envelope is the L&D Manager's.
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-00000000e0a4', '10000000-0000-4000-8000-00000000e0a4',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-00000000e0a4'));
+do $$
+begin
+  perform tests.assert_fails($q$update tms.plan_cycle_departments set budget_amount = 1 where cycle_id = 'ae000000-0000-4000-8000-000000000001' and department_id = 'a3000000-0000-4000-8000-000000000004'$q$,
+    array['JK001'], 'a head never changes their envelope (draft cycle)');
+  perform tests.assert_fails($q$update tms.plan_cycle_departments set status = 'draft' where cycle_id = 'ae000000-0000-4000-8000-000000000001' and department_id = 'a3000000-0000-4000-8000-000000000004'$q$,
+    array['JK001'], 'nor starts entering before the launch');
+end $$;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-00000000e0a1', '10000000-0000-4000-8000-00000000e0a1',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-00000000e0a1'));
+do $$
+declare
+  c constant uuid := 'ae000000-0000-4000-8000-000000000001';
+  sal constant uuid := 'a3000000-0000-4000-8000-000000000004';
+begin
   -- The submission columns start with the launch: a draft keeps them empty.
   perform tests.assert_fails(format($q$update tms.plan_cycle_departments set status = 'draft' where cycle_id = %L and department_id = %L$q$, c, sal),
     array['JK001'], 'a department''s form starts with the launch');
@@ -67,6 +85,8 @@ begin
     1::bigint, 'the L&D Manager launches the cycle');
   perform tests.assert_fails(format($q$update tms.plan_cycle_departments set budget_amount = 1 where cycle_id = %L and department_id = %L$q$, c, sal),
     array['JK001'], 'the envelope no longer changes once the cycle is open');
+  perform tests.assert_fails(format($q$update tms.plan_cycle_departments set status = 'submitted' where cycle_id = %L and department_id = %L$q$, c, sal),
+    array['JK001'], 'the L&D Manager never submits on a head''s behalf');
   perform tests.assert_fails(format($q$insert into tms.plan_needs (cycle_id, department_id, topic, people_count) values (%L, %L, 'Intruder', 1)$q$, c, sal),
     array['42501'], 'the L&D Manager enters no need');
 end $$;
@@ -121,6 +141,8 @@ begin
   -- Submit: locks the set; nothing changes until a recall.
   perform tests.assert_eq(tests.rows_affected(format($q$update tms.plan_cycle_departments set status = 'submitted' where cycle_id = %L and department_id = %L$q$, c, sal)),
     1::bigint, 'the head submits');
+  perform tests.assert_fails(format($q$update tms.plan_cycle_departments set budget_amount = 1 where cycle_id = %L and department_id = %L$q$, c, sal),
+    array['JK001'], 'a head never changes their envelope (open cycle)');
   perform tests.assert((select submitted_at is not null and submitted_by = 'a1000000-0000-4000-8000-00000000e0a4'::uuid
                         from tms.plan_cycle_departments where cycle_id = c and department_id = sal),
     'the submission is stamped by the database');

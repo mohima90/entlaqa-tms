@@ -30,8 +30,8 @@
 -- ---------------------------------------------------------------------------------------------------
 
 -- The department's effective head: its own head, else the nearest head above it (EP-ORG, agreed 17 Oct 2026;
--- the same rule as effectiveHead in modules/tms planning/rules.ts). Deleted units are walked through like any
--- other (a unit under a deleted parent keeps its own head). At most 50 levels.
+-- the same rule as effectiveHead in modules/tms planning/rules.ts over listOrgStructure, which leaves deleted
+-- units out — so does this walk: a deleted unit has no head and stops the search). At most 50 levels.
 create or replace function private.plan_department_head(p_tenant_id uuid, p_department_id uuid)
 returns uuid
 language sql stable
@@ -40,12 +40,12 @@ as $$
   with recursive up as (
     select d.id, d.parent_id, d.head_person_id, 1 as depth
     from platform.departments d
-    where d.tenant_id = p_tenant_id and d.id = p_department_id
+    where d.tenant_id = p_tenant_id and d.id = p_department_id and d.deleted_at is null
     union all
     select d.id, d.parent_id, d.head_person_id, up.depth + 1
     from platform.departments d
     join up on d.tenant_id = p_tenant_id and d.id = up.parent_id
-    where up.head_person_id is null and up.depth < 50
+    where up.head_person_id is null and up.depth < 50 and d.deleted_at is null
   )
   select up.head_person_id from up where up.head_person_id is not null order by up.depth limit 1;
 $$;
@@ -242,6 +242,12 @@ begin
   end if;
 
   if v_cycle.status = 'draft' then
+    -- Set-up is the L&D Manager's alone (review F1): the head's update policy reaches draft rows too, and the
+    -- envelope must never be the head's to change. Platform operations (the owner, no claims) stay possible.
+    if current_user = 'authenticated' and not private.may_manage_plan_cycles(v_row.tenant_id) then
+      raise exception 'the scope, budget and approval chain of a planning cycle are set up by the L&D Manager'
+        using errcode = 'JK001';
+    end if;
     if tg_op <> 'DELETE' and (new.status <> 'not_started' or new.submitted_at is not null or new.submitted_by is not null
                               or new.returned_at is not null or new.returned_by is not null or new.return_note is not null
                               or new.deadline_on is not null or new.answers <> '{}'::jsonb) then

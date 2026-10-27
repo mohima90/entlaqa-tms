@@ -723,8 +723,7 @@ export function updateNeedActionDefinition(): ActionDefinition<
       if (!draft.ok) return draft;
       const written = await repo.updateNeed(
         ctx.tx,
-        input.needId,
-        input.departmentId,
+        input,
         input.version,
         draft.value.values,
         draft.value.personIds,
@@ -767,12 +766,7 @@ export function deleteNeedActionDefinition(): ActionDefinition<
       if (!state.ok) return state;
       const blocked = editable(state.value);
       if (blocked) return err(blocked);
-      const removed = await repo.deleteNeed(
-        ctx.tx,
-        input.needId,
-        input.departmentId,
-        input.version,
-      );
+      const removed = await repo.deleteNeed(ctx.tx, input, input.version);
       if (removed.outcome !== 'ok') return err(needOutcomeError(removed.outcome));
       return ok({ cycleId: input.cycleId, departmentId: input.departmentId, needId: input.needId });
     },

@@ -847,7 +847,10 @@ async function Overview({
               status: row.status,
               statusLabel: t(`cycle.formStatus.${row.status}`),
               tone: FORM_TONE[row.status],
-              needs: t('cycle.needsCell', { needs: row.needs.count, seats: row.needs.seats }),
+              needs:
+                row.needs.count === 0
+                  ? t('cycle.noEnvelope')
+                  : t('cycle.needsCell', { needs: row.needs.count, seats: row.needs.seats }),
               note:
                 row.deadline !== view.cycle.deadline
                   ? t('cycle.extendedTo', { date: day(row.deadline) })

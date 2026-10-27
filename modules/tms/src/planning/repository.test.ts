@@ -364,11 +364,12 @@ describe('department needs (WP-LD-01)', () => {
     expect(inserted.executed).toHaveLength(3);
     expect(inserted.executed[2]?.params).toContain('{p1}');
     const stale = fakeTx([], [{ '?column?': 1 }]);
-    expect(await repo.updateNeed(stale.tx, 'n1', 'd1', 1, values, [])).toEqual({
+    const ref = { cycleId: ID, departmentId: 'd1', needId: 'n1' };
+    expect(await repo.updateNeed(stale.tx, ref, 1, values, [])).toEqual({
       outcome: 'conflict',
     });
     const gone = fakeTx([], []);
-    expect(await repo.deleteNeed(gone.tx, 'n1', 'd1', 1)).toEqual({ outcome: 'not_found' });
+    expect(await repo.deleteNeed(gone.tx, ref, 1)).toEqual({ outcome: 'not_found' });
     expect(
       await repo.insertNeed(
         fakeTx(pgError('JK005', 'needs entry is closed')).tx,

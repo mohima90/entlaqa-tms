@@ -693,23 +693,24 @@ export async function insertNeed(
 /** Changes a need at `version` (optimistic concurrency) and replaces its named people. */
 export async function updateNeed(
   tx: UserTx,
-  needId: string,
-  departmentId: string,
+  ref: { readonly cycleId: string; readonly departmentId: string; readonly needId: string },
   version: number,
   values: NeedValues,
   personIds: readonly string[],
 ): Promise<NeedWriteOutcome> {
+  const { cycleId, departmentId, needId } = ref;
   try {
     const [row] = await tx.execute(sql`
       update tms.plan_needs set topic = ${values.topic}, course_id = ${values.courseId}::uuid,
              people_count = ${values.peopleCount}, estimated_cost = ${values.estimatedCost}::numeric,
              answers = ${JSON.stringify(values.answers)}::jsonb
-      where id = ${needId}::uuid and department_id = ${departmentId}::uuid and version = ${version}
+      where id = ${needId}::uuid and cycle_id = ${cycleId}::uuid and department_id = ${departmentId}::uuid
+        and version = ${version}
       returning id, version`);
     if (!row) {
-      const [exists] = await tx.execute(
-        sql`select 1 from tms.plan_needs where id = ${needId}::uuid and department_id = ${departmentId}::uuid`,
-      );
+      const [exists] = await tx.execute(sql`
+        select 1 from tms.plan_needs
+        where id = ${needId}::uuid and cycle_id = ${cycleId}::uuid and department_id = ${departmentId}::uuid`);
       return { outcome: exists ? 'conflict' : 'not_found' };
     }
     await replaceNeedPeople(tx, needId, departmentId, personIds);
@@ -723,18 +724,20 @@ export async function updateNeed(
 
 export async function deleteNeed(
   tx: UserTx,
-  needId: string,
-  departmentId: string,
+  ref: { readonly cycleId: string; readonly departmentId: string; readonly needId: string },
   version: number,
 ): Promise<NeedWriteOutcome> {
+  const { cycleId, departmentId, needId } = ref;
   try {
     const [row] = await tx.execute(sql`
-      delete from tms.plan_needs where id = ${needId}::uuid and department_id = ${departmentId}::uuid and version = ${version}
+      delete from tms.plan_needs
+      where id = ${needId}::uuid and cycle_id = ${cycleId}::uuid and department_id = ${departmentId}::uuid
+        and version = ${version}
       returning id`);
     if (!row) {
-      const [exists] = await tx.execute(
-        sql`select 1 from tms.plan_needs where id = ${needId}::uuid and department_id = ${departmentId}::uuid`,
-      );
+      const [exists] = await tx.execute(sql`
+        select 1 from tms.plan_needs
+        where id = ${needId}::uuid and cycle_id = ${cycleId}::uuid and department_id = ${departmentId}::uuid`);
       return { outcome: exists ? 'conflict' : 'not_found' };
     }
     return { outcome: 'ok', id: needId, version };

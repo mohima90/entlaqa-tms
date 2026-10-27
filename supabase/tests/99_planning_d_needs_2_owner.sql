@@ -29,6 +29,22 @@ reset session authorization;
 alter table tms.plan_cycles disable trigger plan_cycles_guard;
 update tms.plan_cycles set deadline_on = private.plan_cycle_today(tenant_id) - 1 where id = 'ae000000-0000-4000-8000-000000000001';
 alter table tms.plan_cycles enable trigger plan_cycles_guard;
+-- Another department's need in the same cycle (TD, headed by uA; written by the platform with the guards off):
+-- uH never reads it (review F3 c).
+alter table tms.plan_cycle_departments disable trigger plan_cycle_departments_guard;
+alter table tms.plan_needs disable trigger plan_needs_guard;
+alter table tms.plan_need_people disable trigger plan_need_people_guard;
+insert into tms.plan_cycle_departments (tenant_id, cycle_id, department_id) values
+  ('a0000000-0000-4000-8000-000000000001', 'ae000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001');
+insert into tms.plan_needs (id, tenant_id, cycle_id, department_id, topic, people_count) values
+  ('af000000-0000-4000-8000-0000000000d1', 'a0000000-0000-4000-8000-000000000001', 'ae000000-0000-4000-8000-000000000001',
+   'a3000000-0000-4000-8000-000000000001', 'TD only', 2);
+insert into tms.plan_need_people (tenant_id, need_id, department_id, person_id) values
+  ('a0000000-0000-4000-8000-000000000001', 'af000000-0000-4000-8000-0000000000d1', 'a3000000-0000-4000-8000-000000000001',
+   'a1000000-0000-4000-8000-0000000000a1');
+alter table tms.plan_need_people enable trigger plan_need_people_guard;
+alter table tms.plan_needs enable trigger plan_needs_guard;
+alter table tms.plan_cycle_departments enable trigger plan_cycle_departments_guard;
 
 set local session authorization app_server;
 set local role authenticated;
@@ -38,6 +54,12 @@ do $$
 begin
   perform tests.assert(not private.plan_needs_entry_open('a0000000-0000-4000-8000-000000000001', 'ae000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000004'),
     'entry is closed after the deadline');
+  perform tests.assert_eq((select count(*) from tms.plan_needs where department_id = 'a3000000-0000-4000-8000-000000000001'), 0::bigint,
+    'the head of SAL reads no need of TD');
+  perform tests.assert_eq((select count(*) from tms.plan_need_people where department_id = 'a3000000-0000-4000-8000-000000000001'), 0::bigint,
+    'nor its names');
+  perform tests.assert_eq((select count(*) from tms.plan_cycle_departments where department_id = 'a3000000-0000-4000-8000-000000000001'), 0::bigint,
+    'nor its form row');
   perform tests.assert_fails($q$insert into tms.plan_needs (cycle_id, department_id, topic, people_count) values ('ae000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000004', 'Too late', 1)$q$,
     array['JK005'], 'a late head enters nothing');
   perform tests.assert_fails($q$update tms.plan_cycle_departments set status = 'submitted' where cycle_id = 'ae000000-0000-4000-8000-000000000001' and department_id = 'a3000000-0000-4000-8000-000000000004'$q$,
@@ -76,6 +98,14 @@ update tms.plan_cycle_departments set deadline_on = private.plan_cycle_today(ten
 alter table tms.plan_cycle_departments enable trigger plan_cycle_departments_guard;
 set local session authorization app_server;
 set local role authenticated;
+-- The head's submission stays: no recall after the (extended) deadline either (review F3 b).
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-00000000e0a4', '10000000-0000-4000-8000-00000000e0a4',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-00000000e0a4'));
+do $$
+begin
+  perform tests.assert_fails($q$update tms.plan_cycle_departments set status = 'draft' where cycle_id = 'ae000000-0000-4000-8000-000000000001' and department_id = 'a3000000-0000-4000-8000-000000000004'$q$,
+    array['JK005'], 'no recall after the deadline');
+end $$;
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-00000000e0a1', '10000000-0000-4000-8000-00000000e0a1',
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-00000000e0a1'));
 do $$

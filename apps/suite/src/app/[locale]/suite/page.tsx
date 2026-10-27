@@ -5,9 +5,14 @@ import { hasLocale } from 'next-intl';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { type HomeTileGroup, HomeTiles } from '../../../components/home-tiles';
+import { NeedsTaskCards } from '../../../components/needs/needs-task-cards';
 import { SuiteShell } from '../../../components/suite-shell';
 import { TeamStats } from '../../../components/users/team-stats';
 import { planNotices } from '../../../lib/plan-notices';
+import { myNeedsQuery } from '../../../lib/needs-queries';
+import { NEEDS_PATHS } from '../../../lib/needs-view';
+import { dayFormatter } from '../../../lib/planning-format';
+import { localName } from '../../../lib/planning-view';
 import { organizationPlanQuery } from '../../../lib/plan-queries';
 import { getSuiteContext } from '../../../lib/suite-context';
 import {
@@ -83,6 +88,15 @@ export default async function SuiteHomePage({ params }: { params: Promise<{ loca
   const plan = home.kind === 'setup' && context.live ? await organizationPlanQuery({}) : null;
   const notices = plan?.ok ? planNotices(plan.value, locale) : [];
   const plans = await getTranslations({ locale, namespace: 'plans' });
+  // A Department Head's one planning task (WP-LD-01, design screen 1): the banner and the task card.
+  const needs =
+    home.kind === 'training' && context.live && context.navigation.needsEntry
+      ? await myNeedsQuery({})
+      : null;
+  const tasks = needs?.ok ? needs.value.tasks : [];
+  const needsT = await getTranslations({ locale, namespace: 'needsEntry' });
+  const needsDay = dayFormatter(locale, context.regional.dateDisplay);
+  const needsBanner = tasks.find((task) => task.status !== 'submitted') ?? null;
   const users = await getTranslations({ locale, namespace: 'users' });
   const format = await getFormatter({ locale });
 
@@ -240,6 +254,66 @@ export default async function SuiteHomePage({ params }: { params: Promise<{ loca
         </div>
       ) : (
         <div className="flex flex-col gap-5.5">
+          {needsBanner ? (
+            <Alert
+              tone={needsBanner.status === 'late' ? 'danger' : 'warning'}
+              data-testid="home-needs-banner"
+              action={
+                <a
+                  href={`/${locale}${NEEDS_PATHS.mine}/${needsBanner.cycleId}/${needsBanner.departmentId}`}
+                  className={buttonClasses({ variant: 'secondary', size: 'sm' })}
+                >
+                  {needsT(needsBanner.status === 'not_started' ? 'task.enter' : 'task.continue')}
+                </a>
+              }
+            >
+              {needsBanner.status === 'late'
+                ? needsT('home.bannerLate', {
+                    cycle: localName(locale, needsBanner.cycleName),
+                    department: localName(locale, needsBanner.departmentName),
+                    date: needsDay(needsBanner.deadline),
+                  })
+                : needsBanner.status === 'returned'
+                  ? needsT('home.bannerReturned', {
+                      cycle: localName(locale, needsBanner.cycleName),
+                      department: localName(locale, needsBanner.departmentName),
+                    })
+                  : needsT('home.bannerDue', {
+                      cycle: localName(locale, needsBanner.cycleName),
+                      department: localName(locale, needsBanner.departmentName),
+                      due: needsT('task.dueIn', { count: Math.max(needsBanner.daysLeft, 0) }),
+                    })}
+            </Alert>
+          ) : null}
+          {tasks.length > 0 && needs?.ok ? (
+            <section
+              aria-labelledby="home-needs-title"
+              className="rounded-2xl border border-border bg-surface px-5 py-5.5 shadow-2 md:px-7 md:py-6.5"
+              data-testid="home-needs"
+            >
+              <header className="mb-5 flex items-start gap-4">
+                <span
+                  aria-hidden="true"
+                  className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-primary-subtle text-primary-text"
+                >
+                  <Icon name="form" className="size-5" />
+                </span>
+                <div className="min-w-0">
+                  <h2 id="home-needs-title" className="m-0 text-[22px] font-bold">
+                    {needsT('home.cardTitle')}
+                  </h2>
+                  <p className="m-0 mt-1 text-text-muted">{needsT('home.cardIntro')}</p>
+                </div>
+              </header>
+              <NeedsTaskCards
+                locale={locale}
+                tasks={tasks}
+                levels={needs.value.levels}
+                display={context.regional.dateDisplay}
+                testId="home-needs-tasks"
+              />
+            </section>
+          ) : null}
           {pageTiles.length > 0 ? null : empty}
           <HomeTiles
             headingId="home-pages-title"

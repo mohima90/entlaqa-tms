@@ -72,6 +72,9 @@ const pages = [
   // Planning → Needs forms (T-M3-10), the library on the preview copy.
   { path: '/ar/suite/planning/needs-forms', lang: 'ar', dir: 'rtl', heading: 'نماذج الاحتياجات' },
   { path: '/en/suite/planning/needs-forms', lang: 'en', dir: 'ltr', heading: 'Needs forms' },
+  // My team's needs (WP-LD-01): the Department Head's list, the "needs a database" state.
+  { path: '/en/suite/my-team/needs', lang: 'en', dir: 'ltr', heading: "My team's training needs" },
+  { path: '/ar/suite/my-team/needs', lang: 'ar', dir: 'rtl', heading: 'احتياجات فريقي التدريبية' },
 ] as const;
 
 function collectConsoleErrors(page: Page): string[] {

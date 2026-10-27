@@ -1,6 +1,6 @@
 # M3 — Department Head enters the team's training needs (design for approval)
 
-> **Status:** **Approved by the PO on 27 Oct 2026** («approved»; Arabic design page «تصميم: إدخال احتياجات الإدارة», five screens) — **being built in WP-LD-01** (T-M3-05) · Roles: Department Head (filling), L&D Manager / Training Coordinator (progress)
+> **Status:** **Approved by the PO on 27 Oct 2026** («approved»; Arabic design page «تصميم: إدخال احتياجات الإدارة», five screens) — **built in WP-LD-01** (T-M3-05, 27 Oct 2026; see «As built» below) · Roles: Department Head (filling), L&D Manager / Training Coordinator (progress)
 > **Requirements:** FR-PLN-03, FR-MGR-05, FR-PLN-02 (progress), FR-PLN-06 (envelope) · **Business flow:** `docs/business-flows/EP-PLN-planning-cycle.md` §3 C6–9 as amended 27 Oct 2026 · **Proposal and decisions:** `docs/product/proposals/step-10-needs-entry.md`
 > **Source:** Mobbin references listed below (links only; no images in the repository), applied in Direction C (`docs/design/redesign-direction-c.md`) with the forms standard (`docs/design/forms-standard.md`).
 
@@ -18,7 +18,7 @@
 
 - **Seats are the unit** (Q1): *How many people* is required, names optional; choosing more names than the number raises the number; unnamed seats are shown as such and are named at scheduling.
 - **The envelope is visible** (Q2): one line with a meter; over the envelope the meter turns amber and the text says by how much; submitting is never blocked.
-- **Late stays with L&D** (Q3): after the deadline an unsubmitted department shows *Late · N days* on the progress page and a «Late» banner on its own page; entry stays open until the L&D Manager extends (all or one) or proceeds; nothing auto-submits.
+- **Late stays with L&D** (Q3): after the deadline an unsubmitted department shows *Late · N days* on the progress page and a «Late» banner on its own page; **entry closes** (what was saved stays) until the L&D Manager extends — the whole cycle or one department — or proceeds; nothing auto-submits.
 - States: *Not started · In progress · Submitted · Returned · Late*, plus the *No head* warning (assign a head from the row).
 - Submit locks the set; **Recall** until the deadline; after it only L&D returns or edits on behalf (audited).
 - Notifications: cycle opened, reminders (7 and 2 days), returned, extended, late summary to L&D; no e-mail per saved need. Full in-app delivery needs WP-PLT-01; until then e-mail + the Home card.
@@ -33,3 +33,13 @@
 ## Open points for the PO
 
 None pending beyond the approval itself; changes are taken per screen number.
+
+## As built (WP-LD-01, 27 Oct 2026)
+
+- **Screen 1** — Home: a banner (due in N days / late / returned) with the one action, and the task card list under «Your team's training needs»; the menu entry «My team's needs» right after Home (`/suite/my-team/needs`). The team size is shown on the needs page, not on the card (one query less on Home).
+- **Screen 2** — `/suite/my-team/needs/{cycle}/{department}`: banners, the four figures (needs; seats with named / to be named later; estimated cost with the envelope meter and line; deadline with the status pill), the needs table (topic with «From the course library», who, cost, last change, Edit / Remove), «Add a need», «Submit» (disabled with a hint until one need), «Recall» with «until {date}». The cycle form's other sections (answered once per department) under «About your department».
+- **Screen 3** — the side panel: course from the library (search), topic, how many people, who (search, «Everyone (N)», the number follows the names), «More» (the form's other fields), estimated cost; «Save and add another».
+- **Screen 4** — the submit summary (needs, seats, named, to be named later, cost, envelope with Within / Over by); the recall confirmation.
+- **Screen 5** — the cycle's progress table gained «Needs · seats», «Extended to {date}» under the status and a «View» per department → `/suite/planning/cycles/{cycle}/departments/{department}`: the same page read-only with «Return for changes» (note required) and «Extend for this department». «Send reminder», the bulk bar and «Assign a head» from the row wait for WP-PLT-01 (in-app notifications) and are not built here.
+- Not in this package (as proposed): automatic 7- and 2-day reminders and the late summary to L&D (WP-PLT-01); edit on behalf after the deadline (WP-LD-02 consolidation decides what it needs).
+

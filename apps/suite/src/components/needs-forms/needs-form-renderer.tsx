@@ -173,7 +173,7 @@ export function NeedsFormRenderer(props: NeedsFormRendererProps) {
   );
 }
 
-function FieldControl({
+export function FieldControl({
   field,
   id,
   locale,

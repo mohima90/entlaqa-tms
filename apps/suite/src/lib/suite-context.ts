@@ -91,6 +91,11 @@ export interface SuiteNavigationAccess {
   /** Planning → Needs forms (T-M3-10): members who read the needs forms organization-wide. */
   readonly needsForms: boolean;
   /**
+   * My team's needs (WP-LD-01): a Department Head who may enter the needs of the departments they head
+   * (`tms.plan_needs.submit` in any scope — the role grants it for the headed departments).
+   */
+  readonly needsEntry: boolean;
+  /**
    * Organization → Grades (WP-ADM-04): members who manage the grade list — `platform.user.update`
    * organization-wide, i.e. the HR Manager and the Organization Admin.
    */
@@ -140,6 +145,7 @@ export function navigationFor(
       courses: true,
       planning: true,
       needsForms: true,
+      needsEntry: true,
       grades: true,
       branding: true,
       emailIntegration: true,
@@ -163,6 +169,7 @@ export function navigationFor(
     courses: tenantWide(coursePermissions['tms.course.read'].code),
     planning: tenantWide(tmsPlanningPermissions['tms.plan_cycle.read'].code),
     needsForms: !organizationSetup && tenantWide(tmsPermissions['tms.needs_form.read'].code),
+    needsEntry: grants.some((g) => g.permission === tmsPermissions['tms.plan_needs.submit'].code),
     grades: tenantWide(platformPermissions['platform.user.update'].code),
     branding: features.includes('branding'),
     emailIntegration: features.includes('email_integration'),

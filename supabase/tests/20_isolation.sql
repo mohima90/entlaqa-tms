@@ -34,6 +34,9 @@ begin
     -- cross-tenant insert and composite-FK cases as an L&D Manager are in 99_planning_b_app_server.sql.
     'tms.planning_settings', 'tms.planning_default_steps', 'tms.plan_cycles', 'tms.plan_cycle_scope',
     'tms.plan_cycle_departments', 'tms.plan_cycle_steps',
+    -- Department needs (WP-LD-01): read by the planning roles and the department's head only; cross-tenant,
+    -- FK and permission tests in 99_planning_d_needs_1_app_server.sql.
+    'tms.plan_needs', 'tms.plan_need_people',
     -- Needs forms (T-M3-10): insert/FK tests below; rules in 99_needs_forms_1_app_server.sql.
     'tms.needs_forms', 'tms.needs_form_sections', 'tms.needs_form_fields',
     -- Branding (WP-ADM-02): insert/FK tests below; images, publishing and the public path in 99_branding_*.sql.
@@ -78,7 +81,8 @@ begin
     execute format('select count(*), count(*) filter (where %I <> %L) from %s', r.tenant_column, v_a, r.table_name)
       into v_total, v_foreign;
     if r.table_name::text in ('tms.planning_settings', 'tms.planning_default_steps', 'tms.plan_cycles',
-                              'tms.plan_cycle_scope', 'tms.plan_cycle_departments', 'tms.plan_cycle_steps') then
+                              'tms.plan_cycle_scope', 'tms.plan_cycle_departments', 'tms.plan_cycle_steps',
+                              'tms.plan_needs', 'tms.plan_need_people') then
       -- Read only with tms.plan_cycle.read / .manage (S-L3), which the Organization Admin does not hold: the
       -- same generic check as an L&D Manager of tenant A is in 99_planning_b_app_server.sql.
       perform tests.assert_eq(v_total, 0::bigint, format('%s: read with the planning permissions only', r.table_name));
@@ -518,8 +522,10 @@ begin
     'plan_cycle_departments: insert with tenant B tenant_id is rejected by RLS');
   perform tests.assert_eq(tests.rows_affected($q$update tms.plan_cycle_departments set budget_amount = 1 where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
     0::bigint, 'plan_cycle_departments: RLS filters tenant B rows');
-  perform tests.assert_privilege_denied($q$update tms.plan_cycle_departments set status = 'submitted'$q$,
-    'plan_cycle_departments: the form status is not updatable (T-M3-05)');
+  -- The form status is a department head's (WP-LD-01): granted, and RLS keeps everyone else (here the
+  -- Organization Admin, who heads TD without the Department Head role) from every row.
+  perform tests.assert_eq(tests.rows_affected($q$update tms.plan_cycle_departments set status = 'submitted'$q$),
+    0::bigint, 'plan_cycle_departments: the form status moves only for the department''s head');
   perform tests.assert_privilege_denied($q$update tms.plan_cycle_departments set cycle_id = 'be000000-0000-4000-8000-000000000001'$q$,
     'plan_cycle_departments: cycle_id is not updatable');
   perform tests.assert_rls_violation($q$insert into tms.plan_cycle_steps (tenant_id, cycle_id, position, kind, name_ar, name_en) values ('b0000000-0000-4000-8000-000000000001', 'be000000-0000-4000-8000-000000000001', 3, 'person', 'س', 'S')$q$,

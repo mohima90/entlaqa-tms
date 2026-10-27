@@ -3,7 +3,7 @@
 -- tenants (created after the migrations, by the trigger), a new organization created by provisioning (the
 -- owner) and one created the way the platform console does it (as platform_admin_guard, which may only seed:
 -- no update or delete of needs forms). The seeded content matches the business flow (one repeatable «Training
--- needs» section; topic and people required system fields; eight more fields).
+-- needs» section; topic and people required system fields; seven more fields — no «Estimated cost» since WP-LD-01).
 \set ON_ERROR_STOP on
 
 do $$
@@ -17,8 +17,7 @@ begin
      where f.tenant_id = 'b0000000-0000-4000-8000-000000000001' and f.is_default),
     'training_topic:text:true:Training topic, -:textarea:false:Description, -:select:false:Category, '
     || '-:select:false:Preferred delivery type, people:people:true:People, -:select:false:Priority, '
-    || '-:select:false:Reason type, -:textarea:false:Reason, -:select:false:Preferred quarter, '
-    || '-:number:false:Estimated cost',
+    || '-:select:false:Reason type, -:textarea:false:Reason, -:select:false:Preferred quarter',
     'the default form''s fields, in order');
   perform tests.assert_eq(
     (select row(s.name_en, s.name_ar, s.is_repeatable, s.min_entries, s.max_entries)::text
@@ -41,7 +40,7 @@ do $$
 begin
   perform tests.assert_eq((select count(*) from tms.needs_form_fields x join tms.needs_forms f on f.id = x.form_id
                            where f.tenant_id = 'e9000000-0000-4000-8000-000000000001' and f.is_default),
-    10::bigint, 'provisioning: the default form with its ten fields');
+    9::bigint, 'provisioning: the default form with its nine fields (no «Estimated cost» since WP-LD-01)');
 end $$;
 set constraints all immediate;
 rollback;

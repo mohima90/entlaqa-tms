@@ -318,6 +318,7 @@ begin
       end if;
       new.submitted_at := null;
       new.submitted_by := null;
+      new.return_note := old.return_note;
     elsif old.status in ('not_started', 'draft', 'returned') and new.status = 'submitted' then
       if not v_head then
         raise exception 'only the department''s head submits its needs' using errcode = 'JK001';
@@ -338,6 +339,7 @@ begin
       if not v_head then
         raise exception 'only the department''s head enters its needs' using errcode = 'JK001';
       end if;
+      new.return_note := old.return_note;
     else
       raise exception 'this change of a department''s form status is not allowed' using errcode = 'JK001';
     end if;

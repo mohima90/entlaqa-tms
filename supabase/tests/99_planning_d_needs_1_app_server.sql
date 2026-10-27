@@ -156,8 +156,10 @@ begin
     array['JK005'], 'department answers stay after submitting');
 
   -- Recall (before the deadline): back to draft, the stamps cleared, entry open again.
-  perform tests.assert_eq(tests.rows_affected(format($q$update tms.plan_cycle_departments set status = 'draft' where cycle_id = %L and department_id = %L$q$, c, sal)),
+  perform tests.assert_eq(tests.rows_affected(format($q$update tms.plan_cycle_departments set status = 'draft', return_note = 'smuggled' where cycle_id = %L and department_id = %L$q$, c, sal)),
     1::bigint, 'the head recalls');
+  perform tests.assert((select return_note is null from tms.plan_cycle_departments where cycle_id = c and department_id = sal),
+    'a recall writes no note (second look: the note belongs to a return)');
   perform tests.assert((select submitted_at is null and submitted_by is null from tms.plan_cycle_departments where cycle_id = c and department_id = sal),
     'a recall clears the submission stamps');
   insert into tms.plan_needs (cycle_id, department_id, topic, people_count) values (c, sal, 'Excel', 2);

@@ -34,8 +34,7 @@ alter table tms.plan_cycles enable trigger plan_cycles_guard;
 alter table tms.plan_cycle_departments disable trigger plan_cycle_departments_guard;
 alter table tms.plan_needs disable trigger plan_needs_guard;
 alter table tms.plan_need_people disable trigger plan_need_people_guard;
-insert into tms.plan_cycle_departments (tenant_id, cycle_id, department_id) values
-  ('a0000000-0000-4000-8000-000000000001', 'ae000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001');
+-- (TD's form row in ae…01 comes from 00_helpers_and_fixtures.sql.)
 insert into tms.plan_needs (id, tenant_id, cycle_id, department_id, topic, people_count) values
   ('af000000-0000-4000-8000-0000000000d1', 'a0000000-0000-4000-8000-000000000001', 'ae000000-0000-4000-8000-000000000001',
    'a3000000-0000-4000-8000-000000000001', 'TD only', 2);

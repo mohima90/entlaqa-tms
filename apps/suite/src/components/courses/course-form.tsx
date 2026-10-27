@@ -23,6 +23,8 @@ export interface CourseFormSharedProps {
   readonly categories: readonly { readonly id: string; readonly name: string }[];
   /** Delivery types in list order, with their names. */
   readonly deliveryTypes: readonly { readonly value: string; readonly label: string }[];
+  /** Every type's label: a course on a type no longer offered keeps it in the list (PO, 27 Oct 2026). */
+  readonly deliveryTypeLabels?: Readonly<Record<string, string>> | undefined;
   /** The organization's default currency (General settings): the currency new costs are entered in. */
   readonly currency: string;
   /** Show the cost fields (holders of tms.course_cost.read). */
@@ -161,7 +163,7 @@ export function CourseForm(props: CourseFormProps) {
       lang={options.lang}
       inputMode={options.numeric ? 'decimal' : undefined}
       autoComplete="off"
-      className={options.wide ? 'sm:col-span-2' : undefined}
+      className={undefined}
       data-testid={`course-field-${name}`}
     />
   );
@@ -196,10 +198,8 @@ export function CourseForm(props: CourseFormProps) {
   };
 
   const group = (legend: string, children: ReactNode) => (
-    <fieldset className="m-0 grid min-w-0 grid-cols-1 gap-4 border-0 border-t border-border p-0 pt-4 first-of-type:border-t-0 first-of-type:pt-0 sm:grid-cols-2">
-      <legend className="float-start mb-1 w-full p-0 text-[15px] font-bold sm:col-span-2">
-        {legend}
-      </legend>
+    <fieldset className="m-0 grid min-w-0 grid-cols-1 gap-4 border-0 border-t border-border p-0 pt-4 first-of-type:border-t-0 first-of-type:pt-0">
+      <legend className="float-start mb-1 w-full p-0 text-[15px] font-bold">{legend}</legend>
       {children}
     </fieldset>
   );
@@ -236,7 +236,7 @@ export function CourseForm(props: CourseFormProps) {
           {field('titleAr', { label: text('form.titleAr'), required: true, lang: 'ar' })}
           {textarea('descriptionEn', text('form.descriptionEn'), 'en')}
           {textarea('descriptionAr', text('form.descriptionAr'), 'ar')}
-          <div className="sm:col-span-2">
+          <div className="">
             <SelectField
               id={`${idPrefix}-category`}
               label={text('form.category')}
@@ -278,7 +278,7 @@ export function CourseForm(props: CourseFormProps) {
       {group(
         text('form.sectionDelivery'),
         <>
-          <div className="sm:col-span-2">
+          <div className="">
             <SelectField
               id={`${idPrefix}-deliveryType`}
               label={text('form.deliveryType')}
@@ -291,7 +291,18 @@ export function CourseForm(props: CourseFormProps) {
               disabled={pending}
               data-testid="course-field-deliveryType"
             >
-              {props.deliveryTypes.map((type) => (
+              {[
+                ...props.deliveryTypes,
+                ...(state.deliveryType &&
+                !props.deliveryTypes.some((type) => type.value === state.deliveryType)
+                  ? [
+                      {
+                        value: state.deliveryType,
+                        label: props.deliveryTypeLabels?.[state.deliveryType] ?? state.deliveryType,
+                      },
+                    ]
+                  : []),
+              ].map((type) => (
                 <option key={type.value} value={type.value}>
                   {type.label}
                 </option>
@@ -323,9 +334,7 @@ export function CourseForm(props: CourseFormProps) {
             required: true,
             numeric: true,
           })}
-          <p className="m-0 text-[13.5px] text-text-muted sm:col-span-2">
-            {text('form.participantsHint')}
-          </p>
+          <p className="m-0 text-[13.5px] text-text-muted">{text('form.participantsHint')}</p>
           {props.showCosts ? (
             <>
               {field('estCostPerSession', {
@@ -338,9 +347,7 @@ export function CourseForm(props: CourseFormProps) {
                 numeric: true,
                 ltr: true,
               })}
-              <p className="m-0 text-[13.5px] text-text-muted sm:col-span-2">
-                {text('form.costHint')}
-              </p>
+              <p className="m-0 text-[13.5px] text-text-muted">{text('form.costHint')}</p>
             </>
           ) : null}
         </>,

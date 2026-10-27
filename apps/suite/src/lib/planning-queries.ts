@@ -43,5 +43,7 @@ export function planningTexts(locale: AppLocale): Record<string, string> {
     keepEditing: messages.common.keepEditing,
     discardChanges: messages.common.discardChanges,
     unsavedChanges: messages.common.unsavedChanges,
+    typeToSearch: messages.common.typeToSearch,
+    noMatches: messages.common.noMatches,
   };
 }

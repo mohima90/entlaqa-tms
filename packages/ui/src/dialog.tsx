@@ -30,7 +30,8 @@ export interface DialogProps {
   readonly 'data-testid'?: string | undefined;
 }
 
-const widths = { sm: 'max-w-sm', md: 'max-w-[460px]', lg: 'max-w-2xl' } as const;
+// Wider than before (role-play feedback #5, PO 27 Oct 2026).
+const widths = { sm: 'max-w-md', md: 'max-w-[560px]', lg: 'max-w-3xl' } as const;
 const toneTiles: Record<
   'danger' | 'warning',
   { readonly icon: IconName; readonly classes: string }

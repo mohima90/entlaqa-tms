@@ -95,7 +95,8 @@ export function SidePanel({
       data-testid={testId}
       className={cn(
         'fixed inset-y-2.5 end-2.5 start-auto m-0 h-auto max-h-none max-w-[calc(100%-1.25rem)] overflow-hidden rounded-xl border border-border bg-surface-raised p-0 text-text shadow-4 backdrop:bg-overlay',
-        size === 'lg' ? 'w-[600px]' : 'w-[440px]',
+        // Wider than before (role-play feedback #5, PO 27 Oct 2026): room for one field per row.
+        size === 'lg' ? 'w-[720px]' : 'w-[560px]',
         'open:flex open:flex-col',
       )}
     >

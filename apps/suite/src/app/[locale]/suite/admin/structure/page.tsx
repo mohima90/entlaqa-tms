@@ -26,7 +26,8 @@ import { localizedName } from '../../../../../lib/users-view';
 const PATH = '/suite/admin/structure';
 /** Ten levels at most (platform.structure_levels; MAX_STRUCTURE_LEVELS in platform-db). */
 const MAX_LEVELS = 10;
-const VIEWS = ['tree', 'levels', 'costCentres'] as const;
+// Levels first (the organization names them once), then the departments, then cost centres (PO, 27 Oct 2026).
+const VIEWS = ['levels', 'tree', 'costCentres'] as const;
 type View = (typeof VIEWS)[number];
 
 /** Before the database is connected: the default level every organization starts with (EP-ORG). */
@@ -306,6 +307,7 @@ async function Structure({
           units={units}
           canManage={data.canManage}
           firstLevelName={first ? (locale === 'ar' ? first.nameAr : first.nameEn) : null}
+          levelNames={levelNames}
           branches={data.branches.map((b) => ({
             value: b.id,
             label: localizedName(locale, b.nameAr, b.nameEn),
@@ -324,7 +326,23 @@ async function Structure({
           errors={errors}
           locale={locale}
           header={header}
-          top={top}
+          top={
+            <>
+              {top}
+              {/* No departments yet: the levels come first, right here (role-play feedback #10). */}
+              {units.length === 0 && data.canManage ? (
+                <LevelsCard
+                  levels={levels}
+                  canManage={data.canManage}
+                  locked={data.levelsLocked}
+                  maxLevels={MAX_LEVELS}
+                  texts={texts}
+                  errors={errors}
+                  locale={locale}
+                />
+              ) : null}
+            </>
+          }
           levelsHref={`/${locale}${PATH}?view=levels`}
           importHref={`/${locale}${PATH}/import`}
         />

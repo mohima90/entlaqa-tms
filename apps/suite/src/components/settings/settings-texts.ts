@@ -20,4 +20,7 @@ export interface SettingsCommonTexts {
   /** The «Verify with the app» banner: mfa.stepUpIntro and profile.mfa.verifyFirst. */
   readonly stepUpIntro: string;
   readonly verifyFirst: string;
+  /** Long lists with a search box (ComboboxField): the placeholder and the empty result. */
+  readonly typeToSearch: string;
+  readonly noMatches: string;
 }

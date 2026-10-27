@@ -25,7 +25,9 @@
     "breadcrumbLabel": "مسار التنقل",
     "keepEditing": "متابعة التعديل",
     "discardChanges": "تجاهل التغييرات",
-    "cancel": "إلغاء"
+    "cancel": "إلغاء",
+    "typeToSearch": "اكتب للبحث",
+    "noMatches": "لا نتائج مطابقة"
   },
   "landing": {
     "title": "نظام إدارة التدريب",
@@ -2997,7 +2999,19 @@
       "defaultCostCentre": "مركز التكلفة الافتراضي",
       "defaultCostCentreHint": "يُعطى للأشخاص في هذه الإدارة إذا لم تحدد الموارد البشرية مركز تكلفة لهم.",
       "noCostCentre": "بلا مركز افتراضي",
-      "inactiveCostCentre": "المركز الحالي (غير نشط)"
+      "inactiveCostCentre": "المركز الحالي (غير نشط)",
+      "more": "خيارات أكثر",
+      "moreSummary": "الرمز {code}",
+      "moreSummaryBranch": "الرمز {code} · الفرع {branch}",
+      "codeSuggested": "مقترح من الاسم الإنجليزي؛ غيّره إذا كانت منشأتك تستخدم رموزها الخاصة. حروف وأرقام ونقاط وشرطات؛ حتى 32، وفريد.",
+      "branchFromParent": "نفس فرع {parent} ما لم تغيّره.",
+      "addedTitle": "أُضيفت {name}",
+      "addedDescription": "ما التالي؟",
+      "addedNext": "يمكنك إضافة ما تحت {name} من مستوى «{level}» الآن، أو لاحقًا من صفها.",
+      "addedLast": "هذا آخر مستوى. يمكنك إضافة أخرى من المستوى نفسه، أو الإنهاء.",
+      "addUnder": "إضافة {level} تحتها",
+      "addAnother": "إضافة {level} أخرى",
+      "done": "تم"
     },
     "fieldErrors": {
       "required": "هذا الحقل مطلوب.",

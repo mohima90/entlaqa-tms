@@ -241,7 +241,7 @@ function CreateAccountForm({
 
   return (
     <form className="flex flex-col gap-5" onSubmit={onSubmit} noValidate>
-      <div className="grid gap-3.5 sm:grid-cols-2">
+      <div className="grid gap-3.5">
         {/* The page's language first (English by default, PO 14 Oct 2026); both optional: an empty field
             keeps the name the organization entered (either may be missing, PO 17 Oct 2026). */}
         {(locale === 'ar' ? (['ar', 'en'] as const) : (['en', 'ar'] as const)).map((language, i) =>

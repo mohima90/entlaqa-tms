@@ -230,15 +230,15 @@ export function PersonalDetailsForm({
   const nameSet = (script: 'Ar' | 'En') => {
     const key = script === 'Ar' ? 'ar' : 'en';
     return (
-      <fieldset className="m-0 grid grid-cols-1 gap-4.5 border-0 p-0 sm:grid-cols-2 md:col-span-2">
+      <fieldset className="m-0 grid grid-cols-1 gap-4.5 border-0 p-0">
         <legend className="mb-3 p-0 font-bold">
           {script === 'Ar' ? labels.arabicName : labels.englishName}
         </legend>
         {initial.prefilled[key] ? (
-          <p className="m-0 text-sm text-text-muted sm:col-span-2">{labels.prefilledName}</p>
+          <p className="m-0 text-sm text-text-muted">{labels.prefilledName}</p>
         ) : null}
         {initial.unsplit[key] ? (
-          <p className="m-0 text-sm text-text-muted sm:col-span-2">
+          <p className="m-0 text-sm text-text-muted">
             {labels.currentName} <bdi>{initial.unsplit[key]}</bdi> {labels.currentNameKept}
           </p>
         ) : null}
@@ -277,7 +277,7 @@ export function PersonalDetailsForm({
           {showOther ? (
             nameSet(otherScript)
           ) : (
-            <div className="md:col-span-2">
+            <div className="">
               <OtherNameToggle
                 label={otherScript === 'Ar' ? labels.addArabicName : labels.addEnglishName}
                 focusId={`profile-firstName${otherScript}`}
@@ -317,7 +317,7 @@ export function PersonalDetailsForm({
             <option value="en">{labels.languages.en}</option>
           </SelectField>
           {problem ? (
-            <div className="md:col-span-2">
+            <div className="">
               <Alert tone="danger" data-testid="profile-message">
                 {problem}
               </Alert>

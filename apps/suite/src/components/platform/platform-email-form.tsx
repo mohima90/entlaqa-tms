@@ -183,7 +183,7 @@ export function PlatformEmailForm({
             />
           </Step>
           <Step number={2} id="platform-email-step-sender" title={t('sender.title')}>
-            <div className="grid grid-cols-1 gap-4.5 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4.5">
               <TextField
                 id="platform-email-fromAddress"
                 name="fromAddress"

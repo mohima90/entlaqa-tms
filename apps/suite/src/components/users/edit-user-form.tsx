@@ -298,15 +298,15 @@ export function EditUserForm(props: EditUserFormProps) {
   const nameSet = (script: 'Ar' | 'En') => {
     const key = script === 'Ar' ? 'ar' : 'en';
     return (
-      <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0 sm:grid-cols-2">
+      <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0">
         <legend className="mb-2 font-semibold">
           {text(script === 'Ar' ? 'arabicName' : 'englishName')}
         </legend>
         {names.prefilled[key] ? (
-          <p className="m-0 text-sm text-text-muted sm:col-span-2">{text('prefilledName')}</p>
+          <p className="m-0 text-sm text-text-muted">{text('prefilledName')}</p>
         ) : null}
         {names.unsplit[key] ? (
-          <p className="m-0 text-sm text-text-muted sm:col-span-2">
+          <p className="m-0 text-sm text-text-muted">
             {text('currentName')} <bdi>{names.unsplit[key]}</bdi> {text('currentNameKept')}
           </p>
         ) : null}
@@ -349,7 +349,7 @@ export function EditUserForm(props: EditUserFormProps) {
           />
         )}
 
-        <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0 sm:grid-cols-2">
+        <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0">
           <legend className="mb-2 font-semibold">{text('contact')}</legend>
           {values.hasLogin ? (
             <TextField
@@ -407,7 +407,7 @@ export function EditUserForm(props: EditUserFormProps) {
           </SelectField>
         </fieldset>
 
-        <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0 sm:grid-cols-2">
+        <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0">
           <legend className="mb-2 font-semibold">{text('work')}</legend>
           <TextField
             id="edit-employeeNumber"
@@ -526,7 +526,7 @@ export function EditUserForm(props: EditUserFormProps) {
               ))}
             </SelectField>
           ) : null}
-          <div className="flex flex-col gap-2 sm:col-span-2">
+          <div className="flex flex-col gap-2">
             <SelectField
               id="edit-manager"
               name="managerPersonId"
@@ -567,9 +567,9 @@ export function EditUserForm(props: EditUserFormProps) {
         </fieldset>
       </fieldset>
 
-      <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0 sm:grid-cols-2">
+      <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0">
         <legend className="mb-2 font-semibold">{rt('grade.label')}</legend>
-        <div className="flex flex-col gap-2 sm:col-span-2">
+        <div className="flex flex-col gap-2">
           <SelectField
             id="edit-grade"
             name="gradeId"
@@ -599,10 +599,7 @@ export function EditUserForm(props: EditUserFormProps) {
       </fieldset>
 
       {record.canEditHr ? (
-        <fieldset
-          className="m-0 grid grid-cols-1 gap-4 border-0 p-0 sm:grid-cols-2"
-          data-testid="edit-hr-details"
-        >
+        <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0" data-testid="edit-hr-details">
           <legend className="mb-2 flex flex-wrap items-center gap-2 font-semibold">
             {rt('hr.title')}
             <Badge>
@@ -610,7 +607,7 @@ export function EditUserForm(props: EditUserFormProps) {
               {rt('hr.lock')}
             </Badge>
           </legend>
-          <p className="m-0 text-[13.5px] text-text-muted sm:col-span-2">{rt('hr.sectionHint')}</p>
+          <p className="m-0 text-[13.5px] text-text-muted">{rt('hr.sectionHint')}</p>
           <SelectField
             id="edit-gender"
             name="gender"
@@ -659,7 +656,7 @@ export function EditUserForm(props: EditUserFormProps) {
             error={fieldErrors.birthDate}
             disabled={pending}
           />
-          <p className="m-0 text-[13.5px] text-text-muted sm:col-span-2">{rt('hr.audit')}</p>
+          <p className="m-0 text-[13.5px] text-text-muted">{rt('hr.audit')}</p>
         </fieldset>
       ) : null}
 

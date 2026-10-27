@@ -25,7 +25,9 @@
     "breadcrumbLabel": "Breadcrumb",
     "keepEditing": "Keep editing",
     "discardChanges": "Discard changes",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "typeToSearch": "Type to search",
+    "noMatches": "No matches"
   },
   "landing": {
     "title": "Training Management System",
@@ -2997,7 +2999,19 @@
       "defaultCostCentre": "Default cost centre",
       "defaultCostCentreHint": "People placed in this department get it when HR picks no cost centre for them.",
       "noCostCentre": "No default",
-      "inactiveCostCentre": "Current cost centre (inactive)"
+      "inactiveCostCentre": "Current cost centre (inactive)",
+      "more": "More options",
+      "moreSummary": "Code {code}",
+      "moreSummaryBranch": "Code {code} · Branch {branch}",
+      "codeSuggested": "Suggested from the English name; change it if your organization uses its own codes. Letters, digits, dots, hyphens or underscores; up to 32, unique.",
+      "branchFromParent": "Same as {parent} unless you change it.",
+      "addedTitle": "{name} added",
+      "addedDescription": "What next?",
+      "addedNext": "You can add the {level}s under {name} now, or later from its row.",
+      "addedLast": "This is the last level. You can add another one of the same level, or finish.",
+      "addUnder": "Add a {level} under it",
+      "addAnother": "Add another {level}",
+      "done": "Done"
     },
     "fieldErrors": {
       "required": "This field is required.",

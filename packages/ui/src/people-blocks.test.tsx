@@ -284,7 +284,7 @@ describe('SidePanel: unsaved changes and sizes', () => {
       </SidePanel>,
     );
     const dialog = container.querySelector('dialog')!;
-    expect(dialog.className).toContain('w-[600px]');
+    expect(dialog.className).toContain('w-[720px]');
     const cancel = new Event('cancel', { cancelable: true });
     act(() => {
       dialog.dispatchEvent(cancel);

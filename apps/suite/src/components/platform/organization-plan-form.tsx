@@ -214,7 +214,7 @@ export function OrganizationPlanForm({
       <h2 id={`${formId}-title`} className="m-0 text-xl font-bold">
         {text('organizationPlan.title')}
       </h2>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4">
         <SelectField
           id={`${formId}-planId`}
           name="planId"

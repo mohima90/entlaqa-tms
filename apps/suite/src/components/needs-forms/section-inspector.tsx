@@ -158,7 +158,7 @@ export function SectionInspector(props: SectionDialogProps) {
             </span>
           </div>
           {values.repeatable ? (
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3">
               <TextField
                 id="section-min-entries"
                 label={text('minEntries')}

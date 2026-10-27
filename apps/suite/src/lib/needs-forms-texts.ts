@@ -14,6 +14,8 @@ export function needsFormsTexts(locale: AppLocale): Record<string, string> {
     markerOptional: messages.common.optional,
     // Redesign package 4: the builder's unsaved note and the library's Undo.
     unsavedChanges: messages.common.unsavedChanges,
+    typeToSearch: messages.common.typeToSearch,
+    noMatches: messages.common.noMatches,
     undo: messages.common.undo,
     breadcrumbLabel: messages.planning.breadcrumb.label,
     breadcrumbPlanning: messages.planning.breadcrumb.planning,

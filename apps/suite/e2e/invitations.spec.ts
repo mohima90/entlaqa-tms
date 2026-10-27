@@ -449,12 +449,15 @@ test.describe('organization structure (HR Manager)', () => {
     await expect(unitDialog.getByRole('heading', { level: 2 })).toHaveText('Add Department');
     await unitDialog.locator('#unit-nameEn').fill(`Sales ${run}`);
     await unitDialog.locator('#unit-nameAr').fill(`المبيعات ${run}`);
+    // The code, head and cost centre wait under «More options» (Kawadir form, WP-FIX-02 #12).
+    await unitDialog.getByTestId('unit-more').click();
     await unitDialog.locator('#unit-code').fill(top);
     await unitDialog.locator('#unit-head').selectOption({ index: 1 });
     await unitDialog
       .getByTestId('unit-cost-centre')
       .selectOption({ label: `${costCentre} · Sales ${run}` });
     await unitDialog.getByTestId('unit-dialog-submit').click();
+    await unitDialog.getByTestId('unit-dialog-done').click();
     await expect(unitDialog).toBeHidden();
     const sales = hrPage.getByTestId(`unit-${top}`);
     await expect(sales.getByTestId('unit-level').first()).toHaveText('Department');
@@ -466,8 +469,10 @@ test.describe('organization structure (HR Manager)', () => {
     await expect(unitDialog.getByRole('heading', { level: 2 })).toHaveText('Add Section');
     await unitDialog.locator('#unit-nameEn').fill(`Sales team ${run}`);
     await unitDialog.locator('#unit-nameAr').fill(`فريق المبيعات ${run}`);
+    await unitDialog.getByTestId('unit-more').click();
     await unitDialog.locator('#unit-code').fill(child);
     await unitDialog.getByTestId('unit-dialog-submit').click();
+    await unitDialog.getByTestId('unit-dialog-done').click();
     await expect(unitDialog).toBeHidden();
     const team = sales.getByTestId(`unit-${child}`);
     await expect(team.getByTestId('unit-level')).toHaveText('Section');

@@ -30,6 +30,7 @@ import {
 } from '../../lib/organization-profile-form';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
+import { ComboboxField } from '../combobox-field';
 import { SelectField } from '../select-field';
 import { LeaveGuard } from '../settings/leave-guard';
 import { Segmented } from '../settings/segmented';
@@ -346,12 +347,22 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
             required: true,
           })}
           <div className="flex min-w-0 flex-col gap-3">
-            {select('countryCode', t('organization.country'), choices.countries, {
-              choose: t('organization.countryChoose'),
-              hint: t('organization.countryHint'),
-              required: true,
-              onChange: changeCountry,
-            })}
+            {/* A long list with a search box (role-play feedback #4, PO 27 Oct 2026). */}
+            <ComboboxField
+              id="org-countryCode"
+              name="countryCode"
+              label={t('organization.country')}
+              marker={props.common.required}
+              tag={suggested('countryCode')}
+              hint={t('organization.countryHint')}
+              error={errorOf('countryCode')}
+              value={values.countryCode}
+              options={choices.countries}
+              disabled={disabled}
+              texts={{ typeToSearch: props.common.typeToSearch, noMatches: props.common.noMatches }}
+              onChange={changeCountry}
+              data-testid="org-countryCode"
+            />
             {presetUndo ? (
               <div
                 className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-info-subtle px-3.5 py-2.5 text-sm text-info"

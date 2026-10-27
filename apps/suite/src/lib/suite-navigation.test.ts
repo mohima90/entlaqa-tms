@@ -50,9 +50,8 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
       }),
     ).toEqual([
       'main: home→/suite',
-      'groupOrganization: teamMembers→/suite/admin/users branding→/suite/admin/branding roles→/suite/admin/roles',
-      'groupBilling: subscription→/suite/admin/subscription',
-      'groupSettings: general→/suite/admin/settings emailIntegration→/suite/admin/settings/email integrations(soon) security→/suite/admin/security auditLog(soon)',
+      'groupOrganization: teamMembers→/suite/admin/users roles→/suite/admin/roles',
+      'groupSettings: general→/suite/admin/settings branding→/suite/admin/branding emailIntegration→/suite/admin/settings/email security→/suite/admin/security subscription→/suite/admin/subscription integrations(soon) auditLog(soon)',
     ]);
   });
 
@@ -98,10 +97,10 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
       }),
     ).toEqual([
       'main: home→/suite calendar(soon) sessions(soon) courses(soon)',
-      // Branding (WP-ADM-02): read by tenant.read holders.
-      'groupOrganization: teamMembers→/suite/admin/users branding→/suite/admin/branding roles→/suite/admin/roles',
-      // Email integration (WP-ADM-01): read by tenant.read holders.
-      'groupSettings: general→/suite/admin/settings emailIntegration→/suite/admin/settings/email security→/suite/admin/security',
+      'groupOrganization: teamMembers→/suite/admin/users roles→/suite/admin/roles',
+      // Branding (WP-ADM-02) and Email settings (WP-ADM-01): read by tenant.read holders; under Settings
+      // since the product map (PO, 27 Oct 2026).
+      'groupSettings: general→/suite/admin/settings branding→/suite/admin/branding emailIntegration→/suite/admin/settings/email security→/suite/admin/security',
     ]);
   });
 
@@ -134,10 +133,11 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
     ]);
   });
 
-  it('lists Grades under Organization for members who keep the list (HR Manager, Organization Admin; WP-ADM-04)', () => {
+  it('lists Grades under Settings for members who keep the list (HR Manager, Organization Admin; WP-ADM-04)', () => {
     expect(outline({ ...NONE, users: true, grades: true, training: true })).toEqual([
       'main: home→/suite calendar(soon) sessions(soon) courses(soon)',
-      'groupOrganization: teamMembers→/suite/admin/users grades→/suite/admin/grades',
+      'groupOrganization: teamMembers→/suite/admin/users',
+      'groupSettings: grades→/suite/admin/grades',
     ]);
     // Nobody else sees the entry, however much else they may do.
     expect(
@@ -202,12 +202,12 @@ describe('suiteHome (T-M2-21)', () => {
     expect(home.kind).toBe('setup');
     expect(home.kind === 'setup' ? home.links.map((l) => l.link?.href) : []).toEqual([
       '/suite/admin/users',
-      '/suite/admin/branding',
       '/suite/admin/roles',
-      '/suite/admin/subscription',
       '/suite/admin/settings',
+      '/suite/admin/branding',
       '/suite/admin/settings/email',
       '/suite/admin/security',
+      '/suite/admin/subscription',
     ]);
   });
 
@@ -215,10 +215,10 @@ describe('suiteHome (T-M2-21)', () => {
     const home = suiteHome({ ...NONE, organizationSetup: true, users: true });
     expect(home.kind === 'setup' ? home.links.map((l) => l.key) : []).toEqual([
       'teamMembers',
-      'branding',
-      'subscription',
       'general',
+      'branding',
       'emailIntegration',
+      'subscription',
     ]);
     expect(
       suiteHome({ ...NONE, users: true, roles: true, security: true, training: true }),
@@ -238,8 +238,8 @@ describe('suiteHome (T-M2-21)', () => {
     });
     expect(home.kind === 'setup' ? home.links.map((l) => l.key) : []).toEqual([
       'teamMembers',
-      'subscription',
       'general',
+      'subscription',
     ]);
   });
 });
@@ -271,12 +271,12 @@ describe('commandPaletteItems (⌘K / Ctrl K, T-M2-43)', () => {
     expect(items.map((i) => `${i.group} ${i.label} ${i.href}`)).toEqual([
       '«searchGroupPages» «home» /ar/suite',
       '«groupOrganization» «teamMembers» /ar/suite/admin/users',
-      '«groupOrganization» «branding» /ar/suite/admin/branding',
       '«groupOrganization» «roles» /ar/suite/admin/roles',
-      '«groupBilling» «subscription» /ar/suite/admin/subscription',
       '«groupSettings» «general» /ar/suite/admin/settings',
+      '«groupSettings» «branding» /ar/suite/admin/branding',
       '«groupSettings» «emailIntegration» /ar/suite/admin/settings/email',
       '«groupSettings» «security» /ar/suite/admin/security',
+      '«groupSettings» «subscription» /ar/suite/admin/subscription',
       '«searchGroupAccount» «myProfile» /ar/suite/profile',
     ]);
     expect(new Set(items.map((i) => i.id)).size).toBe(items.length);

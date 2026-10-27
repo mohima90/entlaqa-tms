@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   JADARAT_BRAND,
   brandAssetPath,
+  brandColorsFromSearch,
   brandCss,
+  brandCssHref,
+  brandStylesheet,
   brandProperties,
   contrastChecks,
   deriveBrandingColors,
@@ -156,5 +159,48 @@ describe('whose look the sign-in page shows', () => {
     expect(parseBrandCookie("raya'; drop")).toBeNull();
     expect(parseBrandCookie('-raya')).toBeNull();
     expect(parseBrandCookie('raya-2')).toBe('raya-2');
+  });
+});
+
+describe('the brand layer as a stylesheet file (WP-FIX-02 #1)', () => {
+  const burgundy = { primaryColor: '#7a1f2b', secondaryColor: '#9B2C3A', useGradient: true };
+
+  it('names the colours in the URL, upper-case, and nothing for the Jadarat look', () => {
+    expect(brandCssHref(burgundy)).toBe('/api/brand-css?p=7A1F2B&s=9B2C3A&g=1');
+    expect(
+      brandCssHref({ primaryColor: '#7A1F2B', secondaryColor: null, useGradient: false }),
+    ).toBe('/api/brand-css?p=7A1F2B&g=0');
+    expect(brandCssHref(null)).toBeNull();
+    expect(
+      brandCssHref({ primaryColor: null, secondaryColor: null, useGradient: true }),
+    ).toBeNull();
+  });
+
+  it('reads back exactly what it writes and refuses anything else', () => {
+    const href = brandCssHref(burgundy) ?? '';
+    expect(brandColorsFromSearch(new URL(href, 'https://x.test').searchParams)).toEqual({
+      primaryColor: '#7A1F2B',
+      secondaryColor: '#9B2C3A',
+      useGradient: true,
+    });
+    for (const bad of [
+      'p=red',
+      'p=7A1F2B',
+      'p=7A1F2B&g=2',
+      'g=1',
+      'p=7A1F2B;x&g=1',
+      'p=%23ABC&g=1',
+    ]) {
+      expect(brandColorsFromSearch(new URLSearchParams(bad))).toBeNull();
+    }
+  });
+
+  it('serves the same layer as before, one step more specific so it wins wherever it is placed', () => {
+    const css = brandStylesheet(burgundy) ?? '';
+    expect(css).toContain('html:root {');
+    expect(css).toContain('html:root[data-theme="dark"]');
+    expect(css).not.toContain(' :root');
+    expect(css.replaceAll('html:root', ':root')).toBe(brandCss(burgundy));
+    expect(brandStylesheet(null)).toBeNull();
   });
 });

@@ -401,7 +401,7 @@ test.describe('organization structure (HR Manager)', () => {
     await expect(
       hrPage
         .getByRole('navigation', { name: 'Main navigation' })
-        .getByRole('link', { name: 'Structure' }),
+        .getByRole('link', { name: 'Departments' }),
     ).toBeVisible();
 
     // Levels: the seeded Department and Section. People are placed in units, so the levels are set
@@ -484,7 +484,7 @@ test.describe('organization structure (HR Manager)', () => {
     await sales.getByTestId('unit-menu').first().click();
     await hrPage.getByTestId('unit-menu-delete').click();
     const deleteDialog = hrPage.getByTestId('unit-delete-dialog');
-    await expect(deleteDialog.getByTestId('unit-in-use')).toContainText('Units under it: 1');
+    await expect(deleteDialog.getByTestId('unit-in-use')).toContainText('Departments under it: 1');
     await expect(deleteDialog.getByTestId('confirm-dialog-confirm')).toHaveCount(0);
     await deleteDialog.getByRole('button', { name: 'Keep the unit' }).click();
     await expect(deleteDialog).toBeHidden();

@@ -15,7 +15,7 @@ const TEXTS = {
   en: {
     nav: 'Main navigation',
     menu: 'Menu',
-    groups: ['Organization', 'Billing', 'Settings'],
+    groups: ['Organization', 'Settings'],
     links: [
       'Home',
       'Team members',
@@ -23,7 +23,7 @@ const TEXTS = {
       'Roles & permissions',
       'Grades',
       'General',
-      'Email integration',
+      'Email settings',
       'Security',
       // Subscription is a page since WP-ADM-06 (the plan, read-only).
       'Subscription',
@@ -53,7 +53,7 @@ const TEXTS = {
   ar: {
     nav: 'التنقل الرئيسي',
     menu: 'القائمة',
-    groups: ['المنشأة', 'الفوترة', 'الإعدادات'],
+    groups: ['المنشأة', 'الإعدادات'],
     links: [
       'الرئيسية',
       'أعضاء الفريق',
@@ -61,7 +61,7 @@ const TEXTS = {
       'الأدوار والصلاحيات',
       'الدرجات الوظيفية',
       'الإعدادات العامة',
-      'تكامل البريد الإلكتروني',
+      'إعدادات البريد',
       'الأمان',
       'الاشتراك',
     ],

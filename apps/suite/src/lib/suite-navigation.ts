@@ -104,9 +104,10 @@ const when = (allowed: boolean, ...entries: NavEntry[]): NavEntry[] => (allowed 
  * soon" (not links, not focusable). Deny by default: a group appears only with at least one entry the
  * member's grants allow.
  *
- * Organization Admin (PO, 15–16 Oct 2026): Home · Organization (Team members, Branding, Roles &
- * permissions) · Billing (Subscription — the plan, WP-ADM-06) · Settings (General, Email integration, Integrations*,
- * Security, Audit log*) — no training entries (BR-IAM-4). Other roles: Home and the training module's
+ * In the order of the product map (PO, 27 Oct 2026; docs/product/PRODUCT-MAP.md): Home and the training
+ * entries · Planning · Organization (Team members, Departments, Branches, Roles & permissions) · Settings
+ * (General, Branding, Grades, Email settings, Security, Subscription, Integrations*, Audit log*). The
+ * Organization Admin has no training entries (BR-IAM-4); other roles get Home, the training module's
  * entries, then the built pages their grants open, in the same groups.
  */
 export function suiteNavigation(access: SuiteNavigationAccess): NavGroupModel[] {
@@ -138,40 +139,41 @@ export function suiteNavigation(access: SuiteNavigationAccess): NavGroupModel[] 
     {
       key: 'groupOrganization',
       entries: [
+        // Organization (product map, PO 27 Oct 2026): the people and where they sit — Team members,
+        // Departments and Branches (T-M3-02, EP-ORG: the HR Manager's pages), Roles.
         ...when(access.users, page('teamMembers', 'people', 'users')),
-        // Organization → Structure and Branches (T-M3-02, EP-ORG): the HR Manager's pages.
         ...when(
           access.structure,
           page('structure', 'structure', 'structure'),
           page('branches', 'building', 'branches'),
         ),
-        // Organization → Branding (WP-ADM-02): the Organization Admin edits it, a tenant.read holder (e.g.
-        // the Auditor) reads it.
-        ...when(
-          (access.organizationProfile || setup) && access.branding,
-          page('branding', 'palette', 'branding'),
-        ),
         ...when(access.roles, page('roles', 'key', 'roles')),
-        // Organization → Grades (WP-ADM-04): HR Manager and Organization Admin keep the list of grade codes.
-        ...when(access.grades, page('grades', 'star', 'grades')),
       ],
     },
-    // Subscription (WP-ADM-06; the menu item keeps its name, PO 24 Oct 2026): the plan, read-only.
-    { key: 'groupBilling', entries: when(setup, page('subscription', 'billing', 'subscription')) },
     {
       key: 'groupSettings',
       entries: [
         // Settings → General (T-M2-22 organization profile): the Organization Admin edits it, the
         // Auditor reads it.
         ...when(access.organizationProfile || setup, page('general', 'settings', 'general')),
-        // Settings → Email integration (WP-ADM-01): the Organization Admin edits it, a tenant.read holder
+        // Settings → Branding (WP-ADM-02): the Organization Admin edits it, a tenant.read holder (e.g.
+        // the Auditor) reads it. Under Settings since the product map (PO, 27 Oct 2026).
+        ...when(
+          (access.organizationProfile || setup) && access.branding,
+          page('branding', 'palette', 'branding'),
+        ),
+        // Settings → Grades (WP-ADM-04): HR Manager and Organization Admin keep the list of grade codes.
+        ...when(access.grades, page('grades', 'star', 'grades')),
+        // Settings → Email settings (WP-ADM-01): the Organization Admin edits it, a tenant.read holder
         // (e.g. the Auditor) reads it.
         ...when(
           (access.organizationProfile || setup) && access.emailIntegration,
           page('emailIntegration', 'mail', 'emailIntegration'),
         ),
-        ...when(setup, soon('integrations', 'plug')),
         ...when(access.security, page('security', 'shield', 'security')),
+        // Subscription (WP-ADM-06; the menu item keeps its name, PO 24 Oct 2026): the plan, read-only.
+        ...when(setup, page('subscription', 'billing', 'subscription')),
+        ...when(setup, soon('integrations', 'plug')),
         ...when(setup, soon('auditLog', 'audit')),
       ],
     },

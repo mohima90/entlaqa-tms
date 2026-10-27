@@ -63,7 +63,7 @@ test.describe('signed-in flow', () => {
       /^Roles & permissions/,
       /^Grades/,
       /^General/,
-      /^Email integration/,
+      /^Email settings/,
       /^Security/,
     ]);
     // The greeting and the team's figures (each a link to Team members on its tab).

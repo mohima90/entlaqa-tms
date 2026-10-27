@@ -216,12 +216,15 @@ export function AppShell({
           <div className="flex items-center gap-2">
             <div
               className={cn(
-                'flex min-w-0 flex-1 items-center gap-3 rounded-lg border border-nav-border bg-on-nav/10 p-2',
+                'flex min-w-0 flex-1 items-center gap-3',
+                // The organization's logo stands on its own (role-play feedback, PO 27 Oct 2026: no box
+                // around it); the initials tile keeps its chip.
+                logo ? 'p-1' : 'rounded-lg border border-nav-border bg-on-nav/10 p-2',
                 navState.collapsed && 'flex-none justify-center p-1.5',
               )}
             >
               {logo && !navState.collapsed ? (
-                <span className="flex h-12 min-w-0 flex-1 items-center rounded-md bg-surface px-2 [&>img]:max-h-10 [&>img]:w-auto [&>img]:max-w-full [&>img]:object-contain">
+                <span className="flex h-12 min-w-0 flex-1 items-center [&>img]:max-h-11 [&>img]:w-auto [&>img]:max-w-full [&>img]:object-contain">
                   {logo}
                 </span>
               ) : (

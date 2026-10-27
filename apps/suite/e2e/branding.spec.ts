@@ -240,11 +240,18 @@ test.describe('branding saved', () => {
     await page.getByRole('button', { name: 'Use the Burgundy colours' }).click();
     await page.getByTestId('save-bar-save').click();
     await expect(page.getByText('Branding saved', { exact: false })).toBeVisible();
+    const brandColor = () =>
+      page
+        .locator('html')
+        .evaluate((el) => getComputedStyle(el).getPropertyValue('--color-brand').trim());
+    // After a client-side navigation (no reload): the colours used to vanish here (WP-FIX-02 #1), because
+    // the inline style's nonce no longer matched the document's policy.
+    await page.getByRole('navigation').getByRole('link', { name: 'Team members' }).click();
+    await expect(page).toHaveURL(/\/en\/suite\/users/);
+    await expect.poll(brandColor).toBe('#7A1F2B');
     await page.reload();
-    const current = await page
-      .locator('html')
-      .evaluate((el) => getComputedStyle(el).getPropertyValue('--color-brand').trim());
-    expect(current).toBe('#7A1F2B');
+    await expect.poll(brandColor).toBe('#7A1F2B');
+    await page.goto('/en/suite/admin/branding');
     // Back to the Jadarat look for the next run.
     await page.getByTestId('brand-reset').click();
     await page.getByTestId('save-bar-save').click();

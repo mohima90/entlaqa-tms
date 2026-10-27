@@ -57,8 +57,8 @@ const pages = [
   // Organization → Grades (WP-ADM-04): the page in preview mode without a database.
   { path: '/en/suite/admin/grades', lang: 'en', dir: 'ltr', heading: 'Grades' },
   { path: '/ar/suite/admin/grades', lang: 'ar', dir: 'rtl', heading: 'الدرجات الوظيفية' },
-  // Settings → Email integration (WP-ADM-01): the frame and the "not available here" state without a database.
-  { path: '/en/suite/admin/settings/email', lang: 'en', dir: 'ltr', heading: 'Email integration' },
+  // Settings → Email settings (WP-ADM-01): the frame and the "not available here" state without a database.
+  { path: '/en/suite/admin/settings/email', lang: 'en', dir: 'ltr', heading: 'Email settings' },
   {
     path: '/ar/suite/admin/settings/email',
     lang: 'ar',

@@ -9,7 +9,7 @@ import { afterSignIn, fillSignIn } from './sign-in';
  *
  * Always (default CI, no Auth server):
  *  - Platform settings → Email does not exist for a visitor (404);
- *  - Settings → Email integration renders in the shell (its menu entry is a page now, no longer «Coming soon»)
+ *  - Settings → Email settings renders in the shell (its menu entry is a page now, no longer «Coming soon»)
  *    with the "not available here" state, without serious accessibility violations.
  * Against a configured deployment:
  *  - the Super Admin (PLATFORM_E2E_EMAIL / _PASSWORD) opens Platform settings → Email from the console menu,
@@ -32,8 +32,8 @@ const TEXTS = {
   en: {
     nav: 'Main navigation',
     menu: 'Menu',
-    integration: 'Email integration',
-    notConfigured: 'Email integration needs a configured organization.',
+    integration: 'Email settings',
+    notConfigured: 'Email settings need a configured organization.',
     platformTitle: 'Email sender',
     platformNav: 'Email',
     platformStatus: 'Current status',
@@ -75,7 +75,7 @@ for (const locale of ['en', 'ar'] as const) {
     await expect(page.getByTestId('platform-email-form')).toHaveCount(0);
   });
 
-  test(`${locale}: Settings → Email integration is a page of the menu (preview without data)`, async ({
+  test(`${locale}: Settings → Email settings is a page of the menu (preview without data)`, async ({
     page,
     isMobile,
   }) => {
@@ -145,7 +145,7 @@ test.describe('Platform settings → Email: the Super Admin (configured deployme
   }
 });
 
-test.describe('Settings → Email integration (configured deployment)', () => {
+test.describe('Settings → Email settings (configured deployment)', () => {
   test.skip(!adminEmail || !adminPassword, 'EMAIL_E2E_ADMIN_* not set');
 
   for (const locale of ['en', 'ar'] as const) {

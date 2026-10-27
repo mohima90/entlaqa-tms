@@ -132,7 +132,7 @@ export function CycleBasicsForm(props: CycleBasicsFormProps) {
   const textarea = (field: 'instructionsAr' | 'instructionsEn', dir: 'rtl' | 'ltr') => {
     const id = `cycle-${field}`;
     return (
-      <div className="flex flex-col gap-1 sm:col-span-2">
+      <div className="flex flex-col gap-1">
         <label htmlFor={id} className="text-sm font-medium">
           {t(`setup.basics.${field}`)}
           <span className="ms-1 font-normal text-text-muted">{t('setup.optional')}</span>
@@ -169,7 +169,7 @@ export function CycleBasicsForm(props: CycleBasicsFormProps) {
         title={t('setup.basics.title')}
         description={t('setup.basics.currency', { currency: props.currency })}
       >
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4">
           <TextField
             id="cycle-name-en"
             label={t('setup.basics.nameEn')}

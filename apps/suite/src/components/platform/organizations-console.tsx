@@ -279,7 +279,7 @@ export function CreateOrganization(
         ) : (
           <form id={`${formId}-form`} noValidate onSubmit={submit} className="flex flex-col gap-4">
             {field('slug', { required: true, dir: 'ltr' })}
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4">
               {field('nameAr', { required: true, dir: 'rtl' })}
               {field('nameEn', { dir: 'ltr' })}
             </div>
@@ -287,7 +287,7 @@ export function CreateOrganization(
               <legend className="px-1 font-semibold">{text('create.adminSection')}</legend>
               {field('adminEmail', { required: true, type: 'email', dir: 'ltr' })}
               <p className="m-0 text-sm text-text-muted">{text('create.adminNamesHint')}</p>
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-4">
                 {/* English first: a new organization's default language (PO 14 and 17 Oct 2026). */}
                 {field('adminFirstNameEn', { dir: 'ltr' })}
                 {field('adminFamilyNameEn', { dir: 'ltr' })}

@@ -345,9 +345,9 @@ export function MfaSetup({
             <img
               src={setup.qrCode}
               alt={texts.qrAlt}
-              width={184}
-              height={184}
-              className="shrink-0 self-center rounded-lg border border-border bg-white p-2 md:self-start"
+              width={256}
+              height={256}
+              className="shrink-0 self-center rounded-lg border border-border bg-white p-3 md:self-start"
               data-testid="mfa-qr"
             />
             <div className="flex min-w-0 flex-col gap-3">

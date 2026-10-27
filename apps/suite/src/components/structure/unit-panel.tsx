@@ -5,7 +5,7 @@ import { type SyntheticEvent, useState, useTransition } from 'react';
 import { createStructureUnitAction, updateStructureUnitAction } from '../../actions/structure';
 import { fillText } from '../../lib/fill-text';
 import { unitFieldText } from '../../lib/structure-form';
-import { unitDeleteBlockers } from '../../lib/structure-view';
+import { suggestUnitCode, unitDeleteBlockers } from '../../lib/structure-view';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { SelectField } from '../select-field';
@@ -49,17 +49,28 @@ export type UnitDialogMode =
   | { readonly kind: 'create'; readonly parent: UnitView | null; readonly levelName: string }
   | { readonly kind: 'edit'; readonly unit: UnitView };
 
+/** What the person wants next, once a unit was added (Kawadir: «enter a department, then the next level»). */
+export type UnitFollowUp =
+  | { readonly kind: 'child'; readonly parentId: string; readonly levelName: string }
+  | { readonly kind: 'sibling' };
+
 export interface UnitPanelProps {
   readonly mode: UnitDialogMode;
   readonly branches: readonly Choice[];
   readonly people: readonly Choice[];
   /** Active cost centres as default choices (WP-HR-01); none hides the field. */
   readonly costCentres: readonly Choice[];
+  /** Every unit's code, so the suggested code is free before it is sent. */
+  readonly existingCodes: readonly string[];
+  /** The organization's level names from the top down (the level under the one being added). */
+  readonly levelNames: readonly string[];
   /** Texts of the `structure` namespace (raw, flattened) plus `required` / `optional`. */
   readonly texts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
   readonly locale: 'ar' | 'en';
   readonly onClose: () => void;
+  /** After adding: the next step the person chose (the tree opens the next panel). */
+  readonly onFollowUp?: ((next: UnitFollowUp) => void) | undefined;
   /** Edit: deactivate or activate the unit (the tree runs it, with Undo or its confirmation). */
   readonly onStatus?: ((unit: UnitView) => void) | undefined;
   /** Edit: delete the unit (the tree's red confirmation). */
@@ -69,21 +80,27 @@ export interface UnitPanelProps {
 const FORM_ID = 'unit-form';
 
 /**
- * Add or edit a unit (FR-ADM-05, EP-ORG) in a side panel with the tree still in view (redesign package 2;
- * approved direction, comparison §3): names in English and Arabic, code, branch and head (any active
- * person). Its level follows from where it sits: at the top, or one level below its parent (the database
- * decides and refuses a unit below the last level). Editing also shows Deactivate and Delete with their
- * consequences — Delete with what still depends on the unit, and only offered when nothing does.
+ * Add or edit a unit (FR-ADM-05, EP-ORG) in a side panel with the tree still in view. The form follows the
+ * Kawadir pattern the PO asked for (role-play feedback #12, 27 Oct 2026): adding asks for the names only,
+ * one field per row; the code is suggested from the English name and the branch is the parent's; code,
+ * branch, head and default cost centre wait under «More options». Once added, the panel offers the next
+ * step — a unit of the level below, another of the same level — or closes. Its level follows from where it
+ * sits: at the top, or one level below its parent (the database decides and refuses a unit below the last
+ * level). Editing shows every field, plus Deactivate and Delete with their consequences — Delete with what
+ * still depends on the unit, and only offered when nothing does.
  */
 export function UnitPanel({
   mode,
   branches,
   people,
   costCentres,
+  existingCodes,
+  levelNames,
   texts,
   errors,
   locale,
   onClose,
+  onFollowUp,
   onStatus,
   onDelete,
 }: UnitPanelProps) {
@@ -98,9 +115,21 @@ export function UnitPanel({
   const [open, setOpen] = useState(true);
   const [after, setAfter] = useState<(() => void) | null>(null);
   const unit = mode.kind === 'edit' ? mode.unit : null;
-  const [branchId, setBranchId] = useState(unit?.branchId ?? '');
+  const parent = mode.kind === 'create' ? mode.parent : null;
+  // A new unit sits in its parent's branch unless changed (role-play feedback #6).
+  const [branchId, setBranchId] = useState(unit?.branchId ?? parent?.branchId ?? '');
   const [headPersonId, setHeadPersonId] = useState(unit?.headPersonId ?? '');
   const [defaultCostCentreId, setDefaultCostCentreId] = useState(unit?.defaultCostCentreId ?? '');
+  // The code follows the English name until the person types one themselves (then it is theirs).
+  const [code, setCode] = useState(unit?.code ?? '');
+  const [codeTouched, setCodeTouched] = useState(mode.kind === 'edit');
+  // «More options» starts closed when adding; a refused field inside opens it.
+  const [more, setMore] = useState(mode.kind === 'edit');
+  // Added: the name and id of the new unit; the panel then offers the next step.
+  const [added, setAdded] = useState<{ readonly id: string; readonly name: string } | null>(null);
+  const levelIndex = mode.kind === 'create' ? levelNames.indexOf(mode.levelName) : -1;
+  const nextLevelName = levelIndex >= 0 ? (levelNames[levelIndex + 1] ?? null) : null;
+
   // A default that was deactivated since stays shown (it stays on the unit until changed).
   const costCentreChoices =
     unit?.defaultCostCentreId && !costCentres.some((c) => c.value === unit.defaultCostCentreId)
@@ -118,6 +147,9 @@ export function UnitPanel({
     unit?.headPersonId && !people.some((p) => p.value === unit.headPersonId)
       ? [{ value: unit.headPersonId, label: unit.headName ?? unit.headPersonId }, ...people]
       : people;
+  const parentBranch = parent?.branchId
+    ? (branches.find((b) => b.value === parent.branchId)?.label ?? null)
+    : null;
 
   const title =
     mode.kind === 'create'
@@ -126,8 +158,8 @@ export function UnitPanel({
   const description =
     mode.kind === 'edit'
       ? text('form.editDescription')
-      : mode.parent
-        ? fill('form.underDescription', { level: mode.levelName, parent: mode.parent.name })
+      : parent
+        ? fill('form.underDescription', { level: mode.levelName, parent: parent.name })
         : text('form.topDescription');
 
   /** Closes the panel, then runs a follow-up (a confirmation must not open under the modal panel). */
@@ -143,9 +175,10 @@ export function UnitPanel({
       const value = form.get(name);
       return typeof value === 'string' ? value : '';
     };
+    const nameEn = field('nameEn');
     const fields = {
-      code: field('code'),
-      nameEn: field('nameEn'),
+      code: codeTouched ? code : suggestUnitCode(nameEn, existingCodes),
+      nameEn,
       nameAr: field('nameAr'),
       branchId,
       headPersonId,
@@ -155,7 +188,7 @@ export function UnitPanel({
     startTransition(async () => {
       const result =
         mode.kind === 'create'
-          ? await createStructureUnitAction({ ...fields, parentId: mode.parent?.id ?? '' })
+          ? await createStructureUnitAction({ ...fields, parentId: parent?.id ?? '' })
           : await updateStructureUnitAction({
               ...fields,
               id: mode.unit.id,
@@ -163,19 +196,41 @@ export function UnitPanel({
             });
       if (result.ok) {
         const name = locale === 'en' ? fields.nameEn.trim() : fields.nameAr.trim();
-        toast.success(
-          mode.kind === 'create' ? fill('toasts.created', { name }) : text('toasts.saved'),
-        );
-        setOpen(false);
         router.refresh();
+        if (mode.kind === 'edit') {
+          toast.success(text('toasts.saved'));
+          setOpen(false);
+          return;
+        }
+        toast.success(fill('toasts.created', { name }));
+        setAdded({ id: result.value.id, name });
         return;
       }
       if (sessionRefused(result.error)) return;
-      setFailure(failureOf(result.error, text, errors, unitFieldText));
+      const next = failureOf(result.error, text, errors, unitFieldText);
+      setFailure(next);
+      // A refused field under «More options» is shown, not hidden.
+      const hidden = next.fields.code
+        ? 'unit-code'
+        : next.fields.branchId
+          ? 'unit-branch'
+          : next.fields.headPersonId
+            ? 'unit-head'
+            : null;
+      if (hidden) {
+        setMore(true);
+        // Focus the refused field once «More options» has rendered it.
+        requestAnimationFrame(() => document.getElementById(hidden)?.focus());
+      }
+      if (next.fields.code && !codeTouched) {
+        setCode(fields.code);
+        setCodeTouched(true);
+      }
     });
   }
 
   const blockers = unit ? unitDeleteBlockers(unit) : [];
+  const showAll = mode.kind === 'edit' || more;
 
   return (
     <SidePanel
@@ -184,45 +239,104 @@ export function UnitPanel({
         onClose();
         after?.();
       }}
-      title={title}
-      description={description}
+      title={added ? fill('form.addedTitle', { name: added.name }) : title}
+      description={added ? text('form.addedDescription') : description}
       closeLabel={text('form.close')}
       data-testid="unit-dialog"
       footer={
-        <>
-          <p className="m-0 flex w-full items-center gap-2 text-[13px] text-text-muted">
-            <Icon name="shield-outline" />
-            {text('form.audited')}
-          </p>
-          <div className="ms-auto flex gap-2.5">
+        added ? (
+          <div className="ms-auto flex flex-wrap gap-2.5">
             <Button
               variant="secondary"
               onClick={() => {
                 setOpen(false);
               }}
-              disabled={pending}
+              data-testid="unit-dialog-done"
             >
-              {text('form.cancel')}
+              {text('form.done')}
             </Button>
-            <Button
-              type="submit"
-              form={FORM_ID}
-              disabled={pending}
-              aria-busy={pending || undefined}
-              data-testid="unit-dialog-submit"
-            >
-              {pending
-                ? text('form.saving')
-                : mode.kind === 'create'
-                  ? text('form.create')
-                  : text('form.save')}
-            </Button>
+            {onFollowUp && mode.kind === 'create' ? (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  closeThen(() => {
+                    onFollowUp({ kind: 'sibling' });
+                  });
+                }}
+                data-testid="unit-dialog-add-another"
+              >
+                <Icon name="plus" />
+                {fill('form.addAnother', { level: mode.levelName })}
+              </Button>
+            ) : null}
+            {onFollowUp && nextLevelName ? (
+              <Button
+                onClick={() => {
+                  closeThen(() => {
+                    onFollowUp({ kind: 'child', parentId: added.id, levelName: nextLevelName });
+                  });
+                }}
+                data-testid="unit-dialog-add-under"
+              >
+                <Icon name="plus" />
+                {fill('form.addUnder', { level: nextLevelName })}
+              </Button>
+            ) : null}
           </div>
-        </>
+        ) : (
+          <>
+            <p className="m-0 flex w-full items-center gap-2 text-[13px] text-text-muted">
+              <Icon name="shield-outline" />
+              {text('form.audited')}
+            </p>
+            <div className="ms-auto flex gap-2.5">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setOpen(false);
+                }}
+                disabled={pending}
+              >
+                {text('form.cancel')}
+              </Button>
+              <Button
+                type="submit"
+                form={FORM_ID}
+                disabled={pending}
+                aria-busy={pending || undefined}
+                data-testid="unit-dialog-submit"
+              >
+                {pending
+                  ? text('form.saving')
+                  : mode.kind === 'create'
+                    ? text('form.create')
+                    : text('form.save')}
+              </Button>
+            </div>
+          </>
+        )
       }
     >
-      <form id={FORM_ID} className="flex flex-col gap-4" onSubmit={onSubmit} noValidate>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      {added ? (
+        <div
+          className="flex flex-col items-center gap-3 py-8 text-center"
+          role="status"
+          data-testid="unit-dialog-added"
+        >
+          <span className="grid size-14 place-items-center rounded-full bg-success-subtle text-success">
+            <Icon name="check" className="size-7" />
+          </span>
+          <p className="m-0 text-lg font-semibold">
+            {fill('form.addedTitle', { name: added.name })}
+          </p>
+          <p className="m-0 max-w-[36ch] text-sm text-text-muted">
+            {nextLevelName
+              ? fill('form.addedNext', { level: nextLevelName, name: added.name })
+              : text('form.addedLast')}
+          </p>
+        </div>
+      ) : (
+        <form id={FORM_ID} className="flex flex-col gap-4" onSubmit={onSubmit} noValidate>
           <TextField
             id="unit-nameEn"
             name="nameEn"
@@ -234,6 +348,9 @@ export function UnitPanel({
             maxLength={200}
             autoComplete="off"
             defaultValue={unit?.nameEn ?? ''}
+            onChange={(event) => {
+              if (!codeTouched) setCode(suggestUnitCode(event.target.value, existingCodes));
+            }}
             error={failure.fields.nameEn}
             disabled={pending}
           />
@@ -251,148 +368,178 @@ export function UnitPanel({
             error={failure.fields.nameAr}
             disabled={pending}
           />
-        </div>
-        <TextField
-          id="unit-code"
-          name="code"
-          label={text('form.code')}
-          marker={text('required')}
-          hint={text('form.codeHint')}
-          required
-          dir="ltr"
-          maxLength={32}
-          autoComplete="off"
-          defaultValue={unit?.code ?? ''}
-          error={failure.fields.code}
-          disabled={pending}
-        />
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <SelectField
-            id="unit-branch"
-            label={text('form.branch')}
-            marker={text('optional')}
-            value={branchId}
-            onChange={(event) => {
-              setBranchId(event.target.value);
-            }}
-            error={failure.fields.branchId}
-            disabled={pending}
-          >
-            <option value="">{text('form.noBranch')}</option>
-            {branchChoices.map((choice) => (
-              <option key={choice.value} value={choice.value}>
-                {choice.label}
-              </option>
-            ))}
-          </SelectField>
-          <SelectField
-            id="unit-head"
-            label={text('form.head')}
-            marker={text('optional')}
-            hint={text('form.headHint')}
-            value={headPersonId}
-            onChange={(event) => {
-              setHeadPersonId(event.target.value);
-            }}
-            error={failure.fields.headPersonId}
-            disabled={pending}
-          >
-            <option value="">{text('form.noHead')}</option>
-            {peopleChoices.map((choice) => (
-              <option key={choice.value} value={choice.value}>
-                {choice.label}
-              </option>
-            ))}
-          </SelectField>
-        </div>
-        {costCentreChoices.length > 0 ? (
-          <SelectField
-            id="unit-cost-centre"
-            label={text('form.defaultCostCentre')}
-            marker={text('optional')}
-            hint={text('form.defaultCostCentreHint')}
-            value={defaultCostCentreId}
-            onChange={(event) => {
-              setDefaultCostCentreId(event.target.value);
-            }}
-            error={failure.fields.defaultCostCentreId}
-            disabled={pending}
-            data-testid="unit-cost-centre"
-          >
-            <option value="">{text('form.noCostCentre')}</option>
-            {costCentreChoices.map((choice) => (
-              <option key={choice.value} value={choice.value}>
-                {choice.label}
-              </option>
-            ))}
-          </SelectField>
-        ) : null}
-        {failure.message ? (
-          <Alert tone="danger" data-testid="unit-dialog-message">
-            {failure.message}
-          </Alert>
-        ) : null}
-        {unit && (onStatus || onDelete) ? (
-          <div className="flex flex-col gap-4 border-t border-border pt-4">
-            {onStatus ? (
-              <div className="flex flex-wrap items-start gap-3">
-                <div className="min-w-0 flex-[1_1_14rem]">
-                  <p className="m-0 font-semibold">
-                    {unit.active ? text('deactivate') : text('activate')}
-                  </p>
-                  <p className="m-0 text-sm text-text-muted">
-                    {unit.active ? text('status.deactivateText') : text('status.activateText')}
-                  </p>
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={pending}
-                  onClick={() => {
-                    closeThen(() => {
-                      onStatus(unit);
-                    });
-                  }}
-                  data-testid="unit-panel-status"
-                >
-                  {unit.active ? text('deactivate') : text('activate')}
-                </Button>
-              </div>
-            ) : null}
-            {onDelete ? (
-              <div className="flex flex-wrap items-start gap-3">
-                <div className="min-w-0 flex-[1_1_14rem]">
-                  <p className="m-0 font-semibold">{text('delete')}</p>
-                  <p className="m-0 text-sm text-text-muted">{text('remove.text')}</p>
-                  {blockers.length > 0 ? (
-                    <p
-                      id="unit-delete-blockers"
-                      className="m-0 mt-1 text-sm text-text-muted"
-                      data-testid="unit-delete-reason"
-                    >
-                      {blockers.map((item) => fill(item.key, { count: item.count })).join(' · ')}
-                    </p>
-                  ) : null}
-                </div>
-                <Button
-                  variant={blockers.length > 0 ? 'secondary' : 'danger'}
-                  size="sm"
-                  disabled={pending || blockers.length > 0}
-                  aria-describedby={blockers.length > 0 ? 'unit-delete-blockers' : undefined}
-                  onClick={() => {
-                    closeThen(() => {
-                      onDelete(unit);
-                    });
-                  }}
-                  data-testid="unit-panel-delete"
-                >
-                  {text('delete')}
-                </Button>
-              </div>
+          {mode.kind === 'create' ? (
+            <button
+              type="button"
+              className="flex min-h-10 items-center gap-1.5 self-start rounded-full px-2 text-sm font-semibold text-primary-text hover:bg-primary-subtle"
+              aria-expanded={more}
+              aria-controls="unit-more"
+              onClick={() => {
+                setMore((current) => !current);
+              }}
+              data-testid="unit-more"
+            >
+              <Icon name={more ? 'chevron-down' : 'chevron-end'} />
+              {text('form.more')}
+              <span className="font-normal text-text-muted">
+                {' · '}
+                {parentBranch
+                  ? fill('form.moreSummaryBranch', { code, branch: parentBranch })
+                  : fill('form.moreSummary', { code })}
+              </span>
+            </button>
+          ) : null}
+          <div id="unit-more" className={showAll ? 'flex flex-col gap-4' : 'hidden'}>
+            <TextField
+              id="unit-code"
+              name="code"
+              label={text('form.code')}
+              marker={text('required')}
+              hint={text(mode.kind === 'create' ? 'form.codeSuggested' : 'form.codeHint')}
+              required
+              dir="ltr"
+              maxLength={32}
+              autoComplete="off"
+              value={code}
+              onChange={(event) => {
+                setCode(event.target.value);
+                setCodeTouched(true);
+              }}
+              error={failure.fields.code}
+              disabled={pending}
+            />
+            <SelectField
+              id="unit-branch"
+              label={text('form.branch')}
+              marker={text('optional')}
+              hint={
+                parentBranch
+                  ? fill('form.branchFromParent', { parent: parent?.name ?? '' })
+                  : undefined
+              }
+              value={branchId}
+              onChange={(event) => {
+                setBranchId(event.target.value);
+              }}
+              error={failure.fields.branchId}
+              disabled={pending}
+            >
+              <option value="">{text('form.noBranch')}</option>
+              {branchChoices.map((choice) => (
+                <option key={choice.value} value={choice.value}>
+                  {choice.label}
+                </option>
+              ))}
+            </SelectField>
+            <SelectField
+              id="unit-head"
+              label={text('form.head')}
+              marker={text('optional')}
+              hint={text('form.headHint')}
+              value={headPersonId}
+              onChange={(event) => {
+                setHeadPersonId(event.target.value);
+              }}
+              error={failure.fields.headPersonId}
+              disabled={pending}
+            >
+              <option value="">{text('form.noHead')}</option>
+              {peopleChoices.map((choice) => (
+                <option key={choice.value} value={choice.value}>
+                  {choice.label}
+                </option>
+              ))}
+            </SelectField>
+            {costCentreChoices.length > 0 ? (
+              <SelectField
+                id="unit-cost-centre"
+                label={text('form.defaultCostCentre')}
+                marker={text('optional')}
+                hint={text('form.defaultCostCentreHint')}
+                value={defaultCostCentreId}
+                onChange={(event) => {
+                  setDefaultCostCentreId(event.target.value);
+                }}
+                error={failure.fields.defaultCostCentreId}
+                disabled={pending}
+                data-testid="unit-cost-centre"
+              >
+                <option value="">{text('form.noCostCentre')}</option>
+                {costCentreChoices.map((choice) => (
+                  <option key={choice.value} value={choice.value}>
+                    {choice.label}
+                  </option>
+                ))}
+              </SelectField>
             ) : null}
           </div>
-        ) : null}
-      </form>
+          {failure.message ? (
+            <Alert tone="danger" data-testid="unit-dialog-message">
+              {failure.message}
+            </Alert>
+          ) : null}
+          {unit && (onStatus || onDelete) ? (
+            <div className="flex flex-col gap-4 border-t border-border pt-4">
+              {onStatus ? (
+                <div className="flex flex-wrap items-start gap-3">
+                  <div className="min-w-0 flex-[1_1_14rem]">
+                    <p className="m-0 font-semibold">
+                      {unit.active ? text('deactivate') : text('activate')}
+                    </p>
+                    <p className="m-0 text-sm text-text-muted">
+                      {unit.active ? text('status.deactivateText') : text('status.activateText')}
+                    </p>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={pending}
+                    onClick={() => {
+                      closeThen(() => {
+                        onStatus(unit);
+                      });
+                    }}
+                    data-testid="unit-panel-status"
+                  >
+                    {unit.active ? text('deactivate') : text('activate')}
+                  </Button>
+                </div>
+              ) : null}
+              {onDelete ? (
+                <div className="flex flex-wrap items-start gap-3">
+                  <div className="min-w-0 flex-[1_1_14rem]">
+                    <p className="m-0 font-semibold">{text('delete')}</p>
+                    <p className="m-0 text-sm text-text-muted">{text('remove.text')}</p>
+                    {blockers.length > 0 ? (
+                      <p
+                        id="unit-delete-blockers"
+                        className="m-0 mt-1 text-sm text-text-muted"
+                        data-testid="unit-delete-reason"
+                      >
+                        {blockers.map((item) => fill(item.key, { count: item.count })).join(' · ')}
+                      </p>
+                    ) : null}
+                  </div>
+                  <Button
+                    variant={blockers.length > 0 ? 'secondary' : 'danger'}
+                    size="sm"
+                    disabled={pending || blockers.length > 0}
+                    aria-describedby={blockers.length > 0 ? 'unit-delete-blockers' : undefined}
+                    onClick={() => {
+                      closeThen(() => {
+                        onDelete(unit);
+                      });
+                    }}
+                    data-testid="unit-panel-delete"
+                  >
+                    {text('delete')}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </form>
+      )}
     </SidePanel>
   );
 }

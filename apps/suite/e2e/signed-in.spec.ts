@@ -57,14 +57,15 @@ test.describe('signed-in flow', () => {
     const setup = page.getByTestId('setup-home');
     await expect(setup.getByRole('heading', { name: 'Set up your organization' })).toBeVisible();
     // Redesign package 6: each page is a tile with one line saying what it is for (name first).
+    // In the product map's order (PO, 27 Oct 2026): settings first, then the people, the look, the rest.
     await expect(setup.getByRole('link')).toHaveText([
+      /^General/,
       /^Team members/,
       /^Branding/,
       /^Roles & permissions/,
-      /^Grades/,
-      /^General/,
-      /^Email integration/,
+      /^Email settings/,
       /^Security/,
+      /^Grades/,
     ]);
     // The greeting and the team's figures (each a link to Team members on its tab).
     await expect(page.getByRole('heading', { level: 1 })).toContainText(/^Welcome, /);

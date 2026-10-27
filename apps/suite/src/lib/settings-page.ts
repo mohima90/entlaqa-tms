@@ -19,6 +19,8 @@ export async function settingsCommonTexts(locale: AppLocale): Promise<SettingsCo
   const errors = await getTranslations({ locale, namespace: 'errors' });
   return {
     unsavedChanges: common('unsavedChanges'),
+    typeToSearch: common('typeToSearch'),
+    noMatches: common('noMatches'),
     invalid: errors('validationFailed'),
     undo: common('undo'),
     reload: common('reload'),

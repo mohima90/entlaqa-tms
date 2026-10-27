@@ -86,7 +86,7 @@ describe('Dialog (native <dialog>, Kawadir)', () => {
     const { dialog } = openDialog(container);
     expect(dialog.open).toBe(true);
     expect(dialog.dataset.testid).toBe('invite-dialog');
-    expect(dialog.className).toContain('max-w-2xl');
+    expect(dialog.className).toContain('max-w-3xl');
     const title = document.getElementById(dialog.getAttribute('aria-labelledby')!);
     expect(title?.textContent).toBe('Invite member');
     const description = document.getElementById(dialog.getAttribute('aria-describedby')!);
@@ -166,7 +166,7 @@ describe('Dialog (native <dialog>, Kawadir)', () => {
     const dialog = container.querySelector('dialog')!;
     expect(dialog.open).toBe(true);
     expect(dialog.hasAttribute('aria-describedby')).toBe(false);
-    expect(dialog.className).toContain('max-w-[460px]');
+    expect(dialog.className).toContain('max-w-[560px]');
     expect(dialog.querySelector('button')?.getAttribute('aria-label')).toBe('إغلاق');
   });
 });

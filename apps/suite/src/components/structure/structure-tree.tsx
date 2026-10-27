@@ -30,7 +30,13 @@ import { useSessionRefusal } from '../auth/session-refusal';
 import { ConfirmDialog } from './confirm-dialog';
 import { failureOf } from './failure';
 import { MoveUnitDialog } from './move-unit-dialog';
-import { type Choice, type UnitDialogMode, UnitPanel, type UnitView } from './unit-panel';
+import {
+  type Choice,
+  type UnitDialogMode,
+  type UnitFollowUp,
+  UnitPanel,
+  type UnitView,
+} from './unit-panel';
 
 export interface StructureTreeProps {
   readonly units: readonly UnitView[];
@@ -38,6 +44,8 @@ export interface StructureTreeProps {
   readonly canManage: boolean;
   /** The organization's first level («Add <first level>» at the top), or null without levels. */
   readonly firstLevelName: string | null;
+  /** Every level's name from the top down (the panel offers the level under the one just added). */
+  readonly levelNames: readonly string[];
   readonly branches: readonly Choice[];
   readonly people: readonly Choice[];
   /** Active cost centres as a unit's default (WP-HR-01). */
@@ -88,7 +96,28 @@ export function StructureTree(props: StructureTreeProps) {
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(parentIds(units)));
-  const [dialog, setDialog] = useState<DialogState | null>(null);
+  const [dialogState, setDialog] = useState<DialogState | null>(null);
+  // «Add a <level> under it» right after adding: the new unit's row arrives with the refreshed tree, so the
+  // next panel is derived from the units once it is there (Kawadir: enter a department, then the next
+  // level if you wish). Cleared when that panel closes.
+  const [followUp, setFollowUp] = useState<UnitFollowUp | null>(null);
+  // A follow-up replaces one open panel by the next in the same event (close, then open): the key makes
+  // it a fresh panel, not the closed one kept with its state.
+  const [panelSeq, setPanelSeq] = useState(0);
+  const followUpParent =
+    followUp?.kind === 'child' ? (units.find((u) => u.id === followUp.parentId) ?? null) : null;
+  const dialog: DialogState | null =
+    dialogState ??
+    (followUp?.kind === 'child' && followUpParent
+      ? {
+          kind: 'unit',
+          mode: {
+            kind: 'create',
+            parent: followUpParent,
+            levelName: followUpParent.nextLevelName ?? followUp.levelName,
+          },
+        }
+      : null);
   // Drag-and-drop among siblings: the unit being dragged and the row it would land on.
   const [dragging, setDragging] = useState<UnitView | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -592,15 +621,28 @@ export function StructureTree(props: StructureTreeProps) {
 
       {dialog?.kind === 'unit' ? (
         <UnitPanel
+          key={`unit-panel-${panelSeq}`}
           mode={dialog.mode}
           branches={props.branches}
           people={props.people}
           costCentres={props.costCentres}
+          existingCodes={units.map((u) => u.code)}
+          levelNames={props.levelNames}
           texts={texts}
           errors={props.errors}
           locale={locale}
           onClose={() => {
             setDialog(null);
+            setFollowUp(null);
+          }}
+          onFollowUp={(next) => {
+            setPanelSeq((n) => n + 1);
+            if (next.kind === 'sibling') {
+              const current = dialog.mode.kind === 'create' ? dialog.mode : null;
+              setDialog(current ? { kind: 'unit', mode: { ...current } } : null);
+              return;
+            }
+            setFollowUp(next);
           }}
           onStatus={changeStatus}
           onDelete={(unit) => {

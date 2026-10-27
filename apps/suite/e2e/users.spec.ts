@@ -119,19 +119,24 @@ test.describe('users pages', () => {
     await expect(page.getByTestId('users-range')).toContainText('Showing 1–1 of 1');
 
     // The unit pill applies at once; the seeded structure mixes two levels (Department, Section): the
-    // filter is «Unit» and each unit shows its level (feedback #3). Its × removes it.
+    // filter is «Department» and each one shows its level (feedback #3). Its × removes it.
     await page.getByRole('searchbox', { name: 'Search' }).fill('');
     await expect(page).not.toHaveURL(/[?&]q=/);
-    await page.getByTestId('users-filter-department').getByRole('button', { name: 'Unit' }).click();
     await page
-      .getByRole('group', { name: 'Unit' })
+      .getByTestId('users-filter-department')
+      .getByRole('button', { name: 'Department' })
+      .click();
+    await page
+      .getByRole('group', { name: 'Department' })
       .getByRole('button', { name: 'Academy · Section' })
       .click();
     await expect(page).toHaveURL(/[?&]department=/);
     await expect(members(page)).toHaveCount(1);
     await page.getByRole('searchbox', { name: 'Search' }).fill('nobody-matches-this');
     await expect(page.getByTestId('users-empty')).toContainText('No results match the filters');
-    await page.getByRole('button', { name: 'Remove the filter Unit: Academy · Section' }).click();
+    await page
+      .getByRole('button', { name: 'Remove the filter Department: Academy · Section' })
+      .click();
     await expect(page).not.toHaveURL(/[?&]department=/);
 
     // Quick look: the person's facts without leaving the list, then the full profile.
@@ -297,16 +302,16 @@ test.describe('users pages', () => {
     const manager = form.getByRole('combobox', { name: /Direct manager/ });
     await expect(manager).toHaveValue('5eed1000-0000-4000-8000-000000000003'); // Mona
     await form
-      .getByRole('combobox', { name: /^Unit/ })
+      .getByRole('combobox', { name: /^Department/ })
       .selectOption({ label: 'Academy · Section' });
     await expect(manager.getByRole('option')).toHaveText([
       'No direct manager',
       'Mona Saeed Alzahrani',
     ]);
-    await form.getByRole('button', { name: /Show managers of all units/ }).click();
+    await form.getByRole('button', { name: /Show managers of all departments/ }).click();
     await expect(manager.getByRole('option')).toHaveCount(3); // + the Organization Admin (heads TRN)
-    await form.getByRole('button', { name: /unit's managers only/ }).click();
-    await form.getByRole('combobox', { name: /^Unit/ }).selectOption({
+    await form.getByRole('button', { name: /department's managers only/ }).click();
+    await form.getByRole('combobox', { name: /^Department/ }).selectOption({
       label: 'Training and development · Department',
     });
 
@@ -359,7 +364,7 @@ test.describe('users pages', () => {
     await expect(
       page.getByRole('heading', { name: 'تعديل بيانات سارة عبدالله القحطاني' }),
     ).toBeVisible();
-    await expect(page.getByRole('combobox', { name: /الوحدة/ })).toHaveValue(/.+/);
+    await expect(page.getByRole('combobox', { name: /الإدارة/ })).toHaveValue(/.+/);
     // Hire date: Gregorian field, Hijri equivalent shown under it
     await expect(page.getByText('يوافق 22 شعبان 1445 هـ')).toBeVisible();
     await expectNoSeriousA11yViolations(page);
@@ -648,12 +653,12 @@ test.describe('users pages', () => {
     await page.goto('/en/suite/admin/users');
     await rowAction(page, 'Mona Saeed Alzahrani', 'member-menu-edit-role');
     const panel = page.getByTestId('change-role-panel');
-    const unit = panel.getByRole('combobox', { name: /^Unit this role covers/ });
+    const unit = panel.getByRole('combobox', { name: /^Department this role covers/ });
     await expect(unit).toHaveCount(0);
     await panel.getByRole('radio', { name: new RegExp(`^${name}`) }).check();
     await expect(unit).toBeVisible();
     await panel.getByRole('button', { name: 'Save role' }).click();
-    await expect(panel.getByText('Choose the unit this role covers.').first()).toBeVisible();
+    await expect(panel.getByText('Choose the department this role covers.').first()).toBeVisible();
     // Tree order with the level's name: the Academy sits under Training and development.
     await expect(unit.locator('option')).toContainText([
       'Training and development (Department)',

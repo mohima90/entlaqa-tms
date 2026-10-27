@@ -286,9 +286,9 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
           data-testid="role-builder"
         >
           <Card title={text('details')}>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4">
               {props.starts.length > 0 ? (
-                <div className="sm:col-span-2">
+                <div className="">
                   <SelectField
                     id="role-start"
                     label={text('startFrom')}
@@ -360,7 +360,7 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
                 error={fieldErrors.nameAr}
                 disabled={pending}
               />
-              <div className="flex flex-col gap-1 sm:col-span-2">
+              <div className="flex flex-col gap-1">
                 <label htmlFor="role-description" className="text-sm font-medium">
                   {text('description')}
                   <span className="ms-1 font-normal text-text-muted">{text('optional')}</span>

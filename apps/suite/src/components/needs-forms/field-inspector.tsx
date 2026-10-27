@@ -174,7 +174,7 @@ export function FieldInspector(props: FieldDialogProps) {
             {props.message}
           </Alert>
         ) : null}
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4">
           <TextField
             id="field-label-en"
             label={text('labelEn')}
@@ -371,7 +371,7 @@ export function FieldInspector(props: FieldDialogProps) {
             ) : null}
           </fieldset>
         ) : null}
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4">
           <TextField
             id="field-placeholder-en"
             label={text('placeholderEn')}
@@ -418,7 +418,7 @@ export function FieldInspector(props: FieldDialogProps) {
           >
             <legend className="px-1 text-sm font-medium">{text('condition')}</legend>
             <p className="m-0 text-sm text-text-muted">{text('conditionHint')}</p>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3">
               <SelectField
                 id="field-condition-field"
                 label={text('condition')}

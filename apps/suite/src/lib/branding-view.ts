@@ -125,3 +125,51 @@ export function websiteLooksValid(value: string): boolean {
     return false;
   }
 }
+
+// ---------------------------------------------------------------------------------------------------
+// The brand layer as a stylesheet file (WP-FIX-02 #1)
+// ---------------------------------------------------------------------------------------------------
+// The colours used to be an inline <style> carrying the request's CSP nonce. After a client-side navigation
+// the next page's nonce no longer matches the document's policy, so the browser dropped the layer and the
+// shell fell back to the Jadarat look until a full reload (PO, 27 Oct 2026). A same-origin stylesheet is
+// allowed by `style-src 'self'` on every navigation. The colours travel in the URL, so the file is pure and
+// cacheable for good: the same colours always give the same bytes.
+
+/** The stylesheet route (apps/suite/src/app/api/brand-css/route.ts). */
+export const BRAND_CSS_PATH = '/api/brand-css';
+
+const HEX6 = /^[0-9A-Fa-f]{6}$/;
+
+/** The stylesheet URL of these colours, or null for the Jadarat look (no stylesheet at all). */
+export function brandCssHref(colors: BrandColors | null): string | null {
+  if (!colors || !brandCss(colors)) return null;
+  const params = new URLSearchParams();
+  if (colors.primaryColor) params.set('p', colors.primaryColor.replace('#', '').toUpperCase());
+  if (colors.secondaryColor) params.set('s', colors.secondaryColor.replace('#', '').toUpperCase());
+  params.set('g', colors.useGradient ? '1' : '0');
+  return `${BRAND_CSS_PATH}?${params.toString()}`;
+}
+
+/** The colours a stylesheet URL names, strictly (#RRGGBB only); null when the URL is not one we write. */
+export function brandColorsFromSearch(params: URLSearchParams): BrandColors | null {
+  const p = params.get('p');
+  const s = params.get('s');
+  const g = params.get('g');
+  if ((p !== null && !HEX6.test(p)) || (s !== null && !HEX6.test(s))) return null;
+  if (g !== '0' && g !== '1') return null;
+  if (p === null && s === null) return null;
+  return {
+    primaryColor: p ? `#${p.toUpperCase()}` : null,
+    secondaryColor: s ? `#${s.toUpperCase()}` : null,
+    useGradient: g === '1',
+  };
+}
+
+/**
+ * The file's text: the brand layer with its selectors made one step more specific (`html:root`), so that it
+ * beats the theme's own `:root` tokens wherever the browser places it among the page's stylesheets.
+ */
+export function brandStylesheet(colors: BrandColors | null): string | null {
+  const css = brandCss(colors);
+  return css ? css.replaceAll(':root', 'html:root') : null;
+}

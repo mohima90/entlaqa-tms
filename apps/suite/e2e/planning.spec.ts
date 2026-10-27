@@ -38,7 +38,7 @@ const TEXTS = {
     required: 'Fill in this field.',
     beforeStart: 'The period must end after it starts.',
     // The built-in heads step names no fixed level (guided-test feedback #3).
-    defaultSteps: ['Unit heads', 'Named person', 'Named person'],
+    defaultSteps: ['Department heads', 'Named person', 'Named person'],
   },
   ar: {
     cycles: 'حملات حصر الاحتياجات',
@@ -47,7 +47,7 @@ const TEXTS = {
     newTitle: 'حملة حصر احتياجات جديدة',
     required: 'عبّئ هذا الحقل.',
     beforeStart: 'يجب أن تنتهي الفترة بعد بدايتها.',
-    defaultSteps: ['رؤساء الوحدات', 'شخص محدد', 'شخص محدد'],
+    defaultSteps: ['رؤساء الإدارات', 'شخص محدد', 'شخص محدد'],
   },
 } as const;
 

@@ -100,7 +100,9 @@ test.describe('organization profile', () => {
     await page.getByTestId('org-workStartsAt').selectOption('08:00');
     await page.getByTestId('org-industry').selectOption('banking_financial');
     await page.getByTestId('org-currencyCode').selectOption('USD');
-    await page.getByTestId('org-countryCode').selectOption('SA');
+    // The country list has a search box (WP-FIX-02 #4): type, then pick.
+    await page.getByTestId('org-countryCode').fill('Saudi');
+    await page.getByRole('option', { name: 'Saudi Arabia' }).click();
     await expect(page.getByTestId('org-preset-note')).toHaveText(
       'Suggestions for Saudi Arabia filled in. Check them, then save.',
     );
@@ -126,7 +128,7 @@ test.describe('organization profile', () => {
     await expect(page.getByTestId('organization-last-changed')).toContainText('Last changed by');
     await expect(page.getByTestId('organization-last-changed')).toContainText(' AH');
     await page.reload();
-    await expect(page.getByTestId('org-countryCode')).toHaveValue('SA');
+    await expect(page.getByTestId('org-countryCode')).toHaveValue('Saudi Arabia');
     await expect(page.getByTestId('org-day-6')).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByTestId('org-language-en')).toBeChecked();
 
@@ -153,10 +155,8 @@ test.describe('organization profile', () => {
     await page.goto('/ar/suite/admin/settings');
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('الإعدادات العامة');
-    await expect(page.getByTestId('org-countryCode')).toHaveValue('SA');
-    await expect(page.getByTestId('org-countryCode').locator('option:checked')).toHaveText(
-      'المملكة العربية السعودية',
-    );
+    await expect(page.getByTestId('org-countryCode')).toHaveValue('المملكة العربية السعودية');
+    await expect(page.locator('input[name="countryCode"]')).toHaveValue('SA');
     await expect(page.getByTestId('org-day-0')).toHaveText('الأحد');
     await expectNoSeriousA11yViolations(page);
 

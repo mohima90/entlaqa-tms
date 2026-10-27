@@ -5,6 +5,7 @@ import {
   type CourseCounts,
   type CourseRow,
   DELIVERY_TYPES,
+  OFFERED_DELIVERY_TYPES,
   countCourses,
   courseMatches,
 } from '@jadarat/tms/courses';
@@ -169,7 +170,7 @@ export default async function CoursesPage({
           ...page.categories.map((c) => ({ value: c.id, label: categoryName(c) })),
           { value: 'none', label: t('noCategory') },
         ]}
-        deliveryOptions={DELIVERY_TYPES.map((value) => ({
+        deliveryOptions={OFFERED_DELIVERY_TYPES.map((value) => ({
           value,
           label: t(`deliveryTypes.${value}`),
         }))}
@@ -179,10 +180,14 @@ export default async function CoursesPage({
         truncated={page.truncated}
         form={{
           categories: page.categories.map((c) => ({ id: c.id, name: categoryName(c) })),
-          deliveryTypes: DELIVERY_TYPES.map((value) => ({
+          deliveryTypes: OFFERED_DELIVERY_TYPES.map((value) => ({
             value,
             label: t(`deliveryTypes.${value}`),
           })),
+          // A stored course may still have one of the other types: it keeps its label in the form.
+          deliveryTypeLabels: Object.fromEntries(
+            DELIVERY_TYPES.map((value) => [value, t(`deliveryTypes.${value}`)]),
+          ),
           currency: page.currency,
           showCosts: page.canSeeCosts,
           preview: page.preview,

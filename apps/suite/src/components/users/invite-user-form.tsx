@@ -286,7 +286,7 @@ export function InviteUserPanel(props: InviteUserFormProps) {
 
   const section = (title: string, children: ReactNode, grid = true) => (
     <fieldset
-      className={`m-0 border-0 border-b border-border p-0 pb-5 last:border-b-0 ${grid ? 'grid grid-cols-1 gap-4 sm:grid-cols-2' : 'flex flex-col gap-3'}`}
+      className={`m-0 border-0 border-b border-border p-0 pb-5 last:border-b-0 ${grid ? 'grid grid-cols-1 gap-4' : 'flex flex-col gap-3'}`}
     >
       <legend className="mb-3 text-base font-bold">{title}</legend>
       {children}
@@ -448,7 +448,7 @@ export function InviteUserPanel(props: InviteUserFormProps) {
                   maxLength={254}
                   error={fieldErrors.email}
                   disabled={pending}
-                  className="sm:col-span-2"
+                  className=""
                 />
                 {nameFields(nameLanguage, true)}
                 {showOther ? (
@@ -504,7 +504,7 @@ export function InviteUserPanel(props: InviteUserFormProps) {
                     </option>
                   ))}
                 </SelectField>
-                <div className="flex flex-col gap-2 sm:col-span-2">
+                <div className="flex flex-col gap-2">
                   <SelectField
                     id="invite-manager"
                     label={text('manager')}

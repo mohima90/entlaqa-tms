@@ -12,6 +12,7 @@ import {
   treeOrder,
   unitNameWithLevel,
   unitsLabel,
+  suggestUnitCode,
 } from './structure-view';
 
 const levels = [
@@ -135,5 +136,21 @@ describe('unit actions (redesign package 2)', () => {
   it('deactivates with Undo only when no role is limited to the unit', () => {
     expect(deactivatesWithUndo({ childCount: 2, peopleCount: 9, roleScopeCount: 0 })).toBe(true);
     expect(deactivatesWithUndo({ childCount: 0, peopleCount: 0, roleScopeCount: 2 })).toBe(false);
+  });
+});
+
+describe('suggestUnitCode (the code the person need not think about, WP-FIX-02 #12)', () => {
+  it('takes the initials of several words, else the first three letters, upper case', () => {
+    expect(suggestUnitCode('Human Resources', [])).toBe('HR');
+    expect(suggestUnitCode('Sales', [])).toBe('SAL');
+    expect(suggestUnitCode('  learning & development ', [])).toBe('LD');
+    expect(suggestUnitCode('IT', [])).toBe('IT');
+  });
+
+  it('steps around codes other units have, ignoring case, and gives up on nothing usable', () => {
+    expect(suggestUnitCode('Human Resources', ['hr'])).toBe('HR-2');
+    expect(suggestUnitCode('Human Resources', ['HR', 'HR-2'])).toBe('HR-3');
+    expect(suggestUnitCode('', [])).toBe('');
+    expect(suggestUnitCode('إدارة', [])).toBe('');
   });
 });

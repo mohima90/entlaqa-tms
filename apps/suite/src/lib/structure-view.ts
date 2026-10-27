@@ -226,3 +226,31 @@ export function unitDeleteBlockers(
 export function deactivatesWithUndo(unit: UnitUse): boolean {
   return unit.roleScopeCount === 0;
 }
+
+// ---------------------------------------------------------------------------------------------------
+// A code the person need not think about (Kawadir asks for none; ours stays for imports and reports)
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * A code suggested from the English name while adding a unit (role-play feedback #12, PO 27 Oct 2026):
+ * the initials of two or more words («Human Resources» → HR), else the first three letters («Sales» →
+ * SAL); Latin letters and digits only, upper case; «-2», «-3»… while another unit has it. Empty when the
+ * name gives nothing usable (the server then asks for a code).
+ */
+export function suggestUnitCode(nameEn: string, existingCodes: readonly string[]): string {
+  const words = nameEn
+    .split(/[^A-Za-z0-9]+/)
+    .map((word) => word.replace(/[^A-Za-z0-9]/g, ''))
+    .filter((word) => word.length > 0);
+  if (words.length === 0) return '';
+  const base = (
+    words.length >= 2 ? words.map((word) => word[0] ?? '').join('') : (words[0] ?? '').slice(0, 3)
+  ).toUpperCase();
+  const taken = new Set(existingCodes.map((code) => code.toUpperCase()));
+  if (!taken.has(base)) return base;
+  for (let n = 2; n < 100; n += 1) {
+    const candidate = `${base}-${String(n)}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return '';
+}

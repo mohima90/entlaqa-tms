@@ -436,20 +436,7 @@ function CostCentrePanel({
       }
     >
       <form id={FORM_ID} className="flex flex-col gap-4" onSubmit={onSubmit} noValidate>
-        <TextField
-          id="cost-centre-code"
-          name="code"
-          label={text('form.code')}
-          marker={text('required')}
-          hint={text('costCentres.codeHint')}
-          required
-          dir="ltr"
-          maxLength={32}
-          autoComplete="off"
-          defaultValue={row?.code ?? ''}
-          error={failure.fields.code}
-          disabled={pending}
-        />
+        {/* Names first, the finance code after (fewest-fields form, PO 27 Oct 2026). */}
         <TextField
           id="cost-centre-nameEn"
           name="nameEn"
@@ -475,28 +462,44 @@ function CostCentrePanel({
           error={failure.fields.nameAr}
           disabled={pending}
         />
-        <div className="flex items-start gap-3 rounded-lg border border-border bg-surface-sunken p-4">
-          <input
-            id="cost-centre-active"
-            type="checkbox"
-            aria-describedby="cost-centre-active-hint"
-            checked={active}
-            onChange={(event) => {
-              setActive(event.target.checked);
-            }}
-            disabled={pending}
-            className="mt-0.5 size-5 shrink-0 accent-primary"
-            data-testid="cost-centre-active"
-          />
-          <span className="flex flex-col gap-0.5">
-            <label htmlFor="cost-centre-active" className="cursor-pointer font-semibold">
-              {text('costCentres.active')}
-            </label>
-            <span id="cost-centre-active-hint" className="text-sm text-text-muted">
-              {text('costCentres.activeHint')}
+        <TextField
+          id="cost-centre-code"
+          name="code"
+          label={text('form.code')}
+          marker={text('required')}
+          hint={text('costCentres.codeHint')}
+          required
+          dir="ltr"
+          maxLength={32}
+          autoComplete="off"
+          defaultValue={row?.code ?? ''}
+          error={failure.fields.code}
+          disabled={pending}
+        />
+        {row ? (
+          <div className="flex items-start gap-3 rounded-lg border border-border bg-surface-sunken p-4">
+            <input
+              id="cost-centre-active"
+              type="checkbox"
+              aria-describedby="cost-centre-active-hint"
+              checked={active}
+              onChange={(event) => {
+                setActive(event.target.checked);
+              }}
+              disabled={pending}
+              className="mt-0.5 size-5 shrink-0 accent-primary"
+              data-testid="cost-centre-active"
+            />
+            <span className="flex flex-col gap-0.5">
+              <label htmlFor="cost-centre-active" className="cursor-pointer font-semibold">
+                {text('costCentres.active')}
+              </label>
+              <span id="cost-centre-active-hint" className="text-sm text-text-muted">
+                {text('costCentres.activeHint')}
+              </span>
             </span>
-          </span>
-        </div>
+          </div>
+        ) : null}
         {failure.message ? (
           <Alert tone="danger" data-testid="cost-centre-dialog-message">
             {failure.message}

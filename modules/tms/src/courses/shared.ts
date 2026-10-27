@@ -21,6 +21,13 @@ export const DELIVERY_TYPES = [
 ] as const;
 export type DeliveryType = (typeof DELIVERY_TYPES)[number];
 
+/**
+ * The delivery types offered when adding or editing a course (PO, 27 Oct 2026, role-play feedback #8): the
+ * four of the positioning statement. The others stay valid for stored courses and come back to the list
+ * when a customer asks.
+ */
+export const OFFERED_DELIVERY_TYPES = ['classroom', 'virtual', 'blended', 'on_the_job'] as const;
+
 export const COURSE_STATUSES = ['active', 'archived'] as const;
 export type CourseStatus = (typeof COURSE_STATUSES)[number];
 

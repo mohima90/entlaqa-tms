@@ -41,8 +41,8 @@ async function expectNoSeriousA11yViolations(page: Page) {
 
 /**
  * The organization's own level names (guided-test feedback #3, PO 17 Oct 2026): the unit column of a table is
- * named after the first level while every row is at that level, else «Unit» — and then each row shows its
- * level («Retail Sales · Unit»). Never the fixed word «Department» unless the organization named a level so.
+ * named after the first level while every row is at that level, else «Department» — and then each row shows its
+ * level («Retail Sales · Department»); the general word is «Department» (word list, PO 27 Oct 2026).
  */
 async function expectUnitColumn(
   page: Page,
@@ -94,7 +94,7 @@ test.describe('planning cycle journey', () => {
 
     // Budget: the organization's level names label the units; an envelope for the first unit; a wrong
     // amount is caught first.
-    await expectUnitColumn(page, 'budget-unit-column', 'budget-row', 'Unit', 'Head');
+    await expectUnitColumn(page, 'budget-unit-column', 'budget-row', 'Department', 'Head');
     await page.getByTestId('budget-amount').first().fill('12,5x');
     await page.getByTestId('cycle-budgets-save').click();
     await expect(page.getByText('Enter an amount in numbers')).toBeVisible();
@@ -135,14 +135,20 @@ test.describe('planning cycle journey', () => {
     await page.getByTestId('cycle-launch-confirm').click();
     // The confirmation is a toast; the flag leaves the address.
     await expect(
-      page.getByText('The cycle is open. Unit heads can now fill in their needs.'),
+      page.getByText('The cycle is open. Department heads can now fill in their needs.'),
     ).toBeVisible();
     await expect(page.getByTestId('cycle-status')).toHaveText('Open');
     await expect(page.getByTestId('progress-filters').getByRole('button')).toHaveCount(6);
     const statuses = page.getByTestId('progress-status');
     expect(await statuses.count()).toBeGreaterThan(0);
     for (const status of await statuses.all()) await expect(status).toHaveText('Not started');
-    await expectUnitColumn(page, 'progress-column-department', 'progress-row', 'Unit', 'Head');
+    await expectUnitColumn(
+      page,
+      'progress-column-department',
+      'progress-row',
+      'Department',
+      'Head',
+    );
     await expectNoSeriousA11yViolations(page);
 
     // Extend the deadline while open.

@@ -33,6 +33,22 @@ async function homeTeamCounts(): Promise<TeamCounts | null> {
   );
 }
 
+/** The set-up steps in the product map's order (docs/product/PRODUCT-MAP.md, phase 1); other pages after. */
+const SETUP_ORDER: readonly NavLabelKey[] = [
+  'general',
+  'teamMembers',
+  'branding',
+  'roles',
+  'emailIntegration',
+  'security',
+  'grades',
+  'subscription',
+];
+const setupRank = (key: NavLabelKey, menuIndex: number): number => {
+  const rank = SETUP_ORDER.indexOf(key);
+  return rank === -1 ? SETUP_ORDER.length + menuIndex : rank;
+};
+
 /** One line under a set-up tile: what the page is for (message keys of namespace `shell`). */
 const SETUP_DESCRIPTION: Partial<Record<NavLabelKey, string>> = {
   teamMembers: 'setupStep.team',
@@ -93,14 +109,21 @@ export default async function SuiteHomePage({ params }: { params: Promise<{ loca
     icon: entry.icon,
     description,
   });
-  const setupGroups: HomeTileGroup[] = groups.map((group) => ({
-    key: group.key,
-    heading: group.key === 'main' ? undefined : t(group.key),
-    tiles: group.entries.map((entry) => {
-      const description = SETUP_DESCRIPTION[entry.key];
-      return tileOf(entry, description ? t(description) : undefined);
-    }),
-  }));
+  // «Set up your organization» (Kawadir's «Complete your setup»): one flat list in the order of the
+  // product map (PO, 27 Oct 2026) — settings, then the people, the look, the rest.
+  const setupEntries = groups
+    .flatMap((group) => group.entries)
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => setupRank(a.entry.key, a.index) - setupRank(b.entry.key, b.index));
+  const setupGroups: HomeTileGroup[] = [
+    {
+      key: 'setup',
+      tiles: setupEntries.map(({ entry }) => {
+        const description = SETUP_DESCRIPTION[entry.key];
+        return tileOf(entry, description ? t(description) : undefined);
+      }),
+    },
+  ];
   const pageTiles = groups.flatMap((group) =>
     group.entries.map((entry) => tileOf(entry, group.key === 'main' ? undefined : t(group.key))),
   );

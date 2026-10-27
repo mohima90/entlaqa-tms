@@ -237,7 +237,7 @@ export function ApprovalChainEditor(props: ApprovalChainEditorProps) {
                     </p>
                   )}
 
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-4">
                     <TextField
                       id={`${base}-name-en`}
                       label={t('setup.approvals.nameEn')}

@@ -1,17 +1,13 @@
-import { headers } from 'next/headers';
-import { type BrandColors, brandCss } from '../../lib/branding-view';
-import { NONCE_HEADER } from '../../lib/security-headers';
+import { type BrandColors, brandCssHref } from '../../lib/branding-view';
 
 /**
- * The organization's colours (WP-ADM-02, FR-ADM-07) as the third theme layer: CSS custom properties for
- * light and dark, loaded after the theme in a `<style>` carrying the request's CSP nonce (the policy allows
- * no other inline style). Nothing for the Jadarat look. Only `#RRGGBB` values of known roles can be written.
+ * The organization's colours (WP-ADM-02, FR-ADM-07) as the third theme layer: a same-origin stylesheet
+ * (/api/brand-css?…) loaded after the theme — allowed by `style-src 'self'` on every page and after every
+ * client-side navigation (an inline <style> with the request's nonce was dropped after navigating, WP-FIX-02
+ * #1). React keeps one copy in <head> by its `precedence`. Nothing for the Jadarat look.
  */
-export async function BrandStyle({ colors }: { readonly colors: BrandColors | null }) {
-  const css = brandCss(colors);
-  // Generated from fixed selectors and #RRGGBB values only; never markup (a `<` would end the element).
-  if (!css || css.includes('<')) return null;
-  const nonce = (await headers()).get(NONCE_HEADER) ?? undefined;
-  // As raw text: React would escape the quotes of the `[data-theme="dark"]` selectors.
-  return <style nonce={nonce} data-brand-layer="" dangerouslySetInnerHTML={{ __html: css }} />;
+export function BrandStyle({ colors }: { readonly colors: BrandColors | null }) {
+  const href = brandCssHref(colors);
+  if (!href) return null;
+  return <link rel="stylesheet" precedence="brand" href={href} data-brand-layer="" />;
 }

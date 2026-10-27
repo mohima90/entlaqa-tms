@@ -235,7 +235,7 @@ export function PlanEditor({
             error={errors.description}
             data-testid="plan-description"
           />
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4">
             {limitField('maxPeople', plan?.maxPeople ?? null)}
             {limitField('maxStorageGb', plan?.maxStorageGb ?? null)}
           </div>

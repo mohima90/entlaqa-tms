@@ -401,7 +401,7 @@ test.describe('organization structure (HR Manager)', () => {
     await expect(
       hrPage
         .getByRole('navigation', { name: 'Main navigation' })
-        .getByRole('link', { name: 'Structure' }),
+        .getByRole('link', { name: 'Departments' }),
     ).toBeVisible();
 
     // Levels: the seeded Department and Section. People are placed in units, so the levels are set
@@ -449,28 +449,45 @@ test.describe('organization structure (HR Manager)', () => {
     await expect(unitDialog.getByRole('heading', { level: 2 })).toHaveText('Add Department');
     await unitDialog.locator('#unit-nameEn').fill(`Sales ${run}`);
     await unitDialog.locator('#unit-nameAr').fill(`المبيعات ${run}`);
+    // The code, head and cost centre wait under «More options» (Kawadir form, WP-FIX-02 #12).
+    await unitDialog.getByTestId('unit-more').click();
     await unitDialog.locator('#unit-code').fill(top);
     await unitDialog.locator('#unit-head').selectOption({ index: 1 });
     await unitDialog
       .getByTestId('unit-cost-centre')
       .selectOption({ label: `${costCentre} · Sales ${run}` });
     await unitDialog.getByTestId('unit-dialog-submit').click();
-    await expect(unitDialog).toBeHidden();
+    // After saving, the next step is offered (Kawadir: «then it asks for the next level»): a fresh panel
+    // for a Section under the new department, with the parent's name in its description.
+    await expect(unitDialog.getByTestId('unit-dialog-added')).toBeVisible();
+    await unitDialog.getByTestId('unit-dialog-add-under').click();
+    await expect(unitDialog.getByRole('heading', { level: 2 })).toHaveText('Add Section');
+    await expect(unitDialog).toContainText(`Sales ${run}`);
+    await expect(unitDialog.locator('#unit-nameEn')).toHaveValue('');
     const sales = hrPage.getByTestId(`unit-${top}`);
     await expect(sales.getByTestId('unit-level').first()).toHaveText('Department');
     await expect(sales).toContainText('Head:');
-    // The row menu adds the next level under it.
     const child = `SUB${run}`;
-    await sales.getByTestId('unit-menu').first().click();
-    await hrPage.getByTestId('unit-menu-add').click();
-    await expect(unitDialog.getByRole('heading', { level: 2 })).toHaveText('Add Section');
     await unitDialog.locator('#unit-nameEn').fill(`Sales team ${run}`);
     await unitDialog.locator('#unit-nameAr').fill(`فريق المبيعات ${run}`);
+    await unitDialog.getByTestId('unit-more').click();
     await unitDialog.locator('#unit-code').fill(child);
     await unitDialog.getByTestId('unit-dialog-submit').click();
+    // «Add another Section»: a fresh, empty panel for a sibling; closed without saving.
+    await unitDialog.getByTestId('unit-dialog-add-another').click();
+    await expect(unitDialog.getByRole('heading', { level: 2 })).toHaveText('Add Section');
+    await expect(unitDialog.locator('#unit-nameEn')).toHaveValue('');
+    await expect(unitDialog.getByTestId('unit-dialog-added')).toHaveCount(0);
+    await unitDialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(unitDialog).toBeHidden();
     const team = sales.getByTestId(`unit-${child}`);
     await expect(team.getByTestId('unit-level')).toHaveText('Section');
+    // The row menu also adds the next level under a department.
+    await sales.getByTestId('unit-menu').first().click();
+    await hrPage.getByTestId('unit-menu-add').click();
+    await expect(unitDialog.getByRole('heading', { level: 2 })).toHaveText('Add Section');
+    await unitDialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(unitDialog).toBeHidden();
     // Collapse and expand the units under Sales.
     const toggle = sales.getByTestId('unit-toggle').first();
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -484,9 +501,9 @@ test.describe('organization structure (HR Manager)', () => {
     await sales.getByTestId('unit-menu').first().click();
     await hrPage.getByTestId('unit-menu-delete').click();
     const deleteDialog = hrPage.getByTestId('unit-delete-dialog');
-    await expect(deleteDialog.getByTestId('unit-in-use')).toContainText('Units under it: 1');
+    await expect(deleteDialog.getByTestId('unit-in-use')).toContainText('Departments under it: 1');
     await expect(deleteDialog.getByTestId('confirm-dialog-confirm')).toHaveCount(0);
-    await deleteDialog.getByRole('button', { name: 'Keep the unit' }).click();
+    await deleteDialog.getByRole('button', { name: 'Keep the department' }).click();
     await expect(deleteDialog).toBeHidden();
 
     // «Move to…» (WP-HR-01, design screens 4–5): the team moves under Training and development — only

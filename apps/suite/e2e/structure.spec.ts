@@ -4,7 +4,7 @@ import { type Page, expect, test } from '@playwright/test';
 /**
  * Organization → Structure and Branches without a database (FR-ADM-04/05, T-M3-02; business flow EP-ORG;
  * the default CI run; direction C, redesign package 2): the page frame with its breadcrumbs, the summary
- * strip, the two views «Units» and «Levels» (Q2-10; the levels as a top-to-bottom chain) with the default level
+ * strip, the two views «Departments» and «Levels» (Q2-10; the levels as a top-to-bottom chain) with the default level
  * every organization starts with — Department / «إدارة» — and the branches list, in English and Arabic,
  * accessible (axe). Building the tree, the levels, and the department picker of department-limited roles need
  * data: invitations.spec.ts (an HR Manager signs up and builds the structure) and users.spec.ts (a role
@@ -23,36 +23,36 @@ async function expectNoSeriousA11yViolations(page: Page) {
 const TEXTS = {
   en: {
     title: 'Organization structure',
-    tree: 'Units',
+    tree: 'Departments',
     levels: 'Levels',
     chain: 'Levels from the top down',
     explanation:
       'Name the levels of your organization in order. The structure follows these names.',
-    empty: 'No units yet',
+    empty: 'No departments yet',
     level: 'Level 1',
-    units: 'No units',
+    units: 'No departments',
     branches: 'Branches',
     noBranches: 'No branches yet',
     breadcrumb: 'Breadcrumb',
     costCentres: 'Cost centres',
     noCostCentres: 'No cost centres yet',
-    importTitle: 'Import units',
+    importTitle: 'Import departments',
   },
   ar: {
     title: 'الهيكل التنظيمي',
-    tree: 'الوحدات',
+    tree: 'الإدارات',
     levels: 'المستويات',
     chain: 'المستويات من الأعلى إلى الأسفل',
     explanation: 'سمِّ مستويات منظمتك بالترتيب، ويتبع الهيكل هذه الأسماء.',
-    empty: 'لا توجد وحدات بعد',
+    empty: 'لا توجد إدارات بعد',
     level: 'المستوى 1',
-    units: 'لا وحدات',
+    units: 'لا إدارات',
     branches: 'الفروع',
     noBranches: 'لا توجد فروع بعد',
     breadcrumb: 'مسار التنقل',
     costCentres: 'مراكز التكلفة',
     noCostCentres: 'لا توجد مراكز تكلفة بعد',
-    importTitle: 'استيراد الوحدات',
+    importTitle: 'استيراد الإدارات',
   },
 } as const;
 
@@ -158,7 +158,7 @@ test('the menu links Structure and Branches (Organization group)', async ({ page
   await page.goto('/en/suite');
   if (isMobile) await page.getByRole('button', { name: 'Menu', exact: true }).click();
   const nav = page.getByRole('navigation', { name: 'Main navigation' });
-  await expect(nav.getByRole('link', { name: 'Structure' })).toHaveAttribute(
+  await expect(nav.getByRole('link', { name: 'Departments' })).toHaveAttribute(
     'href',
     '/en/suite/admin/structure',
   );
@@ -169,6 +169,6 @@ test('the menu links Structure and Branches (Organization group)', async ({ page
   // The other view of the structure page is its own address (bookmarkable, server-rendered).
   await page.goto('/en/suite/admin/structure?view=unknown');
   await expect(
-    page.getByTestId('structure-views').getByRole('link', { name: 'Units' }),
+    page.getByTestId('structure-views').getByRole('link', { name: 'Departments' }),
   ).toHaveAttribute('aria-current', 'page');
 });

@@ -42,7 +42,7 @@ begin
     from platform.tenants t left join private.plans p on p.id = t.plan_id
     where t.slug in ('generic-a', 'generic-b')
   loop
-    perform tests.assert_eq(r.fields, 10::bigint, r.slug || ': the default needs form is seeded (ten fields)');
+    perform tests.assert_eq(r.fields, 9::bigint, r.slug || ': the default needs form is seeded (nine fields)');
     perform tests.assert_eq(r.plan_name, 'Generic plans', r.slug || ': on its plan');
     perform tests.assert_eq(r.status, case r.slug when 'generic-a' then 'trial' else 'active' end, r.slug || ': its status');
   end loop;

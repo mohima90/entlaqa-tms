@@ -1,5 +1,13 @@
 'use client';
-import { Badge, type BadgeTone, ListCard, ListCards, cn, tableClasses } from '@jadarat/ui';
+import {
+  Badge,
+  type BadgeTone,
+  ListCard,
+  ListCards,
+  buttonClasses,
+  cn,
+  tableClasses,
+} from '@jadarat/ui';
 import { useState } from 'react';
 import { STATUS_FILTERS, type StatusFilter } from '../../lib/planning-view';
 
@@ -12,6 +20,13 @@ export interface ProgressRow {
   readonly status: Exclude<StatusFilter, 'all'>;
   readonly statusLabel: string;
   readonly tone: BadgeTone;
+  /** The needs entered so far, as text («3 needs · 12 seats»; WP-LD-01). */
+  readonly needs: string;
+  /** A line under the status, e.g. «Extended to 5 Dec» (WP-LD-01, Q3); null: none. */
+  readonly note: string | null;
+  /** The department's needs page («View»); null before the launch. */
+  readonly href: string | null;
+  readonly viewLabel: string;
 }
 
 export interface ProgressTableProps {
@@ -25,7 +40,10 @@ export interface ProgressTableProps {
     /** The chips' names: All and every form status. */
     readonly chips: Readonly<Record<StatusFilter, string>>;
     /** The column headers (the unit column is named after the organization's level). */
-    readonly columns: Readonly<Record<'department' | 'head' | 'envelope' | 'status', string>>;
+    readonly columns: Readonly<
+      Record<'department' | 'head' | 'envelope' | 'needs' | 'status' | 'actions', string>
+    >;
+    readonly view: string;
   };
 }
 
@@ -86,16 +104,18 @@ export function ProgressTable({ rows, counts, texts }: ProgressTableProps) {
             <caption className="sr-only">{texts.caption}</caption>
             <thead className={tableClasses.header}>
               <tr>
-                {(['department', 'head', 'envelope', 'status'] as const).map((key) => (
-                  <th
-                    key={key}
-                    scope="col"
-                    className={tableClasses.head}
-                    data-testid={`progress-column-${key}`}
-                  >
-                    {texts.columns[key]}
-                  </th>
-                ))}
+                {(['department', 'head', 'envelope', 'needs', 'status', 'actions'] as const).map(
+                  (key) => (
+                    <th
+                      key={key}
+                      scope="col"
+                      className={tableClasses.head}
+                      data-testid={`progress-column-${key}`}
+                    >
+                      {texts.columns[key]}
+                    </th>
+                  ),
+                )}
               </tr>
             </thead>
             <tbody>
@@ -108,10 +128,28 @@ export function ProgressTable({ rows, counts, texts }: ProgressTableProps) {
                     {row.head ?? <Badge tone="warning">{texts.noHead}</Badge>}
                   </td>
                   <td className={`${tableClasses.cell} tabular-nums`}>{row.envelope}</td>
+                  <td className={`${tableClasses.cell} tabular-nums`} data-testid="progress-needs">
+                    {row.needs}
+                  </td>
                   <td className={tableClasses.cell}>
                     <Badge tone={row.tone} dot data-testid="progress-status">
                       {row.statusLabel}
                     </Badge>
+                    {row.note ? (
+                      <span className="mt-1 block text-[13px] text-text-muted">{row.note}</span>
+                    ) : null}
+                  </td>
+                  <td className={tableClasses.cell}>
+                    {row.href ? (
+                      <a
+                        href={row.href}
+                        aria-label={row.viewLabel}
+                        className={buttonClasses({ variant: 'secondary', size: 'sm' })}
+                        data-testid="progress-view"
+                      >
+                        {texts.view}
+                      </a>
+                    ) : null}
                   </td>
                 </tr>
               ))}
@@ -129,12 +167,24 @@ export function ProgressTable({ rows, counts, texts }: ProgressTableProps) {
                   <span className="block">
                     {texts.envelope}: {row.envelope}
                   </span>
+                  <span className="block">{row.needs}</span>
                 </>
               }
               status={
                 <Badge tone={row.tone} dot>
                   {row.statusLabel}
                 </Badge>
+              }
+              action={
+                row.href ? (
+                  <a
+                    href={row.href}
+                    aria-label={row.viewLabel}
+                    className={buttonClasses({ variant: 'secondary', size: 'sm' })}
+                  >
+                    {texts.view}
+                  </a>
+                ) : undefined
               }
             />
           ))}

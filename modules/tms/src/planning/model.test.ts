@@ -1,28 +1,37 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AddNeedInput,
   BudgetAmount,
   CreateCycleInput,
   DEFAULT_CHAIN,
   ReminderDays,
+  ReturnNeedsInput,
   SaveScopeInput,
   SaveStepsInput,
   type StructureUnit,
   addDays,
   basicsIssues,
   canExtendDeadline,
+  canRecallNeeds,
+  canSubmitNeeds,
   canonicalAmount,
   chainIssues,
   dayInZone,
   daysBetween,
   defaultDeadline,
   defaultPeriod,
+  departmentDeadline,
   departmentsInScope,
   earliestExtension,
   effectiveCycleStatus,
   effectiveHead,
+  entryOpen,
+  envelopeState,
   formStatus,
   isCalendarDay,
+  latestDeadline,
   launchProblems,
+  needsTotals,
   toFieldErrors,
   treeOrder,
 } from './model';
@@ -312,5 +321,81 @@ describe('input rules', () => {
       SaveScopeInput.safeParse({ id, version: 2, departmentIds: ['1 or 1=1'], branchIds: [] })
         .success,
     ).toBe(false);
+  });
+});
+
+describe('department needs (WP-LD-01; PO decisions Q1–Q3, 27 Oct 2026)', () => {
+  it('takes the later of the cycle deadline and a department extension; the latest decides Open', () => {
+    expect(departmentDeadline('2026-11-30', null)).toBe('2026-11-30');
+    expect(departmentDeadline('2026-11-30', '2026-12-05')).toBe('2026-12-05');
+    expect(departmentDeadline('2026-11-30', '2026-11-01')).toBe('2026-11-30');
+    expect(latestDeadline('2026-11-30', [null, '2026-12-05', '2026-12-01'])).toBe('2026-12-05');
+    expect(
+      effectiveCycleStatus('open', latestDeadline('2026-11-30', ['2026-12-05']), '2026-12-03'),
+    ).toBe('open');
+  });
+
+  it('opens entry while the cycle is open and the effective deadline has not passed', () => {
+    expect(entryOpen('open', '2026-11-30', '2026-11-30')).toBe(true);
+    expect(entryOpen('open', '2026-11-30', '2026-12-01')).toBe(false);
+    expect(entryOpen('closed', '2026-11-30', '2026-11-01')).toBe(false);
+    expect(entryOpen('draft', '2026-11-30', '2026-11-01')).toBe(false);
+  });
+
+  it('submits with at least one need and recalls only a submitted set', () => {
+    expect(canSubmitNeeds('not_started', 0)).toBe(false);
+    expect(canSubmitNeeds('draft', 2)).toBe(true);
+    expect(canSubmitNeeds('returned', 1)).toBe(true);
+    expect(canSubmitNeeds('submitted', 3)).toBe(false);
+    expect(canRecallNeeds('submitted')).toBe(true);
+    expect(canRecallNeeds('draft')).toBe(false);
+  });
+
+  it('sums seats, named seats and costs (Q1: seats are the unit; names never exceed the seats)', () => {
+    expect(
+      needsTotals([
+        { peopleCount: 5, namedCount: 2, estimatedCost: '1200.5' },
+        { peopleCount: 3, namedCount: 4, estimatedCost: null },
+        { peopleCount: 10, namedCount: 0, estimatedCost: '800' },
+      ]),
+    ).toEqual({ needs: 3, seats: 18, named: 5, unnamed: 13, cost: '2000.5', costed: 2 });
+    expect(needsTotals([])).toEqual({
+      needs: 0,
+      seats: 0,
+      named: 0,
+      unnamed: 0,
+      cost: null,
+      costed: 0,
+    });
+  });
+
+  it('shows the envelope and never blocks (Q2): what is left, or by how much it is exceeded', () => {
+    expect(envelopeState('2000.5', null)).toEqual({ kind: 'none' });
+    expect(envelopeState(null, '50000')).toEqual({ kind: 'within', left: '50000' });
+    expect(envelopeState('2000.5', '50000')).toEqual({ kind: 'within', left: '47999.5' });
+    expect(envelopeState('60000', '50000')).toEqual({ kind: 'over', overBy: '10000' });
+    expect(envelopeState('50000', '50000')).toEqual({ kind: 'within', left: '0' });
+  });
+
+  it('validates a need: topic, seats, names, cost and the «More» answers', () => {
+    const base = {
+      cycleId: '55555555-5555-4555-8555-555555555555',
+      departmentId: '66666666-6666-4666-8666-666666666661',
+      topic: '  Excel  ',
+      courseId: null,
+      peopleCount: 5,
+      personIds: [],
+      estimatedCost: '1,200.50',
+      answers: {},
+    };
+    const parsed = AddNeedInput.safeParse(base);
+    expect(parsed.success && parsed.data.topic).toBe('Excel');
+    expect(parsed.success && parsed.data.estimatedCost).toBe('1200.50');
+    expect(AddNeedInput.safeParse({ ...base, peopleCount: 0 }).success).toBe(false);
+    expect(AddNeedInput.safeParse({ ...base, topic: '‮x' }).success).toBe(false);
+    expect(AddNeedInput.safeParse({ ...base, estimatedCost: 'abc' }).success).toBe(false);
+    expect(AddNeedInput.safeParse({ ...base, estimatedCost: '' }).success).toBe(true);
+    expect(AddNeedInput.safeParse({ ...base, personIds: ['not-a-uuid'] }).success).toBe(false);
+    expect(ReturnNeedsInput.safeParse({ ...base, version: 1, note: '   ' }).success).toBe(false);
   });
 });

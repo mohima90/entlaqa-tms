@@ -221,6 +221,18 @@ export const tmsRolePermissions = definePermissions('tms', [
     risk: 'medium',
     requiresAal2: false,
   },
+  {
+    // WP-LD-01 (FR-PLN-03, FR-MGR-05; PO decisions 27 Oct 2026): the Department Head enters, submits and recalls
+    // the needs of the departments they head (the effective head, as the database checks).
+    code: 'tms.plan_needs.submit',
+    label: { ar: 'إدخال احتياجات الإدارة', en: 'Enter the department’s training needs' },
+    description: {
+      ar: 'إدخال الاحتياجات التدريبية للإدارات التي يرأسها وإرسالها وسحبها قبل الموعد النهائي',
+      en: 'Enter, submit and recall the training needs of the departments they head before the deadline',
+    },
+    risk: 'low',
+    requiresAal2: false,
+  },
 ]);
 
 export type TmsRolePermissionCode = keyof typeof tmsRolePermissions;

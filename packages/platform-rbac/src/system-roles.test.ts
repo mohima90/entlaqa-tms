@@ -116,6 +116,9 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
       // Manager gives (PO, 17 Oct 2026: designed by the L&D Manager).
       'tms.needs_form.read',
       'tms.needs_form.manage',
+      // WP-LD-01 (reviewed): a Department Head entering the training needs of the departments they head is
+      // training work — it changes no person, structure, organization setting or audit record.
+      'tms.plan_needs.submit',
     ];
     for (const role of SYSTEM_ROLES.filter((r) => !r.privileged)) {
       for (const grant of role.grants) {

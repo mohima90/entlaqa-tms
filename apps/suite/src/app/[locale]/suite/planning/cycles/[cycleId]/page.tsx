@@ -1,5 +1,5 @@
 import { toClientError } from '@jadarat/platform-core';
-import type { AppLocale } from '@jadarat/platform-i18n';
+import type { AppLocale, DateDisplay } from '@jadarat/platform-i18n';
 import { formatDisplayDate } from '@jadarat/platform-i18n/dates';
 import { routing } from '@jadarat/platform-i18n/routing';
 import type { CycleView } from '@jadarat/tms';
@@ -37,6 +37,7 @@ import { ProgressTable } from '../../../../../../components/planning/progress-ta
 import { SetupStepNav } from '../../../../../../components/planning/setup-step-nav';
 import { SuiteShell } from '../../../../../../components/suite-shell';
 import { toDrafts } from '../../../../../../lib/planning-chain';
+import { cycleDepartmentHref } from '../../../../../../lib/needs-view';
 import { dayFormatter, formatAmount } from '../../../../../../lib/planning-format';
 import {
   planCycleQuery,
@@ -197,7 +198,12 @@ export default async function PlanCyclePage({
             />
           );
         }
-        content = await Overview({ locale, view, launched: query.launched === '1' });
+        content = await Overview({
+          locale,
+          view,
+          launched: query.launched === '1',
+          display: context.regional.dateDisplay,
+        });
       }
     }
   }
@@ -771,12 +777,15 @@ async function Overview({
   locale,
   view,
   launched,
+  display,
 }: {
   locale: AppLocale;
   view: CycleView;
   launched: boolean;
+  display: DateDisplay;
 }) {
   const t = await getTranslations({ locale, namespace: 'planning' });
+  const day = dayFormatter(locale, display);
   const format = await getFormatter({ locale });
   const number = (n: number) => format.number(n, 'integer');
   const counts = statusCounts(view.departments.map((d) => d.status));
@@ -798,7 +807,7 @@ async function Overview({
       {view.status === 'closed' ? <Alert tone="info">{t('cycle.closedNote')}</Alert> : null}
       <Card
         title={t('cycle.progressTitle')}
-        description={`${t('cycle.progressIntro')} ${t('cycle.remindSoon')}`}
+        description={`${t('cycle.progressIntroNeeds')} ${t('cycle.remindSoon')}`}
         data-testid="progress-card"
       >
         {/* TODO(BACKLOG T-M3-04 follow-up): «Send reminder» per department with in-app notifications (FR-NTF-01). */}
@@ -838,6 +847,19 @@ async function Overview({
               status: row.status,
               statusLabel: t(`cycle.formStatus.${row.status}`),
               tone: FORM_TONE[row.status],
+              needs:
+                row.needs.count === 0
+                  ? t('cycle.noEnvelope')
+                  : t('cycle.needsCell', { needs: row.needs.count, seats: row.needs.seats }),
+              note:
+                row.deadline !== view.cycle.deadline
+                  ? t('cycle.extendedTo', { date: day(row.deadline) })
+                  : null,
+              href:
+                view.cycle.status === 'draft'
+                  ? null
+                  : cycleDepartmentHref(locale, view.cycle.id, row.departmentId),
+              viewLabel: t('cycle.viewNeeds', { name: localName(locale, row.name) }),
             }))}
             counts={
               Object.fromEntries(STATUS_FILTERS.map((key) => [key, number(counts[key])])) as Record<
@@ -867,8 +889,11 @@ async function Overview({
                 ),
                 head: t('cycle.columns.head'),
                 envelope: t('cycle.columns.envelope'),
+                needs: t('cycle.columns.needs'),
                 status: t('cycle.columns.status'),
+                actions: t('cycle.columns.actions'),
               },
+              view: t('cycle.view'),
             }}
           />
         </div>

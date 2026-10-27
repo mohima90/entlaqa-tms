@@ -73,7 +73,8 @@ describe.skipIf(!configured)('needs forms against PostgreSQL', () => {
       isActive: true,
       lockedAt: null,
       sectionCount: 1,
-      fieldCount: 10,
+      // Nine since WP-LD-01: the estimated cost is a column of the need, no longer a seeded field.
+      fieldCount: 9,
     });
     const form = await as((tx) => db.getNeedsForm(tx, forms[0]?.id ?? ''));
     expect(form?.sections[0]?.fields.map((f) => f.systemKey ?? f.type)).toEqual([
@@ -86,7 +87,6 @@ describe.skipIf(!configured)('needs forms against PostgreSQL', () => {
       'select',
       'textarea',
       'select',
-      'number',
     ]);
     expect(form?.sections[0]?.fields[2]?.options[0]).toEqual({
       value: 'technical',

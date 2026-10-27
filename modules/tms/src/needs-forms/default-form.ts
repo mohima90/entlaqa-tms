@@ -124,7 +124,8 @@ export const DEFAULT_FIELDS: readonly TemplateField[] = [
       opt('q4', 'Fourth quarter', 'الربع الرابع'),
     ],
   }),
-  field('number', 'Estimated cost', 'التكلفة التقديرية'),
+  // No «Estimated cost» field since WP-LD-01 (PO decision Q1, 27 Oct 2026): a need's cost is a column of the
+  // need itself, entered on the Add-a-need panel under «More» (migration 20261105100200).
 ];
 
 /**

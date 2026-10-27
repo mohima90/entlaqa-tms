@@ -24,7 +24,9 @@ export type SuitePage =
   // Planning (EP-PLN, T-M3-04).
   | 'planningCycles'
   | 'planningSettings'
-  | 'needsForms';
+  | 'needsForms'
+  // My team's needs (WP-LD-01): the Department Head's needs entry.
+  | 'myNeeds';
 
 /** Message keys (namespace `shell`) of every navigation label. */
 export type NavLabelKey =
@@ -43,7 +45,8 @@ export type NavLabelKey =
   | 'security'
   | 'auditLog'
   | (typeof tmsPlanningNavigation)[number]['key']
-  | 'needsForms';
+  | 'needsForms'
+  | 'myNeeds';
 
 /** Message keys (namespace `shell`) of the group headings; `main` has none. */
 export type NavGroupKey = 'main' | 'groupPlanning' | 'groupOrganization' | 'groupSettings';
@@ -80,6 +83,8 @@ export const SUITE_PATHS = {
   planningSettings: '/suite/planning/settings',
   // Planning → Needs forms (T-M3-10).
   needsForms: '/suite/planning/needs-forms',
+  // My team's needs (WP-LD-01): the Department Head enters the needs of the departments they head.
+  myNeeds: '/suite/my-team/needs',
 } as const satisfies Record<SuitePage, string>;
 
 const TMS_ICONS: Readonly<Record<(typeof tmsNavigation)[number]['key'], IconName>> = {
@@ -122,6 +127,8 @@ export function suiteNavigation(access: SuiteNavigationAccess): NavGroupModel[] 
       if (item.key === 'courses' && access.courses) return page('courses', 'courses', 'courses');
       return soon(item.key, TMS_ICONS[item.key]);
     });
+  // My team's needs (WP-LD-01): right after Home for a Department Head — their one planning task.
+  if (access.needsEntry) main.splice(1, 0, page('myNeeds', 'form', 'myNeeds'));
   const setup = access.organizationSetup;
   const groups: NavGroupModel[] = [
     { key: 'main', entries: main },

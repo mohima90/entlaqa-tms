@@ -48,6 +48,7 @@ import {
   chainIssues,
   defaultDeadline,
   defaultPeriod,
+  departmentDeadline,
   departmentsInScope,
   effectiveCycleStatus,
   effectiveHead,
@@ -126,6 +127,19 @@ export interface CycleDepartmentView {
   readonly active: boolean;
   readonly budgetAmount: string | null;
   readonly status: FormStatus;
+  /** The department's effective deadline (its own extension when later than the cycle's; WP-LD-01). */
+  readonly deadline: string;
+  /** The needs entered so far (WP-LD-01; design screen 5): count, seats, named seats, estimated cost. */
+  readonly needs: {
+    readonly count: number;
+    readonly seats: number;
+    readonly named: number;
+    readonly cost: string | null;
+  };
+  /** The last change of a need or the submission (ISO), or null. */
+  readonly lastActivityAt: string | null;
+  /** For the manager's actions on the row (return, extend): the department row's version. */
+  readonly version: number;
   /** Who receives the form (own head or nearest above); null: nobody — warned. */
   readonly head: {
     readonly name: PersonName;
@@ -330,7 +344,8 @@ export function planCyclesListQueryDefinition(): QueryDefinition<
         periodStart: r.periodStart,
         periodEnd: r.periodEnd,
         deadline: r.deadline,
-        status: effectiveCycleStatus(r.status, r.deadline, today),
+        // An extension for one department keeps the cycle open until it passes (WP-LD-01, Q3).
+        status: effectiveCycleStatus(r.status, r.latestDeadline, today),
         departmentCount: r.departmentCount,
         submittedCount: r.submittedCount,
       }));
@@ -399,11 +414,19 @@ export function planCycleQueryDefinition(): QueryDefinition<typeof CycleRef, Cyc
           (position.get(a.departmentId) ?? Number.MAX_SAFE_INTEGER) -
           (position.get(b.departmentId) ?? Number.MAX_SAFE_INTEGER),
       );
+      // The needs entered so far, per department (WP-LD-01); nothing before the launch.
+      const progress = new Map(
+        record.status === 'draft'
+          ? []
+          : (await repo.listDepartmentProgress(ctx.tx, record.id)).map((p) => [p.departmentId, p]),
+      );
       const departments: CycleDepartmentView[] = rows.map((row) => {
         const department = byId.get(row.departmentId);
         const head = effectiveHead(tree, row.departmentId);
         const headUnit = head ? byId.get(head.fromDepartmentId) : undefined;
         const headDepartment = headUnit?.head;
+        const figures = progress.get(row.departmentId);
+        const deadline = departmentDeadline(record.deadline, row.deadline);
         return {
           departmentId: row.departmentId,
           name: department
@@ -413,9 +436,16 @@ export function planCycleQueryDefinition(): QueryDefinition<typeof CycleRef, Cyc
           active: department?.active ?? false,
           budgetAmount: row.budgetAmount,
           status:
-            record.status === 'draft'
-              ? 'not_started'
-              : formStatus(row.status, record.deadline, today),
+            record.status === 'draft' ? 'not_started' : formStatus(row.status, deadline, today),
+          deadline,
+          needs: {
+            count: figures?.needsCount ?? 0,
+            seats: figures?.seats ?? 0,
+            named: figures?.named ?? 0,
+            cost: figures?.cost ?? null,
+          },
+          lastActivityAt: figures?.lastActivityAt?.toISOString() ?? null,
+          version: figures?.version ?? 1,
           head:
             head && headDepartment
               ? {
@@ -446,7 +476,7 @@ export function planCycleQueryDefinition(): QueryDefinition<typeof CycleRef, Cyc
       return ok({
         today,
         cycle,
-        status: effectiveCycleStatus(record.status, record.deadline, today),
+        status: effectiveCycleStatus(record.status, record.latestDeadline, today),
         canManage,
         editable,
         canExtend: canManage && canExtendDeadline(record.status),

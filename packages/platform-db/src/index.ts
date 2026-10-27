@@ -466,7 +466,9 @@ export {
   type OrgDepartment,
   type OrgStructure,
   MEMBER_SEARCH,
+  TEAM_LIMIT,
   getMemberOptionsByIds,
+  listDepartmentTeam,
   listOrgStructure,
   searchMemberOptions,
 } from './org-directory';

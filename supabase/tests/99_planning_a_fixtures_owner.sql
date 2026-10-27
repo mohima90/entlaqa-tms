@@ -87,8 +87,14 @@ begin
     'plan_cycles.currency is set by the database');
   perform tests.assert(not has_table_privilege('authenticated', 'tms.planning_settings', 'DELETE'),
     'planning_settings: no DELETE');
-  perform tests.assert(not has_column_privilege('authenticated', 'tms.plan_cycle_departments', 'status', 'UPDATE'),
-    'plan_cycle_departments.status is not updatable yet (needs form, T-M3-05)');
+  -- The submission state (WP-LD-01): the status, answers, return note and a department deadline are written by
+  -- the application; the stamps are the guard's.
+  perform tests.assert(has_column_privilege('authenticated', 'tms.plan_cycle_departments', 'status', 'UPDATE'),
+    'plan_cycle_departments.status is updatable (the head submits, the L&D Manager returns)');
+  perform tests.assert(not has_column_privilege('authenticated', 'tms.plan_cycle_departments', 'submitted_at', 'UPDATE')
+                       and not has_column_privilege('authenticated', 'tms.plan_cycle_departments', 'submitted_by', 'UPDATE')
+                       and not has_column_privilege('authenticated', 'tms.plan_cycle_departments', 'returned_at', 'UPDATE'),
+    'plan_cycle_departments: the submission stamps are set by the database only');
 end $$;
 
 \echo '99_planning_a_fixtures_owner: ok'

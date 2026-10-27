@@ -26,10 +26,10 @@ describe('the needs forms preview copy (no database, T-M3-10)', () => {
     const storage = memory();
     const store = new NeedsFormsPreview(storage);
     const [first] = store.list();
-    expect(first).toMatchObject({ isDefault: true, sectionCount: 1, fieldCount: 10 });
+    expect(first).toMatchObject({ isDefault: true, sectionCount: 1, fieldCount: 9 });
     const snapshot = storage.data.get(PREVIEW_STORAGE_KEY) ?? '';
     expect(previewSummaries(snapshot)).toEqual([first]);
-    expect(previewForm(snapshot, first?.id ?? '')?.sections[0]?.fields).toHaveLength(10);
+    expect(previewForm(snapshot, first?.id ?? '')?.sections[0]?.fields).toHaveLength(9);
     expect(previewForm('not json', 'x')).toBeNull();
     expect(previewSummaries('not json')).toEqual([]);
 

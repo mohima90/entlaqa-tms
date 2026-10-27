@@ -129,7 +129,7 @@ for (const locale of ['en', 'ar'] as const) {
     );
     // Counts in words with the right plural (redesign package 4: no more «1 sections»).
     await expect(card(page, t.defaultForm)).toContainText(
-      locale === 'en' ? '1 section · 10 fields' : 'قسم واحد · 10 حقول',
+      locale === 'en' ? '1 section · 9 fields' : 'قسم واحد · 9 حقول',
     );
     await expectNoSeriousA11yViolations(page);
 

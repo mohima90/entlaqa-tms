@@ -402,7 +402,8 @@ begin
   -- (Compared in byte order: the course permissions of T-M3-03 sort differently under other collations.)
   perform tests.assert_eq((select array_agg(c order by c collate "C")
                            from unnest(private.role_permission_codes('a0000000-0000-4000-8000-000000000001', 'department_head')) c),
-    array['platform.org.read', 'platform.role.read', 'platform.user.read', 'tms.course.read', 'tms.course_cost.read'],
+    array['platform.org.read', 'platform.role.read', 'platform.user.read', 'tms.course.read', 'tms.course_cost.read',
+          'tms.plan_needs.submit'],
     'a standard role''s permissions (any scope)');
 end $$;
 reset role;
@@ -433,10 +434,12 @@ do $$
 declare
   v_auditor text := (select code from platform.custom_roles where id = 'a6000000-0000-4000-8000-0000000000e9');
 begin
-  -- Never in a custom role: role management, privileged role assignment, the organization structure.
+  -- Never in a custom role: role management, privileged role assignment, the organization structure, and needs
+  -- entry (WP-LD-01: it follows the headed department, which only the standard Department Head role has).
   perform tests.assert_eq((select string_agg(code, ',' order by code collate "C") from platform.ref_permissions
                            where custom_role_use = 'none'),
-    'platform.org.manage,platform.role.assign_privileged,platform.role.manage', 'admin-only permissions (custom_role_use none)');
+    'platform.org.manage,platform.role.assign_privileged,platform.role.manage,tms.plan_needs.submit',
+    'permissions no custom role carries (custom_role_use none): the admin-only ones and the Department Head''s own needs entry');
   -- The permissions that make a role privileged (only the Organization Admin gives such a role): exactly these.
   perform tests.assert_eq((select string_agg(code, ',' order by code collate "C") from platform.ref_permissions
                            where privileged),

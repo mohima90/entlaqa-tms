@@ -124,7 +124,8 @@
       "rows": "Move between rows",
       "open": "Open the selected row"
     },
-    "grades": "Grades"
+    "grades": "Grades",
+    "myNeeds": "My team's needs"
   },
   "errors": {
     "malformedRequest": "We couldn't process this request. Refresh the page and try again.",
@@ -144,7 +145,12 @@
     "planCycleDeadlineRefused": "The deadline can only move later while the cycle is open and before the current deadline passes.",
     "planPeopleLimit": "Your organization's plan has reached its limit of people. Nobody new can be added until someone is deactivated or ENTLAQA raises the limit. Nothing else changes.",
     "planStorageLimit": "Your organization's plan has reached its storage limit. No new file can be added until files are removed or ENTLAQA raises the limit.",
-    "planFeatureOff": "This part isn't in your organization's plan. To add it, contact ENTLAQA."
+    "planFeatureOff": "This part isn't in your organization's plan. To add it, contact ENTLAQA.",
+    "planNeedsClosed": "Needs entry is closed for this department: the cycle is not open or its deadline has passed. The L&D Manager can extend it.",
+    "planNeedsSubmitted": "These needs are submitted. Recall the submission to change them.",
+    "planNeedsEmpty": "Add at least one training need before you submit.",
+    "planNeedsLimit": "The limit was reached: at most 200 needs per department and 500 named people per need.",
+    "planNeedsNotSubmitted": "These needs are not submitted right now. Refresh the page to see their current status."
   },
   "auth": {
     "signInTitle": "Sign in",
@@ -1123,7 +1129,9 @@
         "head": "Head",
         "envelope": "Budget envelope",
         "status": "Status",
-        "actions": "Actions"
+        "actions": "Actions",
+        "needs": "Needs · seats",
+        "cost": "Estimated cost"
       },
       "tableCaption": "Progress per department",
       "formStatus": {
@@ -1148,7 +1156,12 @@
       "stepPerson": "{step}: {name}",
       "stepHeads": "{step}: every department head for their own lines",
       "stepUnnamed": "{step}: not named yet",
-      "filterLabel": "Show departments by status"
+      "filterLabel": "Show departments by status",
+      "needsCell": "{needs, plural, =0 {—} one {# need} other {# needs}} · {seats, plural, one {# seat} other {# seats}}",
+      "view": "View",
+      "viewNeeds": "View the needs of {name}",
+      "extendedTo": "Extended to {date}",
+      "progressIntroNeeds": "Department heads enter their training needs until the deadline. Open a row to read them, return them for changes or extend one department."
     },
     "settings": {
       "title": "Planning settings",
@@ -3801,6 +3814,174 @@
       "adminTitle": "Your organization's access is paused",
       "adminText": "Your people see a notice instead of Jadarat TMS until ENTLAQA resumes the service. Nothing has been deleted.",
       "contact": "To resume, contact ENTLAQA."
+    }
+  },
+  "needsEntry": {
+    "title": "My team's training needs",
+    "intro": "When a planning cycle is open, enter what training your team needs next year, then submit it before the deadline.",
+    "notConfigured": "Your team's training needs appear here once this environment is connected to its database.",
+    "loadFailed": "We couldn't load the training needs. Try again. Reference: {correlationId}",
+    "breadcrumb": "My team's needs",
+    "emptyTitle": "Nothing to enter right now",
+    "emptyBody": "When the L&D Manager opens a planning cycle that includes your department, it appears here.",
+    "task": {
+      "dueIn": "{count, plural, =0 {Due today} one {Due tomorrow} other {Due in # days}}",
+      "late": "{count, plural, one {# day late} other {# days late}}",
+      "deadline": "Deadline {date}",
+      "needs": "{count, plural, =0 {No needs yet} one {# need} other {# needs}}",
+      "seats": "{count, plural, =0 {no seats} one {# seat} other {# seats}}",
+      "enter": "Enter needs",
+      "continue": "Continue",
+      "view": "View needs",
+      "returned": "Returned for changes"
+    },
+    "home": {
+      "bannerDue": "{cycle}: the training needs of {department} are {due}.",
+      "bannerLate": "{cycle}: the training needs of {department} were due on {date}. Contact the L&D Manager for an extension.",
+      "bannerReturned": "{cycle}: the training needs of {department} were returned for changes.",
+      "cardTitle": "Your team's training needs",
+      "cardIntro": "One task per department you head."
+    },
+    "page": {
+      "deadline": "Deadline",
+      "extendedDeadline": "Deadline (extended for your department)",
+      "instructions": "Instructions from the L&D Manager",
+      "statsLabel": "Your needs in numbers",
+      "stats": {
+        "needs": "Needs",
+        "seats": "Seats",
+        "named": "Named",
+        "unnamed": "To be named later",
+        "cost": "Estimated cost",
+        "envelope": "Budget envelope"
+      },
+      "envelopeNone": "No envelope was set for your department.",
+      "envelopeWithin": "{left} left of {envelope}.",
+      "envelopeOver": "{over} over the envelope of {envelope}. You can still submit; the L&D Manager decides.",
+      "costNone": "No cost estimated yet.",
+      "tableCaption": "Training needs of {department}",
+      "columns": {
+        "topic": "Training topic",
+        "people": "Who",
+        "cost": "Estimated cost",
+        "updated": "Last change",
+        "actions": "Actions"
+      },
+      "peopleCell": "{count, plural, one {# person} other {# people}}",
+      "namedCell": "{named} of {count} named",
+      "fromLibrary": "From the course library",
+      "noCost": "—",
+      "add": "Add a need",
+      "addFirst": "Add your first need",
+      "edit": "Edit {topic}",
+      "remove": "Remove {topic}",
+      "removeTitle": "Remove this need?",
+      "removeBody": "«{topic}» is removed from your list. You can add it again later.",
+      "removeConfirm": "Remove",
+      "keep": "Keep",
+      "removed": "The need was removed.",
+      "emptyTitle": "No needs yet",
+      "emptyBody": "Add the training your team needs next year: a topic and how many people. Names are optional.",
+      "submit": "Submit",
+      "submitDisabledHint": "Add at least one need to submit.",
+      "recall": "Recall",
+      "recallHint": "You can recall your submission until {date} to change it.",
+      "submittedOn": "Submitted on {date}.",
+      "submittedOnBy": "Submitted on {date} by {by}.",
+      "returnedBanner": "Returned for changes by the L&D Manager: «{note}». Change your needs and submit again.",
+      "lateBanner": "The deadline ({date}) has passed. Your needs can no longer change unless the L&D Manager extends it.",
+      "closedBanner": "This planning cycle is closed.",
+      "submittedBanner": "Your needs are submitted. The L&D Manager consolidates them into the training plan.",
+      "readOnly": "You see these needs as the department's head entered them.",
+      "teamSize": "{count, plural, =0 {Nobody is employed in this department yet} one {# person in your team} other {# people in your team}}",
+      "moreAnswers": "Details",
+      "departmentAnswersTitle": "About your department",
+      "departmentAnswersSave": "Save answers",
+      "departmentAnswersSaved": "Your answers were saved."
+    },
+    "panel": {
+      "addTitle": "Add a need",
+      "editTitle": "Edit the need",
+      "intro": "A topic and how many people. Names are optional: unnamed seats are named when the training is scheduled.",
+      "course": "Course from the library",
+      "courseNone": "Not from the library — my own topic",
+      "courseHint": "Picking a course fills in the topic; you can still change it.",
+      "topic": "Training topic",
+      "topicHint": "What the training is about, in a few words. Up to 500 characters.",
+      "peopleCount": "How many people",
+      "peopleCountHint": "The seats this topic needs. Up to 100,000.",
+      "who": "Who",
+      "whoHint": "Pick the people you already know, from your team. The number rises to match.",
+      "everyone": "Everyone ({count})",
+      "nobody": "Nobody chosen",
+      "chosen": "{count, plural, one {# person chosen} other {# people chosen}}",
+      "searchTeam": "Search your team",
+      "more": "More",
+      "moreHint": "Details your organization asks for.",
+      "estimatedCost": "Estimated cost ({currency})",
+      "estimatedCostHint": "If you know it. Leave empty otherwise.",
+      "save": "Save",
+      "saveAndAddAnother": "Save and add another",
+      "cancel": "Cancel",
+      "close": "Close",
+      "working": "Working…",
+      "saved": "The need was saved.",
+      "added": "The need was added.",
+      "discardTitle": "Discard this need?",
+      "discardBody": "What you typed in this panel is not saved."
+    },
+    "submitDialog": {
+      "title": "Submit the needs of {department}?",
+      "body": "The L&D Manager receives them. You can recall them until {date}.",
+      "rows": {
+        "needs": "Needs",
+        "seats": "Seats",
+        "named": "Of which named",
+        "unnamed": "To be named later",
+        "cost": "Estimated cost",
+        "envelope": "Budget envelope"
+      },
+      "within": "Within the envelope",
+      "over": "Over by {amount} — you can still submit",
+      "confirm": "Submit",
+      "cancel": "Not yet",
+      "submitted": "Your needs were submitted."
+    },
+    "recallDialog": {
+      "title": "Recall your submission?",
+      "body": "Your needs go back to a draft. Submit them again before {date}.",
+      "confirm": "Recall",
+      "cancel": "Keep it submitted",
+      "recalled": "Your submission was recalled. Change your needs and submit again."
+    },
+    "manager": {
+      "return": "Return for changes",
+      "returnTitle": "Return the needs of {department}?",
+      "returnBody": "The head sees your note on their needs page and submits again before the deadline.",
+      "returnLabel": "Note to the head",
+      "returnHint": "What should change. Up to 500 characters.",
+      "returnConfirm": "Return",
+      "returned": "The needs were returned to the head.",
+      "extend": "Extend for this department",
+      "extendTitle": "Extend the deadline for {department}",
+      "extendLabel": "New deadline for this department",
+      "extendHint": "Later than its current deadline ({current}), within the planning period ({end}). Other departments keep theirs.",
+      "extendConfirm": "Extend",
+      "extended": "The deadline was extended for this department.",
+      "headLine": "Head: {name}",
+      "noHead": "No head: nobody can enter these needs."
+    },
+    "fieldErrors": {
+      "required": "Fill in this field.",
+      "invalid": "Check this field.",
+      "personNotAllowed": "Pick people from your team only.",
+      "fewerThanNamed": "The number cannot be lower than the people you named.",
+      "unknownCourse": "Pick a course from the list.",
+      "invalidAmount": "Enter an amount with up to 3 decimals.",
+      "tooLong": "This text is too long.",
+      "notLater": "Pick a later date.",
+      "inPast": "Pick today or a later day.",
+      "afterPeriod": "Pick a day within the planning period."
     }
   }
 }

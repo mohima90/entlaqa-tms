@@ -175,3 +175,39 @@ export async function searchMemberOptions(
     limit ${MEMBER_SEARCH.limit}`);
   return rows.map((r) => ({ personId: r.person_id, nameAr: r.name_ar, nameEn: r.name_en }));
 }
+
+/** The team of a department as a needs page names it: active members employed in the unit or any unit under it. */
+export const TEAM_LIMIT = 2000;
+
+/**
+ * The people a Department Head may name for a training need (WP-LD-01, Q1: candidates are optional): active
+ * members whose employment is in `departmentId` or a unit under it, by name, at most TEAM_LIMIT. Names only.
+ * Row-level security on persons still applies (the head reads the people of the departments they head).
+ */
+export async function listDepartmentTeam(
+  tx: UserTx,
+  departmentId: string,
+): Promise<readonly MemberOption[]> {
+  if (!UUID_RE.test(departmentId)) return [];
+  const rows = await tx.execute<{
+    person_id: string;
+    name_ar: string | null;
+    name_en: string | null;
+  }>(sql`
+    with recursive tree (id) as (
+      select d.id from platform.departments d where d.id = ${departmentId}::uuid and d.deleted_at is null
+      union
+      select c.id from platform.departments c join tree t on c.parent_id = t.id where c.deleted_at is null
+    )
+    select p.id as person_id, p.display_name_ar as name_ar, p.display_name_en as name_en
+    from platform.persons p
+    join platform.person_employment e on e.tenant_id = p.tenant_id and e.person_id = p.id
+    where p.status = 'active'
+      and e.department_id in (select id from tree)
+      and (e.end_on is null or e.end_on >= current_date)
+      and exists (select 1 from platform.tenant_memberships m
+                  where m.tenant_id = p.tenant_id and m.person_id = p.id and m.status = 'active')
+    order by coalesce(p.display_name_ar, p.display_name_en), p.id
+    limit ${TEAM_LIMIT}`);
+  return rows.map((r) => ({ personId: r.person_id, nameAr: r.name_ar, nameEn: r.name_en }));
+}

@@ -33,7 +33,6 @@ describe('the default needs form (business flow EP-PLN §12)', () => {
       ['Reason type', 'select', false, null],
       ['Reason', 'textarea', false, null],
       ['Preferred quarter', 'select', false, null],
-      ['Estimated cost', 'number', false, null],
     ]);
     for (const field of DEFAULT_FIELDS) {
       expect(field.label.ar.trim(), field.label.en).not.toBe('');
@@ -77,7 +76,7 @@ describe('the default needs form (business flow EP-PLN §12)', () => {
       isDefault: false,
       full: false,
     });
-    expect(full.fieldCount).toBe(10);
+    expect(full.fieldCount).toBe(9);
     expect(blank.sections[0]?.fields.map((f) => f.label.en)).toEqual([
       TOPIC_FIELD.label.en,
       PEOPLE_FIELD.label.en,

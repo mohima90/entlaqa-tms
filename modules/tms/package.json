@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./actions/sessions": "./src/actions/sessions.ts",
     "./actions/planning": "./src/actions/planning.ts",
+    "./actions/needs": "./src/actions/needs.ts",
     "./courses": "./src/courses/shared.ts",
     "./courses/server": "./src/courses/server.ts",
     "./needs-forms": "./src/needs-forms/index.ts",

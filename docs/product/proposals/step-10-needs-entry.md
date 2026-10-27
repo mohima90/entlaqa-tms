@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Sent to the PO 27 Oct 2026 (Arabic page «اقتراح: إدخال احتياجات الإدارة»). **Q1 decided (PO, 27 Oct 2026): the number of people is required, names optional; the plan counts seats** (see below). Q2–Q3 open |
+| **Status** | Sent to the PO 27 Oct 2026 (Arabic page «اقتراح: إدخال احتياجات الإدارة»). **Q1 decided (PO, 27 Oct 2026): the number of people is required, names optional; the plan counts seats**; **Q2 decided (PO, 27 Oct 2026): the head sees the department's envelope** (one quiet line, warning when over, never a block). Q3 open |
 | **Builds on** | `docs/business-flows/EP-PLN-planning-cycle.md` §3 C6–9, §9, §12 (agreed 17 Oct 2026); `docs/design/forms-standard.md`; product map step 10 |
 | **Work package** | WP-LD-01 (PLN-03 filling, MGR-05, PLN-02 progress; T-M3-05) |
 | **Research** | Kawadir ATS code (dashboard task card, banner, bell, cron nudges), Cornerstone Training Demand Forecasting, SAP SuccessFactors Training Planner, Skillup, Oracle Learning (research brief kept in the session; sources in the Arabic page's footer) |
@@ -57,5 +57,5 @@ Co-planners (Cornerstone), budget lock by L&D after review (SAP), pre-fill from 
 ## Questions to the PO (A = proposed)
 
 1. ~~«Who needs it»~~ — decided above (number required, names optional, seats in the plan).
-2. Does the head see the envelope? **A** yes, one quiet line with a warning when over · B no, L&D only.
+2. ~~Does the head see the envelope?~~ — decided: **yes** (one quiet line, warning when over, no block; the head trims before submitting, fewer return rounds for L&D).
 3. Deadline passed and not submitted: **A** shown to L&D as *Late* with what was saved; L&D extends or proceeds · B auto-submitted as is.

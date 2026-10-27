@@ -41,9 +41,10 @@ const ALLOWED: Readonly<Record<string, string>> = {
   'structure.levels.example': 'example level names',
 };
 
-/** «unit(s)» as a word, outside ICU placeholders such as {unit}. */
+/** «unit(s)» as a word, outside ICU placeholders such as {unit} — the branches of a plural still count. */
 const EN_UNIT = /\bunits?\b/i;
-const withoutPlaceholders = (text: string) => text.replace(/\{[^}]*\}/g, '');
+const withoutPlaceholders = (text: string) =>
+  text.replace(/\{\s*\w+\s*\}/g, '').replace(/\{\s*\w+\s*,\s*\w+\s*,/g, '');
 /** The Arabic word for a unit in its forms (وحدة، وحدات، وحدتان، وحدتين، وحدته…), not وحده / وحدك / وحدود. */
 const AR_UNIT = /وحد(ة|ات|ت(ان|ين|ه|ها|هم|ك|كم|ي))/;
 /** Arabic words for a division / section used as the general word (needs-form sections keep «القسم»). */

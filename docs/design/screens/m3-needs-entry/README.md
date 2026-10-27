@@ -1,6 +1,6 @@
 # M3 — Department Head enters the team's training needs (design for approval)
 
-> **Status:** Shown to the PO on 27 Oct 2026 (Arabic design page «تصميم: إدخال احتياجات الإدارة», five screens) — **waiting for approval**, then built in **WP-LD-01** (T-M3-05) · Roles: Department Head (filling), L&D Manager / Training Coordinator (progress)
+> **Status:** **Approved by the PO on 27 Oct 2026** («approved»; Arabic design page «تصميم: إدخال احتياجات الإدارة», five screens) — **being built in WP-LD-01** (T-M3-05) · Roles: Department Head (filling), L&D Manager / Training Coordinator (progress)
 > **Requirements:** FR-PLN-03, FR-MGR-05, FR-PLN-02 (progress), FR-PLN-06 (envelope) · **Business flow:** `docs/business-flows/EP-PLN-planning-cycle.md` §3 C6–9 as amended 27 Oct 2026 · **Proposal and decisions:** `docs/product/proposals/step-10-needs-entry.md`
 > **Source:** Mobbin references listed below (links only; no images in the repository), applied in Direction C (`docs/design/redesign-direction-c.md`) with the forms standard (`docs/design/forms-standard.md`).
 

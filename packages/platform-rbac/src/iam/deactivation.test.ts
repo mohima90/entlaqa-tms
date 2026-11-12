@@ -177,7 +177,7 @@ describe('deactivation screen query', () => {
         candidates: [{ personId: NEW_MANAGER, nameAr: 'خالد', nameEn: null }],
       }),
     );
-    // The member doing it is never offered as the replacement (second look M3c).
+    // The list is asked with the member doing it, who is marked in it (second look M3c).
     expect(db.listReplacementCandidates).toHaveBeenCalledWith(TX, SARA, ME);
   });
 
@@ -389,9 +389,31 @@ describe('deactivate action', () => {
     expect(!result.ok && result.error.fieldErrors).toEqual([
       { path: 'reassign.platform.direct_reports', code: 'OWNER_INVALID' },
     ]);
-    // The member doing it is never offered as the replacement (second look M3c).
+    // The list is asked with the member doing it, who is marked in it (second look M3c).
     expect(db.listReplacementCandidates).toHaveBeenCalledWith(TX, SARA, ME);
     expect(db.reassignDirectReports).not.toHaveBeenCalled();
+    expect(db.deactivateMembership).not.toHaveBeenCalled();
+  });
+
+  it("nobody hands a leaver's units to themselves; the direct reports they may take (second look M3)", async () => {
+    db.listDirectReports.mockResolvedValue([report]);
+    db.listHeadedDepartments.mockResolvedValue([department]);
+    db.listReplacementCandidates.mockResolvedValue([
+      { personId: NEW_MANAGER, nameAr: 'خالد', nameEn: null, self: false },
+      { personId: ME, nameAr: 'أنا', nameEn: null, self: true },
+    ]);
+    const result = await action(['tenant_admin']).run(
+      deactivateInput({
+        reassign: [
+          { kind: 'platform.direct_reports', toPersonId: ME },
+          { kind: 'platform.headed_departments', toPersonId: ME },
+        ],
+      }),
+    );
+    expect(!result.ok && result.error.fieldErrors).toEqual([
+      { path: 'reassign.platform.headed_departments', code: 'OWNER_INVALID' },
+    ]);
+    expect(db.reassignHeadedDepartments).not.toHaveBeenCalled();
     expect(db.deactivateMembership).not.toHaveBeenCalled();
   });
 

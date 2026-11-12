@@ -230,16 +230,21 @@ export interface ReplacementCandidate {
   readonly personId: string;
   readonly nameAr: string | null;
   readonly nameEn: string | null;
+  /**
+   * The member who is deactivating (second look M3, 12 Nov 2026): they may take over the leaver's direct
+   * reports, but never the leaver's units — a unit's head enters its training needs, so nobody hands units
+   * to themselves in passing (the database refuses it too: private.check_department_writer, 20261112100400).
+   */
+  readonly self: boolean;
 }
 
 /**
  * Who can take over: the organization's active members with a managing role in force (Department Head),
  * the heads of departments and the people with direct reports (the reporting line, EP-ROLES) — the people
- * the direct-manager picker offers (T-M2-13) — without the person being deactivated, and without the
- * member who deactivates them (`actorPersonId`; second look M3, 12 Nov 2026): a unit's head enters its
- * training needs, so nobody hands a leaver's units to themselves in passing — the database refuses it too
- * (private.check_department_writer, migration 20261112100400). A structure manager who should head a unit
- * picks themselves in the Departments form, a privileged and audited act.
+ * the direct-manager picker offers (T-M2-13) — without the person being deactivated. The member who
+ * deactivates them (`actorPersonId`) is in the list, marked `self`: the callers offer them for the direct
+ * reports and not for the units. A structure manager who should head a unit picks themselves in the
+ * Departments form, a privileged and audited act.
  */
 export async function listReplacementCandidates(
   tx: UserTx,
@@ -248,8 +253,13 @@ export async function listReplacementCandidates(
 ): Promise<readonly ReplacementCandidate[]> {
   const managers = await listManagerOptions(tx);
   return managers
-    .filter((m) => m.active && m.personId !== personId && m.personId !== actorPersonId)
-    .map((m) => ({ personId: m.personId, nameAr: m.nameAr, nameEn: m.nameEn }));
+    .filter((m) => m.active && m.personId !== personId)
+    .map((m) => ({
+      personId: m.personId,
+      nameAr: m.nameAr,
+      nameEn: m.nameEn,
+      self: actorPersonId !== null && m.personId === actorPersonId,
+    }));
 }
 
 /** Revokes the person's pending invitations of this organization (each emits `invitation.revoked`). */

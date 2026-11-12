@@ -197,7 +197,14 @@ export function DeactivateDialog(props: DeactivateDialogProps) {
   const stuck =
     form !== null &&
     (form.kinds.some((k) => k.blockedText !== null) ||
-      (form.kinds.length > 0 && form.candidates.length === 0));
+      // Nobody can take a kind over: the signed-in member is offered for the direct reports, never for
+      // the departments (deactivate-member-form.tsx).
+      form.kinds.some(
+        (k) =>
+          form.candidates.filter(
+            (c) => !(k.code === 'platform.headed_departments' && c.self === true),
+          ).length === 0,
+      ));
 
   const reactivate = (personId: string, privileged: boolean) => {
     void (privileged ? reactivatePrivilegedMemberAction : reactivateMemberAction)({

@@ -30,7 +30,12 @@ export interface DeactivateMemberFormProps {
   /** The member holds a privileged role: the privileged action (Organization Admin, AAL2). */
   readonly privileged: boolean;
   readonly kinds: readonly DeactivationKindRow[];
-  readonly candidates: readonly { readonly personId: string; readonly name: string }[];
+  /** `self`: the signed-in member — offered for the direct reports, never for the departments (the head enters the needs). */
+  readonly candidates: readonly {
+    readonly personId: string;
+    readonly name: string;
+    readonly self?: boolean;
+  }[];
   readonly reasons: readonly { readonly value: string; readonly label: string }[];
   /** Texts of namespace `deactivation`. */
   readonly labels: Readonly<Record<string, string>>;
@@ -60,7 +65,13 @@ export function DeactivateMemberForm(props: DeactivateMemberFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const [kindErrors, setKindErrors] = useState<Readonly<Record<string, string>>>({});
   const blocked = views.some((k) => k.blocked);
-  const noCandidates = kinds.length > 0 && candidates.length === 0;
+  // Nobody hands a leaver's departments to themselves in passing (the server refuses it too).
+  const HEADED = 'platform.headed_departments';
+  const candidatesFor = (code: string) =>
+    code === HEADED ? candidates.filter((c) => c.self !== true) : candidates;
+  const forAll = kinds.some((k) => k.code === HEADED) ? candidatesFor(HEADED) : candidates;
+  // Stuck when a kind has nobody who can take it over.
+  const noCandidates = kinds.some((k) => candidatesFor(k.code).length === 0);
   const idOf = (code: string) => code.replaceAll('.', '-');
   const onPending = props.onPending;
   useEffect(() => {
@@ -138,7 +149,7 @@ export function DeactivateMemberForm(props: DeactivateMemberFormProps) {
                 data-testid="owner-all"
               >
                 <option value="">{text('choosePerson')}</option>
-                {candidates.map((c) => (
+                {forAll.map((c) => (
                   <option key={c.personId} value={c.personId}>
                     {c.name}
                   </option>
@@ -190,7 +201,7 @@ export function DeactivateMemberForm(props: DeactivateMemberFormProps) {
                         data-testid={`owner-${kind.code}`}
                       >
                         <option value="">{text('choosePerson')}</option>
-                        {candidates.map((c) => (
+                        {candidatesFor(kind.code).map((c) => (
                           <option key={c.personId} value={c.personId}>
                             {c.name}
                           </option>

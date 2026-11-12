@@ -342,6 +342,14 @@ function deactivateAction(
           ),
         );
         if (!candidates.has(choice.toPersonId)) return err(fieldError(path, 'OWNER_INVALID'));
+        // Nobody hands a leaver's units to themselves in passing (second look M3; the database refuses it
+        // too) — the direct reports they may take.
+        if (
+          kind.code === headedDepartmentsResponsibility.code &&
+          choice.toPersonId === ctx.actor.personId
+        ) {
+          return err(fieldError(path, 'OWNER_INVALID'));
+        }
         const outcome = await kind.reassign(ctx.tx, input.personId, choice.toPersonId);
         if (!outcome.ok) return err(fieldError(path, REASSIGN_CODES[outcome.refusal]));
         reassigned.push({ kind: kind.code, toPersonId: choice.toPersonId, ids: outcome.moved });

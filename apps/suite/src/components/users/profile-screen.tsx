@@ -1285,6 +1285,7 @@ async function deactivateDialog(
         candidates: view.candidates.map((c) => ({
           personId: c.personId,
           name: localizedName(locale, c.nameAr, c.nameEn),
+          self: c.self,
         })),
         reasons: DEACTIVATION_REASONS.map((value) => ({ value, label: t(`reasons.${value}`) })),
         labels,

@@ -117,8 +117,8 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     code: 'hr_manager',
     name: { ar: 'مدير الموارد البشرية', en: 'HR Manager' },
     description: {
-      ar: 'سجلات الموظفين والفروع والهيكل التنظيمي ورؤساء وحداته وقواعد الامتثال، ودعوة المستخدمين وإسناد الأدوار غير المميزة.',
-      en: 'Employee records, branches, the structure and its unit heads, compliance rules; invites people and gives roles that are not privileged.',
+      ar: 'سجلات الموظفين والفروع والهيكل التنظيمي ورؤساء إداراته وقواعد الامتثال، ودعوة المستخدمين وإسناد الأدوار غير المميزة.',
+      en: 'Employee records, branches, the structure and its department heads, compliance rules; invites people and gives roles that are not privileged.',
     },
     privileged: true,
     grants: tenantWide(
@@ -185,8 +185,8 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     code: 'department_head',
     name: { ar: 'رئيس القسم', en: 'Department Head' },
     description: {
-      ar: 'الوحدات التي يرأسها فقط: يقترح الاحتياجات ويعتمد بنود الخطة والطلبات ويرى فريقه.',
-      en: 'The units they head only: proposes needs, approves plan lines and requests, sees the team.',
+      ar: 'الإدارات التي يرأسها فقط: يُدخل احتياجات فريقه التدريبية ويرى فريقه.',
+      en: "The departments they head only: enters the team's training needs and sees the team.",
     },
     privileged: false,
     grants: [

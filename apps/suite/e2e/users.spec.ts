@@ -642,6 +642,8 @@ test.describe('users pages', () => {
     await expect(page.getByRole('menuitem', { name: /Delete role/ })).toBeDisabled();
     await page.keyboard.press('Escape');
     await row.getByRole('link', { name, exact: true }).click();
+    // The address changes after the click (a client-side navigation): wait for it before reading it.
+    await page.waitForURL(/\/roles\/custom_[0-9a-f]{12}$/);
     const code = /\/roles\/(custom_[0-9a-f]{12})$/.exec(page.url())?.[1] ?? '';
     expect(code).toMatch(/^custom_[0-9a-f]{12}$/);
     await page.goto(`/ar/suite/admin/roles/${code}`);

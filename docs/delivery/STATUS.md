@@ -39,7 +39,7 @@
 4. Scope: confirm IAM-08 «R1 part» in the feature list (its release column says R2); decide whether self-service sign-up (ADM-01) stays in R1 now that organizations are created by the Super Admin.
 5. Whether to start a second Claude account now (it begins with `HOW-TO-START.md`).
 6. Before the first customer: production worker host (cost), legal items (SDAIA SCCs / transfer assessment, security decisions 6–14).
-7. **Plan approval, simpler (PO, 12 Nov 2026; `test-feedback-2026-11-12.md` #4):** L&D submits the plan → the HR Manager approves → Finance confirms; no chain step in the cycle set-up. Claude's view given; the PO's answers are needed (who is «Finance»; what Finance may do), then EP-PLN is amended before WP-LD-03.
+7. **Plan approval, simpler (PO, 12 Nov 2026; `test-feedback-2026-11-12.md` #4):** L&D submits the plan → the HR Manager approves → Finance confirms; no chain step in the cycle set-up. **Decided (PO, 12 Nov 2026): approvers by role — whoever holds the HR Manager role approves; «Finance» is a ready-made role given in Team members; the Finance step is optional per organization** (some enterprises use it, others do not). Still open: how the step is switched on (proposal: a switch in Planning settings, off by default) and what Finance may do (confirm / send back). Then EP-PLN is amended (and the BRD if the role list changes) before WP-LD-03.
 8. ~~Look and feel~~ — **decided (PO «A», 12 Nov 2026): Kawadir is the reference for the look and the user experience again** (its popups for inviting and creating above all); Mobbin where Kawadir has no matching screen. CLAUDE.md updated with the PO's yes. Next from Claude: the pilot — the planning cycle set-up redone the Kawadir way, old and new side by side, for the PO's approval.
 
 ---

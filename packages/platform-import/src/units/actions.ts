@@ -2,12 +2,14 @@ import { type AppError, type Result, appError, err, ok } from '@jadarat/platform
 import {
   type UserTx,
   applyUnitImport,
+  listHeadedUnitIds,
   loadUnitImportContext,
   lockUnitImport,
 } from '@jadarat/platform-db';
 import {
   type ActionDefinition,
   type QueryDefinition,
+  giveHeadRole,
   platformPermissions,
 } from '@jadarat/platform-rbac';
 import { z } from 'zod';
@@ -75,6 +77,12 @@ export interface UnitImportApplied {
   /** For the audit: the codes created and the units updated (no names, no file content). */
   readonly createdCodes: readonly string[];
   readonly updatedIds: readonly string[];
+  /**
+   * Heads named in the file who were given the Department Head role (WP-FIX-03, «either door does both»):
+   * how many, and how many keep another role (a person holds one role).
+   */
+  readonly headRolesGiven: number;
+  readonly headRolesKept: number;
 }
 
 /** «Import»: the good rows, in one go; the structure changed since the check → nothing is written. */
@@ -107,12 +115,29 @@ export function applyUnitImportActionDefinition(): ActionDefinition<
           }),
         );
       }
+      // The heads the file names get the Department Head role, as from the unit form (head-role.ts; each
+      // change has its own audit event).
+      const heads = new Set<string>();
+      for (const operation of checked.value.operations) {
+        if (typeof operation.headPersonId === 'string') heads.add(operation.headPersonId);
+      }
+      let headRolesGiven = 0;
+      let headRolesKept = 0;
+      for (const personId of [...heads].sort()) {
+        const units = await listHeadedUnitIds(ctx.tx, personId);
+        if (units.length === 0) continue;
+        const role = await giveHeadRole(ctx, personId, units, 'unit_import');
+        if (role.kind === 'given') headRolesGiven += 1;
+        else if (role.kind === 'kept' || role.kind === 'not_allowed') headRolesKept += 1;
+      }
       return ok({
         created: outcome.created,
         updated: outcome.updated,
         problems: checked.value.counts.problems,
         createdCodes: outcome.createdCodes,
         updatedIds: outcome.updatedIds,
+        headRolesGiven,
+        headRolesKept,
       });
     },
     audit: (_input, output) => ({
@@ -124,6 +149,7 @@ export function applyUnitImportActionDefinition(): ActionDefinition<
         skipped: output.problems,
         createdCodes: output.createdCodes,
         updatedIds: output.updatedIds,
+        headRolesGiven: output.headRolesGiven,
       },
     }),
   };

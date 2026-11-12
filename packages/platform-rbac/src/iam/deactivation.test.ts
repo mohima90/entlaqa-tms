@@ -21,6 +21,11 @@ import {
 } from './deactivation';
 
 const db = vi.hoisted(() => ({
+  // The head's Department Head role (WP-FIX-03, head-role.ts): nobody has an account unless a test says so.
+  getEditableRole: vi.fn((): Promise<unknown> => Promise.resolve(null)),
+  lockTenantRoles: vi.fn(() => Promise.resolve()),
+  replaceMemberRole: vi.fn(),
+  insertAuditEvent: vi.fn(() => Promise.resolve()),
   getMemberLifecycleTarget: vi.fn(),
   lockMemberLifecycle: vi.fn(),
   listDirectReports: vi.fn(),
@@ -294,6 +299,11 @@ describe('deactivate action', () => {
     ].map((fn) => fn.mock.invocationCallOrder[0] ?? 0);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(db.reassignDirectReports).toHaveBeenCalledWith(TX, SARA, NEW_MANAGER);
+    // The new head of the leaver's units: their Department Head role is looked at (WP-FIX-03,
+    // head-role.ts — here a person without an account, so nothing changes), not the new manager's.
+    expect(db.getEditableRole).toHaveBeenCalledTimes(1);
+    expect(db.getEditableRole).toHaveBeenCalledWith(TX, NEW_MANAGER);
+    expect(db.lockTenantRoles).toHaveBeenCalledWith(TX);
     expect(db.deactivateMembership).toHaveBeenCalledWith(TX, {
       personId: SARA,
       membershipId: 'm1',

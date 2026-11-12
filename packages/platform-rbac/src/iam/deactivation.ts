@@ -22,6 +22,7 @@ import type { ActionContext, ActionDefinition } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import type { PermissionDefinition } from '../permissions';
 import { platformPermissions } from '../platform-permissions';
+import { giveHeadRole } from './head-role';
 
 /**
  * Deactivate / reactivate a member (T-M2-09, FR-IAM-05; approved screen 4 «تعطيل المستخدم»). Permission
@@ -340,6 +341,10 @@ function deactivateAction(
         const outcome = await kind.reassign(ctx.tx, input.personId, choice.toPersonId);
         if (!outcome.ok) return err(fieldError(path, REASSIGN_CODES[outcome.refusal]));
         reassigned.push({ kind: kind.code, toPersonId: choice.toPersonId, ids: outcome.moved });
+        // The new head of the leaver's units gets the Department Head role (WP-FIX-03, head-role.ts).
+        if (kind.code === headedDepartmentsResponsibility.code && outcome.moved.length > 0) {
+          await giveHeadRole(ctx, choice.toPersonId, outcome.moved, 'head_hand_over');
+        }
       }
 
       let invitationsRevoked: readonly string[];

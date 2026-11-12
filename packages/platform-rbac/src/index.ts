@@ -70,6 +70,7 @@ export * from './iam/organization-profile';
 export * from './iam/branding';
 export * from './iam/email-integration';
 export * from './iam/structure';
+export * from './iam/head-role';
 export * from './iam/branches';
 export * from './iam/cost-centres';
 export * from './iam/scope-units';

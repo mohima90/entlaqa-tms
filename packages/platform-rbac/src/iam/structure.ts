@@ -27,9 +27,10 @@ import {
 } from '@jadarat/platform-db';
 import { hasVisibleText } from '@jadarat/platform-i18n';
 import { z } from 'zod';
-import type { ActionDefinition } from '../define-action';
+import type { ActionContext, ActionDefinition } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import { platformPermissions } from '../platform-permissions';
+import { type HeadRoleOutcome, giveHeadRole } from './head-role';
 
 /**
  * Organization → Structure (FR-ADM-05, BRD v3.2; T-M3-02; business flow
@@ -239,6 +240,11 @@ export interface StructureSaved<T> {
   readonly id: string;
   readonly before: T | null;
   readonly after: T | null;
+  /**
+   * A unit whose head changed to a person (WP-FIX-03, «either door does both»): what happened to that
+   * person's role — given the Department Head role, kept another role, no account… (head-role.ts).
+   */
+  readonly headRole?: HeadRoleOutcome | null;
 }
 
 function saved<T extends { readonly id: string }>(
@@ -325,6 +331,23 @@ export function removeStructureLevelActionDefinition(): ActionDefinition<
 // Units
 // ---------------------------------------------------------------------------------------------------
 
+/**
+ * A saved unit, and — when its head is now another person — that person's Department Head role
+ * (WP-FIX-03: picking a head gives the role, head-role.ts; the role change has its own audit event).
+ */
+async function withHeadRole(
+  ctx: Pick<ActionContext<UserTx>, 'can' | 'tx' | 'actor'>,
+  outcome: StructureOutcome<StructureUnitRow>,
+) {
+  if (!outcome.ok) return err(refusalError(outcome));
+  const head = outcome.after?.headPersonId ?? null;
+  const headRole =
+    outcome.after && head !== null && head !== (outcome.before?.headPersonId ?? null)
+      ? await giveHeadRole(ctx, head, [outcome.after.id], 'unit_head')
+      : null;
+  return ok({ ...saved(outcome), headRole });
+}
+
 /** «Add <first level>» (no parent) or «Add <next level>» under a unit. */
 export function createStructureUnitActionDefinition(): ActionDefinition<
   typeof CreateUnitInput,
@@ -336,7 +359,7 @@ export function createStructureUnitActionDefinition(): ActionDefinition<
     input: CreateUnitInput,
     handler: async ({ ctx, input }) => {
       const { parentId, ...fields } = input;
-      return result(await createStructureUnit(ctx.tx, parentId, fields));
+      return withHeadRole(ctx, await createStructureUnit(ctx.tx, parentId, fields));
     },
     audit: (_input, output) => ({
       action: 'platform.org.unit_created',
@@ -358,7 +381,7 @@ export function updateStructureUnitActionDefinition(): ActionDefinition<
     input: UpdateUnitInput,
     handler: async ({ ctx, input }) => {
       const { id, version, ...fields } = input;
-      return result(await updateStructureUnit(ctx.tx, id, version, fields));
+      return withHeadRole(ctx, await updateStructureUnit(ctx.tx, id, version, fields));
     },
     audit: (_input, output) => ({
       action: 'platform.org.unit_updated',

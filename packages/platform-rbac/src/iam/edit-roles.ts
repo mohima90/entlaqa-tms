@@ -295,7 +295,11 @@ function roleAction(
         }
         if (set.changed) {
           headSet = { unitId: set.unitId, replaced: set.before };
-          await insertAuditEvent(ctx.tx, ctx.actor, headAudit(set.unitId, set.before, input.personId));
+          await insertAuditEvent(
+            ctx.tx,
+            ctx.actor,
+            headAudit(set.unitId, set.before, input.personId),
+          );
         }
       }
       let headsCleared: readonly string[] = [];

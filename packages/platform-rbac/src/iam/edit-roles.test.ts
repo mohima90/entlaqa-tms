@@ -494,9 +494,11 @@ describe('the Department Head role and the unit they head (WP-FIX-03, «either d
       heads: [{ unitId: SALES, personId: SARA, nameAr: 'سارة', nameEn: 'Sara' }],
     });
     // The Organization Admin gives the role but does not manage the structure (PO, 11 Oct 2026).
-    const admin = await createDefineQuery(runtime(['tenant_admin']).rt)(editRolesQueryDefinition())({
-      personId: SARA,
-    });
+    const admin = await createDefineQuery(runtime(['tenant_admin']).rt)(editRolesQueryDefinition())(
+      {
+        personId: SARA,
+      },
+    );
     expect(admin.ok && admin.value.headUnits.canPick).toBe(false);
   });
 

@@ -501,7 +501,12 @@ test.describe('organization structure (HR Manager)', () => {
 
     // A unit with a unit under it is not deleted: the dialog says what is left.
     await sales.getByTestId('unit-menu').first().click();
-    await hrPage.getByTestId('unit-menu-delete').click();
+    // Blocked: announced as unavailable with the reason next to it, and still opens the dialog that
+    // lists what is left (so the click skips Playwright's «enabled» check).
+    const blockedDelete = hrPage.getByTestId('unit-menu-delete');
+    await expect(blockedDelete).toHaveAttribute('aria-disabled', 'true');
+    await expect(blockedDelete.getByTestId('unit-delete-reason')).toBeVisible();
+    await blockedDelete.click({ force: true });
     const deleteDialog = hrPage.getByTestId('unit-delete-dialog');
     await expect(deleteDialog.getByTestId('unit-in-use')).toContainText('Departments under it: 1');
     await expect(deleteDialog.getByTestId('confirm-dialog-confirm')).toHaveCount(0);

@@ -20,7 +20,7 @@
     "@jadarat/platform-db": "workspace:*",
     "@jadarat/platform-i18n": "workspace:*",
     "@jadarat/platform-jobs": "workspace:*",
-    "nodemailer": "10.1.6",
+    "nodemailer": "10.2.1",
     "server-only": "0.0.1",
     "zod": "4.6.7"
   },
@@ -31,7 +31,7 @@
     "@types/smtp-server": "3.5.13",
     "@vitest/coverage-v8": "5.0.5",
     "drizzle-orm": "0.45.4",
-    "smtp-server": "3.20.1",
+    "smtp-server": "3.21.1",
     "typescript": "6.0.3",
     "vitest": "5.0.5"
   }

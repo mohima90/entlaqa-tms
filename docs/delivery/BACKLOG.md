@@ -34,6 +34,16 @@
 |---|---|---|---|---|---|
 | T-M3-18 | **«Simple way» test fixes 1–3**: the Department Head role and a department's «Head» set each other (either door does both; replacing asks, removing warns; import and deactivation follow); a refused change from an older copy of a page loads the latest version by itself, pages reload when the tab is shown again; the cycle's set-up asks for the name in the default language only (the other language optional); a red asterisk marks required fields on every form instead of «(required)» (PO, 12 Nov 2026) | WP-FIX-03 | Claude | 🔵 | FR-ADM-05, FR-IAM-03/04, FR-PLN-02, FR-PLN-03. One PR; with it the fix of the nightly self-hosted gate (issue #95: image vulnerability scan) |
 
+#### WP-UX-01 The Kawadir experience across the product (PO, 12 Nov 2026)
+
+**Claimed by:** Claude (12 Nov 2026) · **Business flow:** not needed — the pattern is `docs/design/forms-standard.md` rules 8–9, approved by the PO from the «Cycle set-up pilot» mock-up (12 Nov 2026) and extended to the whole product the same day · **Depends on:** WP-FIX-03 merged; the cycle set-up part also on EP-PLN §13 agreed in full
+
+| ID | Task | WP | Owner | Status | Notes / PR |
+|---|---|---|---|---|---|
+| T-M3-19 | **Inventory and roll-out order**: every create / add / invite / edit interaction, how it is presented today (dialog, side panel, wizard, full page), what changes to reach the Kawadir pattern, size, tests to update | WP-UX-01 | Claude | 🔵 | Inventory running 12 Nov 2026 |
+| T-M3-20 | **Pilot: planning cycle set-up** — one popup to create, launch from the row menu with a confirmation, an optional settings page; the «Approval chain» step leaves the cycle (EP-PLN §13) | WP-UX-01 | Claude | ⚪ | FR-PLN-02. After WP-FIX-03 and EP-PLN §13 |
+| T-M3-21 | **Roll-out to every other create / add / invite / edit interaction** in the order of T-M3-19; screenshots EN + AR to the PO before each PR merges | WP-UX-01 | Claude | ⚪ | FR-STE-08; no behaviour or data changes |
+
 #### WP-FIX-01 Test feedback fixes 1–3
 
 **Claimed by:** tech lead session (17 Oct 2026) · **Business flow:** not needed — fixes approved by the PO (`test-feedback-2026-10-17.md` #1–3) · **Depends on:** —

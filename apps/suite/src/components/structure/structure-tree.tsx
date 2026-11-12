@@ -152,6 +152,12 @@ export function StructureTree(props: StructureTreeProps) {
   function refusal(error: Parameters<typeof sessionRefused>[0]): string | null {
     if (sessionRefused(error)) return null;
     const failure = actionFailure(error, text, props.errors, unitFieldText);
+    if (failure.latest) {
+      // The page now shows the latest version; the confirmation held the older row (review M4).
+      setDialog(null);
+      if (failure.message) toast.warning(failure.message);
+      return null;
+    }
     return failure.message ?? Object.values(failure.fields)[0] ?? null;
   }
 

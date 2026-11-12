@@ -7,6 +7,11 @@ import { fieldErrorCodes } from '../profile/field-errors';
 export interface Failure {
   readonly fields: Readonly<Record<string, string>>;
   readonly message: string | null;
+  /**
+   * The page loaded the latest version by itself (the change came from an older copy): a confirmation that
+   * is still open holds the old row, so it closes and the message goes to the page (review M4).
+   */
+  readonly latest?: boolean;
 }
 
 /**

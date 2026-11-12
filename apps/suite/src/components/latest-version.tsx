@@ -1,6 +1,6 @@
 'use client';
 import type { AppError } from '@jadarat/platform-core';
-import { toast } from '@jadarat/ui';
+import { Button, toast } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import {
   type ReactNode,
@@ -73,6 +73,9 @@ export function useLatestVersion(): {
     (error: AppError, fallback = '') => {
       if (!isVersionConflict(error)) return null;
       if (!texts) return fallback;
+      // Inside a side panel or a dialog (a modal) the page's messages cannot be reached: the form shows
+      // the button itself, with `LoadLatestVersion` (review M3).
+      if (document.querySelector('dialog:modal')) return texts.offer;
       toast.warning(texts.offer, {
         action: {
           label: texts.load,
@@ -86,6 +89,30 @@ export function useLatestVersion(): {
     [texts],
   );
   return { refresh, offer };
+}
+
+/**
+ * «Load the latest version» inside a form's own message (review M3): the offer of `useLatestVersion` is a
+ * message of the page, which a side panel or a dialog covers and makes unreachable — a form in one places
+ * this under its message, and it shows when that message is the offer.
+ */
+export function LoadLatestVersion({ message }: { readonly message: string | null | undefined }) {
+  const texts = useContext(LatestVersionContext);
+  if (!texts || message !== texts.offer) return null;
+  return (
+    <span className="mt-2 block">
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={() => {
+          window.location.reload();
+        }}
+        data-testid="load-latest-version"
+      >
+        {texts.load}
+      </Button>
+    </span>
+  );
 }
 
 /**

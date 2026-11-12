@@ -527,7 +527,13 @@ export function NeedsPage(props: NeedsPageProps) {
               disabled={pending}
               onClick={() => {
                 if (!removing) return;
-                const need = removing;
+                // The need as the page holds it now: after an automatic reload the confirmation would
+                // otherwise send the older version again and be refused again (review M4).
+                const need = view.needs.find((n) => n.id === removing.id);
+                if (!need) {
+                  setRemoving(null);
+                  return;
+                }
                 run(
                   () =>
                     deleteNeedAction({

@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation';
 import { useId, useMemo, useState, useTransition } from 'react';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
-import { useLatestVersion } from '../latest-version';
+import { LoadLatestVersion, useLatestVersion } from '../latest-version';
 import { ComboboxField } from '../combobox-field';
 import { FieldControl } from '../needs-forms/needs-form-renderer';
 import { useNeedsTexts } from './use-needs-texts';
@@ -284,6 +284,7 @@ export function NeedPanel(props: NeedPanelProps) {
         {notice ? (
           <Alert tone="danger" data-testid="need-error">
             {notice}
+            <LoadLatestVersion message={notice} />
           </Alert>
         ) : null}
 

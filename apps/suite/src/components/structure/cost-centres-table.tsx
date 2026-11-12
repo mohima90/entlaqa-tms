@@ -31,6 +31,7 @@ import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { ConfirmDialog } from './confirm-dialog';
 import type { Failure } from './failure';
+import { LoadLatestVersion } from '../latest-version';
 import { useFailure } from './use-failure';
 
 /** A cost centre as the page shows it (name in the page's language and the usage line formatted on the server). */
@@ -88,6 +89,12 @@ export function CostCentresTable({
   function refusal(error: Parameters<typeof sessionRefused>[0]): string | null {
     if (sessionRefused(error)) return null;
     const failure = actionFailure(error, text, errors, costCentreFieldText);
+    if (failure.latest) {
+      // The page now shows the latest version; the confirmation held the older row (review M4).
+      setDialog(null);
+      if (failure.message) toast.warning(failure.message);
+      return null;
+    }
     return failure.message ?? Object.values(failure.fields)[0] ?? null;
   }
 
@@ -506,6 +513,7 @@ function CostCentrePanel({
         {failure.message ? (
           <Alert tone="danger" data-testid="cost-centre-dialog-message">
             {failure.message}
+            <LoadLatestVersion message={failure.message} />
           </Alert>
         ) : null}
       </form>

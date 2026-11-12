@@ -18,6 +18,7 @@ import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { SelectField } from '../select-field';
 import type { Failure } from './failure';
+import { LoadLatestVersion } from '../latest-version';
 import { useFailure } from './use-failure';
 import type { Choice } from './unit-panel';
 
@@ -548,6 +549,7 @@ export function BranchPanel(props: BranchPanelProps) {
         {failure.message ? (
           <Alert tone="danger" data-testid="branch-dialog-message">
             {failure.message}
+            <LoadLatestVersion message={failure.message} />
           </Alert>
         ) : null}
       </form>

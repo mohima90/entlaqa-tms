@@ -16,7 +16,7 @@ import {
 } from '../../lib/courses-view';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
-import { useLatestVersion } from '../latest-version';
+import { LoadLatestVersion, useLatestVersion } from '../latest-version';
 import { SelectField } from '../select-field';
 
 export interface CourseFormSharedProps {
@@ -218,6 +218,7 @@ export function CourseForm(props: CourseFormProps) {
       {message ? (
         <Alert tone={message.tone} data-testid="course-form-message">
           {message.text}
+          <LoadLatestVersion message={message.text} />
         </Alert>
       ) : null}
       {group(

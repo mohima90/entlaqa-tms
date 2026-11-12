@@ -30,7 +30,7 @@ export function useFailure(): {
     (error, text, errors, fieldText) => {
       const failure = failureOf(error, text, errors, fieldText);
       const latest = latestVersion.refresh(error, failure.message ?? '');
-      return latest === null ? failure : { fields: {}, message: latest };
+      return latest === null ? failure : { fields: {}, message: latest, latest: true };
     },
     [latestVersion],
   );

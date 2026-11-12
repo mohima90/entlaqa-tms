@@ -13,6 +13,7 @@ import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { ConfirmDialog } from './confirm-dialog';
 import type { Failure } from './failure';
+import { LoadLatestVersion } from '../latest-version';
 import { useFailure } from './use-failure';
 
 /** A level as the page shows it. */
@@ -235,6 +236,12 @@ export function LevelsCard(props: LevelsCardProps) {
             }
             if (sessionRefused(result.error)) return null;
             const failure = actionFailure(result.error, text, props.errors, levelFieldText);
+            if (failure.latest) {
+              // The page now shows the latest version; this confirmation held the older level (review M4).
+              setDialog(null);
+              if (failure.message) toast.warning(failure.message);
+              return null;
+            }
             const message = failure.message ?? Object.values(failure.fields)[0] ?? null;
             // The count of a level in use comes formatted from the server.
             return message === text('levels.inUse') ? dialog.level.inUseLabel : message;
@@ -346,6 +353,7 @@ function LevelDialog({
         {failure.message ? (
           <Alert tone="danger" data-testid="level-dialog-message">
             {failure.message}
+            <LoadLatestVersion message={failure.message} />
           </Alert>
         ) : null}
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

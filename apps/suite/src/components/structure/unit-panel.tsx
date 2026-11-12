@@ -10,6 +10,7 @@ import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { SelectField } from '../select-field';
 import type { Failure } from './failure';
+import { LoadLatestVersion } from '../latest-version';
 import { useFailure } from './use-failure';
 
 /** A unit of the tree as the page shows it (names in the page's language, prepared on the server). */
@@ -491,6 +492,7 @@ export function UnitPanel({
           {failure.message ? (
             <Alert tone="danger" data-testid="unit-dialog-message">
               {failure.message}
+              <LoadLatestVersion message={failure.message} />
             </Alert>
           ) : null}
           {unit && (onStatus || onDelete) ? (

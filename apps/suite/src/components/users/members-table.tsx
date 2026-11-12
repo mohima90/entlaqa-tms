@@ -51,7 +51,7 @@ export interface MemberRowView {
   readonly editHref: string | null;
   /** «Deactivate user» (the profile with its dialog), when the member may deactivate this person. */
   readonly deactivateHref: string | null;
-  /** «Change role» in a panel over the list, when the member may change this person's role. */
+  /** «Change role» in a popup over the list, when the member may change this person's role. */
   readonly role: Omit<RoleTarget, 'personId' | 'name'> | null;
   /**
    * The person's own department: the Department Head role makes them its head (PO, 12 Nov 2026); null
@@ -70,7 +70,7 @@ export interface MembersTableProps {
   readonly unitHeader: string;
   /** Texts (namespaces `users`, `userProfile`, `invitations.copy`), translated on the server. */
   readonly texts: Readonly<Record<string, string>>;
-  /** The change-role panel (null: the member gives no roles). */
+  /** The change-role popup (null: the member gives no roles). */
   readonly roleMenu: {
     readonly options: readonly RoleOption[];
     readonly selectTexts: RoleSelectTexts;

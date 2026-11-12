@@ -1,14 +1,14 @@
 'use client';
 import { Alert, Button, Card, Dialog, Icon, TextField, toast } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
-import { type SyntheticEvent, useState, useTransition } from 'react';
+import { type SyntheticEvent, useCallback, useState, useTransition } from 'react';
 import {
   addStructureLevelAction,
   removeStructureLevelAction,
   renameStructureLevelAction,
 } from '../../actions/structure';
 import { fillText } from '../../lib/fill-text';
-import { levelFieldText } from '../../lib/structure-form';
+import { levelFieldText, nameOrder } from '../../lib/structure-form';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { ConfirmDialog } from './confirm-dialog';
@@ -20,9 +20,10 @@ import { useFailure } from './use-failure';
 export interface LevelView {
   readonly id: string;
   readonly ordinal: number;
-  readonly nameEn: string;
-  readonly nameAr: string;
-  /** In the page's language. */
+  /** One of the two names may be missing, never both (the default language's name is required). */
+  readonly nameEn: string | null;
+  readonly nameAr: string | null;
+  /** In the page's language, else the name that exists. */
   readonly name: string;
   readonly version: number;
   readonly unitCount: number;
@@ -42,6 +43,8 @@ export interface LevelsCardProps {
   readonly texts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
   readonly locale: 'ar' | 'en';
+  /** The organization's default language: the form requires its name and asks it first. */
+  readonly nameLanguage: 'ar' | 'en';
 }
 
 type DialogState =
@@ -52,8 +55,8 @@ type DialogState =
 /**
  * Structure → Organization tree (FR-ADM-05, EP-ORG BR-ORG-b; PO 17 Oct 2026: each organization names its own
  * levels; guided-test feedback #1: the levels shown as the organization's own tree template, top to bottom):
- * the ordered levels as a chain (an ordered list — Level 1 → Level 2 → …) with their names in both languages
- * and the number of units at each; the HR Manager adds a level at the bottom (up to ten), renames any level
+ * the ordered levels as a chain (an ordered list — Level 1 → Level 2 → …) with their names (the other
+ * language's under it, when given) and the number of units at each; the HR Manager adds a level at the bottom (up to ten), renames any level
  * and removes the last one while no unit uses it. The Structure tab follows these names («Add <next level>»).
  */
 export function LevelsCard(props: LevelsCardProps) {
@@ -140,13 +143,16 @@ export function LevelsCard(props: LevelsCardProps) {
                     <span className="font-semibold break-words" data-testid="level-name">
                       {level.name}
                     </span>
-                    <span
-                      className="text-sm text-text-muted break-words"
-                      dir={otherLang === 'ar' ? 'rtl' : 'ltr'}
-                      lang={otherLang}
-                    >
-                      {other}
-                    </span>
+                    {/* The other language's name, when the level has one that is not shown already. */}
+                    {other !== null && other !== level.name ? (
+                      <span
+                        className="text-sm text-text-muted break-words"
+                        dir={otherLang === 'ar' ? 'rtl' : 'ltr'}
+                        lang={otherLang}
+                      >
+                        {other}
+                      </span>
+                    ) : null}
                   </div>
                   <span
                     className="shrink-0 text-sm text-text-muted tabular-nums"
@@ -196,6 +202,7 @@ export function LevelsCard(props: LevelsCardProps) {
         <LevelDialog
           level={dialog.kind === 'rename' ? dialog.level : null}
           lastName={last?.name ?? ''}
+          nameLanguage={props.nameLanguage}
           text={text}
           fill={fill}
           errors={props.errors}
@@ -258,9 +265,16 @@ export function LevelsCard(props: LevelsCardProps) {
   );
 }
 
+const LEVEL_FORM_ID = 'level-form';
+
+/**
+ * «Add level» / «Rename» in one centred popup (448 px; forms standard rule 9, PO 12 Nov 2026): the name in
+ * the organization's default language (required), then the other language (optional).
+ */
 function LevelDialog({
   level,
   lastName,
+  nameLanguage,
   text,
   fill,
   errors,
@@ -270,6 +284,7 @@ function LevelDialog({
 }: {
   readonly level: LevelView | null;
   readonly lastName: string;
+  readonly nameLanguage: 'ar' | 'en';
   readonly text: (key: string) => string;
   readonly fill: (key: string, values: Record<string, string | number>) => string;
   readonly errors: ErrorTexts;
@@ -281,6 +296,8 @@ function LevelDialog({
   const [open, setOpen] = useState(true);
   const [pending, startTransition] = useTransition();
   const [failure, setFailure] = useState<Failure>({ fields: {}, message: null });
+  // Escape, ✕ and the backdrop wait while the level is being saved.
+  const canClose = useCallback(() => !pending, [pending]);
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -309,6 +326,8 @@ function LevelDialog({
     <Dialog
       open={open}
       onClose={onClose}
+      canClose={canClose}
+      size="sm"
       title={level ? fill('levels.renameTitle', { name: level.name }) : text('levels.addTitle')}
       description={
         level
@@ -317,46 +336,8 @@ function LevelDialog({
       }
       closeLabel={text('form.close')}
       data-testid="level-dialog"
-    >
-      <form className="flex flex-col gap-4" onSubmit={onSubmit} noValidate>
-        <div className="grid grid-cols-1 gap-4">
-          <TextField
-            id="level-nameEn"
-            name="nameEn"
-            label={text('form.nameEn')}
-            marker={text('required')}
-            required
-            dir="ltr"
-            lang="en"
-            maxLength={60}
-            autoComplete="off"
-            defaultValue={level?.nameEn ?? ''}
-            error={failure.fields.nameEn}
-            disabled={pending}
-          />
-          <TextField
-            id="level-nameAr"
-            name="nameAr"
-            label={text('form.nameAr')}
-            marker={text('required')}
-            required
-            dir="rtl"
-            lang="ar"
-            maxLength={60}
-            autoComplete="off"
-            defaultValue={level?.nameAr ?? ''}
-            error={failure.fields.nameAr}
-            disabled={pending}
-          />
-        </div>
-        <p className="m-0 text-sm text-text-muted">{text('form.audited')}</p>
-        {failure.message ? (
-          <Alert tone="danger" data-testid="level-dialog-message">
-            {failure.message}
-            <LoadLatestVersion message={failure.message} />
-          </Alert>
-        ) : null}
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+      footer={
+        <>
           <Button
             variant="secondary"
             onClick={() => {
@@ -366,10 +347,48 @@ function LevelDialog({
           >
             {text('form.cancel')}
           </Button>
-          <Button type="submit" disabled={pending} data-testid="level-dialog-submit">
+          <Button
+            type="submit"
+            form={LEVEL_FORM_ID}
+            disabled={pending}
+            aria-busy={pending || undefined}
+            data-testid="level-dialog-submit"
+          >
             {pending ? text('form.saving') : level ? text('form.save') : text('levels.add')}
           </Button>
-        </div>
+        </>
+      }
+    >
+      <form id={LEVEL_FORM_ID} className="flex flex-col gap-4" onSubmit={onSubmit} noValidate>
+        {/* The organization's default language first (required), then the other one (optional). */}
+        {nameOrder(nameLanguage).map((language) => {
+          const key = language === 'ar' ? 'nameAr' : 'nameEn';
+          const required = language === nameLanguage;
+          return (
+            <TextField
+              key={key}
+              id={`level-${key}`}
+              name={key}
+              label={text(`form.${key}`)}
+              marker={text(required ? 'required' : 'optional')}
+              required={required}
+              dir={language === 'ar' ? 'rtl' : 'ltr'}
+              lang={language}
+              maxLength={60}
+              autoComplete="off"
+              defaultValue={(language === 'ar' ? level?.nameAr : level?.nameEn) ?? ''}
+              error={failure.fields[key]}
+              disabled={pending}
+            />
+          );
+        })}
+        {failure.message ? (
+          <Alert tone="danger" data-testid="level-dialog-message">
+            {failure.message}
+            <LoadLatestVersion message={failure.message} />
+          </Alert>
+        ) : null}
+        <p className="m-0 text-[13px] text-text-muted">{text('form.audited')}</p>
       </form>
     </Dialog>
   );

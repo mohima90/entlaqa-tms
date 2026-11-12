@@ -286,8 +286,7 @@ function unitHead(
   if (!head || !headUnit || !person) return null;
   return {
     name: { ar: person.nameAr, en: person.nameEn },
-    via:
-      head.fromDepartmentId === departmentId ? null : structureName(headUnit),
+    via: head.fromDepartmentId === departmentId ? null : structureName(headUnit),
   };
 }
 

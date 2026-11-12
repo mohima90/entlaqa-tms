@@ -236,7 +236,13 @@ async function templateGuide(locale: AppLocale, nameLanguage: NameLanguage) {
       <summary className="min-h-11 cursor-pointer font-medium">{t('guide.toggle')}</summary>
       <h3 className="mb-2 mt-4 text-base font-semibold">{t('guide.title')}</h3>
       <p className="mt-0">{t('guide.intro')}</p>
-      <div className="overflow-x-auto">
+      <div
+        className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2"
+        // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrollable region takes focus
+        tabIndex={0}
+        role="region"
+        aria-label={t('guide.caption')}
+      >
         <table className="w-full border-collapse text-start text-sm">
           <caption className="sr-only">{t('guide.caption')}</caption>
           <thead className="bg-surface-sunken">
@@ -330,7 +336,13 @@ async function recentImports(
       {view.recent.length === 0 ? (
         <p className="m-0">{t('recent.empty')}</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border bg-surface">
+        <div
+          className="overflow-x-auto rounded-lg border border-border bg-surface focus-visible:outline-2 focus-visible:outline-offset-2"
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrollable region takes focus
+          tabIndex={0}
+          role="region"
+          aria-label={t('recent.caption')}
+        >
           <table className="w-full border-collapse text-start">
             <caption className="sr-only">{t('recent.caption')}</caption>
             <thead className="bg-surface-sunken text-sm">

@@ -31,8 +31,9 @@ interface Common {
 function chainErrors(
   steps: readonly StepDraft[],
   t: (key: string) => string,
+  nameLanguage: 'ar' | 'en',
 ): Record<string, string> {
-  const errors = stepNameErrors(steps, t('setup.fieldErrors.required'));
+  const errors = stepNameErrors(steps, t('setup.fieldErrors.required'), nameLanguage);
   for (const issue of toFieldErrors(chainIssues(fromDrafts(steps), false))) {
     errors[issue.path] ??= t(fieldErrorKey(issue.code));
   }
@@ -105,6 +106,8 @@ export function StepFooter({
 }
 
 export interface CycleStepsFormProps extends Common {
+  /** The language whose step names are required: the organization's default language (PO, 12 Nov 2026). */
+  readonly nameLanguage: 'ar' | 'en';
   readonly cycle: { readonly id: string; readonly version: number };
   readonly initial: readonly StepDraft[];
   /** Names of the active members already named in the chain (C-M3: others are searched). */
@@ -127,7 +130,7 @@ export function CycleStepsForm(props: CycleStepsFormProps) {
   function onSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     setNotice(null);
-    const found = chainErrors(steps, t);
+    const found = chainErrors(steps, t, props.nameLanguage);
     if (Object.keys(found).length > 0) {
       setErrors(found);
       return;
@@ -155,6 +158,7 @@ export function CycleStepsForm(props: CycleStepsFormProps) {
       <Card title={t('setup.approvals.title')} description={t('setup.approvals.intro')}>
         <div className="flex flex-col gap-3.5">
           <ApprovalChainEditor
+            nameLanguage={props.nameLanguage}
             locale={props.locale}
             steps={steps}
             onChange={(next) => {
@@ -264,6 +268,8 @@ export function CycleRemindersForm(props: CycleRemindersFormProps) {
 }
 
 export interface PlanningSettingsFormProps extends Common {
+  /** The language whose step names are required: the organization's default language (PO, 12 Nov 2026). */
+  readonly nameLanguage: 'ar' | 'en';
   readonly initialDays: readonly number[];
   readonly initialSteps: readonly StepDraft[];
   /** Names of the active members already named in the chain (C-M3: others are searched). */
@@ -299,7 +305,7 @@ export function PlanningSettingsForm(props: PlanningSettingsFormProps) {
     event.preventDefault();
     setNotice(null);
     const parsed = parseReminderDays(days);
-    const found = chainErrors(steps, t);
+    const found = chainErrors(steps, t, props.nameLanguage);
     setDaysError(parsed.ok ? undefined : t(parsed.key));
     setErrors(found);
     if (!parsed.ok || Object.keys(found).length > 0) return;
@@ -340,6 +346,7 @@ export function PlanningSettingsForm(props: PlanningSettingsFormProps) {
       <div className="grid grid-cols-1 items-start gap-4 2xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
         <Card title={t('settings.chainTitle')} description={t('setup.approvals.intro')}>
           <ApprovalChainEditor
+            nameLanguage={props.nameLanguage}
             locale={props.locale}
             steps={steps}
             onChange={(next) => {

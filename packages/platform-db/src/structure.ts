@@ -781,10 +781,15 @@ async function unitsInOpenPlanCycles(
       unitIds.slice(at, at + 2_000).map((unitId) => sql`${unitId}::uuid`),
       sql`, `,
     );
-    const rows = await tx.execute<{ name_en: string; name_ar: string }>(sql`
+    const rows = await tx.execute<{ name_en: string | null; name_ar: string | null }>(sql`
       select c.name_en, c.name_ar from private.units_in_open_plan_cycles(array[${ids}]::uuid[]) c`);
-    for (const r of rows)
-      found.set(`${r.name_en}\u0000${r.name_ar}`, { nameEn: r.name_en, nameAr: r.name_ar });
+    for (const r of rows) {
+      // A cycle may be named in one language only (the organization's default; migration 20261112100100):
+      // the other language shows the same name.
+      const nameEn = r.name_en ?? r.name_ar ?? '';
+      const nameAr = r.name_ar ?? r.name_en ?? '';
+      found.set(`${nameEn}\u0000${nameAr}`, { nameEn, nameAr });
+    }
   }
   return [...found.values()];
 }

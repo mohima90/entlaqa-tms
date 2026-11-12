@@ -14,6 +14,7 @@ import {
   MEMBER_SEARCH,
   getMemberOptionsByIds,
   getOrganizationProfile,
+  getTenantDefaultLocale,
   listOrgStructure,
   listStructureLevelLabels,
   searchMemberOptions,
@@ -43,6 +44,7 @@ import {
   type StructureUnit,
   UpdateCycleBasicsInput,
   basicsIssues,
+  nameIssues,
   canExtendDeadline,
   canonicalAmount,
   chainIssues,
@@ -96,9 +98,18 @@ export interface PersonName {
   readonly en: string | null;
 }
 
+/**
+ * A cycle's or an approval step's name: the organization's default language's name is there, the other one
+ * may be missing (never both; WP-FIX-03, PO 12 Nov 2026). Readers show the other language when one is missing.
+ */
+export interface CycleName {
+  readonly ar: string | null;
+  readonly en: string | null;
+}
+
 export interface CycleListItem {
   readonly id: string;
-  readonly name: { readonly ar: string; readonly en: string };
+  readonly name: CycleName;
   readonly periodStart: string;
   readonly periodEnd: string;
   readonly deadline: string;
@@ -174,6 +185,11 @@ export interface CycleView {
   /** A draft and the member manages cycles: the set-up steps are editable. */
   readonly editable: boolean;
   readonly canExtend: boolean;
+  /**
+   * The language whose name is required (the organization's default language; WP-FIX-03, PO 12 Nov 2026):
+   * the forms ask for it first and mark the other language optional.
+   */
+  readonly nameLanguage: 'ar' | 'en';
   readonly departments: readonly CycleDepartmentView[];
   /** The organization's own level names (FR-ADM-05): the pages say them instead of «Department». */
   readonly levels: readonly StructureLevelLabel[];
@@ -198,6 +214,11 @@ export interface SettingsView {
   readonly settings: repo.PlanningSettingsRecord;
   readonly steps: readonly StepView[];
   readonly canManage: boolean;
+  /**
+   * The language whose name is required (the organization's default language; WP-FIX-03, PO 12 Nov 2026):
+   * the forms ask for it first and mark the other language optional.
+   */
+  readonly nameLanguage: 'ar' | 'en';
 }
 
 export interface NewCycleView {
@@ -208,6 +229,11 @@ export interface NewCycleView {
     readonly deadline: string;
   };
   readonly currency: string;
+  /**
+   * The language whose name is required (the organization's default language; WP-FIX-03, PO 12 Nov 2026):
+   * the forms ask for it first and mark the other language optional.
+   */
+  readonly nameLanguage: 'ar' | 'en';
   /** Needs forms of the forms library (stub: none until it merges — needs-forms.ts). */
   readonly needsForms: readonly NeedsFormOption[];
 }
@@ -385,6 +411,7 @@ export function newPlanCycleQueryDefinition(): QueryDefinition<
           deadline: defaultDeadline(today, period.end),
         },
         currency: profile?.currencyCode ?? 'SAR',
+        nameLanguage: await getTenantDefaultLocale(ctx.tx),
         needsForms: await listNeedsFormOptions(ctx.tx),
       });
     },
@@ -480,6 +507,7 @@ export function planCycleQueryDefinition(): QueryDefinition<typeof CycleRef, Cyc
         canManage,
         editable,
         canExtend: canManage && canExtendDeadline(record.status),
+        nameLanguage: await getTenantDefaultLocale(ctx.tx),
         departments,
         levels: await listStructureLevelLabels(ctx.tx),
         steps: stepViews(record.steps, people),
@@ -517,6 +545,7 @@ export function planningSettingsQueryDefinition(): QueryDefinition<
         settings,
         steps: stepViews(settings.steps, memberMap(members)),
         canManage: ctx.can(MANAGE, 'tenant'),
+        nameLanguage: await getTenantDefaultLocale(ctx.tx),
       });
     },
   };
@@ -525,6 +554,15 @@ export function planningSettingsQueryDefinition(): QueryDefinition<
 // ---------------------------------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------------------------------
+
+/** Every step is named in the organization's default language (the other language is optional). */
+async function stepNameIssues(
+  tx: UserTx,
+  steps: readonly { readonly nameAr: string | null; readonly nameEn: string | null }[],
+): Promise<{ path: string; message: string }[]> {
+  const locale = await getTenantDefaultLocale(tx);
+  return steps.flatMap((step, index) => nameIssues(locale, step, `steps.${String(index)}.`));
+}
 
 const audit = (action: string, id: string, data: Record<string, unknown>): AuditRecord => ({
   action: `tms.plan_cycle.${action}`,
@@ -553,6 +591,8 @@ export function createPlanCycleActionDefinition(): ActionDefinition<
     input: CreateCycleInput,
     handler: async ({ ctx, input }) => {
       const issues = [
+        // The name in the organization's default language is required (PO, 12 Nov 2026).
+        ...toFieldErrors(nameIssues(await getTenantDefaultLocale(ctx.tx), input)),
         ...toFieldErrors(basicsIssues(input)),
         ...(await needsFormProblems(ctx.tx, input.needsFormId)),
       ];
@@ -603,6 +643,7 @@ export function updatePlanCycleBasicsActionDefinition(): ActionDefinition<
       const before = await repo.getCycle(ctx.tx, input.id);
       if (!before) return err(appError('NOT_FOUND'));
       const issues = [
+        ...toFieldErrors(nameIssues(await getTenantDefaultLocale(ctx.tx), input)),
         ...toFieldErrors(basicsIssues(input)),
         ...(await needsFormProblems(ctx.tx, input.needsFormId, before.needsFormId)),
       ];
@@ -737,7 +778,10 @@ export function savePlanCycleStepsActionDefinition(): ActionDefinition<
     permission: MANAGE,
     input: SaveStepsInput,
     handler: async ({ ctx, input }) => {
-      const issues = chainIssues(input.steps, false);
+      const issues = [
+        ...(await stepNameIssues(ctx.tx, input.steps)),
+        ...chainIssues(input.steps, false),
+      ];
       if (issues.length > 0) return validation(toFieldErrors(issues));
       const before = await repo.getCycle(ctx.tx, input.id);
       if (!before) return err(appError('NOT_FOUND'));
@@ -902,7 +946,7 @@ export function extendPlanCycleDeadlineActionDefinition(): ActionDefinition<
 
 export interface Deleted {
   readonly id: string;
-  readonly name: { readonly ar: string; readonly en: string };
+  readonly name: CycleName;
 }
 
 export function deletePlanCycleActionDefinition(): ActionDefinition<
@@ -943,7 +987,10 @@ export function savePlanningSettingsActionDefinition(): ActionDefinition<
     permission: MANAGE,
     input: SaveSettingsInput,
     handler: async ({ ctx, input }) => {
-      const issues = chainIssues(input.steps, false);
+      const issues = [
+        ...(await stepNameIssues(ctx.tx, input.steps)),
+        ...chainIssues(input.steps, false),
+      ];
       if (issues.length > 0) return validation(toFieldErrors(issues));
       const notMembers = await approverProblems(ctx.tx, input.steps);
       if (notMembers.length > 0) return validation(notMembers);

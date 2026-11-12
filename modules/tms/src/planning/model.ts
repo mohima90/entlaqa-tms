@@ -23,6 +23,24 @@ const name = (max: number) =>
       message: 'invalid',
     });
 
+/**
+ * A cycle's or a step's name in ONE language: may be empty (WP-FIX-03; PO, 12 Nov 2026 — the name in the
+ * organization's default language is required, the other one optional; which one is the handler's rule,
+ * rules.ts `nameIssues`). A given name is checked as before.
+ */
+const nameInOneLanguage = (max: number) =>
+  z
+    .string()
+    .normalize('NFC')
+    .trim()
+    .max(max)
+    .refine((v) => v === '' || (visible(v) && !/\p{Cc}/u.test(v) && !BIDI_CONTROLS.test(v)), {
+      message: 'invalid',
+    })
+    .nullable()
+    .optional()
+    .transform((v) => (v === undefined || v === null || v === '' ? null : v));
+
 const optionalText = (max: number) =>
   z
     .string()
@@ -40,8 +58,8 @@ export const Id = z.uuid();
 export const Version = z.int().min(1);
 
 export const CycleBasicsFields = z.strictObject({
-  nameAr: name(PLAN_LIMITS.nameMax),
-  nameEn: name(PLAN_LIMITS.nameMax),
+  nameAr: nameInOneLanguage(PLAN_LIMITS.nameMax),
+  nameEn: nameInOneLanguage(PLAN_LIMITS.nameMax),
   periodStart: CalendarDay,
   periodEnd: CalendarDay,
   deadline: CalendarDay,
@@ -93,8 +111,8 @@ export type SaveBudgetsInput = z.output<typeof SaveBudgetsInput>;
 
 export const StepInput = z.strictObject({
   kind: z.enum(STEP_KINDS),
-  nameAr: name(PLAN_LIMITS.stepNameMax),
-  nameEn: name(PLAN_LIMITS.stepNameMax),
+  nameAr: nameInOneLanguage(PLAN_LIMITS.stepNameMax),
+  nameEn: nameInOneLanguage(PLAN_LIMITS.stepNameMax),
   approverPersonId: Id.nullable(),
 });
 

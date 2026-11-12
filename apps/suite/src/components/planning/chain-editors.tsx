@@ -18,6 +18,8 @@ type T = (key: string, values?: Readonly<Record<string, string | number>>) => st
 export interface ApprovalChainEditorProps {
   readonly locale: 'ar' | 'en';
   readonly steps: readonly StepDraft[];
+  /** The language whose step names are required: the organization's default language (PO, 12 Nov 2026). */
+  readonly nameLanguage: 'ar' | 'en';
   readonly onChange: (steps: StepDraft[]) => void;
   /** Names of the active members already named in the chain, by person id (the rest is searched). */
   readonly names: Readonly<Record<string, string>>;
@@ -72,8 +74,10 @@ export function ApprovalChainEditor(props: ApprovalChainEditorProps) {
               ? t('setup.approvals.approverInactive', { name: inactiveName })
               : undefined);
           const title =
-            (props.locale === 'ar' ? step.nameAr : step.nameEn).trim() ||
-            t('setup.approvals.stepLabel', { number });
+            (props.locale === 'ar'
+              ? step.nameAr || step.nameEn
+              : step.nameEn || step.nameAr
+            ).trim() || t('setup.approvals.stepLabel', { number });
           return (
             <li
               key={step.key}
@@ -238,38 +242,33 @@ export function ApprovalChainEditor(props: ApprovalChainEditorProps) {
                   )}
 
                   <div className="grid grid-cols-1 gap-4">
-                    <TextField
-                      id={`${base}-name-en`}
-                      label={t('setup.approvals.nameEn')}
-                      marker={t('setup.required')}
-                      aria-required
-                      value={step.nameEn}
-                      onChange={(event) => {
-                        set(index, { nameEn: event.target.value });
-                      }}
-                      maxLength={80}
-                      dir="ltr"
-                      lang="en"
-                      autoComplete="off"
-                      error={error('nameEn')}
-                      disabled={props.disabled}
-                    />
-                    <TextField
-                      id={`${base}-name-ar`}
-                      label={t('setup.approvals.nameAr')}
-                      marker={t('setup.required')}
-                      aria-required
-                      value={step.nameAr}
-                      onChange={(event) => {
-                        set(index, { nameAr: event.target.value });
-                      }}
-                      maxLength={80}
-                      dir="rtl"
-                      lang="ar"
-                      autoComplete="off"
-                      error={error('nameAr')}
-                      disabled={props.disabled}
-                    />
+                    {/* The default language's name first and required; the other one optional. */}
+                    {(props.nameLanguage === 'ar'
+                      ? (['ar', 'en'] as const)
+                      : (['en', 'ar'] as const)
+                    ).map((language) => {
+                      const field = language === 'ar' ? 'nameAr' : 'nameEn';
+                      const required = language === props.nameLanguage;
+                      return (
+                        <TextField
+                          key={field}
+                          id={`${base}-name-${language}`}
+                          label={t(`setup.approvals.${field}`)}
+                          marker={required ? t('setup.required') : t('setup.optional')}
+                          aria-required={required ? true : undefined}
+                          value={step[field]}
+                          onChange={(event) => {
+                            set(index, { [field]: event.target.value });
+                          }}
+                          maxLength={80}
+                          dir={language === 'ar' ? 'rtl' : 'ltr'}
+                          lang={language}
+                          autoComplete="off"
+                          error={error(field)}
+                          disabled={props.disabled}
+                        />
+                      );
+                    })}
                   </div>
                 </section>
               </div>

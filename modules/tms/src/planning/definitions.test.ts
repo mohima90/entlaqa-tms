@@ -14,6 +14,8 @@ const db = vi.hoisted(() => ({
   searchMemberOptions: vi.fn(),
   MEMBER_SEARCH: { minLength: 2, maxLength: 100, limit: 50 },
   getOrganizationProfile: vi.fn(),
+  // The organization's default language (WP-FIX-03): English unless a test says otherwise.
+  getTenantDefaultLocale: vi.fn((): Promise<'ar' | 'en'> => Promise.resolve('en')),
   listStructureLevelLabels: vi.fn(),
   // Read when @jadarat/platform-rbac loads (its security settings schema, T-M2-10).
   MFA_MODES: ['off', 'optional', 'required_all', 'required_roles'],
@@ -188,6 +190,7 @@ beforeEach(() => {
   db.listStructureLevelLabels.mockResolvedValue(LEVELS);
   db.getMemberOptionsByIds.mockResolvedValue(members);
   db.getOrganizationProfile.mockResolvedValue({ fiscalYearStartMonth: 7, currencyCode: 'AED' });
+  db.getTenantDefaultLocale.mockResolvedValue('en');
   forms.listNeedsFormOptions.mockResolvedValue([]);
 });
 
@@ -301,6 +304,8 @@ describe('L&D Manager: list, new cycle, cycle view', () => {
       today: '2026-10-17',
       defaults: { periodStart: '2027-07-01', periodEnd: '2028-06-30', deadline: '2026-11-16' },
       currency: 'AED',
+      // The language whose name the form requires (WP-FIX-03): the organization's default language.
+      nameLanguage: 'en',
       needsForms: [],
     });
   });
@@ -382,6 +387,64 @@ describe('L&D Manager: set-up steps', () => {
         entityId: CYCLE,
         data: { after: { ...basics, needsFormId: FORM } },
       },
+    ]);
+  });
+
+  it('asks for the name in the default language only; the other language is optional (PO, 12 Nov 2026)', async () => {
+    repo.insertCycle.mockResolvedValue({ id: CYCLE, version: 1, needsFormId: FORM });
+    const { action, audits } = runtime('training_manager');
+    const create = action(defs.createPlanCycleActionDefinition());
+    // English is the default language: an English name alone is enough…
+    const englishOnly = await create({ ...basics, nameAr: '', needsFormId: null });
+    expect(englishOnly.ok).toBe(true);
+    expect(repo.insertCycle).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ nameAr: null, nameEn: basics.nameEn }),
+    );
+    expect(audits[0]).toMatchObject({
+      data: { after: { nameAr: null, nameEn: basics.nameEn } },
+    });
+    // …and an Arabic name alone is refused, on the English field.
+    const arabicOnly = await create({ ...basics, nameEn: '', needsFormId: null });
+    expect(!arabicOnly.ok && arabicOnly.error.fieldErrors).toEqual([
+      { path: 'nameEn', code: 'REQUIRED' },
+    ]);
+    // With Arabic as the default language it is the other way round.
+    db.getTenantDefaultLocale.mockResolvedValue('ar');
+    const arabicDefault = await create({ ...basics, nameEn: '', needsFormId: null });
+    expect(arabicDefault.ok).toBe(true);
+    const noArabic = await create({ ...basics, nameAr: '   ', needsFormId: null });
+    expect(!noArabic.ok && noArabic.error.fieldErrors).toEqual([
+      { path: 'nameAr', code: 'REQUIRED' },
+    ]);
+    // The basics of an existing cycle and the approval steps follow the same rule.
+    const basicsSaved = await action(defs.updatePlanCycleBasicsActionDefinition())({
+      ...basics,
+      nameAr: null,
+      id: CYCLE,
+      version: 3,
+      needsFormId: null,
+    });
+    expect(!basicsSaved.ok && basicsSaved.error.fieldErrors).toEqual([
+      { path: 'nameAr', code: 'REQUIRED' },
+    ]);
+    const steps = await action(defs.savePlanCycleStepsActionDefinition())({
+      id: CYCLE,
+      version: 3,
+      steps: [
+        { kind: 'department_heads', nameAr: 'رؤساء الإدارات', nameEn: '', approverPersonId: null },
+        { kind: 'person', nameAr: '', nameEn: 'Finance', approverPersonId: null },
+      ],
+    });
+    expect(!steps.ok && steps.error.fieldErrors).toEqual([
+      { path: 'steps.1.nameAr', code: 'REQUIRED' },
+    ]);
+    const settings = await action(defs.savePlanningSettingsActionDefinition())({
+      reminderDays: [7],
+      steps: [{ kind: 'department_heads', nameAr: '', nameEn: 'Heads', approverPersonId: null }],
+    });
+    expect(!settings.ok && settings.error.fieldErrors).toEqual([
+      { path: 'steps.0.nameAr', code: 'REQUIRED' },
     ]);
   });
 

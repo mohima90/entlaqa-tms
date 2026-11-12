@@ -30,8 +30,9 @@ export function toDrafts(steps: readonly ApprovalStep[]): StepDraft[] {
   return steps.map((step, index) => ({
     key: `saved-${String(index)}`,
     kind: step.kind,
-    nameAr: step.nameAr,
-    nameEn: step.nameEn,
+    // A step saved with one name only (the default language's; PO, 12 Nov 2026) shows the other empty.
+    nameAr: step.nameAr ?? '',
+    nameEn: step.nameEn ?? '',
     approverPersonId: step.approverPersonId ?? '',
   }));
 }
@@ -64,11 +65,13 @@ export function parseReminderDays(
 export function stepNameErrors(
   steps: readonly StepDraft[],
   required: string,
+  /** The organization's default language: only its name is required (WP-FIX-03; PO, 12 Nov 2026). */
+  nameLanguage: 'ar' | 'en',
 ): Record<string, string> {
   const errors: Record<string, string> = {};
+  const field = nameLanguage === 'ar' ? 'nameAr' : 'nameEn';
   steps.forEach((step, index) => {
-    if (step.nameAr.trim() === '') errors[`steps.${String(index)}.nameAr`] = required;
-    if (step.nameEn.trim() === '') errors[`steps.${String(index)}.nameEn`] = required;
+    if (step[field].trim() === '') errors[`steps.${String(index)}.${field}`] = required;
   });
   return errors;
 }

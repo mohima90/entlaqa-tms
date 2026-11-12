@@ -46,6 +46,7 @@ export default async function PlanningSettingsPage({
         </Alert>
         <PlanningSettingsForm
           locale={locale}
+          nameLanguage="en"
           texts={texts}
           errors={errors}
           initialDays={DEFAULT_REMINDER_DAYS}
@@ -84,6 +85,7 @@ export default async function PlanningSettingsPage({
       content = view.canManage ? (
         <PlanningSettingsForm
           locale={locale}
+          nameLanguage={view.nameLanguage}
           texts={texts}
           errors={errors}
           initialDays={view.settings.reminderDays}

@@ -50,6 +50,8 @@ export interface CycleBasicsFormProps {
     readonly active: boolean;
   }[];
   readonly currency: string;
+  /** The language whose name is required: the organization's default language (PO, 12 Nov 2026). */
+  readonly nameLanguage: 'ar' | 'en';
   readonly texts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
   readonly cancelHref: string;
@@ -62,7 +64,8 @@ export interface CycleBasicsFormProps {
 type Field = keyof CycleBasicsValues;
 
 /**
- * Step 1 of the cycle set-up — Basics (EP-PLN B4; FR-PLN-02): names in Arabic and English, the planning
+ * Step 1 of the cycle set-up — Basics (EP-PLN B4; FR-PLN-02): the name (in the organization's default
+ * language; the other language optional), the planning
  * period (suggested: the next fiscal year), the deadline for department forms, instructions to department
  * heads and the needs form. Creating saves a draft and goes on to the scope.
  */
@@ -90,7 +93,8 @@ export function CycleBasicsForm(props: CycleBasicsFormProps) {
     event.preventDefault();
     setNotice(null);
     const found: Partial<Record<Field, string>> = {};
-    for (const field of ['nameAr', 'nameEn', 'periodStart', 'periodEnd', 'deadline'] as const) {
+    const requiredName = props.nameLanguage === 'ar' ? 'nameAr' : 'nameEn';
+    for (const field of [requiredName, 'periodStart', 'periodEnd', 'deadline'] as const) {
       if (values[field].trim() === '') found[field] = t('setup.fieldErrors.required');
     }
     for (const issue of toFieldErrors(basicsIssues(values))) {
@@ -170,40 +174,34 @@ export function CycleBasicsForm(props: CycleBasicsFormProps) {
         description={t('setup.basics.currency', { currency: props.currency })}
       >
         <div className="grid grid-cols-1 gap-4">
-          <TextField
-            id="cycle-name-en"
-            label={t('setup.basics.nameEn')}
-            marker={t('setup.required')}
-            hint={t('setup.basics.nameHint')}
-            value={values.nameEn}
-            onChange={(event) => {
-              update('nameEn', event.target.value);
-            }}
-            maxLength={120}
-            required
-            dir="ltr"
-            lang="en"
-            autoComplete="off"
-            error={errors.nameEn}
-            disabled={pending}
-          />
-          <TextField
-            id="cycle-name-ar"
-            label={t('setup.basics.nameAr')}
-            marker={t('setup.required')}
-            hint={t('setup.basics.nameHint')}
-            value={values.nameAr}
-            onChange={(event) => {
-              update('nameAr', event.target.value);
-            }}
-            maxLength={120}
-            required
-            dir="rtl"
-            lang="ar"
-            autoComplete="off"
-            error={errors.nameAr}
-            disabled={pending}
-          />
+          {/* The name in the organization's default language first and required; the other language is
+              optional (WP-FIX-03; PO, 12 Nov 2026 — the rule approved for people on 17 Oct 2026). */}
+          {(props.nameLanguage === 'ar' ? (['ar', 'en'] as const) : (['en', 'ar'] as const)).map(
+            (language) => {
+              const field = language === 'ar' ? 'nameAr' : 'nameEn';
+              const required = language === props.nameLanguage;
+              return (
+                <TextField
+                  key={field}
+                  id={`cycle-name-${language}`}
+                  label={t(`setup.basics.${field}`)}
+                  marker={required ? t('setup.required') : t('setup.optional')}
+                  hint={required ? t('setup.basics.nameHint') : undefined}
+                  value={values[field]}
+                  onChange={(event) => {
+                    update(field, event.target.value);
+                  }}
+                  maxLength={120}
+                  required={required}
+                  dir={language === 'ar' ? 'rtl' : 'ltr'}
+                  lang={language}
+                  autoComplete="off"
+                  error={errors[field]}
+                  disabled={pending}
+                />
+              );
+            },
+          )}
           <TextField
             id="cycle-period-start"
             type="date"

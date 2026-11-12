@@ -37,7 +37,7 @@ import {
   validateEntry,
   validateNeedsAnswers,
 } from '../needs-forms';
-import type { LocalizedName, PersonName } from './definitions';
+import type { CycleName, LocalizedName, PersonName } from './definitions';
 import {
   AddNeedInput,
   DepartmentRef,
@@ -129,7 +129,7 @@ export interface DepartmentNeedsView {
   readonly role: 'head' | 'manager';
   readonly cycle: {
     readonly id: string;
-    readonly name: { readonly ar: string; readonly en: string };
+    readonly name: CycleName;
     readonly periodStart: string;
     readonly periodEnd: string;
     readonly deadline: string;
@@ -186,7 +186,7 @@ export interface DepartmentNeedsView {
 
 export interface MyNeedsTask {
   readonly cycleId: string;
-  readonly cycleName: { readonly ar: string; readonly en: string };
+  readonly cycleName: CycleName;
   readonly departmentId: string;
   readonly departmentName: LocalizedName;
   readonly levelOrdinal: number | null;

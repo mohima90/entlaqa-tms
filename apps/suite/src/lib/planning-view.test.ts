@@ -159,13 +159,21 @@ describe('approval chain drafts (A3/B4)', () => {
     expect(stepKey()).not.toBe(stepKey());
   });
 
-  it('requires step names', () => {
+  it('requires the step name of the default language only (PO, 12 Nov 2026)', () => {
+    const steps = [
+      { key: 'k', kind: 'person' as const, nameAr: ' ', nameEn: 'F', approverPersonId: '' },
+      { key: 'l', kind: 'person' as const, nameAr: 'م', nameEn: '', approverPersonId: '' },
+    ];
+    expect(stepNameErrors(steps, 'required', 'ar')).toEqual({ 'steps.0.nameAr': 'required' });
+    expect(stepNameErrors(steps, 'required', 'en')).toEqual({ 'steps.1.nameEn': 'required' });
+  });
+
+  it('shows a step saved with one name only with the other name empty', () => {
     expect(
-      stepNameErrors(
-        [{ key: 'k', kind: 'person', nameAr: ' ', nameEn: 'F', approverPersonId: '' }],
-        'required',
-      ),
-    ).toEqual({ 'steps.0.nameAr': 'required' });
+      toDrafts([{ kind: 'person', nameAr: null, nameEn: 'Finance', approverPersonId: null }]),
+    ).toEqual([
+      { key: 'saved-0', kind: 'person', nameAr: '', nameEn: 'Finance', approverPersonId: '' },
+    ]);
   });
 
   it('reads reminder days: whole days 1–90, each once', () => {

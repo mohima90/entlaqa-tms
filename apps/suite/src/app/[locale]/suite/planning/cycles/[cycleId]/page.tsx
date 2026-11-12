@@ -296,8 +296,8 @@ async function SetUp({
           locale={locale}
           editing={cycle}
           initial={{
-            nameAr: view.cycle.nameAr,
-            nameEn: view.cycle.nameEn,
+            nameAr: view.cycle.nameAr ?? '',
+            nameEn: view.cycle.nameEn ?? '',
             periodStart: view.cycle.periodStart,
             periodEnd: view.cycle.periodEnd,
             deadline: view.cycle.deadline,
@@ -311,6 +311,7 @@ async function SetUp({
             active: f.active,
           }))}
           currency={view.cycle.currency}
+          nameLanguage={view.nameLanguage}
           texts={texts}
           errors={errors}
           cancelHref={`/${locale}${PLANNING_PATHS.cycles}`}
@@ -379,6 +380,7 @@ async function SetUp({
       form = (
         <CycleStepsForm
           locale={locale}
+          nameLanguage={view.nameLanguage}
           cycle={cycle}
           initial={toDrafts(view.steps)}
           names={approverNames}

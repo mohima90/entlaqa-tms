@@ -449,7 +449,10 @@ for (const locale of ['en', 'ar'] as const) {
     await expect(required.locator('.sr-only')).toHaveText(texts.required);
     const box = await required.locator('.sr-only').boundingBox();
     expect(box === null || (box.width <= 1 && box.height <= 1)).toBe(true);
-    await expect(page.getByLabel(`${texts.en} ${texts.required}`)).toHaveAttribute('required', '');
+    // (By role: the accessible name leaves the hidden asterisk out and keeps the word.)
+    await expect(
+      page.getByRole('textbox', { name: `${texts.en} ${texts.required}`, exact: true }),
+    ).toHaveAttribute('required', '');
     // The asterisk is red: the danger colour, not the label's own colour.
     const colours = await required.evaluate((label) => {
       const star = label.querySelector('[data-required-mark]');

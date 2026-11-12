@@ -104,10 +104,11 @@ for (const locale of ['en', 'ar'] as const) {
     await expectNoHorizontalOverflow(page);
 
     await page.getByTestId('cycle-basics-save').click();
+    // Only the name in the organization's default language (English) is required; the Arabic name is
+    // optional and stays empty here (WP-FIX-03; PO, 12 Nov 2026).
     await expect(form.locator('#cycle-name-en-error')).toHaveText(t.required);
-    await expect(form.locator('#cycle-name-ar-error')).toHaveText(t.required);
+    await expect(form.locator('#cycle-name-ar-error')).toHaveCount(0);
     await form.locator('#cycle-name-en').fill('Plan 2027');
-    await form.locator('#cycle-name-ar').fill('الخطة التدريبية 2027');
     const start = await form.locator('#cycle-period-start').inputValue();
     await form.locator('#cycle-period-end').fill(start);
     await page.getByTestId('cycle-basics-save').click();

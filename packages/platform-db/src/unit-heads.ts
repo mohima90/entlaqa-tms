@@ -101,9 +101,13 @@ export async function setUnitHead(
   if (unit.head_person_id !== null && !options.replace) {
     return { ok: false, refusal: 'head_taken', headPersonId: unit.head_person_id };
   }
-  await tx.execute(sql`
+  const written = await tx.execute<{ id: string }>(sql`
     update platform.departments set head_person_id = ${personId}::uuid
-    where id = ${unitId}::uuid and deleted_at is null`);
+    where id = ${unitId}::uuid and deleted_at is null
+    returning id`);
+  // A row the actor may read but not write is filtered by the update policy without an error: never
+  // report a head that was not written (review M5).
+  if (written.length === 0) return { ok: false, refusal: 'unit_not_found' };
   return { ok: true, unitId, before: unit.head_person_id, changed: true };
 }
 

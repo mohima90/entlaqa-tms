@@ -40,7 +40,7 @@
 
 | ID | Task | WP | Owner | Status | Notes / PR |
 |---|---|---|---|---|---|
-| T-M3-19 | **Inventory and roll-out order**: every create / add / invite / edit interaction, how it is presented today (dialog, side panel, wizard, full page), what changes to reach the Kawadir pattern, size, tests to update | WP-UX-01 | Claude | 🔵 | Inventory running 12 Nov 2026 |
+| T-M3-19 | **Inventory and roll-out order**: every create / add / invite / edit interaction, how it is presented today (dialog, side panel, wizard, full page), what changes to reach the Kawadir pattern, size, tests to update | WP-UX-01 | Claude | 🟢 | Done 12 Nov 2026: `docs/design/kawadir-rollout.md` (39 interactions; five waves: pilot + foundations → organization set-up → L&D → platform → settings pages and lists) |
 | T-M3-20 | **Pilot: planning cycle set-up** — one popup to create, launch from the row menu with a confirmation, an optional settings page; the «Approval chain» step leaves the cycle (EP-PLN §13) | WP-UX-01 | Claude | ⚪ | FR-PLN-02. After WP-FIX-03 and EP-PLN §13 |
 | T-M3-21 | **Roll-out to every other create / add / invite / edit interaction** in the order of T-M3-19; screenshots EN + AR to the PO before each PR merges | WP-UX-01 | Claude | ⚪ | FR-STE-08; no behaviour or data changes |
 

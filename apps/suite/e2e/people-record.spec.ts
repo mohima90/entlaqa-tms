@@ -69,7 +69,9 @@ async function expectNoSeriousA11yViolations(page: Page) {
   expect(blocking.map((v) => `${v.id}: ${v.help} (${v.nodes.length})`)).toEqual([]);
 }
 
-const toasts = (page: Page) => page.getByRole('region', { name: 'Status messages' });
+/** The toast region, named in the page's language. */
+const toasts = (page: Page) =>
+  page.getByRole('region', { name: /^(Status messages|رسائل الحالة)$/ });
 
 test.describe('Grades, photo and HR-only fields as the Organization Admin', () => {
   test.skip(!email || !password, 'signed-in E2E credentials not set');

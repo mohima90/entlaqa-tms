@@ -42,7 +42,9 @@ async function signIn(
 }
 
 /** The toasts of the page (a polite live region). */
-const toasts = (page: Page) => page.getByRole('region', { name: 'Status messages' });
+/** The toast region, named in the page's language. */
+const toasts = (page: Page) =>
+  page.getByRole('region', { name: /^(Status messages|رسائل الحالة)$/ });
 
 /** The profile's «Actions ▾» → «Deactivate user»: the dialog over the profile. */
 async function openDeactivate(page: Page) {

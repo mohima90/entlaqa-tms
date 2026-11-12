@@ -34,7 +34,9 @@ const members = (page: Page) =>
 const member = (page: Page, name: string) => members(page).filter({ hasText: name });
 
 /** The toasts of the page (a polite live region). */
-const toasts = (page: Page) => page.getByRole('region', { name: 'Status messages' });
+/** The toast region, named in the page's language. */
+const toasts = (page: Page) =>
+  page.getByRole('region', { name: /^(Status messages|رسائل الحالة)$/ });
 
 /** Opens a person's ⋯ menu on Team members and picks an entry. */
 async function rowAction(page: Page, name: string, testId: string) {

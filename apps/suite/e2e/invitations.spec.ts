@@ -23,7 +23,9 @@ const rowsOf = (page: Page) =>
     .locator('[data-testid="invitation-row"], [data-testid="invitations-cards"] > li')
     .filter({ visible: true });
 /** The toasts of the page (a polite live region). */
-const toasts = (page: Page) => page.getByRole('region', { name: 'Status messages' });
+/** The toast region, named in the page's language. */
+const toasts = (page: Page) =>
+  page.getByRole('region', { name: /^(Status messages|رسائل الحالة)$/ });
 /** A row's ⋯ menu entry (Copy code, Resend invitation, Revoke invitation). */
 async function rowMenu(page: Page, row: ReturnType<typeof rowsOf>, name: string, entry: RegExp) {
   await row.getByRole('button', { name: `More actions for ${name}` }).click();

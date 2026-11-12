@@ -169,4 +169,16 @@ describe('Dialog (native <dialog>, Kawadir)', () => {
     expect(dialog.className).toContain('max-w-[560px]');
     expect(dialog.querySelector('button')?.getAttribute('aria-label')).toBe('إغلاق');
   });
+
+  it('has a 672 px size for a rich «create» popup (forms standard rule 9)', () => {
+    const container = mount(
+      <Dialog open onClose={vi.fn()} title="New planning cycle" closeLabel="Close" size="rich">
+        x
+      </Dialog>,
+    );
+    const dialog = container.querySelector('dialog')!;
+    // Tailwind's max-w-2xl is 42rem = 672 px.
+    expect(dialog.className).toContain('max-w-2xl');
+    expect(dialog.className).not.toContain('max-w-3xl');
+  });
 });

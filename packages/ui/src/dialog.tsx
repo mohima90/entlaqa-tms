@@ -14,7 +14,11 @@ export interface DialogProps {
   readonly closeLabel: string;
   /** Buttons at the bottom (Kawadir DialogFooter: end-aligned, stacked on phones). */
   readonly footer?: ReactNode;
-  readonly size?: 'sm' | 'md' | 'lg' | undefined;
+  /**
+   * The box's width: `sm` 448 px (a confirmation, a simple «create» popup), `md` 560 px, `rich` 672 px (a
+   * rich «create» popup — forms standard rule 9, docs/design/forms-standard.md), `lg` 768 px.
+   */
+  readonly size?: 'sm' | 'md' | 'rich' | 'lg' | undefined;
   /**
    * A confirmation's consequence (direction C): `danger` — destructive, cannot be undone (red tile);
    * `warning` — reversible but with an effect people should know (amber tile). The text still says it.
@@ -31,7 +35,13 @@ export interface DialogProps {
 }
 
 // Wider than before (role-play feedback #5, PO 27 Oct 2026).
-const widths = { sm: 'max-w-md', md: 'max-w-[560px]', lg: 'max-w-3xl' } as const;
+const widths = {
+  sm: 'max-w-md',
+  md: 'max-w-[560px]',
+  // 672 px: the rich «create» popup of the Kawadir pattern (forms standard rule 9; PO, 12 Nov 2026).
+  rich: 'max-w-2xl',
+  lg: 'max-w-3xl',
+} as const;
 const toneTiles: Record<
   'danger' | 'warning',
   { readonly icon: IconName; readonly classes: string }

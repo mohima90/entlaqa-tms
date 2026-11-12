@@ -20,15 +20,17 @@ export interface TabNavProps extends HTMLAttributes<HTMLElement> {
   /**
    * `underline` (direction C): views of one object — 48 px tabs over a hairline, the current one with a
    * 3 px bar in the brand colour. `pills`: a muted track with a white current tab; `segmented`: a
-   * smaller filter row.
+   * smaller filter row. `side`: the sections of a settings page as a column at the side of the content
+   * (forms standard rule 9); on phones the tabs wrap into rows above the content. Put it in a grid next to
+   * the content, e.g. `grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)]`.
    */
-  readonly variant?: 'underline' | 'pills' | 'segmented' | undefined;
+  readonly variant?: 'underline' | 'pills' | 'segmented' | 'side' | undefined;
 }
 
 /**
  * Views of a page as links: each view is its own address (server-rendered,
  * bookmarkable, works without JavaScript), so they are a `<nav>` of links with `aria-current`, not
- * ARIA tabs. Targets are 36 px on a desktop and 44 px on touch screens.
+ * ARIA tabs. Targets are 36 px on a desktop (40 px for side tabs) and 44 px on touch screens.
  */
 export function TabNav({
   label,
@@ -39,6 +41,37 @@ export function TabNav({
   ...props
 }: TabNavProps) {
   const small = variant === 'segmented';
+  if (variant === 'side') {
+    return (
+      <nav aria-label={label} className={cn('min-w-0', className)} {...props}>
+        <ul className="m-0 flex list-none flex-wrap gap-1 p-0 md:flex-col md:flex-nowrap">
+          {items.map((item) => {
+            const isCurrent = item.key === current;
+            return (
+              <li key={item.key} className="min-w-0">
+                <a
+                  href={item.href}
+                  aria-current={isCurrent ? 'page' : undefined}
+                  className={cn(
+                    'flex min-h-10 items-center gap-2.5 rounded-xl px-3.5 py-2 text-sm no-underline transition-colors pointer-coarse:min-h-11',
+                    isCurrent
+                      ? 'bg-surface-selected font-semibold text-primary-text'
+                      : 'font-medium text-text-muted hover:bg-surface-hover hover:text-text',
+                  )}
+                >
+                  {item.icon ? <Icon name={item.icon} className="size-4 shrink-0" /> : null}
+                  <span className="min-w-0">{item.label}</span>
+                  {item.count !== undefined && item.count !== null ? (
+                    <span className="tabular-nums">({item.count})</span>
+                  ) : null}
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+    );
+  }
   if (variant === 'underline') {
     return (
       <nav aria-label={label} className={cn('max-w-full overflow-x-auto', className)} {...props}>

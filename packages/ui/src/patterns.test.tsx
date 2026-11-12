@@ -295,6 +295,30 @@ describe('page patterns (Kawadir)', () => {
     expect(html).toMatch(/aria-current="page"[^>]*>Pending invites<span[^>]*>\(3\)/);
   });
 
+  it('TabNav side: a column of links at the side that wraps into rows on phones', () => {
+    const html = renderToStaticMarkup(
+      <TabNav
+        label="Cycle settings"
+        variant="side"
+        current="reminders"
+        items={[
+          { key: 'departments', href: '?tab=departments', label: 'Departments & budgets' },
+          { key: 'reminders', href: '?tab=reminders', label: 'Reminders', icon: 'bell' },
+        ]}
+      />,
+    );
+    expect(html).toContain('<nav aria-label="Cycle settings"');
+    // Rows that wrap on phones, a column from the medium breakpoint.
+    expect(html).toMatch(/<ul class="[^"]*flex-wrap[^"]*md:flex-col[^"]*"/);
+    expect(html.match(/aria-current="page"/g)).toHaveLength(1);
+    expect(html).toMatch(
+      /href="\?tab=reminders" aria-current="page" class="[^"]*bg-surface-selected/,
+    );
+    // 40 px targets, 44 px on touch screens.
+    expect(html.match(/min-h-10[^"]*pointer-coarse:min-h-11/g)).toHaveLength(2);
+    expect(html).not.toContain('overflow-x-auto');
+  });
+
   it('DataTable has a caption and column headers with scope', () => {
     const html = renderToStaticMarkup(
       <Card title="Members" flush>

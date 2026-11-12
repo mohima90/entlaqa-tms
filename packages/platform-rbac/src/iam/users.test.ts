@@ -25,6 +25,7 @@ const db = vi.hoisted(() => ({
   listStructureLevelLabels: vi.fn(() => Promise.resolve([])),
   // «Head of which department?» in the edit-role panel (WP-FIX-03): no unit has a head here.
   listUnitHeads: vi.fn(() => Promise.resolve([])),
+  getOwnUnitId: vi.fn(() => Promise.resolve(null)),
   listHeadedUnitIds: vi.fn(() => Promise.resolve([])),
   // WP-ADM-04: the grade, the HR-only fields and the photo (nothing set by default).
   getPersonGrade: vi.fn((): Promise<unknown> => Promise.resolve(null)),
@@ -122,7 +123,8 @@ describe('users list query', () => {
         scopeUnits: { units: [], levels: [], structureVisible: true },
         // «Head of which department?» (WP-FIX-03): the structure is the HR Manager's, so the Organization
         // Admin sees who heads what but does not pick here.
-        headUnits: { canPick: false, headedUnitIds: [], heads: [] },
+        // Whoever gives the Department Head role sets the head with it (PO, 12 Nov 2026).
+        headUnits: { canPick: true, ownUnitId: null, headedUnitIds: [], heads: [] },
         canAssignPrivileged: true,
         // «Edit details» in the row menu (redesign package 3).
         canEditDetails: true,

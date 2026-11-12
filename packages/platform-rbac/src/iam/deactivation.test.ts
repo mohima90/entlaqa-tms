@@ -177,7 +177,8 @@ describe('deactivation screen query', () => {
         candidates: [{ personId: NEW_MANAGER, nameAr: 'خالد', nameEn: null }],
       }),
     );
-    expect(db.listReplacementCandidates).toHaveBeenCalledWith(TX, SARA);
+    // The member doing it is never offered as the replacement (second look M3c).
+    expect(db.listReplacementCandidates).toHaveBeenCalledWith(TX, SARA, ME);
   });
 
   it('HR Manager: moves departments; a privileged report needs the Organization Admin', async () => {
@@ -388,7 +389,8 @@ describe('deactivate action', () => {
     expect(!result.ok && result.error.fieldErrors).toEqual([
       { path: 'reassign.platform.direct_reports', code: 'OWNER_INVALID' },
     ]);
-    expect(db.listReplacementCandidates).toHaveBeenCalledWith(TX, SARA);
+    // The member doing it is never offered as the replacement (second look M3c).
+    expect(db.listReplacementCandidates).toHaveBeenCalledWith(TX, SARA, ME);
     expect(db.reassignDirectReports).not.toHaveBeenCalled();
     expect(db.deactivateMembership).not.toHaveBeenCalled();
   });

@@ -18,11 +18,12 @@ import {
 
 const db = vi.hoisted(() => ({
   // «Head of which department?» (WP-FIX-03): nobody heads a unit unless a test says so.
+  getOwnUnitId: vi.fn((): Promise<string | null> => Promise.resolve(null)),
   listHeadedUnitIds: vi.fn((): Promise<readonly string[]> => Promise.resolve([])),
   listUnitHeads: vi.fn((): Promise<readonly unknown[]> => Promise.resolve([])),
   setUnitHead: vi.fn(),
   lockUnitHeadChange: vi.fn(() => Promise.resolve()),
-  clearHeadedUnits: vi.fn((): Promise<readonly string[]> => Promise.resolve([])),
+  clearHeadedUnits: vi.fn((): Promise<readonly string[] | null> => Promise.resolve([])),
   insertAuditEvent: vi.fn(() => Promise.resolve()),
   getEditableRole: vi.fn(),
   lockTenantRoles: vi.fn(() => Promise.resolve()),
@@ -490,25 +491,93 @@ describe('the Department Head role and the unit they head (WP-FIX-03, «either d
     });
     expect(hr.ok && hr.value.headUnits).toEqual({
       canPick: true,
+      ownUnitId: null,
       headedUnitIds: [SALES],
       heads: [{ unitId: SALES, personId: SARA, nameAr: 'سارة', nameEn: 'Sara' }],
     });
-    // The Organization Admin gives the role but does not manage the structure (PO, 11 Oct 2026).
+    // The Organization Admin does not manage the structure (PO, 11 Oct 2026) but gives the Department
+    // Head role — and whoever gives it sets the head with it (PO, 12 Nov 2026). The page also says which
+    // department is the person's own: the one they become the head of.
+    db.getOwnUnitId.mockResolvedValueOnce(SALES);
     const admin = await createDefineQuery(runtime(['tenant_admin']).rt)(editRolesQueryDefinition())(
       {
         personId: SARA,
       },
     );
-    expect(admin.ok && admin.value.headUnits.canPick).toBe(false);
+    expect(admin.ok && admin.value.headUnits).toMatchObject({ canPick: true, ownUnitId: SALES });
+    expect(db.getOwnUnitId).toHaveBeenLastCalledWith(TX, SARA);
   });
 
-  it('HR Manager: asks for the unit when the person heads none, then makes them its head (audited)', async () => {
+  it('the role makes the person the head of THEIR OWN department, whoever gives it (PO, 12 Nov 2026)', async () => {
+    for (const giver of ['hr_manager', 'tenant_admin'] as const) {
+      vi.clearAllMocks();
+      const save = createDefineAction(runtime([giver]).rt)(updateMemberRolesActionDefinition());
+      db.getOwnUnitId.mockResolvedValueOnce(SALES);
+      db.setUnitHead.mockResolvedValueOnce({
+        ok: true,
+        unitId: SALES,
+        before: null,
+        changed: true,
+      });
+      // Nothing picked: the form was left as it opened.
+      const saved = await save(head());
+      expect(saved.ok && saved.value, giver).toMatchObject({
+        after: 'department_head',
+        headSet: { unitId: SALES, replaced: null },
+      });
+      expect(db.getOwnUnitId, giver).toHaveBeenCalledWith(TX, SARA);
+      expect(db.setUnitHead, giver).toHaveBeenCalledWith(TX, SALES, SARA, { replace: false });
+      expect(db.insertAuditEvent, giver).toHaveBeenCalledWith(
+        TX,
+        expect.anything(),
+        headAudit(SALES, null, SARA),
+      );
+      // The structure's locks come first whenever the role is Department Head (global lock order).
+      expect(db.lockUnitHeadChange, giver).toHaveBeenCalledTimes(1);
+      expect(db.lockUnitHeadChange.mock.invocationCallOrder[0] ?? 0, giver).toBeLessThan(
+        db.lockTenantRoles.mock.invocationCallOrder.at(-1) ?? 0,
+      );
+    }
+  });
+
+  it('their own department has another head: asked before replacing, like a picked one', async () => {
+    const save = createDefineAction(runtime(['tenant_admin']).rt)(
+      updateMemberRolesActionDefinition(),
+    );
+    db.getOwnUnitId.mockResolvedValue(SALES);
+    db.setUnitHead.mockResolvedValueOnce({ ok: false, refusal: 'head_taken', headPersonId: ME });
+    const taken = await save(head());
+    expect(!taken.ok && taken.error.fieldErrors).toEqual([
+      { path: 'headUnitId', code: 'HEAD_TAKEN' },
+    ]);
+    db.setUnitHead.mockResolvedValueOnce({ ok: true, unitId: SALES, before: ME, changed: true });
+    const replaced = await save(head({ replaceHead: true }));
+    expect(replaced.ok && replaced.value.headSet).toEqual({ unitId: SALES, replaced: ME });
+    expect(db.setUnitHead).toHaveBeenLastCalledWith(TX, SALES, SARA, { replace: true });
+    db.getOwnUnitId.mockResolvedValue(null);
+  });
+
+  it("a head the database refuses (not this member's to set) keeps nothing: HEAD_NOT_YOURS", async () => {
+    const save = createDefineAction(runtime(['tenant_admin']).rt)(
+      updateMemberRolesActionDefinition(),
+    );
+    db.setUnitHead.mockResolvedValueOnce({ ok: false, refusal: 'not_allowed' });
+    const refused = await save(head({ headUnitId: SALES }));
+    expect(!refused.ok && refused.error.fieldErrors).toEqual([
+      { path: 'headUnitId', code: 'HEAD_NOT_YOURS' },
+    ]);
+    expect(db.insertAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it('HR Manager: asks for the unit only when the person has no department, then makes them its head (audited)', async () => {
     const { rt, writeAudit } = runtime(['hr_manager']);
     const save = createDefineAction(rt)(updateMemberRolesActionDefinition());
+    // No department on their record (the mock's default): the one case that is asked.
     const missing = await save(head());
     expect(!missing.ok && missing.error.fieldErrors).toEqual([
       { path: 'headUnitId', code: 'HEAD_UNIT_REQUIRED' },
     ]);
+    expect(db.getOwnUnitId).toHaveBeenCalledWith(TX, SARA);
     expect(db.replaceMemberRole).not.toHaveBeenCalled();
 
     db.setUnitHead.mockResolvedValueOnce({ ok: true, unitId: SALES, before: null, changed: true });
@@ -524,9 +593,10 @@ describe('the Department Head role and the unit they head (WP-FIX-03, «either d
       expect.anything(),
       headAudit(SALES, null, SARA),
     );
-    // The structure's locks come before the role lock (global lock order) — only when a head changes.
-    expect(db.lockUnitHeadChange).toHaveBeenCalledTimes(1);
-    expect(db.lockUnitHeadChange.mock.invocationCallOrder[0] ?? 0).toBeLessThan(
+    // The structure's locks come before the role lock (global lock order) — on both saves, since the
+    // Department Head role may always set a head.
+    expect(db.lockUnitHeadChange).toHaveBeenCalledTimes(2);
+    expect(db.lockUnitHeadChange.mock.invocationCallOrder.at(-1) ?? 0).toBeLessThan(
       db.lockTenantRoles.mock.invocationCallOrder.at(-1) ?? 0,
     );
     expect(writeAudit).toHaveBeenCalledTimes(1);
@@ -571,28 +641,37 @@ describe('the Department Head role and the unit they head (WP-FIX-03, «either d
       updateMemberRolesActionDefinition(),
     );
     db.listHeadedUnitIds.mockResolvedValue([SALES]);
+    // Their own department is not added to what they head already: nothing is set unless picked.
+    db.getOwnUnitId.mockResolvedValue(CLOSED);
     expect((await save(head())).ok).toBe(true);
     expect(db.setUnitHead).not.toHaveBeenCalled();
+    expect(db.getOwnUnitId).not.toHaveBeenCalled();
     db.listHeadedUnitIds.mockResolvedValue([]);
+    db.getOwnUnitId.mockResolvedValue(null);
   });
 
-  it('a unit goes only with the Department Head role, from a member who manages the structure', async () => {
-    const hr = createDefineAction(runtime(['hr_manager']).rt)(updateMemberRolesActionDefinition());
-    const other = await hr({ ...form('learner'), headUnitId: SALES });
-    expect(!other.ok && other.error.fieldErrors).toEqual([
-      { path: 'headUnitId', code: 'UNIT_NOT_ALLOWED' },
-    ]);
-    // The Organization Admin gives the role without the unit (the HR Manager picks the head) …
+  it('a unit goes only with the Department Head role; the Organization Admin picks one too', async () => {
+    for (const giver of ['hr_manager', 'tenant_admin'] as const) {
+      const save = createDefineAction(runtime([giver]).rt)(updateMemberRolesActionDefinition());
+      const other = await save({ ...form('learner'), headUnitId: SALES });
+      expect(!other.ok && other.error.fieldErrors, giver).toEqual([
+        { path: 'headUnitId', code: 'UNIT_NOT_ALLOWED' },
+      ]);
+    }
+    expect(db.setUnitHead).not.toHaveBeenCalled();
+    // The Organization Admin: a person without a department is asked, as the HR Manager is …
     const admin = createDefineAction(runtime(['tenant_admin']).rt)(
       updateMemberRolesActionDefinition(),
     );
-    expect((await admin(head())).ok).toBe(true);
-    // … and cannot pick one.
-    const picked = await admin(head({ headUnitId: SALES }));
-    expect(!picked.ok && picked.error.fieldErrors).toEqual([
-      { path: 'headUnitId', code: 'UNIT_NOT_ALLOWED' },
+    const missing = await admin(head());
+    expect(!missing.ok && missing.error.fieldErrors).toEqual([
+      { path: 'headUnitId', code: 'HEAD_UNIT_REQUIRED' },
     ]);
-    expect(db.setUnitHead).not.toHaveBeenCalled();
+    // … and the department they pick is set (PO, 12 Nov 2026; replaces «the HR Manager picks it»).
+    db.setUnitHead.mockResolvedValueOnce({ ok: true, unitId: SALES, before: null, changed: true });
+    const picked = await admin(head({ headUnitId: SALES }));
+    expect(picked.ok && picked.value.headSet).toEqual({ unitId: SALES, replaced: null });
+    expect(db.setUnitHead).toHaveBeenCalledWith(TX, SALES, SARA, { replace: false });
   });
 
   it('taking the role away from a head: warns which units are left, clears them once confirmed (audited)', async () => {
@@ -664,7 +743,7 @@ describe('the Department Head role and the unit they head (WP-FIX-03, «either d
     db.listHeadedUnitIds.mockResolvedValue([]);
   });
 
-  it('a member who does not manage the structure changes the role and leaves the units as they are', async () => {
+  it('the Organization Admin making a head an Employee is asked too, and the units are cleared (second look M1)', async () => {
     const admin = createDefineAction(runtime(['tenant_admin']).rt)(
       updateMemberRolesActionDefinition(),
     );
@@ -673,8 +752,122 @@ describe('the Department Head role and the unit they head (WP-FIX-03, «either d
       editable({ roleCode: 'department_head', version: HEAD_TOKEN }),
     );
     db.listHeadedUnitIds.mockResolvedValue([SALES]);
-    const result = await admin({ ...form('learner'), version: HEAD_TOKEN });
-    expect(result.ok && result.value.headsCleared).toEqual([]);
+    // Never an Employee who silently stays a head: the question comes first …
+    const warned = await admin({ ...form('learner'), version: HEAD_TOKEN });
+    expect(!warned.ok && warned.error).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      fieldErrors: [{ path: 'role', code: 'HEADS_LEFT' }],
+      params: { units: 1 },
+    });
+    expect(db.replaceMemberRole).not.toHaveBeenCalled();
+    expect(db.clearHeadedUnits).not.toHaveBeenCalled();
+    // … and once confirmed the unit is left without a head, audited.
+    db.clearHeadedUnits.mockResolvedValueOnce([SALES]);
+    const cleared = await admin({ ...form('learner'), version: HEAD_TOKEN, clearHeads: true });
+    expect(cleared.ok && cleared.value.headsCleared).toEqual([SALES]);
+    expect(db.insertAuditEvent).toHaveBeenCalledWith(
+      TX,
+      expect.anything(),
+      headAudit(SALES, SARA, null),
+    );
+    db.listHeadedUnitIds.mockResolvedValue([]);
+  });
+
+  it('units the database does not let this member clear fail the whole change (second look L10)', async () => {
+    const save = createDefineAction(runtime(['tenant_admin']).rt)(
+      updateMemberRolesActionDefinition(),
+    );
+    const HEAD_TOKEN = 'department_head:5c1d2b3f-9a4e-4d2f-8b8c-3e6f7a8b9c0d:1';
+    db.getEditableRole.mockResolvedValue(
+      editable({ roleCode: 'department_head', version: HEAD_TOKEN }),
+    );
+    db.listHeadedUnitIds.mockResolvedValue([SALES, CLOSED]);
+    // Refused outright (42501), or fewer units cleared than the person heads: nothing is kept.
+    for (const outcome of [null, [SALES]] as const) {
+      db.clearHeadedUnits.mockResolvedValueOnce(outcome);
+      const result = await save({ ...form('learner'), version: HEAD_TOKEN, clearHeads: true });
+      expect(!result.ok && result.error.fieldErrors, String(outcome)).toEqual([
+        { path: 'role', code: 'HEADS_NOT_YOURS' },
+      ]);
+    }
+    expect(db.insertAuditEvent).not.toHaveBeenCalled();
+    db.listHeadedUnitIds.mockResolvedValue([]);
+  });
+
+  it('a member who gives roles but does not see the structure, or does not manage people, sets no head and clears none', async () => {
+    // Custom roles an Organization Admin can build: one gives roles without the «Organization» pages,
+    // one sees them but manages nobody (the database asks for a user manager: actor_may_manage_person).
+    const { rt } = runtime([]);
+    const custom = (permissions: readonly string[]): ActionRuntime<UserTx> => ({
+      ...rt,
+      loadGrants: () =>
+        Promise.resolve(
+          permissions.map((permission) => ({ permission, scope: { type: 'tenant' as const } })),
+        ),
+    });
+    const blind = custom([
+      'platform.user.read',
+      'platform.user.update',
+      'platform.role.read',
+      'platform.role.assign',
+    ]);
+    const clerk = custom([
+      'platform.user.read',
+      'platform.role.read',
+      'platform.role.assign',
+      'platform.org.read',
+    ]);
+    const page = await createDefineQuery(blind)(editRolesQueryDefinition())({ personId: SARA });
+    expect(page.ok && page.value.headUnits).toEqual({
+      canPick: false,
+      ownUnitId: null,
+      headedUnitIds: [],
+      heads: [],
+    });
+    const clerkPage = await createDefineQuery(clerk)(editRolesQueryDefinition())({
+      personId: SARA,
+    });
+    expect(clerkPage.ok && clerkPage.value.headUnits.canPick).toBe(false);
+    // With both — and the role to give — a custom role sets the head like the standard ones.
+    const manager = custom([
+      'platform.user.read',
+      'platform.user.update',
+      'platform.role.read',
+      'platform.role.assign',
+      'platform.org.read',
+    ]);
+    const managerPage = await createDefineQuery(manager)(editRolesQueryDefinition())({
+      personId: SARA,
+    });
+    expect(managerPage.ok && managerPage.value.headUnits.canPick).toBe(true);
+    const clerkSave = createDefineAction(clerk)(updateMemberRolesActionDefinition());
+    const clerkPicked = await clerkSave(head({ headUnitId: SALES }));
+    expect(!clerkPicked.ok && clerkPicked.error.fieldErrors).toEqual([
+      { path: 'headUnitId', code: 'UNIT_NOT_ALLOWED' },
+    ]);
+    const save = createDefineAction(blind)(updateMemberRolesActionDefinition());
+    // The role is given; the head is not theirs to set (the form says the HR Manager picks it) …
+    db.getOwnUnitId.mockResolvedValue(SALES);
+    const given = await save(head());
+    expect(given.ok && given.value).toMatchObject({ after: 'department_head', headSet: null });
+    expect(db.setUnitHead).not.toHaveBeenCalled();
+    db.getOwnUnitId.mockResolvedValue(null);
+    // … a department cannot be sent either …
+    const picked = await save(head({ headUnitId: SALES }));
+    expect(!picked.ok && picked.error.fieldErrors).toEqual([
+      { path: 'headUnitId', code: 'UNIT_NOT_ALLOWED' },
+    ]);
+    // … and a head is never made an Employee by someone who cannot leave the department without one:
+    // refused with the reason, nothing written (second look M1).
+    db.listHeadedUnitIds.mockResolvedValue([SALES]);
+    for (const clearHeads of [false, true]) {
+      vi.mocked(db.replaceMemberRole).mockClear();
+      const refused = await save({ ...form('learner'), clearHeads });
+      expect(!refused.ok && refused.error.fieldErrors, String(clearHeads)).toEqual([
+        { path: 'role', code: 'HEADS_NOT_YOURS' },
+      ]);
+      expect(db.replaceMemberRole).not.toHaveBeenCalled();
+    }
     expect(db.clearHeadedUnits).not.toHaveBeenCalled();
     db.listHeadedUnitIds.mockResolvedValue([]);
   });

@@ -53,6 +53,11 @@ export interface MemberRowView {
   readonly deactivateHref: string | null;
   /** «Change role» in a panel over the list, when the member may change this person's role. */
   readonly role: Omit<RoleTarget, 'personId' | 'name'> | null;
+  /**
+   * The person's own department: the Department Head role makes them its head (PO, 12 Nov 2026); null
+   * without one.
+   */
+  readonly ownUnitId: string | null;
   /** «Reactivate» on the Deactivated view. */
   readonly reactivate: { readonly privileged: boolean } | null;
 }
@@ -377,7 +382,8 @@ export function MembersTable(props: MembersTableProps) {
           selectTexts={props.roleMenu.selectTexts}
           scopeUnits={props.roleMenu.scopeUnits}
           unitTexts={props.roleMenu.unitTexts}
-          headUnits={props.roleMenu.headUnits}
+          // The list's heads, with THIS person's own department (the one the role makes them head of).
+          headUnits={{ ...props.roleMenu.headUnits, ownUnitId: roleFor?.row.ownUnitId ?? null }}
           headTexts={props.roleMenu.headTexts}
           labels={props.roleMenu.labels}
           errors={props.errors}

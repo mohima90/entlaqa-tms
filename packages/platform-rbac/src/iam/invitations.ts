@@ -26,7 +26,12 @@ import type { ActionContext, ActionDefinition } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import type { PermissionDefinition } from '../permissions';
 import { platformPermissions } from '../platform-permissions';
-import { type HeadUnitChoices, ROLE_CODE, loadHeadUnitChoices } from './edit-roles';
+import {
+  type HeadUnitChoices,
+  ROLE_CODE,
+  loadHeadUnitChoices,
+  maySetRoleHeads,
+} from './edit-roles';
 import { DEPARTMENT_HEAD_ROLE } from './head-role';
 import { namePart, nameRuleError } from './my-profile';
 import { type RoleChoice, canGive, findRole, loadRoleChoices } from './role-catalogue';
@@ -103,8 +108,9 @@ export const InviteUserInput = z.strictObject({
   role: z.string().max(40).regex(ROLE_CODE),
   // The unit of a custom role limited to «A department» (EP-ORG, T-M3-09); empty for every other role.
   scopeUnitId: ScopeUnitField.default(null),
-  // «Head of which department?» for the Department Head role (WP-FIX-03, «either door does both»): the
-  // unit the new person heads; `replaceHead` once the form asked about the unit's current head.
+  // The unit a new Department Head heads (WP-FIX-03, «either door does both»). Empty means «their own
+  // department» — the Department of this same form (PO, 12 Nov 2026); `replaceHead` once the form asked
+  // about the unit's current head.
   headUnitId: ScopeUnitField.default(null),
   replaceHead: z.boolean().default(false),
   locale: z.enum(['ar', 'en']),
@@ -215,7 +221,10 @@ function inviteAction(
     handler: async ({ ctx, input }) => {
       // An invitation that also makes the person a unit's head takes the structure's locks first (the
       // global lock order: departments → person_employment → role_assignments; WP-FIX-03).
-      if (input.headUnitId !== null) await lockUnitHeadChange(ctx.tx);
+      // The Department Head role always may: its holder becomes the head of their own department.
+      if (input.role === DEPARTMENT_HEAD_ROLE || input.headUnitId !== null) {
+        await lockUnitHeadChange(ctx.tx);
+      }
       const nameProblem = await nameRuleError(ctx.tx, input);
       if (nameProblem) return err(nameProblem);
       const role = await findRole(ctx.tx, input.role);
@@ -236,24 +245,30 @@ function inviteAction(
         input.scopeUnitId === null ? [] : await listStructureUnitOptions(ctx.tx),
       );
       if (unitProblem) return err(fieldError('scopeUnitId', unitProblem));
-      // «Either door does both» (WP-FIX-03): a Department Head is invited as the head of a unit, picked
-      // by a member who manages the structure (`platform.org.manage`); every rule before the first write.
+      // «Either door does both» (WP-FIX-03): a Department Head is invited as the head of a unit — the one
+      // picked, else THEIR OWN department, the Department of this form (PO, 12 Nov 2026: «he becomes the
+      // manager of the department according to what his department is»). Whoever gives the role sets the
+      // head with it (`maySetRoleHeads`: the HR Manager and the Organization Admin alike); every rule
+      // before the first write.
       const becomesHead = role.code === DEPARTMENT_HEAD_ROLE;
-      const managesUnits = ctx.can(p['platform.org.manage'], 'tenant');
+      const managesUnits = await maySetRoleHeads(ctx);
       if (input.headUnitId !== null && (!becomesHead || !managesUnits)) {
         return err(fieldError('headUnitId', 'UNIT_NOT_ALLOWED'));
       }
-      if (becomesHead && managesUnits && input.headUnitId === null) {
+      const headUnitId =
+        becomesHead && managesUnits ? (input.headUnitId ?? input.departmentId) : null;
+      // Asked only of a person without a department.
+      if (becomesHead && managesUnits && headUnitId === null) {
         return err(fieldError('headUnitId', 'HEAD_UNIT_REQUIRED'));
       }
-      if (input.headUnitId !== null && !input.replaceHead) {
-        const taken = (await listUnitHeads(ctx.tx)).some((h) => h.unitId === input.headUnitId);
+      if (headUnitId !== null && !input.replaceHead) {
+        const taken = (await listUnitHeads(ctx.tx)).some((h) => h.unitId === headUnitId);
         if (taken) return err(fieldError('headUnitId', 'HEAD_TAKEN'));
       }
       try {
         const created = await invite(ctx, input, inviteLinkOf, queueEmail);
-        if (input.headUnitId === null) return ok(created);
-        const set = await setUnitHead(ctx.tx, input.headUnitId, created.personId, {
+        if (headUnitId === null) return ok(created);
+        const set = await setUnitHead(ctx.tx, headUnitId, created.personId, {
           replace: input.replaceHead,
         });
         if (!set.ok) {
@@ -265,7 +280,10 @@ function inviteAction(
                 ? 'HEAD_TAKEN'
                 : set.refusal === 'person_not_active'
                   ? 'HEAD_NOT_ACTIVE'
-                  : 'UNIT_NOT_ALLOWED',
+                  : set.refusal === 'not_allowed'
+                    ? // The database's refusal: this head is not this member's to change.
+                      'HEAD_NOT_YOURS'
+                    : 'UNIT_NOT_ALLOWED',
             ),
           );
         }

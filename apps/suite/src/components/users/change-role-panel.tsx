@@ -7,6 +7,7 @@ import { fillText } from '../../lib/fill-text';
 import {
   DEPARTMENT_HEAD_ROLE,
   EMPLOYEE_ROLE,
+  headUnitDefault,
   type HeadUnitView,
   NO_HEAD_UNIT_VIEW,
   headUnitErrorKey,
@@ -75,9 +76,11 @@ export interface ChangeRolePanelProps {
  * PO asked for about 10 seconds; the review of 21 Oct 2026 keeps a toast with an action until it is closed
  * (WCAG 2.2.1 / 2.1.1: keyboard and screen-reader users must be able to reach it).
  *
- * «Either door does both» (WP-FIX-03; PO, 12 Nov 2026): the Department Head role asks «Head of which
- * department?» (a member who manages the structure picks it here); a department that has another head asks
- * before replacing; taking the role away from a head warns which departments are left without one.
+ * «Either door does both» (WP-FIX-03; PO, 12 Nov 2026): the Department Head role makes the person the
+ * head of THEIR OWN department — the panel says «Becomes the head of {department}» and lets another one be
+ * chosen; only a person without a department is asked «Head of which department?». Whoever gives the role
+ * sets the head with it (HR Manager or Organization Admin). A department that has another head asks before
+ * replacing; making a head an Employee warns which departments are left without one.
  */
 export function ChangeRolePanel(props: ChangeRolePanelProps) {
   const { labels, options, target } = props;
@@ -98,11 +101,18 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
   const headTexts = props.headTexts ?? {};
   const headText = (key: string, values: Record<string, string> = {}) =>
     fillText(headTexts[key] ?? key, values, props.locale);
-  const [headUnit, setHeadUnit] = useState('');
+  const [pickedHeadUnit, setHeadUnit] = useState('');
   const [headError, setHeadError] = useState<string | undefined>(undefined);
   const [asking, setAsking] = useState<'replace' | 'clear' | null>(null);
   const picksHead = headUnits.canPick && role === DEPARTMENT_HEAD_ROLE;
   const headed = headUnits.heads.filter((h) => h.personId === target.personId);
+  // Their own department unless another one is picked (PO, 12 Nov 2026).
+  const headUnit = headUnitDefault({
+    picked: pickedHeadUnit,
+    ownUnitId: headUnits.ownUnitId,
+    headsSomething: headed.length > 0,
+    units: props.scopeUnits,
+  });
   const unitName = (unitId: string) =>
     unitLabel(props.scopeUnits.find((u) => u.id === unitId)?.label ?? '');
   const headedNames = headed.map((h) => unitName(h.unitId)).join(headText('listSeparator'));
@@ -228,8 +238,9 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
           router.refresh();
           return;
         }
-        // A Department Head who heads nothing yet, given by a member who does not manage the structure
-        // (the Organization Admin): say who picks the department.
+        // A Department Head who heads nothing yet, given by a member who does not see the structure (a
+        // custom role that gives roles without the Organization pages — the HR Manager and the
+        // Organization Admin set the head with the role): say who picks the department.
         if (
           role === DEPARTMENT_HEAD_ROLE &&
           !headUnits.canPick &&
@@ -289,9 +300,11 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
       const first = codes[0];
       if (first !== undefined) {
         const key = roleErrorKey(first);
-        // The last Organization Admin is about the change, not the choice: a message in the panel.
-        if (key === 'lastAdmin') setMessage({ tone: 'danger', text: text(key) });
-        else setRoleError(text(key));
+        // The last Organization Admin, or a head whose departments this member cannot leave without one,
+        // is about the change, not the choice: a message in the panel.
+        if (key === 'lastAdmin' || key === 'headsNotYours') {
+          setMessage({ tone: 'danger', text: text(key) });
+        } else setRoleError(text(key));
         return;
       }
       setMessage({ tone: 'danger', text: errorText(result.error, props.errors) });
@@ -359,6 +372,7 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
           units={props.scopeUnits}
           heads={headUnits.heads}
           personId={target.personId}
+          ownUnitId={headUnits.ownUnitId}
           texts={headTexts}
           error={headError}
           disabled={pending}

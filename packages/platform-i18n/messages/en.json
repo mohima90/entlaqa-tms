@@ -779,6 +779,7 @@
     "roleNotAllowed": "You can't give this role. Only the Organization Admin gives privileged roles.",
     "roleUnknown": "This role no longer exists. Reload the page and choose another role.",
     "lastAdmin": "The organization must keep at least one active Organization Admin without an end date.",
+    "headsNotYours": "This person is the head of a department, and you can't leave it without a head. Ask the HR Manager to pick a new head in Organization → Departments first, then change the role.",
     "actionsFor": "Actions for {name}",
     "editRole": "Edit role",
     "dialogTitle": "Edit role",
@@ -813,6 +814,9 @@
     "head": {
       "label": "Head of which department?",
       "hint": "The person becomes the head of this department and sees it with everything under it.",
+      "becomes": "Becomes the head of {unit}",
+      "ownLabel": "Head of",
+      "ownHint": "Their own department. Choose another one if they head a different department.",
       "keep": "Already the head of {units}. Leave this empty to keep it that way, or pick one more department.",
       "placeholder": "Choose a department",
       "inactive": "inactive",
@@ -823,6 +827,7 @@
       "required": "Choose the department this person heads.",
       "taken": "This department already has a head. Confirm the replacement to continue.",
       "notActive": "This person can't head a department: they are not active.",
+      "notYours": "You can't change the head of this department. Choose another department, or ask the HR Manager to pick the head in Organization → Departments.",
       "notAllowed": "This department can't be picked: it's inactive or no longer exists. Choose another department.",
       "replaceTitle": "Replace the head of {unit}?",
       "replaceBody": "{head} is the head of {unit} now. {name} becomes the head instead. {head} keeps their role.",
@@ -2248,6 +2253,7 @@
       "NEW_SKIPPED_UPDATE_ONLY": "Not users (update only)",
       "NO_CHANGES": "Nothing differs from their data",
       "ROLE_REPEATED": "Role repeated in the row",
+      "HEAD_NOT_SET": "Department Head: the import sets no head",
       "ROLES_ONE_PER_PERSON": "Additional roles not given (one role per person)",
       "NAME_EN_REQUIRED": "English first or family name empty"
     },

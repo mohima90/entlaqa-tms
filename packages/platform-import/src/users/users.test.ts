@@ -347,6 +347,29 @@ describe('normalizeRow', () => {
     expect(row.issues.find((i) => i.c === 'ROLE_UNKNOWN')?.p).toEqual({ name: 'منسق' });
   });
 
+  it('a row with the Department Head role says that the import sets no head (WP-FIX-03), by any of its names', () => {
+    const mapping = {
+      '0': 'email',
+      '1': 'first_name_ar',
+      '2': 'family_name_ar',
+      '3': 'primary_role',
+    } as const;
+    const head = SYSTEM_ROLES.find((r) => r.code === 'department_head');
+    expect(head).toBeDefined();
+    for (const name of [head?.name.ar, head?.name.en, head?.code]) {
+      const row = normalizeRow(2, ['a@b.example', 'نورة', 'الدوسري', name ?? ''], mapping, 'ar');
+      // The role is still given: a warning, not an error — the row is imported.
+      expect(row.data.primary_role, name).toBe('department_head');
+      expect(
+        row.issues.map((i) => `${i.c}:${i.s}:${i.f ?? ''}`),
+        name,
+      ).toEqual(['HEAD_NOT_SET:w:primary_role']);
+    }
+    // Any other role: nothing is said.
+    const other = normalizeRow(2, ['a@b.example', 'نورة', 'الدوسري', 'learner'], mapping, 'ar');
+    expect(other.issues.some((i) => i.c === 'HEAD_NOT_SET')).toBe(false);
+  });
+
   it('never takes a privileged role from a file, by any of its names (no step-up path, TM-0003 D-IAM-01)', () => {
     const mapping = {
       '0': 'email',

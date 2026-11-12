@@ -23,6 +23,7 @@ import {
 
 const db = vi.hoisted(() => ({
   // «Head of which department?» (WP-FIX-03): nobody heads a unit unless a test says so.
+  getOwnUnitId: vi.fn((): Promise<string | null> => Promise.resolve(null)),
   listHeadedUnitIds: vi.fn((): Promise<readonly string[]> => Promise.resolve([])),
   listUnitHeads: vi.fn((): Promise<readonly unknown[]> => Promise.resolve([])),
   setUnitHead: vi.fn(),
@@ -420,13 +421,59 @@ describe('invite user action', () => {
     );
   });
 
+  it('a Department Head is invited as the head of THEIR OWN department, whoever invites (PO, 12 Nov 2026)', async () => {
+    const OTHER = '99999999-9999-4999-8999-999999999999';
+    for (const giver of ['hr_manager', 'tenant_admin'] as const) {
+      vi.clearAllMocks();
+      const invite = createDefineAction(runtime([giver]).rt)(inviteUserActionDefinition());
+      db.setUnitHead.mockResolvedValueOnce({
+        ok: true,
+        unitId: DEPARTMENT,
+        before: null,
+        changed: true,
+      });
+      // Nothing picked: the form's Department is the department they head.
+      const created = await invite({ ...form, role: 'department_head' });
+      expect(created.ok && created.value.headSet, giver).toEqual({
+        unitId: DEPARTMENT,
+        replaced: null,
+      });
+      expect(db.setUnitHead, giver).toHaveBeenCalledWith(TX, DEPARTMENT, PERSON, {
+        replace: false,
+      });
+      // The structure's locks come first whenever the role is Department Head (global lock order).
+      expect(db.lockUnitHeadChange, giver).toHaveBeenCalledTimes(1);
+      // Another department can still be chosen (a person may head a department above their own).
+      db.setUnitHead.mockResolvedValueOnce({
+        ok: true,
+        unitId: OTHER,
+        before: null,
+        changed: true,
+      });
+      const picked = await invite({ ...form, role: 'department_head', headUnitId: OTHER });
+      expect(picked.ok && picked.value.headSet, giver).toEqual({ unitId: OTHER, replaced: null });
+      expect(db.setUnitHead, giver).toHaveBeenLastCalledWith(TX, OTHER, PERSON, {
+        replace: false,
+      });
+    }
+  });
+
   it('a Department Head is invited as the head of a unit (WP-FIX-03): asked for, set and audited', async () => {
     const { rt, writeAudit } = runtime(['hr_manager']);
     const hr = createDefineAction(rt)(inviteUserActionDefinition());
     const head = { ...form, role: 'department_head' };
-    const missing = await hr(head);
+    // Asked only of a person without a department (PO, 12 Nov 2026).
+    const missing = await hr({ ...head, departmentId: '' });
     expect(!missing.ok && missing.error.fieldErrors).toEqual([
       { path: 'headUnitId', code: 'HEAD_UNIT_REQUIRED' },
+    ]);
+    // Their own department has a head: the form asks first, as for a picked one.
+    db.listUnitHeads.mockResolvedValueOnce([
+      { unitId: DEPARTMENT, personId: ME, nameAr: null, nameEn: 'Me' },
+    ]);
+    const ownTaken = await hr(head);
+    expect(!ownTaken.ok && ownTaken.error.fieldErrors).toEqual([
+      { path: 'headUnitId', code: 'HEAD_TAKEN' },
     ]);
     // The unit has a head: the form asks first.
     db.listUnitHeads.mockResolvedValueOnce([
@@ -464,28 +511,36 @@ describe('invite user action', () => {
       data: { personId: PERSON, role: 'department_head', headUnitId: DEPARTMENT },
     });
 
-    // A refused head keeps nothing (the action's transaction is rolled back).
-    db.setUnitHead.mockResolvedValueOnce({ ok: false, refusal: 'unit_inactive' });
-    const refused = await hr({ ...head, headUnitId: DEPARTMENT });
-    expect(!refused.ok && refused.error.fieldErrors).toEqual([
-      { path: 'headUnitId', code: 'UNIT_NOT_ALLOWED' },
-    ]);
+    // A refused head keeps nothing (the action's transaction is rolled back) — also one the database
+    // does not let this member set.
+    for (const [refusal, code] of [
+      ['unit_inactive', 'UNIT_NOT_ALLOWED'],
+      ['not_allowed', 'HEAD_NOT_YOURS'],
+    ] as const) {
+      db.setUnitHead.mockResolvedValueOnce({ ok: false, refusal });
+      const refused = await hr({ ...head, headUnitId: DEPARTMENT });
+      expect(!refused.ok && refused.error.fieldErrors, refusal).toEqual([
+        { path: 'headUnitId', code },
+      ]);
+    }
   });
 
-  it('a unit to head goes only with the Department Head role, from a member who manages the structure', async () => {
-    const hr = createDefineAction(runtime(['hr_manager']).rt)(inviteUserActionDefinition());
-    const other = await hr({ ...form, headUnitId: DEPARTMENT });
-    expect(!other.ok && other.error.fieldErrors).toEqual([
-      { path: 'headUnitId', code: 'UNIT_NOT_ALLOWED' },
-    ]);
-    // The Organization Admin invites a Department Head without the unit (the HR Manager picks the head).
-    const admin = createDefineAction(runtime(['tenant_admin']).rt)(inviteUserActionDefinition());
-    expect((await admin({ ...form, role: 'department_head' })).ok).toBe(true);
-    const picked = await admin({ ...form, role: 'department_head', headUnitId: DEPARTMENT });
-    expect(!picked.ok && picked.error.fieldErrors).toEqual([
-      { path: 'headUnitId', code: 'UNIT_NOT_ALLOWED' },
-    ]);
+  it('a unit to head goes only with the Department Head role; the Organization Admin is asked like the HR Manager', async () => {
+    for (const giver of ['hr_manager', 'tenant_admin'] as const) {
+      const invite = createDefineAction(runtime([giver]).rt)(inviteUserActionDefinition());
+      const other = await invite({ ...form, headUnitId: DEPARTMENT });
+      expect(!other.ok && other.error.fieldErrors, giver).toEqual([
+        { path: 'headUnitId', code: 'UNIT_NOT_ALLOWED' },
+      ]);
+      // A Department Head without a department: «Head of which department?» (replaces «the HR Manager
+      // picks the head» for the Organization Admin — PO, 12 Nov 2026).
+      const missing = await invite({ ...form, role: 'department_head', departmentId: '' });
+      expect(!missing.ok && missing.error.fieldErrors, giver).toEqual([
+        { path: 'headUnitId', code: 'HEAD_UNIT_REQUIRED' },
+      ]);
+    }
     expect(db.setUnitHead).not.toHaveBeenCalled();
+    expect(db.createInvitation).not.toHaveBeenCalled();
   });
 
   it('without platform.user.invite: FORBIDDEN, nothing created', async () => {

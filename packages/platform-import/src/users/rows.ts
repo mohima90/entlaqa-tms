@@ -245,6 +245,8 @@ export function normalizeRow(
     data.roles_given = true;
     primary = roleProblem(values.primary_role, 'primary_role');
     if (primary !== null) data.primary_role = primary;
+    // The role is given; who heads a department is never changed by an import (WP-FIX-03).
+    if (primary === 'department_head') issues.push(issue('HEAD_NOT_SET', 'primary_role'));
   }
   if (values.additional_roles !== undefined) {
     data.roles_given = true;

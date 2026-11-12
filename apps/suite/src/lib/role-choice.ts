@@ -70,8 +70,11 @@ export function scopeUnitErrorKey(code: string): 'unitRequired' | 'unitNotAllowe
 /** Text key of a role field error from the server (codes only, never values). */
 export function roleErrorKey(
   code: string,
-): 'roleNotAllowed' | 'roleUnknown' | 'lastAdmin' | 'roleRequired' {
+): 'roleNotAllowed' | 'roleUnknown' | 'lastAdmin' | 'headsNotYours' | 'roleRequired' {
   switch (code) {
+    // A head made an Employee whose departments this member cannot leave without a head.
+    case 'HEADS_NOT_YOURS':
+      return 'headsNotYours';
     case 'ROLE_NOT_ALLOWED':
     case 'ROLE_CONFLICT':
       return 'roleNotAllowed';

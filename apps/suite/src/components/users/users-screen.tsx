@@ -457,6 +457,7 @@ async function UsersList({
             withLevels,
           )
         : null,
+      ownUnitId: row.departmentId,
       status: row.status,
       statusText: t(`status.${row.status}`),
       lastSignIn: row.lastSignInAt ? dates.dateTime(row.lastSignInAt) : t('never'),

@@ -35,6 +35,7 @@ import { fillText } from '../../lib/fill-text';
 import {
   DEPARTMENT_HEAD_ROLE,
   type HeadUnitView,
+  headUnitDefault,
   headUnitErrorKey,
   unitLabel,
 } from '../../lib/head-unit';
@@ -182,10 +183,18 @@ export function InviteUserPanel(props: InviteUserFormProps) {
   const [role, setRole] = useState('');
   const [scopeUnitId, setScopeUnitId] = useState('');
   const withUnit = needsScopeUnit(roles, role);
-  // «Head of which department?» (WP-FIX-03): asked with the Department Head role.
-  const [headUnitId, setHeadUnitId] = useState('');
+  // The department a new Department Head heads (WP-FIX-03): their own — the Department of this form —
+  // unless another one is picked (PO, 12 Nov 2026); asked only when no Department is chosen.
+  const [pickedHeadUnitId, setHeadUnitId] = useState('');
   const [askReplace, setAskReplace] = useState<InviteInput | null>(null);
   const picksHead = props.headUnits.canPick && role === DEPARTMENT_HEAD_ROLE;
+  const ownUnitId = departmentId === '' ? null : departmentId;
+  const headUnitId = headUnitDefault({
+    picked: pickedHeadUnitId,
+    ownUnitId,
+    headsSomething: false,
+    units: props.scopeUnits,
+  });
   const headText = (key: string, values: Record<string, string> = {}) =>
     fillText(props.headTexts[key] ?? key, values, props.uiLocale);
   const headUnitName = unitLabel(props.scopeUnits.find((u) => u.id === headUnitId)?.label ?? '');
@@ -272,8 +281,8 @@ export function InviteUserPanel(props: InviteUserFormProps) {
       if (result.ok) {
         // Kawadir: the code and the link right away (no e-mail needed); the list keeps them too.
         setDirty(false);
-        // A Department Head invited by a member who does not manage the structure: say who picks the
-        // department (WP-FIX-03).
+        // A Department Head invited by a member who does not see the structure (a custom role without the
+        // Organization pages): say who picks the department (WP-FIX-03).
         if (input.role === DEPARTMENT_HEAD_ROLE && !props.headUnits.canPick) {
           toast.info(
             headText('invitedNoUnit', {
@@ -667,6 +676,7 @@ export function InviteUserPanel(props: InviteUserFormProps) {
                     units={props.scopeUnits}
                     heads={props.headUnits.heads}
                     personId={null}
+                    ownUnitId={ownUnitId}
                     texts={props.headTexts}
                     marker={text('required')}
                     error={fieldErrors.headUnitId}

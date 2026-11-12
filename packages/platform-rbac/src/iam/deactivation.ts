@@ -216,7 +216,9 @@ export function deactivationQueryDefinition(
       if (blocked) return ok({ ...view, responsibilities: [], candidates: [] });
       const responsibilities = await responsibilitiesOf(ctx, kinds, input.personId);
       const candidates =
-        responsibilities.length > 0 ? await listReplacementCandidates(ctx.tx, input.personId) : [];
+        responsibilities.length > 0
+          ? await listReplacementCandidates(ctx.tx, input.personId, ctx.actor.personId)
+          : [];
       return ok({ ...view, responsibilities, candidates });
     },
   };
@@ -335,7 +337,9 @@ function deactivateAction(
         const choice = input.reassign.find((c) => c.kind === kind.code);
         if (!choice) return err(fieldError(path, 'OWNER_REQUIRED'));
         candidates ??= new Set(
-          (await listReplacementCandidates(ctx.tx, input.personId)).map((c) => c.personId),
+          (await listReplacementCandidates(ctx.tx, input.personId, ctx.actor.personId)).map(
+            (c) => c.personId,
+          ),
         );
         if (!candidates.has(choice.toPersonId)) return err(fieldError(path, 'OWNER_INVALID'));
         const outcome = await kind.reassign(ctx.tx, input.personId, choice.toPersonId);

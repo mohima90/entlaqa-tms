@@ -16,6 +16,11 @@ export interface HeadUnitFieldProps {
   readonly heads: readonly HeadOfUnit[];
   /** The person who gets the role (null: someone being invited). */
   readonly personId: string | null;
+  /**
+   * The person's own department, when the value is that default (PO, 12 Nov 2026): the field then states
+   * «Becomes the head of {department}» instead of asking.
+   */
+  readonly ownUnitId?: string | null | undefined;
   readonly texts: HeadUnitTexts;
   readonly marker?: string | undefined;
   readonly error?: string | undefined;
@@ -24,10 +29,11 @@ export interface HeadUnitFieldProps {
 }
 
 /**
- * «Head of which department?» under the Department Head role (WP-FIX-03; PO, 12 Nov 2026): one department
- * of the structure; the person becomes its head when the role is saved. Someone who already heads
- * departments may leave it empty (they keep them). A department with another head says who, before the
- * replacement is confirmed.
+ * The department under the Department Head role (WP-FIX-03; PO, 12 Nov 2026): the person becomes the head
+ * of THEIR OWN department when the role is saved — the field opens on it and says so; another department
+ * can be chosen (a person may head a department above their own). Only a person without a department is
+ * asked «Head of which department?». Someone who already heads departments may leave it empty (they keep
+ * them). A department with another head says who, before the replacement is confirmed.
  */
 export function HeadUnitField(props: HeadUnitFieldProps) {
   const { texts, units, heads, personId } = props;
@@ -40,22 +46,35 @@ export function HeadUnitField(props: HeadUnitFieldProps) {
     props.value === ''
       ? null
       : (heads.find((h) => h.unitId === props.value && h.personId !== personId) ?? null);
+  // Their own department is the answer already: a statement, not a question (and no «required» mark).
+  const own =
+    !optional && props.ownUnitId != null && props.value === props.ownUnitId
+      ? props.ownUnitId
+      : null;
   const hint =
     units.length === 0
       ? text('none')
       : optional
         ? text('keep', { units: headed.map((h) => labelOf(h.unitId)).join(text('listSeparator')) })
-        : text('hint');
+        : own
+          ? text('ownHint')
+          : text('hint');
   return (
     <div className="flex flex-col gap-2" data-testid="head-unit-field">
+      {own ? (
+        <p className="m-0 font-semibold" data-testid={`${props.id}-becomes`}>
+          {text('becomes', { unit: labelOf(own) })}
+        </p>
+      ) : null}
       <SelectField
         id={props.id}
-        label={text('label')}
-        marker={optional ? undefined : props.marker}
+        label={own ? text('ownLabel') : text('label')}
+        marker={optional || own ? undefined : props.marker}
         hint={hint}
         error={props.error}
         value={props.value}
-        required={!optional}
+        // Their own department is the answer already: nothing is asked, so nothing is marked required.
+        required={!optional && !own}
         disabled={props.disabled === true || units.length === 0}
         onChange={(event) => {
           props.onChange(event.target.value);

@@ -449,13 +449,23 @@ test.describe('users pages', () => {
     await expect(panel.getByRole('radio', { name: /^Organization Admin/ })).toBeEnabled();
     await expectNoSeriousA11yViolations(page);
 
-    // Department Head: «Head of which department?» for a member who manages the structure (WP-FIX-03);
-    // saving without a department is refused in words.
+    // Department Head (WP-FIX-03; PO, 12 Nov 2026): the role makes Sarah the head of HER OWN department
+    // — the panel says so instead of asking, whoever gives the role (here the Organization Admin, who
+    // does not manage the structure); another department can still be chosen. Not saved here: the tests
+    // below read Sarah's role.
     await panel.getByRole('radio', { name: /^Department Head/ }).check();
-    await expect(panel.getByTestId('head-unit-field')).toBeVisible();
-    await expect(panel.getByLabel('Head of which department?')).toBeVisible();
-    await panel.getByRole('button', { name: 'Save role' }).click();
-    await expect(panel.getByText('Choose the department this person heads.')).toBeVisible();
+    const headField = panel.getByTestId('head-unit-field');
+    await expect(headField).toContainText('Becomes the head of Academy (Section)');
+    await expect(headField.getByText('Head of which department?')).toHaveCount(0);
+    const headOf = headField.getByLabel('Head of', { exact: true });
+    await expect(headOf.locator('option:checked')).toHaveText('Academy (Section)');
+    await headOf.selectOption({ label: 'Training and development (Department)' });
+    // Another department is a question again; this one has a head (the Organization Admin).
+    await expect(headField.getByText('Becomes the head of')).toHaveCount(0);
+    await expect(headField).toContainText(
+      'Training and development (Department) already has a head',
+    );
+    await expectNoSeriousA11yViolations(page);
     await panel.getByRole('radio', { name: /^L&D Manager/ }).check();
     await panel.getByRole('button', { name: 'Save role' }).click();
     await expect(panel).toBeHidden();

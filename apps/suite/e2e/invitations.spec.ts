@@ -370,6 +370,8 @@ test.describe('organization structure (HR Manager)', () => {
   test.skip(!email || !password, 'SIGNED_IN_E2E_* not set');
 
   test('an HR Manager signs up and builds the levels and the tree', async ({ page, browser }) => {
+    // A long journey (sign-up, levels, cost centres, the tree, move, import, branches, Arabic).
+    test.setTimeout(120_000);
     const hr = `hr-structure-${run}@sovereign.example`;
     await signIn(page);
     await page.goto('/en/suite/admin/users/invite');
@@ -542,6 +544,13 @@ test.describe('organization structure (HR Manager)', () => {
     await expect(hrPage.getByTestId('unit-status-dialog')).toHaveCount(0);
     await expect(hrPage.getByTestId('toast-action')).toHaveText('Undo');
     await expect(moved.getByTestId('unit-inactive')).toHaveText('Inactive');
+    // The message with «Undo» stays 20 seconds in the corner, over the end of the last rows: closed, as
+    // a person who goes on working there would.
+    await toasts(hrPage)
+      .getByRole('listitem')
+      .filter({ hasText: 'deactivated' })
+      .getByRole('button', { name: 'Close' })
+      .click();
     await moved.getByTestId('unit-menu').click();
     await hrPage.getByTestId('unit-menu-delete').click();
     await deleteDialog.getByTestId('confirm-dialog-confirm').click();

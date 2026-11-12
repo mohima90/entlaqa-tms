@@ -385,8 +385,9 @@ function CycleForm(props: CycleDialogProps & { readonly onBusy: (busy: boolean) 
       >
         {t('dialog.note')}
       </p>
-      {/* «Cancel», then the primary button at the end (the dialog's footer; stacked on phones). */}
-      <div className="mt-1.5 flex flex-col-reverse gap-2.5 sm:flex-row sm:flex-wrap sm:justify-end">
+      {/* «Cancel», then the primary button at the end. The footer stays in view while a long popup
+          scrolls (a short screen, many departments), so the way out and the way on are always there. */}
+      <div className="sticky bottom-0 -mx-6 -mb-6 mt-1.5 flex flex-col-reverse gap-2.5 border-t border-border bg-surface-raised px-6 py-4 sm:-mx-6.5 sm:-mb-6.5 sm:flex-row sm:flex-wrap sm:justify-end sm:px-6.5">
         <Button
           variant="secondary"
           onClick={props.onClose}

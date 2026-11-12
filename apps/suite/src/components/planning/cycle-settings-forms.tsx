@@ -596,7 +596,7 @@ function ScopeForm(
           t={t}
         />
       )}
-      <div className="mt-1.5 flex flex-col-reverse gap-2.5 sm:flex-row sm:flex-wrap sm:justify-end">
+      <div className="sticky bottom-0 -mx-6 -mb-6 mt-1.5 flex flex-col-reverse gap-2.5 border-t border-border bg-surface-raised px-6 py-4 sm:-mx-6.5 sm:-mb-6.5 sm:flex-row sm:flex-wrap sm:justify-end sm:px-6.5">
         <Button variant="secondary" onClick={props.onClose} disabled={pending}>
           {t('setup.cancel')}
         </Button>

@@ -269,7 +269,11 @@ export function CyclesScreen(props: CyclesScreenProps) {
     ) : (
       <a
         href={cycleHref(locale, cycle.id)}
-        className={buttonClasses({ variant: 'secondary', size: 'sm' })}
+        className={buttonClasses({
+          variant: 'secondary',
+          size: 'sm',
+          className: 'whitespace-nowrap',
+        })}
         aria-label={t('list.progressOf', { name: cycle.name })}
         data-testid="cycle-open-link"
       >
@@ -377,7 +381,7 @@ export function CyclesScreen(props: CyclesScreenProps) {
                   >
                     <th
                       scope="row"
-                      className={`${tableClasses.cell} ${mobile} text-start font-semibold [overflow-wrap:anywhere] max-md:self-center`}
+                      className={`${tableClasses.cell} ${mobile} text-start font-semibold [overflow-wrap:anywhere] max-md:self-center max-md:first:ps-0`}
                     >
                       <a
                         href={

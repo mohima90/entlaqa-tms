@@ -1,7 +1,7 @@
 'use client';
-import { Alert, Button } from '@jadarat/ui';
+import { Alert, Button, Dialog } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
-import { useId, useRef, useState, useTransition } from 'react';
+import { useCallback, useState, useTransition } from 'react';
 import { resetMemberMfaAction } from '../../actions/security';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
@@ -47,20 +47,24 @@ export function ResetAuthenticator({
 }) {
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
-  const titleId = useId();
-  const dialog = useRef<HTMLDialogElement>(null);
+  const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<{
     tone: 'success' | 'warning' | 'danger';
     text: string;
   } | null>(null);
   const named = (text: string) => text.replaceAll('{name}', personName);
+  const close = useCallback(() => {
+    setOpen(false);
+  }, []);
+  // Escape, ✕ and the backdrop wait while the reset is running.
+  const canClose = useCallback(() => !pending, [pending]);
 
   function reset() {
     setMessage(null);
     startTransition(async () => {
       const result = await resetMemberMfaAction({ personId });
-      dialog.current?.close();
+      setOpen(false);
       if (result.ok) {
         setMessage({ tone: 'success', text: named(labels.done) });
         router.refresh();
@@ -94,10 +98,9 @@ export function ResetAuthenticator({
           <Button
             type="button"
             variant="secondary"
-            disabled={pending}
             onClick={() => {
               setMessage(null);
-              dialog.current?.showModal();
+              setOpen(true);
             }}
             data-testid="user-mfa-reset-open"
           >
@@ -110,38 +113,35 @@ export function ResetAuthenticator({
           {message.text}
         </Alert>
       ) : null}
-      <dialog
-        ref={dialog}
-        aria-labelledby={titleId}
-        className="max-w-md rounded-lg border border-border bg-surface p-6 text-text shadow-lg backdrop:bg-black/40"
+      {/* The shared confirmation popup (forms standard rule 9; before: a hand-made <dialog>): the page
+          behind is inert, Escape and «Cancel» close it, focus returns to the button that opened it. */}
+      <Dialog
+        open={open}
+        onClose={close}
+        canClose={canClose}
+        size="sm"
+        tone="danger"
+        title={labels.confirmTitle}
+        description={named(labels.confirmText)}
+        closeLabel={labels.cancel}
         data-testid="user-mfa-reset-dialog"
-      >
-        <h2 id={titleId} className="m-0 mb-2 text-lg font-semibold">
-          {labels.confirmTitle}
-        </h2>
-        <p className="m-0 mb-4">{named(labels.confirmText)}</p>
-        <div className="flex flex-wrap gap-3">
-          <Button
-            type="button"
-            variant="danger"
-            onClick={reset}
-            disabled={pending}
-            data-testid="user-mfa-reset-confirm"
-          >
-            {pending ? labels.resetting : labels.confirm}
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={pending}
-            onClick={() => {
-              dialog.current?.close();
-            }}
-          >
-            {labels.cancel}
-          </Button>
-        </div>
-      </dialog>
+        footer={
+          <>
+            <Button variant="secondary" disabled={pending} onClick={close}>
+              {labels.cancel}
+            </Button>
+            <Button
+              variant="danger"
+              onClick={reset}
+              disabled={pending}
+              aria-busy={pending || undefined}
+              data-testid="user-mfa-reset-confirm"
+            >
+              {pending ? labels.resetting : labels.confirm}
+            </Button>
+          </>
+        }
+      />
     </div>
   );
 }

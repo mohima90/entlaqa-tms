@@ -125,11 +125,12 @@ export async function readUnitFile(bytes: Uint8Array): Promise<UnitFileRead> {
           );
           if (column && found[column.key] === undefined) found[column.key] = index;
         });
-        // Level, code and both names are needed; the other columns may be left out.
+        // Level, code and a name column are needed; the other columns may be left out. Which name every
+        // row must give follows the organization's default language (checkUnitRows; PO, 12 Nov 2026).
         if (
-          ['level', 'code', 'nameEn', 'nameAr'].some(
-            (key) => found[key as UnitColumn] === undefined,
-          )
+          found.level === undefined ||
+          found.code === undefined ||
+          (found.nameEn === undefined && found.nameAr === undefined)
         ) {
           return { ok: false, problem: 'FILE_COLUMNS' };
         }
@@ -216,10 +217,13 @@ export function checkUnitRows(
   const has = new Set(columns);
   const levelByName = new Map<string, number>();
   for (const level of context.levels) {
-    levelByName.set(normalizeHeader(level.nameEn), level.ordinal);
-    levelByName.set(normalizeHeader(level.nameAr), level.ordinal);
+    // A level may be named in one language only (migration 20261113100000).
+    if (level.nameEn !== null) levelByName.set(normalizeHeader(level.nameEn), level.ordinal);
+    if (level.nameAr !== null) levelByName.set(normalizeHeader(level.nameAr), level.ordinal);
     levelByName.set(String(level.ordinal), level.ordinal);
   }
+  /** The name every row must give: the organization's default language's (the other one is optional). */
+  const requiredName = context.nameLanguage === 'ar' ? 'nameAr' : 'nameEn';
   const existing = new Map(context.units.map((u) => [u.code.toLowerCase(), u]));
   const unitById = new Map(context.units.map((u) => [u.id, u]));
   const branches = new Map(context.branches.map((b) => [b.code.toLowerCase(), b.id]));
@@ -233,7 +237,8 @@ export function checkUnitRows(
 
   for (const { row, cells } of rows) {
     const code = cells.code;
-    const name = cells.nameEn || cells.nameAr;
+    const name =
+      context.nameLanguage === 'ar' ? cells.nameAr || cells.nameEn : cells.nameEn || cells.nameAr;
     const problem = (issue: UnitRowIssue) => {
       results.push({ row, code, name, level: cells.level, result: 'problem', issue });
     };
@@ -252,8 +257,11 @@ export function checkUnitRows(
       continue;
     }
     seen.add(key);
-    // A name of spaces or invisible characters only counts as missing (the database refuses it too).
-    if (!hasVisibleText(cells.nameEn) || !hasVisibleText(cells.nameAr)) {
+    // The name in the organization's default language is required; the other language is optional. A name
+    // of spaces or invisible characters only counts as missing (the database refuses it too).
+    const nameEn = hasVisibleText(cells.nameEn) ? cells.nameEn : null;
+    const nameAr = hasVisibleText(cells.nameAr) ? cells.nameAr : null;
+    if ((requiredName === 'nameAr' ? nameAr : nameEn) === null) {
       problem('NAME_REQUIRED');
       continue;
     }
@@ -305,8 +313,9 @@ export function checkUnitRows(
         row,
         id: current.id,
         version: current.version,
-        nameEn: cells.nameEn,
-        nameAr: cells.nameAr,
+        // An empty name cell (or no such column) keeps the unit's name in that language: never cleared here.
+        nameEn: nameEn ?? undefined,
+        nameAr: nameAr ?? undefined,
         // A column left out keeps the unit's value; an empty cell clears it; a head not found stays as is.
         branchId: has.has('branchCode') ? branchId : undefined,
         defaultCostCentreId:
@@ -348,8 +357,8 @@ export function checkUnitRows(
       kind: 'create',
       row,
       code,
-      nameEn: cells.nameEn,
-      nameAr: cells.nameAr,
+      nameEn,
+      nameAr,
       parentId,
       parentCode,
       branchId,

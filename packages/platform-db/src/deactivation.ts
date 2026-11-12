@@ -200,10 +200,10 @@ export async function listHeadedDepartments(
   tx: UserTx,
   personId: string,
 ): Promise<readonly ResponsibilityItem[]> {
-  const rows = await tx.execute<{ id: string; name_ar: string; name_en: string | null }>(sql`
+  const rows = await tx.execute<{ id: string; name_ar: string | null; name_en: string | null }>(sql`
     select d.id, d.name_ar, d.name_en from platform.departments d
     where d.head_person_id = ${personId}::uuid and d.deleted_at is null
-    order by d.name_ar, d.id`);
+    order by coalesce(d.name_ar, d.name_en), d.id`);
   return rows.map((r) => ({ id: r.id, nameAr: r.name_ar, nameEn: r.name_en, movable: true }));
 }
 

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  type LevelLabel,
   deactivatesWithUndo,
+  fallbackUnitCode,
+  levelLabel,
+  unitFieldLabel,
   unitDeleteBlockers,
   levelName,
   nextLevel,
@@ -152,5 +156,45 @@ describe('suggestUnitCode (the code the person need not think about, WP-FIX-02 #
     expect(suggestUnitCode('Human Resources', ['HR', 'HR-2'])).toBe('HR-3');
     expect(suggestUnitCode('', [])).toBe('');
     expect(suggestUnitCode('إدارة', [])).toBe('');
+  });
+
+  it('gives a unit named in Arabic only a neutral code (the English name is optional)', () => {
+    expect(fallbackUnitCode([])).toBe('UNIT');
+    expect(fallbackUnitCode(['unit', 'UNIT-2', 'HR'])).toBe('UNIT-3');
+  });
+});
+
+describe('names in the organization’s default language only (PO, 12 Nov 2026)', () => {
+  const oneName: LevelLabel[] = [
+    { ordinal: 1, nameEn: 'Sector', nameAr: null },
+    { ordinal: 2, nameEn: null, nameAr: 'إدارة' },
+  ];
+
+  it('shows a level by the name that exists, whatever the page’s language', () => {
+    expect(levelLabel({ ordinal: 1, nameEn: 'Sector', nameAr: 'قطاع' }, 'ar')).toBe('قطاع');
+    expect(levelName(oneName, 1, 'ar')).toBe('Sector');
+    expect(levelName(oneName, 2, 'en')).toBe('إدارة');
+    expect(unitFieldLabel(oneName, 1, 'ar', 'الوحدة')).toBe('Sector');
+    expect(unitsLabel(oneName, [1], 'ar', 'الوحدة')).toBe('Sector');
+    expect(orgUnitsLabel(oneName, false, 'ar', 'الوحدة')).toBe('Sector');
+    expect(unitNameWithLevel('المبيعات', 2, oneName, 'en', true)).toBe('المبيعات · إدارة');
+  });
+
+  it('offers a unit by the name that exists in the unit picker', () => {
+    const choices = scopeUnitChoices(
+      [
+        { id: 'a', parentId: null, nameAr: null, nameEn: 'Sales', levelOrdinal: 1, active: true },
+        { id: 'b', parentId: 'a', nameAr: 'التجزئة', nameEn: null, levelOrdinal: 2, active: true },
+      ],
+      oneName,
+      'ar',
+    );
+    expect(choices.map((c) => c.label.trim())).toEqual(['Sales (Sector)', 'التجزئة (إدارة)']);
+    const english = scopeUnitChoices(
+      [{ id: 'b', parentId: null, nameAr: 'التجزئة', nameEn: null, levelOrdinal: 2, active: true }],
+      oneName,
+      'en',
+    );
+    expect(english[0]?.label).toBe('التجزئة (إدارة)');
   });
 });

@@ -1187,12 +1187,10 @@
     "breadcrumb": "Team members",
     "breadcrumbLabel": "Breadcrumb",
     "form": {
-      "person": "Person details",
       "email": "Work email",
       "emailHint": "This email becomes the sign-in name. It must be unique within the organization.",
       "firstNameAr": "First name in Arabic",
       "familyNameAr": "Family name in Arabic",
-      "addEnglishName": "Add the name in English (optional)",
       "firstNameEn": "First name in English",
       "familyNameEn": "Family name in English",
       "department": "Department",
@@ -1214,6 +1212,9 @@
       "privileged": "Privileged role",
       "privilegedAdminOnly": "Only the Organization Admin gives privileged roles (Organization Admin, HR Manager and custom roles with a high-risk permission). You can invite with every other role.",
       "language": "Invitation email language",
+      "more": "More options",
+      "moreSummaryArabic": "Work details and the name in Arabic",
+      "moreSummaryEnglish": "Work details and the name in English",
       "languages": {
         "ar": "العربية",
         "en": "English"
@@ -1234,8 +1235,7 @@
         "unit": "Choose a department or branch from the list.",
         "manager": "Choose the direct manager from the list.",
         "roleUnknown": "This role no longer exists. Choose another role."
-      },
-      "addArabicName": "Add the name in Arabic (optional)"
+      }
     },
     "list": {
       "created": "Invitation created. Copy its code or link from the list; it stays valid for 7 days.",
@@ -3022,7 +3022,7 @@
       "more": "More options",
       "moreSummary": "Code {code}",
       "moreSummaryBranch": "Code {code} · Branch {branch}",
-      "codeSuggested": "Suggested from the English name; change it if your organization uses its own codes. Letters, digits, dots, hyphens or underscores; up to 32, unique.",
+      "codeSuggested": "Suggested for you; change it if your organization uses its own codes. Letters, digits, dots, hyphens or underscores; up to 32, unique.",
       "branchFromParent": "Same as {parent} unless you change it.",
       "addedTitle": "{name} added",
       "addedDescription": "What next?",
@@ -3172,8 +3172,7 @@
       "active": "Active",
       "activeHint": "Only active cost centres can be picked. An inactive one stays on the people who have it.",
       "codeHint": "As in your finance system: letters, digits, dots, hyphens or underscores; up to 32, unique.",
-      "nameHint": "Give the name in at least one language.",
-      "name": "Give a name in English or Arabic, with visible letters, up to 120 characters.",
+      "name": "The name needs visible letters, up to 120 characters.",
       "codeTaken": "Another cost centre has this code.",
       "inUse": "This cost centre is in use. Deactivate it instead.",
       "inUseDetail": "In use: {usage}. Deactivate it instead: it stays on the people who have it, and can't be picked any more.",
@@ -3196,7 +3195,7 @@
       "templateOther": "Template with Arabic headers",
       "rule": {
         "order": "Put a department after its parent: the parent can be an existing department or one in an earlier row.",
-        "update": "A row with an existing code updates that department's names, branch, default cost centre and head. An empty cell clears the value; a column left out of the file changes nothing.",
+        "update": "A row with an existing code updates that department's names, branch, default cost centre and head. An empty cell clears the value — except a name, which is kept; a column left out of the file changes nothing.",
         "noMove": "The import never moves, deactivates or deletes a department. Move departments on the Departments page.",
         "limits": "CSV or XLSX, up to 512 KB and 2,000 rows."
       },
@@ -3243,7 +3242,7 @@
         "LEVEL_UNKNOWN": "The level is not one of your levels.",
         "CODE_INVALID": "The code is missing or not valid.",
         "CODE_REPEATED": "This code is used in an earlier row.",
-        "NAME_REQUIRED": "Both names are required.",
+        "NAME_REQUIRED": "The name in your organization's default language is required.",
         "NAME_TOO_LONG": "A name is longer than 200 characters.",
         "PARENT_REQUIRED": "A department below the top level needs a parent code.",
         "PARENT_NOT_ALLOWED": "A top-level department has no parent.",
@@ -3291,7 +3290,7 @@
     "form": {
       "addTitle": "Add a branch",
       "editTitle": "Edit {name}",
-      "description": "Code, names, location and time zone of the branch.",
+      "description": "The names, code and time zone of the branch. Everything else is optional.",
       "nameEn": "Name in English",
       "nameAr": "Name in Arabic",
       "code": "Code",
@@ -3303,6 +3302,8 @@
       "cityEn": "City in English",
       "cityAr": "City in Arabic",
       "timezone": "Time zone",
+      "more": "More options",
+      "moreSummary": "Parent branch, location, working week and headquarters",
       "headquarters": "This is the headquarters",
       "headquartersHint": "An organization has one headquarters: choosing this branch moves it here.",
       "create": "Add branch",

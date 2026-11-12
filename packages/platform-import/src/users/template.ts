@@ -20,7 +20,8 @@ export type TemplateLocale = 'ar' | 'en';
 
 export interface TemplateUnit {
   readonly code: string | null;
-  readonly nameAr: string;
+  /** One of the two names may be missing, never both (migration 20261113100000). */
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
 }
 
@@ -88,8 +89,10 @@ const GUIDE_TEXT = {
   },
 } as const;
 
+// The name in the template's language, else the name that exists (a unit or branch may be named in the
+// organization's default language only).
 const unitName = (unit: TemplateUnit, locale: TemplateLocale) =>
-  locale === 'en' && unit.nameEn ? unit.nameEn : unit.nameAr;
+  (locale === 'en' ? (unit.nameEn ?? unit.nameAr) : (unit.nameAr ?? unit.nameEn)) ?? '';
 
 export function xlsxTemplate(
   locale: TemplateLocale,

@@ -3,6 +3,7 @@ import {
   Alert,
   Badge,
   Button,
+  Dialog,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -12,21 +13,20 @@ import {
   Icon,
   ListCard,
   ListCards,
-  SidePanel,
   TextField,
   cn,
   tableClasses,
   toast,
 } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
-import { type SyntheticEvent, useState, useTransition } from 'react';
+import { type SyntheticEvent, useCallback, useState, useTransition } from 'react';
 import {
   createCostCentreAction,
   deleteCostCentreAction,
   updateCostCentreAction,
 } from '../../actions/cost-centres';
 import { fillText } from '../../lib/fill-text';
-import { costCentreFieldText } from '../../lib/structure-form';
+import { costCentreFieldText, nameOrder } from '../../lib/structure-form';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { ConfirmDialog } from './confirm-dialog';
@@ -56,6 +56,8 @@ export interface CostCentresTableProps {
   readonly texts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
   readonly locale: 'ar' | 'en';
+  /** The organization's default language: the form requires its name and asks it first. */
+  readonly nameLanguage: 'ar' | 'en';
 }
 
 type DialogState =
@@ -66,7 +68,7 @@ type DialogState =
  * Structure → Cost centres (WP-HR-01; FR-ADM-05, FR-FIN-03; business flow EP-ORG-structure-completion.md §3 A;
  * design screen 2, approved by the PO 24 Oct 2026; Mobbin refs Ramp, Brex, Rippling): the finance codes that pay
  * for training — code, names, how many people and units use each one, active / inactive. «Add cost centre» and
- * Edit open a side panel; one in use is deactivated rather than deleted (it stays on the people who have it).
+ * Edit open a centred popup (forms standard rule 9); one in use is deactivated rather than deleted (it stays on the people who have it).
  */
 export function CostCentresTable({
   rows,
@@ -74,6 +76,7 @@ export function CostCentresTable({
   texts,
   errors,
   locale,
+  nameLanguage,
 }: CostCentresTableProps) {
   const text = (key: string) => texts[key] ?? key;
   const fill = (key: string, values: Record<string, string | number>) =>
@@ -303,6 +306,7 @@ export function CostCentresTable({
       {dialog?.kind === 'form' ? (
         <CostCentrePanel
           row={dialog.row}
+          nameLanguage={nameLanguage}
           text={text}
           fill={fill}
           errors={errors}
@@ -349,9 +353,14 @@ export function CostCentresTable({
 
 const FORM_ID = 'cost-centre-form';
 
-/** «Add cost centre» / Edit (design screen 2): code, names in both languages, active. */
+/**
+ * «Add cost centre» / Edit in one centred popup (448 px; forms standard rule 9, PO 12 Nov 2026): the name in
+ * the organization's default language (required), the other language (optional), the code; Active only when
+ * editing.
+ */
 function CostCentrePanel({
   row,
+  nameLanguage,
   text,
   fill,
   errors,
@@ -359,6 +368,7 @@ function CostCentrePanel({
   sessionRefused,
 }: {
   readonly row: CostCentreView | null;
+  readonly nameLanguage: 'ar' | 'en';
   readonly text: (key: string) => string;
   readonly fill: (key: string, values: Record<string, string | number>) => string;
   readonly errors: ErrorTexts;
@@ -371,6 +381,8 @@ function CostCentrePanel({
   const [pending, startTransition] = useTransition();
   const [failure, setFailure] = useState<Failure>({ fields: {}, message: null });
   const [active, setActive] = useState(row?.active ?? true);
+  // Escape, ✕ and the backdrop wait while the cost centre is being saved.
+  const canClose = useCallback(() => !pending, [pending]);
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -385,9 +397,16 @@ function CostCentrePanel({
       nameAr: field('nameAr'),
       status: active ? ('active' as const) : ('inactive' as const),
     };
-    // A name in at least one language (the action repeats it).
-    if (fields.nameEn.trim() === '' && fields.nameAr.trim() === '') {
-      setFailure({ fields: { nameEn: text('costCentres.name') }, message: null });
+    // The name in the organization's default language (the action repeats it; one saved with its names as
+    // they were is not asked again).
+    const required = nameLanguage === 'ar' ? 'nameAr' : 'nameEn';
+    const unchanged =
+      row !== null &&
+      fields.nameEn.trim() === (row.nameEn ?? '') &&
+      fields.nameAr.trim() === (row.nameAr ?? '');
+    if (fields[required].trim() === '' && !unchanged) {
+      setFailure({ fields: { [required]: text('fieldErrors.required') }, message: null });
+      document.getElementById(`cost-centre-${required}`)?.focus();
       return;
     }
     setFailure({ fields: {}, message: null });
@@ -409,69 +428,61 @@ function CostCentrePanel({
   }
 
   return (
-    <SidePanel
+    <Dialog
       open={open}
       onClose={onClose}
+      canClose={canClose}
+      size="sm"
       title={row ? fill('costCentres.editTitle', { code: row.code }) : text('costCentres.addTitle')}
       description={text('costCentres.formDescription')}
       closeLabel={text('form.close')}
       data-testid="cost-centre-dialog"
       footer={
         <>
-          <p className="m-0 flex w-full items-center gap-2 text-[13px] text-text-muted">
-            <Icon name="shield-outline" />
-            {text('form.audited')}
-          </p>
-          <div className="ms-auto flex gap-2.5">
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setOpen(false);
-              }}
-              disabled={pending}
-            >
-              {text('form.cancel')}
-            </Button>
-            <Button
-              type="submit"
-              form={FORM_ID}
-              disabled={pending}
-              aria-busy={pending || undefined}
-              data-testid="cost-centre-dialog-submit"
-            >
-              {pending ? text('form.saving') : row ? text('form.save') : text('form.create')}
-            </Button>
-          </div>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setOpen(false);
+            }}
+            disabled={pending}
+          >
+            {text('form.cancel')}
+          </Button>
+          <Button
+            type="submit"
+            form={FORM_ID}
+            disabled={pending}
+            aria-busy={pending || undefined}
+            data-testid="cost-centre-dialog-submit"
+          >
+            {pending ? text('form.saving') : row ? text('form.save') : text('form.create')}
+          </Button>
         </>
       }
     >
       <form id={FORM_ID} className="flex flex-col gap-4" onSubmit={onSubmit} noValidate>
-        {/* Names first, the finance code after (fewest-fields form, PO 27 Oct 2026). */}
-        <TextField
-          id="cost-centre-nameEn"
-          name="nameEn"
-          label={text('form.nameEn')}
-          dir="ltr"
-          lang="en"
-          maxLength={120}
-          autoComplete="off"
-          defaultValue={row?.nameEn ?? ''}
-          error={failure.fields.nameEn}
-          disabled={pending}
-        />
-        <TextField
-          id="cost-centre-nameAr"
-          name="nameAr"
-          label={text('form.nameAr')}
-          hint={text('costCentres.nameHint')}
-          dir="rtl"
-          lang="ar"
-          maxLength={120}
-          autoComplete="off"
-          defaultValue={row?.nameAr ?? ''}
-          error={failure.fields.nameAr}
-          disabled={pending}
-        />
+        {/* Names first — the organization's default language, then the other one — the finance code after. */}
+        {nameOrder(nameLanguage).map((language) => {
+          const key = language === 'ar' ? 'nameAr' : 'nameEn';
+          const required = language === nameLanguage;
+          return (
+            <TextField
+              key={key}
+              id={`cost-centre-${key}`}
+              name={key}
+              label={text(`form.${key}`)}
+              marker={text(required ? 'required' : 'optional')}
+              required={required}
+              dir={language === 'ar' ? 'rtl' : 'ltr'}
+              lang={language}
+              maxLength={120}
+              autoComplete="off"
+              defaultValue={(language === 'ar' ? row?.nameAr : row?.nameEn) ?? ''}
+              error={failure.fields[key]}
+              disabled={pending}
+            />
+          );
+        })}
         <TextField
           id="cost-centre-code"
           name="code"
@@ -516,7 +527,11 @@ function CostCentrePanel({
             <LoadLatestVersion message={failure.message} />
           </Alert>
         ) : null}
+        <p className="m-0 flex items-start gap-2 text-[13px] text-text-muted">
+          <Icon name="shield-outline" className="mt-0.5 shrink-0" />
+          {text('form.audited')}
+        </p>
       </form>
-    </SidePanel>
+    </Dialog>
   );
 }

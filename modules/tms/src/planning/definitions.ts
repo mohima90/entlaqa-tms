@@ -50,6 +50,7 @@ import {
   effectiveHead,
   formStatus,
   launchProblems,
+  structureName,
   toFieldErrors,
   treeOrder,
 } from './model';
@@ -266,7 +267,7 @@ function units(structure: OrgStructure): StructureUnit[] {
     branchId: d.branchId,
     active: d.active,
     sortOrder: d.sortOrder,
-    nameAr: d.nameAr,
+    nameAr: structureName(d).ar,
     headPersonId: d.head?.personId ?? null,
   }));
 }
@@ -286,7 +287,7 @@ function unitHead(
   return {
     name: { ar: person.nameAr, en: person.nameEn },
     via:
-      head.fromDepartmentId === departmentId ? null : { ar: headUnit.nameAr, en: headUnit.nameEn },
+      head.fromDepartmentId === departmentId ? null : structureName(headUnit),
   };
 }
 
@@ -301,7 +302,7 @@ function scopeUnitOptions(structure: OrgStructure): ScopeUnitOption[] {
             id,
             parentId: d.parentId,
             branchId: d.branchId,
-            name: { ar: d.nameAr, en: d.nameEn },
+            name: structureName(d),
             levelOrdinal: d.levelOrdinal,
             depth,
             active: d.active,
@@ -316,7 +317,7 @@ function scopeUnitOptions(structure: OrgStructure): ScopeUnitOption[] {
 const branchOptions = (structure: OrgStructure): BranchOption[] =>
   structure.branches.map((b) => ({
     id: b.id,
-    name: { ar: b.nameAr, en: b.nameEn },
+    name: structureName(b),
     active: b.active,
   }));
 
@@ -507,9 +508,7 @@ export function planCycleQueryDefinition(): QueryDefinition<typeof CycleRef, Cyc
         const deadline = departmentDeadline(record.deadline, row.deadline);
         return {
           departmentId: row.departmentId,
-          name: department
-            ? { ar: department.nameAr, en: department.nameEn }
-            : { ar: '—', en: '—' },
+          name: department ? structureName(department) : { ar: '—', en: '—' },
           levelOrdinal: department?.levelOrdinal ?? null,
           active: department?.active ?? false,
           budgetAmount: row.budgetAmount,

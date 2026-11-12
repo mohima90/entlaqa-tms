@@ -413,6 +413,7 @@ export {
 export {
   type LevelNames,
   MAX_STRUCTURE_LEVELS,
+  type NamedOrgThing,
   type PersonOption,
   type StructureLevelLabel,
   type StructureLevelRow,
@@ -433,6 +434,7 @@ export {
   previewStructureUnitMove,
   reorderStructureUnit,
   structureLevelsLocked,
+  getStoredNames,
   hasUnitsBelowFirstLevel,
   listActivePersonOptions,
   listStructureLevelLabels,

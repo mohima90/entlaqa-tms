@@ -674,7 +674,8 @@ export async function scheduleHeldInvitations(
 
 export interface TemplateUnitRow {
   readonly code: string | null;
-  readonly nameAr: string;
+  /** One of the two names may be missing, never both (migration 20261113100000). */
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
 }
 
@@ -683,12 +684,16 @@ export async function listTemplateUnits(
   tx: ClaimsTx,
 ): Promise<{ readonly departments: TemplateUnitRow[]; readonly branches: TemplateUnitRow[] }> {
   const read = async (table: 'departments' | 'branches') => {
-    const rows = await tx.execute<{ code: string | null; name_ar: string; name_en: string | null }>(
+    const rows = await tx.execute<{
+      code: string | null;
+      name_ar: string | null;
+      name_en: string | null;
+    }>(
       table === 'departments'
         ? sql`select code, name_ar, name_en from platform.departments
-              where deleted_at is null order by sort_order, name_ar, id limit 2000`
+              where deleted_at is null order by sort_order, coalesce(name_ar, name_en), id limit 2000`
         : sql`select code, name_ar, name_en from platform.branches
-              where deleted_at is null order by is_headquarters desc, name_ar, id limit 2000`,
+              where deleted_at is null order by is_headquarters desc, coalesce(name_ar, name_en), id limit 2000`,
     );
     return rows.map((r) => ({ code: r.code, nameAr: r.name_ar, nameEn: r.name_en }));
   };

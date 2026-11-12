@@ -107,17 +107,17 @@ const INVITATION_RAW_KEYS = ['revokeConfirm', 'resentExpired'] as const;
 /** The invited view shows at most this many invitations (newest first); search reaches the others. */
 const INVITATIONS_SHOWN = 500;
 
-/** Text keys of the invite panel (namespace `invitations.form`). */
+/** Text keys of the invite popup (namespace `invitations.form`). */
 const INVITE_LABEL_KEYS = [
-  'person',
   'email',
   'emailHint',
   'firstNameAr',
   'familyNameAr',
-  'addArabicName',
-  'addEnglishName',
   'firstNameEn',
   'familyNameEn',
+  'more',
+  'moreSummaryArabic',
+  'moreSummaryEnglish',
   'department',
   'noDepartment',
   'branch',
@@ -159,7 +159,7 @@ const INVITE_FIELD_ERROR_KEYS = [
  * at once (the address keeps them), and the members — a table, or one card per person on phones — with a
  * quick look and a ⋯ menu per person. Only the people the member may see (ADR 0003 §4.2); invitations,
  * import lines and actions with their own permissions, as before (T-M2-07, T-M2-09, T-M2-12, EP-ROLES).
- * `invite`: the address `/users/invite` — the same list with the invite panel open.
+ * `invite`: the address `/users/invite` — the same list with the invite popup open.
  */
 export async function UsersScreen({
   locale,
@@ -448,15 +448,16 @@ async function UsersList({
               ? { text: t('roleUnit', { unit: unitName }), warning: false }
               : { text: `${unitName} · ${t('unitInactive')}`, warning: true }
           : null,
-      unitName: row.departmentNameAr
-        ? unitNameWithLevel(
-            localizedName(locale, row.departmentNameAr, row.departmentNameEn),
-            row.departmentLevelOrdinal,
-            levels,
-            locale,
-            withLevels,
-          )
-        : null,
+      unitName:
+        (row.departmentNameAr ?? row.departmentNameEn)
+          ? unitNameWithLevel(
+              localizedName(locale, row.departmentNameAr, row.departmentNameEn),
+              row.departmentLevelOrdinal,
+              levels,
+              locale,
+              withLevels,
+            )
+          : null,
       ownUnitId: row.departmentId,
       status: row.status,
       statusText: t(`status.${row.status}`),
@@ -870,7 +871,7 @@ async function attentionLines(
   );
 }
 
-/** The invite panel's props (namespace `invitations`), translated on the server. */
+/** The invite popup's props (namespace `invitations`), translated on the server. */
 async function invitePanel(
   locale: AppLocale,
   view: InviteFormView,
@@ -879,14 +880,12 @@ async function invitePanel(
 ): Promise<ReactNode> {
   const t = await getTranslations({ locale, namespace: 'invitations' });
   const common = await getTranslations({ locale, namespace: 'common' });
-  const editUser = await getTranslations({ locale, namespace: 'editUser' });
   const editRoles = await getTranslations({ locale, namespace: 'editRoles' });
   const labels: Record<string, string> = Object.fromEntries(
     INVITE_LABEL_KEYS.map((k) => [k, t(`form.${k}`)]),
   );
   labels.title = t('title');
   labels.intro = t('intro');
-  labels.work = editUser('work');
   labels.close = editRoles('close');
   labels.cancel = editRoles('cancel');
   labels.done = t('done');

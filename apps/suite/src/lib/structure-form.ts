@@ -8,9 +8,26 @@ export interface FieldText {
   readonly key: string;
 }
 
-/** An empty required text comes back as TOO_SMALL; anything else about a name is its rule. */
+/**
+ * An empty required text comes back as TOO_SMALL — or as REQUIRED for the name the organization's default
+ * language requires (the other language's name is optional; PO, 12 Nov 2026); anything else about a name is
+ * its rule.
+ */
 function nameText(field: string, code: string, rule: string): FieldText {
-  return { field, key: code === 'TOO_SMALL' ? 'fieldErrors.required' : rule };
+  return {
+    field,
+    key: code === 'TOO_SMALL' || code === 'REQUIRED' ? 'fieldErrors.required' : rule,
+  };
+}
+
+/**
+ * The two name fields in the order the forms ask them: the organization's default language first (its name
+ * is required), then the other language (optional) — forms standard rule 9.
+ */
+export function nameOrder(
+  nameLanguage: 'ar' | 'en',
+): readonly ['ar', 'en'] | readonly ['en', 'ar'] {
+  return nameLanguage === 'ar' ? ['ar', 'en'] : ['en', 'ar'];
 }
 
 /** Unit form (create / edit). */
@@ -114,8 +131,8 @@ export function costCentreFieldText(path: string, code: string): FieldText {
       return nameText(field, code, 'fieldErrors.code');
     case 'nameEn':
     case 'nameAr':
-      // One sentence for both rules: a name in either language, with visible letters.
-      return { field, key: 'costCentres.name' };
+      // The default language's name is required; a given name needs visible letters.
+      return nameText(field, code, 'costCentres.name');
     case 'costCentre':
       return { field: 'form', key: 'costCentres.inUse' };
     default:

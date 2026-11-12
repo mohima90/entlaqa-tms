@@ -200,6 +200,7 @@ async function Branches({
       countries={choices.countries}
       timeZones={zones}
       defaultTimeZone={context.regional.timeZone}
+      nameLanguage={context.regional.defaultLocale}
       organizationWeek={view.organizationWeek}
       detailsAvailable={view.detailsAvailable}
       weekdays={choices.weekdays}

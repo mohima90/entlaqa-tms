@@ -11,7 +11,8 @@ import type { UserTx } from './with-user-tx';
  * (private.check_person_writer, private.actor_may_manage_person) has the final word.
  */
 export interface CurrentUnit {
-  readonly nameAr: string;
+  /** One of the two names may be missing, never both (migration 20261113100000). */
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
   readonly deleted: boolean;
 }
@@ -78,9 +79,11 @@ export async function getEditableUser(tx: UserTx, personId: string): Promise<Edi
   const text = (key: string) => (row[key] ?? null) as string | null;
   const unit = (kind: 'department' | 'branch'): CurrentUnit | null => {
     const nameAr = text(`${kind}_name_ar`);
-    return nameAr === null
+    const nameEn = text(`${kind}_name_en`);
+    // No unit: neither name (a unit is named in at least one language, migration 20261113100000).
+    return nameAr === null && nameEn === null
       ? null
-      : { nameAr, nameEn: text(`${kind}_name_en`), deleted: row[`${kind}_deleted`] === true };
+      : { nameAr, nameEn, deleted: row[`${kind}_deleted`] === true };
   };
   return {
     personId: row.id as string,

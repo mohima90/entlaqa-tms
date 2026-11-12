@@ -32,7 +32,7 @@
 
 | ID | Task | WP | Owner | Status | Notes / PR |
 |---|---|---|---|---|---|
-| T-M3-18 | **«Simple way» test fixes 1–3**: the Department Head role and a department's «Head» set each other (either door does both; replacing asks, removing warns; import and deactivation follow); a refused change from an older copy of a page loads the latest version by itself, pages reload when the tab is shown again; the cycle's set-up asks for the name in the default language only (the other language optional) | WP-FIX-03 | Claude | 🔵 | FR-ADM-05, FR-IAM-03/04, FR-PLN-02, FR-PLN-03. One PR; with it the fix of the nightly self-hosted gate (issue #95: image vulnerability scan) |
+| T-M3-18 | **«Simple way» test fixes 1–3**: the Department Head role and a department's «Head» set each other (either door does both; replacing asks, removing warns; import and deactivation follow); a refused change from an older copy of a page loads the latest version by itself, pages reload when the tab is shown again; the cycle's set-up asks for the name in the default language only (the other language optional); a red asterisk marks required fields on every form instead of «(required)» (PO, 12 Nov 2026) | WP-FIX-03 | Claude | 🔵 | FR-ADM-05, FR-IAM-03/04, FR-PLN-02, FR-PLN-03. One PR; with it the fix of the nightly self-hosted gate (issue #95: image vulnerability scan) |
 
 #### WP-FIX-01 Test feedback fixes 1–3
 

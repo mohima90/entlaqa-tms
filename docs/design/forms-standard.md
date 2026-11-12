@@ -13,6 +13,8 @@ Agreed with the PO on 27 Oct 2026 as part of the clean-up pass (WP-FIX-02, `docs
 | 5 | **Rules only when they apply, in plain words** | A hint appears next to the field it concerns, and a refusal says what to change («Another department has this code»), never the rule book up front. |
 | 6 | **Long lists can be searched** | A list of more than about twenty choices (countries, people) is a searchable field: type to filter, arrow keys, Enter. |
 | 7 | **Defaults from the context** | A department under a Sector takes the Sector's branch; a cost centre starts active; the language of the page is the first name asked. |
+| 8 | **A red asterisk marks a required field** (PO, 12 Nov 2026) | A red `*` after the label, never the word «(required)». The asterisk is hidden from screen readers, which still hear «required» from the control itself; the red passes 4.5 : 1 in every theme. |
+| 9 | **Creating is one centred popup, the Kawadir way** (PO, 12 Nov 2026) | No wizard and no side panel for creating: one popup (448 px for a simple thing, 672 px for a rich one) with the few fields needed now, sensible defaults already filled, «Cancel» then the primary button at the end. Everything optional waits on the thing's own Settings page (tabs at the side, one «Save»). Launch / publish is a separate action from the row menu with a small confirmation. Pilot: the planning cycle set-up (approved by the PO from the mock-up, 12 Nov 2026). Rule 4's side panels are replaced by this as screens are redone. |
 
 ## The example: Add Department (`apps/suite/src/components/structure/unit-panel.tsx`)
 

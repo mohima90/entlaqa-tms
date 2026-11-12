@@ -12,6 +12,7 @@ import {
   secretStateFor,
 } from '../../lib/email-settings-form';
 import { type ErrorTexts, errorText } from '../auth/error-text';
+import { useLatestVersion } from '../latest-version';
 import { ProviderFields } from '../email/provider-fields';
 
 /**
@@ -88,6 +89,7 @@ export function PlatformEmailForm({
 }: PlatformEmailFormProps) {
   const t = (key: string) => texts[key] ?? key;
   const router = useRouter();
+  const latestVersion = useLatestVersion();
   const [pending, startTransition] = useTransition();
   const [provider, setProvider] = useState<ProviderFormValues>(providerFormValues(saved));
   const [fromName, setFromName] = useState(saved?.fromName ?? 'Jadarat');
@@ -108,15 +110,15 @@ export function PlatformEmailForm({
     setFieldErrors(found);
     const formCode = error.fieldErrors?.find((f) => f.path === 'form')?.code;
     const text =
-      error.code === 'CONFLICT_VERSION'
-        ? t('conflict')
-        : formCode === 'TOO_SOON'
-          ? t('testTooSoon')
-          : formCode === 'KEY_CHANGED'
-            ? t('keyChanged')
-            : formCode === 'NOT_SET_UP'
-              ? t('platform.keyMissing')
-              : errorText(error, errors);
+      // An older copy of the settings (WP-FIX-03): what was typed stays; «Load the latest version» is offered.
+      latestVersion.offer(error, t('conflict')) ??
+      (formCode === 'TOO_SOON'
+        ? t('testTooSoon')
+        : formCode === 'KEY_CHANGED'
+          ? t('keyChanged')
+          : formCode === 'NOT_SET_UP'
+            ? t('platform.keyMissing')
+            : errorText(error, errors));
     setMessage({ tone: 'danger', text });
   }
 

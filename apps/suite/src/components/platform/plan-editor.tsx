@@ -6,6 +6,7 @@ import { type SyntheticEvent, useId, useState, useTransition } from 'react';
 import { savePlanAction } from '../../auth/platform-plans';
 import { PLAN_FEATURE_CODES } from '../../lib/platform-plans-input';
 import { type ErrorTexts, errorText } from '../auth/error-text';
+import { useLatestVersion } from '../latest-version';
 import { fieldErrorCodes } from '../profile/field-errors';
 
 /** Raw texts by dotted key (formatted on the server, filled here). */
@@ -57,6 +58,7 @@ export function PlanEditor({
   const fill = (key: string, values: Record<string, string>) =>
     Object.entries(values).reduce((out, [k, v]) => out.replaceAll(`{${k}}`, v), text(key));
   const router = useRouter();
+  const latestVersion = useLatestVersion();
   const formId = useId();
   const [open, setOpen] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
@@ -106,8 +108,10 @@ export function PlanEditor({
   };
 
   const showError = (error: AppError) => {
-    if (error.code === 'CONFLICT_VERSION') {
-      setErrors({ form: text('plans.errors.stale') });
+    // An older copy of the plan (WP-FIX-03): what was typed stays; «Load the latest version» is offered.
+    const latest = latestVersion.offer(error, text('plans.errors.stale'));
+    if (latest !== null) {
+      setErrors({ form: latest });
       return;
     }
     const codes = fieldErrorCodes(error);

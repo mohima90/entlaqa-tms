@@ -17,7 +17,8 @@ import { branchFieldText } from '../../lib/structure-form';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { SelectField } from '../select-field';
-import { type Failure, failureOf } from './failure';
+import type { Failure } from './failure';
+import { useFailure } from './use-failure';
 import type { Choice } from './unit-panel';
 
 /** A branch as the page shows it (names in the page's language, prepared on the server). */
@@ -98,6 +99,7 @@ export function BranchPanel(props: BranchPanelProps) {
     fillText(text(key), values, locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
+  const { formFailure } = useFailure();
   const [open, setOpen] = useState(true);
   const [pending, startTransition] = useTransition();
   const [failure, setFailure] = useState<Failure>({ fields: {}, message: null });
@@ -172,7 +174,7 @@ export function BranchPanel(props: BranchPanelProps) {
         return;
       }
       if (sessionRefused(result.error)) return;
-      setFailure(failureOf(result.error, text, props.errors, branchFieldText));
+      setFailure(formFailure(result.error, text, props.errors, branchFieldText));
     });
   }
 

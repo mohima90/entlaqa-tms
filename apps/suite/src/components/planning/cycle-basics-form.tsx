@@ -67,7 +67,7 @@ type Field = keyof CycleBasicsValues;
  * heads and the needs form. Creating saves a draft and goes on to the scope.
  */
 export function CycleBasicsForm(props: CycleBasicsFormProps) {
-  const { t, message, fieldErrors } = usePlanningTexts(props.texts, props.errors, props.locale);
+  const { t, formMessage, fieldErrors } = usePlanningTexts(props.texts, props.errors, props.locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
@@ -125,7 +125,7 @@ export function CycleBasicsForm(props: CycleBasicsFormProps) {
       }
       if (sessionRefused(result.error)) return;
       setErrors(fieldErrors(result.error));
-      setNotice(message(result.error));
+      setNotice(formMessage(result.error));
     });
   }
 

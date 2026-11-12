@@ -57,7 +57,8 @@ export async function giveHeadRole(
 ): Promise<HeadRoleOutcome> {
   await lockTenantRoles(ctx.tx);
   const role = await getEditableRole(ctx.tx, personId);
-  if (!role || role.membershipId === null || role.membershipStatus === 'revoked') {
+  if (!role) return { kind: 'no_account', personId };
+  if (role.membershipId === null || role.membershipStatus === 'revoked') {
     return { kind: 'no_account', personId };
   }
   if (role.roleCode === DEPARTMENT_HEAD_ROLE) return { kind: 'already', personId };
@@ -71,7 +72,7 @@ export async function giveHeadRole(
     // In a savepoint: a refusal of the database guard aborts only this step.
     await ctx.tx.transaction(async (savepoint) => {
       const outcome = await replaceMemberRole(
-        savepoint as UserTx,
+        savepoint,
         personId,
         role.version,
         DEPARTMENT_HEAD_ROLE,

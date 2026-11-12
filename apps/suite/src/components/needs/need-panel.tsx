@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation';
 import { useId, useMemo, useState, useTransition } from 'react';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
+import { useLatestVersion } from '../latest-version';
 import { ComboboxField } from '../combobox-field';
 import { FieldControl } from '../needs-forms/needs-form-renderer';
 import { useNeedsTexts } from './use-needs-texts';
@@ -75,6 +76,7 @@ export function NeedPanel(props: NeedPanelProps) {
   const { t, message, fieldErrors } = useNeedsTexts(props.texts, props.errors, props.locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
+  const latestVersion = useLatestVersion();
   const base = useId();
   const [draft, setDraft] = useState<Draft>(() => draftOf(props.need));
   const [opened, setOpened] = useState<NeedView | null | undefined>(undefined);
@@ -219,7 +221,9 @@ export function NeedPanel(props: NeedPanelProps) {
       setNotice(
         result.error.code === 'VALIDATION_FAILED' && Object.keys(mapped).length > 0
           ? null
-          : message(result.error),
+          : // An older copy of this need (WP-FIX-03): what was typed stays; «Load the latest version» is
+            // offered instead of asking for a refresh by hand.
+            (latestVersion.offer(result.error, message(result.error)) ?? message(result.error)),
       );
     });
   }

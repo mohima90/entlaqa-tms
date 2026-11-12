@@ -34,6 +34,7 @@ import { NEEDS_TONE } from '../../lib/needs-view';
 import { dayFormatter, formatAmount } from '../../lib/planning-format';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
+import { useLatestVersion } from '../latest-version';
 import { NeedsFormRenderer, type NeedsFormAnswers } from '../needs-forms/needs-form-renderer';
 import { NeedPanel } from './need-panel';
 import { useNeedsTexts } from './use-needs-texts';
@@ -65,6 +66,13 @@ export function NeedsPage(props: NeedsPageProps) {
   const { t, message, fieldErrors } = useNeedsTexts(props.texts, props.errors, locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
+  const latestVersion = useLatestVersion();
+  /**
+   * How a refused action reads. From an older copy of the page (WP-FIX-03; PO, 12 Nov 2026) the latest
+   * version is loaded here, by itself, and the text says so: nobody is asked to refresh by hand.
+   */
+  const messageOrLatest = (error: Parameters<typeof message>[0]) =>
+    latestVersion.refresh(error, message(error)) ?? message(error);
   const day = dayFormatter(locale, props.display);
   const amount = (value: string | number) => formatAmount(locale, value, view.cycle.currency);
   const when = (iso: string) =>
@@ -108,7 +116,7 @@ export function NeedsPage(props: NeedsPageProps) {
         return;
       }
       if (sessionRefused(result.error)) return;
-      setNotice(message(result.error));
+      setNotice(messageOrLatest(result.error));
     });
   }
 
@@ -673,7 +681,7 @@ export function NeedsPage(props: NeedsPageProps) {
           departmentLabel={props.departmentLabel}
           departmentRef={ref}
           t={t}
-          message={message}
+          message={messageOrLatest}
           fieldErrors={fieldErrors}
           sessionRefused={sessionRefused}
         />
@@ -692,7 +700,7 @@ export function NeedsPage(props: NeedsPageProps) {
           periodEnd={view.cycle.periodEnd}
           day={day}
           t={t}
-          message={message}
+          message={messageOrLatest}
           fieldErrors={fieldErrors}
           sessionRefused={sessionRefused}
         />
@@ -763,6 +771,8 @@ function DepartmentAnswers({
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
   const [answers, setAnswers] = useState<NeedsFormAnswers>(view.answers as NeedsFormAnswers);
+  // Unsaved answers: the page does not reload itself over them (RefreshOnReturn, WP-FIX-03).
+  const [unsaved, setUnsaved] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -815,6 +825,7 @@ function DepartmentAnswers({
               });
               if (result.ok) {
                 setErrors({});
+                setUnsaved(false);
                 toast.success(t('page.departmentAnswersSaved'));
                 router.refresh();
                 return;
@@ -832,13 +843,16 @@ function DepartmentAnswers({
         </Button>
       }
     >
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3" data-unsaved={unsaved ? 'true' : undefined}>
         {notice ? <Alert tone="danger">{notice}</Alert> : null}
         <NeedsFormRenderer
           form={form}
           locale={locale}
           answers={answers}
-          onChange={setAnswers}
+          onChange={(next) => {
+            setAnswers(next);
+            setUnsaved(true);
+          }}
           texts={formTexts}
           errors={errors}
           idPrefix="dept"

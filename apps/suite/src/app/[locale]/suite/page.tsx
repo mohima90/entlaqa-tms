@@ -6,6 +6,7 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { type HomeTileGroup, HomeTiles } from '../../../components/home-tiles';
 import { NeedsTaskCards } from '../../../components/needs/needs-task-cards';
+import { RefreshOnReturn } from '../../../components/latest-version';
 import { SuiteShell } from '../../../components/suite-shell';
 import { TeamStats } from '../../../components/users/team-stats';
 import { planNotices } from '../../../lib/plan-notices';
@@ -326,6 +327,8 @@ export default async function SuiteHomePage({ params }: { params: Promise<{ loca
           {pageTiles.length > 0 ? empty : null}
         </div>
       )}
+      {/* The task cards follow what others do (WP-FIX-03): reload when the person comes back to the tab. */}
+      <RefreshOnReturn />
     </SuiteShell>
   );
 }

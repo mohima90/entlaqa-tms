@@ -1,6 +1,7 @@
 import type { AppLocale } from '@jadarat/platform-i18n';
 import { Icon, Toaster } from '@jadarat/ui';
 import { getTranslations } from 'next-intl/server';
+import { LatestVersionProvider } from './latest-version';
 import type { ReactNode } from 'react';
 import type { SuiteContext } from '../lib/suite-context';
 import { BrandStyle } from './branding/brand-style';
@@ -68,7 +69,15 @@ export async function FocusedShell({
       </header>
       <main id="main" tabIndex={-1} className="flex flex-1 flex-col outline-none">
         <div className="mx-auto flex w-full max-w-[1100px] flex-1 flex-col gap-6 px-4 py-7 md:px-6">
-          {children}
+          <LatestVersionProvider
+            texts={{
+              refreshed: t('latest.refreshed'),
+              offer: t('latest.offer'),
+              load: t('latest.load'),
+            }}
+          >
+            {children}
+          </LatestVersionProvider>
         </div>
       </main>
       <Toaster

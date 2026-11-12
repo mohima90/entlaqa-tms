@@ -30,7 +30,8 @@ import { costCentreFieldText } from '../../lib/structure-form';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { ConfirmDialog } from './confirm-dialog';
-import { type Failure, failureOf } from './failure';
+import type { Failure } from './failure';
+import { useFailure } from './use-failure';
 
 /** A cost centre as the page shows it (name in the page's language and the usage line formatted on the server). */
 export interface CostCentreView {
@@ -78,6 +79,7 @@ export function CostCentresTable({
     fillText(text(key), values, locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
+  const { actionFailure } = useFailure();
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const close = () => {
     setDialog(null);
@@ -85,7 +87,7 @@ export function CostCentresTable({
 
   function refusal(error: Parameters<typeof sessionRefused>[0]): string | null {
     if (sessionRefused(error)) return null;
-    const failure = failureOf(error, text, errors, costCentreFieldText);
+    const failure = actionFailure(error, text, errors, costCentreFieldText);
     return failure.message ?? Object.values(failure.fields)[0] ?? null;
   }
 
@@ -357,6 +359,7 @@ function CostCentrePanel({
   readonly sessionRefused: ReturnType<typeof useSessionRefusal>;
 }) {
   const router = useRouter();
+  const { formFailure } = useFailure();
   const [open, setOpen] = useState(true);
   const [pending, startTransition] = useTransition();
   const [failure, setFailure] = useState<Failure>({ fields: {}, message: null });
@@ -394,7 +397,7 @@ function CostCentrePanel({
         return;
       }
       if (sessionRefused(result.error)) return;
-      setFailure(failureOf(result.error, text, errors, costCentreFieldText));
+      setFailure(formFailure(result.error, text, errors, costCentreFieldText));
     });
   }
 

@@ -28,7 +28,7 @@ import { deactivatesWithUndo, parentIds, unitDeleteBlockers } from '../../lib/st
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { ConfirmDialog } from './confirm-dialog';
-import { failureOf } from './failure';
+import { useFailure } from './use-failure';
 import { MoveUnitDialog } from './move-unit-dialog';
 import {
   type Choice,
@@ -95,6 +95,7 @@ export function StructureTree(props: StructureTreeProps) {
     fillText(text(key), values, locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
+  const { actionFailure } = useFailure();
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(parentIds(units)));
   const [dialogState, setDialog] = useState<DialogState | null>(null);
   // «Add a <level> under it» right after adding: the new unit's row arrives with the refreshed tree, so the
@@ -150,7 +151,7 @@ export function StructureTree(props: StructureTreeProps) {
 
   function refusal(error: Parameters<typeof sessionRefused>[0]): string | null {
     if (sessionRefused(error)) return null;
-    const failure = failureOf(error, text, props.errors, unitFieldText);
+    const failure = actionFailure(error, text, props.errors, unitFieldText);
     return failure.message ?? Object.values(failure.fields)[0] ?? null;
   }
 

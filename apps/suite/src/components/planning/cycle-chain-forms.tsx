@@ -115,7 +115,7 @@ export interface CycleStepsFormProps extends Common {
 
 /** Step 4 — Approval chain of the cycle (business flow B4): copied from the settings, named people. */
 export function CycleStepsForm(props: CycleStepsFormProps) {
-  const { t, message, fieldErrors } = usePlanningTexts(props.texts, props.errors, props.locale);
+  const { t, formMessage, fieldErrors } = usePlanningTexts(props.texts, props.errors, props.locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
@@ -145,7 +145,7 @@ export function CycleStepsForm(props: CycleStepsFormProps) {
       }
       if (sessionRefused(result.error)) return;
       setErrors(fieldErrors(result.error));
-      setNotice(message(result.error));
+      setNotice(formMessage(result.error));
     });
   }
 
@@ -194,7 +194,7 @@ export interface CycleRemindersFormProps extends Common {
  * continue» saves them and goes on to Review & launch (redesign package 4; before, it saved and stayed).
  */
 export function CycleRemindersForm(props: CycleRemindersFormProps) {
-  const { t, message } = usePlanningTexts(props.texts, props.errors, props.locale);
+  const { t, formMessage } = usePlanningTexts(props.texts, props.errors, props.locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
@@ -223,7 +223,7 @@ export function CycleRemindersForm(props: CycleRemindersFormProps) {
         return;
       }
       if (sessionRefused(result.error)) return;
-      setNotice(message(result.error));
+      setNotice(formMessage(result.error));
     });
   }
 
@@ -279,7 +279,7 @@ const SETTINGS_FORM = 'planning-settings';
  * changed (Discard / Save settings) and a toast confirms the save.
  */
 export function PlanningSettingsForm(props: PlanningSettingsFormProps) {
-  const { t, message, fieldErrors } = usePlanningTexts(props.texts, props.errors, props.locale);
+  const { t, formMessage, fieldErrors } = usePlanningTexts(props.texts, props.errors, props.locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
@@ -316,7 +316,7 @@ export function PlanningSettingsForm(props: PlanningSettingsFormProps) {
       }
       if (sessionRefused(result.error)) return;
       setErrors(fieldErrors(result.error));
-      setNotice(message(result.error));
+      setNotice(formMessage(result.error));
     });
   }
 

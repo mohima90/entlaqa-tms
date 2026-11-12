@@ -38,7 +38,7 @@ export interface CycleBudgetsFormProps {
  * organization's currency (BR-PLN-i). Empty = no envelope.
  */
 export function CycleBudgetsForm(props: CycleBudgetsFormProps) {
-  const { t, message, fieldErrors } = usePlanningTexts(props.texts, props.errors, props.locale);
+  const { t, formMessage, fieldErrors } = usePlanningTexts(props.texts, props.errors, props.locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
@@ -92,7 +92,7 @@ export function CycleBudgetsForm(props: CycleBudgetsFormProps) {
         if (text) mapped[row.departmentId] = text;
       });
       setErrors(mapped);
-      setNotice(message(result.error));
+      setNotice(formMessage(result.error));
     });
   }
 

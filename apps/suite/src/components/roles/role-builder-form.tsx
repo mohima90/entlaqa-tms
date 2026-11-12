@@ -31,6 +31,7 @@ import {
 } from '../../lib/role-builder';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
+import { useLatestVersion } from '../latest-version';
 import { DiscardDialog } from '../users/discard-dialog';
 import { SelectField } from '../select-field';
 
@@ -84,6 +85,7 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
   const text = (key: string) => texts[key] ?? key;
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
+  const latestVersion = useLatestVersion();
   const [pending, startTransition] = useTransition();
   const [values, setValues] = useState<BuilderValues>(props.initial);
   const [saved, setSaved] = useState<BuilderValues>(props.initial);
@@ -196,8 +198,10 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
         return;
       }
       if (sessionRefused(result.error)) return;
-      if (result.error.code === 'CONFLICT_VERSION') {
-        setMessage(text('conflict'));
+      // An older copy of the role (WP-FIX-03): what was chosen stays; «Load the latest version» is offered.
+      const latest = latestVersion.offer(result.error, text('conflict'));
+      if (latest !== null) {
+        setMessage(latest);
         return;
       }
       if (result.error.code === 'NOT_FOUND') {

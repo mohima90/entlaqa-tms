@@ -51,7 +51,7 @@ const INDENT = ['ps-0', 'ps-6', 'ps-12', 'ps-18', 'ps-24'] as const;
  * warns about departments whose form reaches no head (EP-ORG: the nearest head above receives it).
  */
 export function CycleScopeForm(props: CycleScopeFormProps) {
-  const { t, message } = usePlanningTexts(props.texts, props.errors, props.locale);
+  const { t, formMessage } = usePlanningTexts(props.texts, props.errors, props.locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
@@ -107,7 +107,7 @@ export function CycleScopeForm(props: CycleScopeFormProps) {
         return;
       }
       if (sessionRefused(result.error)) return;
-      setNotice(message(result.error));
+      setNotice(formMessage(result.error));
     });
   }
 

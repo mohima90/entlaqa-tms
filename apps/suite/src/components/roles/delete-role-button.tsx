@@ -16,6 +16,7 @@ import { useState, useTransition } from 'react';
 import { deleteCustomRoleAction } from '../../actions/roles';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
+import { useLatestVersion } from '../latest-version';
 import { fieldErrorCodes } from '../profile/field-errors';
 
 export interface DeleteRoleProps {
@@ -40,6 +41,7 @@ function DeleteRoleDialog(
   const text = (key: string) => props.texts[key] ?? key;
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
+  const latestVersion = useLatestVersion();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
 
@@ -60,7 +62,9 @@ function DeleteRoleDialog(
         router.refresh();
         return;
       }
-      if (result.error.code === 'CONFLICT_VERSION') setMessage(text('conflict'));
+      // An older copy of the role (WP-FIX-03): the latest version is loaded here, by itself.
+      const latest = latestVersion.refresh(result.error, text('conflict'));
+      if (latest !== null) setMessage(latest);
       else if (result.error.code === 'NOT_FOUND') setMessage(text('notFound'));
       else setMessage(errorText(result.error, props.errors));
     });

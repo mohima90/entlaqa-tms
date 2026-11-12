@@ -16,6 +16,7 @@ import {
 } from '../../lib/courses-view';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
+import { useLatestVersion } from '../latest-version';
 import { SelectField } from '../select-field';
 
 export interface CourseFormSharedProps {
@@ -65,6 +66,7 @@ export function CourseForm(props: CourseFormProps) {
   };
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
+  const latestVersion = useLatestVersion();
   const [pending, startTransition] = useTransition();
   const [state, setState] = useState<CourseFormState>(
     course ? courseFormFrom(course) : EMPTY_COURSE_FORM,
@@ -115,8 +117,10 @@ export function CourseForm(props: CourseFormProps) {
         return;
       }
       if (sessionRefused(result.error)) return;
-      if (result.error.code === 'CONFLICT_VERSION') {
-        setMessage({ tone: 'danger', text: text('conflict') });
+      // An older copy of the course (WP-FIX-03): what was typed stays; «Load the latest version» is offered.
+      const latest = latestVersion.offer(result.error, text('conflict'));
+      if (latest !== null) {
+        setMessage({ tone: 'danger', text: latest });
         return;
       }
       if (result.error.code === 'NOT_FOUND') {

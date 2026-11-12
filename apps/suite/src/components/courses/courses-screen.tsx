@@ -39,6 +39,7 @@ import { setCourseStatusAction } from '../../actions/courses';
 import { type CoursesParams, coursesHref } from '../../lib/courses-view';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
+import { useLatestVersion } from '../latest-version';
 import { CourseForm, type CourseFormSharedProps } from './course-form';
 
 /** A course with what the list shows about it, formatted on the server (plural forms, amounts). */
@@ -109,6 +110,7 @@ export function CoursesScreen(props: CoursesScreenProps) {
   );
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
+  const latestVersion = useLatestVersion();
   const [, startNavigation] = useTransition();
   const [statusPending, startStatus] = useTransition();
   const [panel, setPanel] = useState<Panel>(null);
@@ -178,11 +180,11 @@ export function CoursesScreen(props: CoursesScreenProps) {
       }
       if (sessionRefused(result.error)) return;
       toast.error(
-        result.error.code === 'CONFLICT_VERSION'
-          ? text('conflict')
-          : result.error.code === 'NOT_FOUND'
+        // An older copy of the list (WP-FIX-03): the latest version is loaded here, by itself.
+        latestVersion.refresh(result.error, text('conflict')) ??
+          (result.error.code === 'NOT_FOUND'
             ? text('notFound')
-            : errorText(result.error, props.errors),
+            : errorText(result.error, props.errors)),
       );
     });
   }

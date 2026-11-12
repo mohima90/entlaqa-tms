@@ -15,8 +15,12 @@ let dirty = false;
 export function useUnsavedStep(isDirty: boolean): void {
   useEffect(() => {
     dirty = isDirty;
+    // Said to the page too: it does not reload itself over unsaved entries (RefreshOnReturn, WP-FIX-03).
+    if (isDirty) document.body.dataset.unsaved = 'true';
+    else delete document.body.dataset.unsaved;
     return () => {
       dirty = false;
+      delete document.body.dataset.unsaved;
     };
   }, [isDirty]);
 }

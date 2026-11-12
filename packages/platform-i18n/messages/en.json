@@ -125,7 +125,12 @@
       "open": "Open the selected row"
     },
     "grades": "Grades",
-    "myNeeds": "My team's needs"
+    "myNeeds": "My team's needs",
+    "latest": {
+      "refreshed": "This changed while you had it open. Here is the latest version.",
+      "offer": "This changed while you had it open. What you typed is still here: load the latest version, then make your change again.",
+      "load": "Load the latest version"
+    }
   },
   "errors": {
     "malformedRequest": "We couldn't process this request. Refresh the page and try again.",

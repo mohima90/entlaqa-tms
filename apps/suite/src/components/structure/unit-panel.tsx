@@ -9,7 +9,8 @@ import { suggestUnitCode, unitDeleteBlockers } from '../../lib/structure-view';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { SelectField } from '../select-field';
-import { type Failure, failureOf } from './failure';
+import type { Failure } from './failure';
+import { useFailure } from './use-failure';
 
 /** A unit of the tree as the page shows it (names in the page's language, prepared on the server). */
 export interface UnitView {
@@ -109,6 +110,7 @@ export function UnitPanel({
     fillText(text(key), values, locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
+  const { formFailure } = useFailure();
   const [pending, startTransition] = useTransition();
   const [failure, setFailure] = useState<Failure>({ fields: {}, message: null });
   // Closing goes through the native dialog (focus returns to the button that opened it).
@@ -220,7 +222,7 @@ export function UnitPanel({
         return;
       }
       if (sessionRefused(result.error)) return;
-      const next = failureOf(result.error, text, errors, unitFieldText);
+      const next = formFailure(result.error, text, errors, unitFieldText);
       setFailure(next);
       // A refused field under «More options» is shown, not hidden.
       const hidden = next.fields.code

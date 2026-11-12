@@ -6,6 +6,7 @@ import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { NeedsTaskCards } from '../../../../../components/needs/needs-task-cards';
+import { RefreshOnReturn } from '../../../../../components/latest-version';
 import { SuiteShell } from '../../../../../components/suite-shell';
 import { myNeedsQuery } from '../../../../../lib/needs-queries';
 import { NEEDS_PATHS } from '../../../../../lib/needs-view';
@@ -80,6 +81,7 @@ export default async function MyNeedsPage({ params }: { params: Promise<{ locale
     <SuiteShell locale={locale} context={context} current="myNeeds" path={NEEDS_PATHS.mine}>
       <PageHeader title={t('title')} description={t('intro')} />
       {content}
+      <RefreshOnReturn />
     </SuiteShell>
   );
 }

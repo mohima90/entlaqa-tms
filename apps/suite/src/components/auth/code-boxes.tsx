@@ -7,6 +7,7 @@ import {
   useImperativeHandle,
   useRef,
 } from 'react';
+import { flushSync } from 'react-dom';
 import { CODE_LENGTH, applyBackspace, applyPaste, applyTyping } from '../../lib/sign-in-code-ui';
 
 /**
@@ -50,12 +51,20 @@ export function CodeBoxes({
 }: CodeBoxesProps) {
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
   const focusBox = (index: number) => {
-    // After the state update the boxes re-render; focus on the next frame.
-    requestAnimationFrame(() => {
-      const box = inputs.current[Math.min(Math.max(index, 0), CODE_LENGTH - 1)];
-      box?.focus();
-      box?.select();
+    const box = inputs.current[Math.min(Math.max(index, 0), CODE_LENGTH - 1)];
+    box?.focus();
+    box?.select();
+  };
+  /**
+   * A change of the code, then the focus — both before the next key is handled. Moving the focus a frame
+   * later lost digits typed faster than the screen redraws (a busy phone, a tool that types the code): the
+   * next digit landed in the box just filled and replaced it.
+   */
+  const change = (next: string, focus: number) => {
+    flushSync(() => {
+      onChange(next);
     });
+    focusBox(focus);
   };
   useImperativeHandle(ref, () => ({
     focus: () => {
@@ -69,8 +78,7 @@ export function CodeBoxes({
       const back = applyBackspace(value, index);
       if (back) {
         event.preventDefault();
-        onChange(back.value);
-        focusBox(back.focus);
+        change(back.value, back.focus);
       }
     } else if (event.key === 'ArrowLeft') {
       event.preventDefault();
@@ -84,8 +92,7 @@ export function CodeBoxes({
   function onPaste(event: ClipboardEvent<HTMLInputElement>) {
     event.preventDefault();
     const pasted = applyPaste(event.clipboardData.getData('text'));
-    onChange(pasted.value);
-    focusBox(pasted.focus);
+    change(pasted.value, pasted.focus);
   }
 
   return (
@@ -117,8 +124,7 @@ export function CodeBoxes({
           value={value[index] ?? ''}
           onChange={(event) => {
             const typed = applyTyping(value, index, event.target.value);
-            onChange(typed.value);
-            focusBox(typed.focus);
+            change(typed.value, typed.focus);
           }}
           onKeyDown={(event) => {
             onKeyDown(event, index);

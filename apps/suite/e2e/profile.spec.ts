@@ -62,6 +62,14 @@ test.describe('My profile', () => {
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('My profile');
     await expectNoSeriousA11yViolations(page);
 
+    // English is the organization's default language: a save that changes a name needs the English first
+    // and family names (PO, 17 Oct 2026; WP-FIX-01 review). Mona's whole English name sat in «First name»,
+    // so she splits it as the hint says — the full name stays the same.
+    const english = page.getByRole('group', { name: 'Name in English' });
+    await expect(english.getByLabel('First name')).toHaveValue('Mona Saeed Alzahrani');
+    await english.getByLabel('First name').fill('Mona');
+    await english.getByLabel("Father's name").fill('Saeed');
+    await english.getByLabel('Family name').fill('Alzahrani');
     const arabic = page.getByRole('group', { name: 'Name in Arabic' });
     await arabic.getByLabel('First name').fill('منيرة');
     await arabic.getByLabel('Family name').fill('الزهراني');

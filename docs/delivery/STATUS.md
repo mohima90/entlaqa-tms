@@ -40,7 +40,7 @@
 5. Whether to start a second Claude account now (it begins with `HOW-TO-START.md`).
 6. Before the first customer: production worker host (cost), legal items (SDAIA SCCs / transfer assessment, security decisions 6–14).
 7. **Plan approval, simpler (PO, 12 Nov 2026; `test-feedback-2026-11-12.md` #4):** L&D submits the plan → the HR Manager approves → Finance confirms; no chain step in the cycle set-up. Claude's view given; the PO's answers are needed (who is «Finance»; what Finance may do), then EP-PLN is amended before WP-LD-03.
-8. **Look and feel (PO, 12 Nov 2026; #5):** «not satisfied with UI & UX at all; Kawadir was super professional». Claude's recommendation: Kawadir is the reference for the look again, starting with one pilot screen side by side — the PO decides (CLAUDE.md changes only with the PO's explicit yes).
+8. ~~Look and feel~~ — **decided (PO «A», 12 Nov 2026): Kawadir is the reference for the look and the user experience again** (its popups for inviting and creating above all); Mobbin where Kawadir has no matching screen. CLAUDE.md updated with the PO's yes. Next from Claude: the pilot — the planning cycle set-up redone the Kawadir way, old and new side by side, for the PO's approval.
 
 ---
 
@@ -348,6 +348,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 12 Nov 2026 | **Decision (PO «A»): Kawadir is the look and user-experience reference again; Mobbin second, where Kawadir has no matching screen** (replaces «Mobbin» of 21 Oct 2026; CLAUDE.md updated with the PO's explicit yes). Pilot: the planning cycle set-up, side by side. The build of WP-FIX-03 was told to use Kawadir-style dialogs |
 | 12 Nov 2026 | **PO: «Fixes first»** → **WP-FIX-03** (T-M3-18; `test-feedback-2026-11-12.md` #1–3: Head ↔ role either door, automatic reload after a conflict, the cycle's name in the default language only) started, after the nightly gate (issue #95 — the image vulnerability scan fails on newly published CVEs). Also from the PO: a simpler plan approval (HR Manager → Finance; #4) and the look and feel is still not liked, Kawadir preferred (#5) — both wait for the PO's answers |
 | 12 Nov 2026 | PO back after two weeks: recap given; the PO started the «simple way» test of WP-LD-01 with Claude guiding step by step (draft «Test Cycle»). **Finding:** the Department Head role and the department's «Head» field are separate and both needed — confusing (PO); proposal put to the PO (one rule, either door does both), no build until the PO's «yes». Test so far OK: head enters and submits, L&D views, returns with a note, extends one department, the head sees the note and resubmits over the envelope, recalls and submits again — **the test is complete and passed (production, cycle «2027 Cycle», department Finance).** **Second finding:** a stale page makes the user refresh by hand after the conflict message — proposed: reload automatically. Not started: nightly self-hosted failure (issue #95), four Dependabot PRs (#96–#99) |
 | 27 Oct 2026 | **PR #94 (WP-LD-01) merged by the PO (20:00 UTC); automatic DB deploy green (20:01 UTC): migrations 20261105100000–100200 live in production.** Branch restarted from `main`. Next: the PO's «simple way» test; the PO will send a list of enhancement comments (the add-member name fields stay as they are for now — PO, 27 Oct 2026) |

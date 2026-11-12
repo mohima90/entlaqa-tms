@@ -205,3 +205,13 @@ Screens: **Planning → Needs forms** (library: cards with default / locked / of
 | # | Question | Proposed answer | PO answer |
 |---|---|---|---|
 | 19 | What can the HR Manager and Finance do with the plan? | **Approve, or send back to the L&D Manager with a comment** (the plan becomes a draft again; after changes it is submitted again and goes through the same steps). No rejecting of single lines by approvers in the first version — the L&D Manager changes the lines after a send-back | **Approved («A», 12 Nov 2026)** |
+
+## 14. Who enters a department's needs (PO, 12 Nov 2026 — amendment to §2 and §3 C)
+
+**Decided (PO, «نسمح له طبعا», 12 Nov 2026):** the needs of a department are entered by its **head as picked in the structure** — its own head, else the nearest head above; a sub-department with its own head belongs to that head — **whatever role that person holds**. A person holds one role, so the HR Manager who also heads Human Resources, an L&D Manager who heads a department, or a head who accepted their invitation as an Employee before they were picked, would otherwise be a head who cannot enter their team's needs.
+
+- The role «Department Head» is what an **Employee** gets automatically when they are picked as a head (it also lets them see their team); a head with another role keeps that role and still enters the needs.
+- Giving the Department Head role in Team members asks «Head of which department?»; a department that has a head asks before replacing.
+- A head keeps their departments with any role **except Employee**: making a head an Employee asks first, and their departments are then left without a head.
+- Heads are picked by members who manage the structure (HR Manager); nobody gains the right by themselves. Every other rule (cycle open, deadline, submitted, the envelope shown not blocking) is unchanged.
+- Built in WP-FIX-03 (migration `20261112100300`, `private.may_submit_plan_needs`; `packages/platform-rbac` `headshipGrant`).

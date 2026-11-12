@@ -761,7 +761,7 @@
     "breadcrumbLabel": "Breadcrumb",
     "roles": "Role",
     "roleHint": "Each person has one role. It decides their menu, pages and the data they see.",
-    "departmentsHint": "This role sees the departments the person heads, with everything under them. HR sets department heads in Organization → Departments.",
+    "departmentsHint": "This role sees the departments the person heads, with everything under them. Whoever manages the structure picks the department here, or in Organization → Departments.",
     "privilegedAdminOnly": "Unavailable roles are greyed out: only the Organization Admin gives privileged roles (Organization Admin, HR Manager and custom roles with a high-risk permission).",
     "audited": "Every role change is recorded in the audit log with the role before and after.",
     "save": "Save role",
@@ -804,7 +804,34 @@
       "structureHidden": "You can't see the organization structure, so you can't pick a department. Ask HR to give this role."
     },
     "current": "Current role",
-    "undone": "Role change undone: {name} is {role} again."
+    "undone": "Role change undone: {name} is {role} again.",
+    "head": {
+      "label": "Head of which department?",
+      "hint": "The person becomes the head of this department and sees it with everything under it.",
+      "keep": "Already the head of {units}. Leave this empty to keep it that way, or pick one more department.",
+      "placeholder": "Choose a department",
+      "inactive": "inactive",
+      "none": "The organization has no departments yet. HR adds them in Organization → Departments.",
+      "listSeparator": ", ",
+      "takenBy": "{unit} already has a head: {head}. You will be asked before they are replaced.",
+      "takenUnnamed": "{unit} already has a head. You will be asked before they are replaced.",
+      "required": "Choose the department this person heads.",
+      "taken": "This department already has a head. Confirm the replacement to continue.",
+      "notActive": "This person can't head a department: they are not active.",
+      "notAllowed": "This department can't be picked: it's inactive or no longer exists. Choose another department.",
+      "replaceTitle": "Replace the head of {unit}?",
+      "replaceBody": "{head} is the head of {unit} now. {name} becomes the head instead. {head} keeps their role.",
+      "replaceBodyUnnamed": "{unit} has a head now. {name} becomes the head instead.",
+      "replaceConfirm": "Replace the head",
+      "clearTitle": "Leave {units} without a head?",
+      "clearBody": "{name} is the head of {units}. With another role they stop being the head, and nobody can enter the training needs there until a new head is picked in Organization → Departments.",
+      "clearConfirm": "Change the role",
+      "cancel": "Cancel",
+      "savedHead": "Role saved. {name} is now the head of {unit}.",
+      "savedCleared": "Role saved. Now without a head: {units}.",
+      "savedNoUnit": "Role saved. {name} heads no department yet: the HR Manager picks it in Organization → Departments.",
+      "invitedNoUnit": "{name} heads no department yet: the HR Manager picks it in Organization → Departments."
+    }
   },
   "rolesPage": {
     "title": "Roles & permissions",
@@ -1203,7 +1230,7 @@
       "employeeNumberHint": "Must be unique within the organization, for example EMP-1450.",
       "role": "Role",
       "roleHint": "Each person has one role. It decides their menu, pages and the data they see.",
-      "departmentsHint": "This role sees the departments the person heads, with everything under them. HR sets department heads in Organization → Departments.",
+      "departmentsHint": "This role sees the departments the person heads, with everything under them. Whoever manages the structure picks the department here, or in Organization → Departments.",
       "rolesHelp": "What can each role do?",
       "privileged": "Privileged role",
       "privilegedAdminOnly": "Only the Organization Admin gives privileged roles (Organization Admin, HR Manager and custom roles with a high-risk permission). You can invite with every other role.",
@@ -3001,7 +3028,7 @@
       "noBranch": "No branch",
       "head": "Head",
       "noHead": "No head yet",
-      "headHint": "Any active person. A Department Head sees the departments they head and everything under them.",
+      "headHint": "Any active person. An employee you pick gets the Department Head role; someone with another role keeps it.",
       "create": "Add",
       "save": "Save changes",
       "saving": "Saving…",
@@ -3070,7 +3097,13 @@
       "levelAdded": "Level added.",
       "levelRenamed": "Level renamed.",
       "levelRemoved": "Level removed.",
-      "reordered": "{name} moved."
+      "reordered": "{name} moved.",
+      "headRole": {
+        "given": "{name} is now a Department Head.",
+        "kept": "{name} keeps their current role, because a person has one role. Only someone with the Department Head role enters a department's training needs.",
+        "notAllowed": "{name} still needs the Department Head role. The Organization Admin or HR gives it in Team members.",
+        "noAccount": "{name} has no account in the organization yet. Invite them as a Department Head so they can enter the department's training needs."
+      }
     },
     "levels": {
       "title": "Levels",

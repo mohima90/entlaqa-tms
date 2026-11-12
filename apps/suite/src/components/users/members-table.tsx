@@ -21,6 +21,7 @@ import { type ReactNode, useState } from 'react';
 import { fillText } from '../../lib/fill-text';
 import { returnFocusTo, useReturnedFocus } from '../../lib/focus-return';
 import type { RoleOption } from '../../lib/role-choice';
+import type { HeadUnitView } from '../../lib/head-unit';
 import type { ScopeUnitChoice } from '../../lib/structure-view';
 import type { ErrorTexts } from '../auth/error-text';
 import { ChangeRolePanel, type RoleTarget } from './change-role-panel';
@@ -70,6 +71,9 @@ export interface MembersTableProps {
     readonly selectTexts: RoleSelectTexts;
     readonly scopeUnits: readonly ScopeUnitChoice[];
     readonly unitTexts: ScopeUnitTexts;
+    /** «Head of which department?» for the Department Head role (WP-FIX-03). */
+    readonly headUnits: HeadUnitView;
+    readonly headTexts: Readonly<Record<string, string>>;
     readonly labels: Readonly<Record<string, string>>;
   } | null;
   /** Reactivation texts (namespace `deactivation.reactivate`). */
@@ -373,6 +377,8 @@ export function MembersTable(props: MembersTableProps) {
           selectTexts={props.roleMenu.selectTexts}
           scopeUnits={props.roleMenu.scopeUnits}
           unitTexts={props.roleMenu.unitTexts}
+          headUnits={props.roleMenu.headUnits}
+          headTexts={props.roleMenu.headTexts}
           labels={props.roleMenu.labels}
           errors={props.errors}
           undoLabel={text('undo')}

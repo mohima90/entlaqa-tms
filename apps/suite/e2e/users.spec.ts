@@ -449,9 +449,13 @@ test.describe('users pages', () => {
     await expect(panel.getByRole('radio', { name: /^Organization Admin/ })).toBeEnabled();
     await expectNoSeriousA11yViolations(page);
 
-    // Department Head: the hint about the departments the person heads.
+    // Department Head: «Head of which department?» for a member who manages the structure (WP-FIX-03);
+    // saving without a department is refused in words.
     await panel.getByRole('radio', { name: /^Department Head/ }).check();
-    await expect(panel.getByTestId('role-departments-hint')).toBeVisible();
+    await expect(panel.getByTestId('head-unit-field')).toBeVisible();
+    await expect(panel.getByLabel('Head of which department?')).toBeVisible();
+    await panel.getByRole('button', { name: 'Save role' }).click();
+    await expect(panel.getByText('Choose the department this person heads.')).toBeVisible();
     await panel.getByRole('radio', { name: /^L&D Manager/ }).check();
     await panel.getByRole('button', { name: 'Save role' }).click();
     await expect(panel).toBeHidden();

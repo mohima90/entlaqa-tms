@@ -31,6 +31,13 @@ import {
   readsHeadedDepartments,
   roleActionPath,
 } from '../../lib/role-choice';
+import { fillText } from '../../lib/fill-text';
+import {
+  DEPARTMENT_HEAD_ROLE,
+  type HeadUnitView,
+  headUnitErrorKey,
+  unitLabel,
+} from '../../lib/head-unit';
 import type { ScopeUnitChoice } from '../../lib/structure-view';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
@@ -41,6 +48,7 @@ import type { InviteCodeValue, InviteCopyTexts } from './invite-code-copy';
 import { OtherNameToggle } from './other-name-toggle';
 import { DiscardDialog, type DiscardTexts } from './discard-dialog';
 import { RoleSelect, type RoleSelectTexts } from './role-select';
+import { HeadConfirmDialog, HeadUnitField, type HeadUnitTexts } from './head-unit-field';
 import { ScopeUnitSelect, type ScopeUnitTexts } from './scope-unit-select';
 
 export interface InviteUserFormProps {
@@ -58,6 +66,9 @@ export interface InviteUserFormProps {
   /** The unit picker (tree order) for a custom role limited to «A department» (EP-ORG, T-M3-09). */
   readonly scopeUnits: readonly ScopeUnitChoice[];
   readonly unitTexts: ScopeUnitTexts;
+  /** «Head of which department?» for the Department Head role (WP-FIX-03). */
+  readonly headUnits: HeadUnitView;
+  readonly headTexts: HeadUnitTexts;
   /** Texts by key (translated on the server). */
   readonly labels: Readonly<Record<string, string>>;
   readonly fieldTexts: Readonly<Record<string, string>>;
@@ -73,6 +84,9 @@ export interface InviteUserFormProps {
   /** The page's language: the success view names the invitee in it (English name when given). */
   readonly uiLocale: 'ar' | 'en';
 }
+
+/** What the invite actions take (the form's fields as typed). */
+type InviteInput = Parameters<typeof inviteUserAction>[0];
 
 /** The invitation just created: its code to copy (Kawadir, with its language and link) and the name. */
 interface Created {
@@ -168,6 +182,16 @@ export function InviteUserPanel(props: InviteUserFormProps) {
   const [role, setRole] = useState('');
   const [scopeUnitId, setScopeUnitId] = useState('');
   const withUnit = needsScopeUnit(roles, role);
+  // «Head of which department?» (WP-FIX-03): asked with the Department Head role.
+  const [headUnitId, setHeadUnitId] = useState('');
+  const [askReplace, setAskReplace] = useState<InviteInput | null>(null);
+  const picksHead = props.headUnits.canPick && role === DEPARTMENT_HEAD_ROLE;
+  const headText = (key: string, values: Record<string, string> = {}) =>
+    fillText(props.headTexts[key] ?? key, values, props.uiLocale);
+  const headUnitName = unitLabel(props.scopeUnits.find((u) => u.id === headUnitId)?.label ?? '');
+  const replacedHead = picksHead
+    ? (props.headUnits.heads.find((h) => h.unitId === headUnitId) ?? null)
+    : null;
   const [invitationLocale, setInvitationLocale] = useState<'ar' | 'en'>(props.defaultLocale);
   const [created, setCreated] = useState<Created | null>(null);
   const [kept, setKept] = useState(false);
@@ -218,19 +242,48 @@ export function InviteUserPanel(props: InviteUserFormProps) {
       role,
       // A unit goes only with a department-limited custom role (EP-ORG); the server checks it.
       scopeUnitId: withUnit ? scopeUnitId : '',
+      // The department a new Department Head heads (WP-FIX-03); the server checks it.
+      headUnitId: picksHead ? headUnitId : '',
+      replaceHead: false,
       locale: invitationLocale,
     };
+    setMessage(null);
+    setFieldErrors({});
+    if (picksHead && headUnitId === '') {
+      setFieldErrors({ headUnitId: headText('required') });
+      return;
+    }
+    // The department has a head: ask before replacing (a small popup).
+    if (replacedHead) {
+      setAskReplace(input);
+      return;
+    }
+    send(input);
+  }
+
+  function send(input: InviteInput) {
     const action =
       role !== '' && roleActionPath(roles, role) === 'privileged'
         ? invitePrivilegedUserAction
         : inviteUserAction;
-    setMessage(null);
-    setFieldErrors({});
     startTransition(async () => {
       const result = await action(input);
+      setAskReplace(null);
       if (result.ok) {
         // Kawadir: the code and the link right away (no e-mail needed); the list keeps them too.
         setDirty(false);
+        // A Department Head invited by a member who does not manage the structure: say who picks the
+        // department (WP-FIX-03).
+        if (input.role === DEPARTMENT_HEAD_ROLE && !props.headUnits.canPick) {
+          toast.info(
+            headText('invitedNoUnit', {
+              name: createdName(props.uiLocale, {
+                ar: [input.firstNameAr, input.familyNameAr],
+                en: [input.firstNameEn, input.familyNameEn],
+              }),
+            }),
+          );
+        }
         setCreated({
           value: {
             inviteCode: result.value.inviteCode,
@@ -249,6 +302,12 @@ export function InviteUserPanel(props: InviteUserFormProps) {
       if (result.error.code === 'VALIDATION_FAILED') {
         const errors: Record<string, string> = {};
         for (const [path, code] of Object.entries(fieldErrorCodes(result.error))) {
+          if (path === 'headUnitId') {
+            errors.headUnitId = headText(headUnitErrorKey(code));
+            // The heads changed since the form was opened: load them again.
+            router.refresh();
+            continue;
+          }
           const { field: name, key } = inviteFieldError(path, code);
           errors[name] ??= fieldTexts[key] ?? fieldTexts.name ?? '';
         }
@@ -570,7 +629,10 @@ export function InviteUserPanel(props: InviteUserFormProps) {
                   onChange={(code) => {
                     setRole(code);
                     if (!needsScopeUnit(roles, code)) setScopeUnitId('');
-                    setFieldErrors(({ role: _cleared, scopeUnitId: _unit, ...rest }) => rest);
+                    if (code !== DEPARTMENT_HEAD_ROLE) setHeadUnitId('');
+                    setFieldErrors(
+                      ({ role: _cleared, scopeUnitId: _unit, headUnitId: _head, ...rest }) => rest,
+                    );
                   }}
                   options={roles}
                   texts={props.roleTexts}
@@ -594,7 +656,25 @@ export function InviteUserPanel(props: InviteUserFormProps) {
                     disabled={pending}
                   />
                 ) : null}
-                {readsHeadedDepartments(roles, role) ? (
+                {picksHead ? (
+                  <HeadUnitField
+                    id="invite-head-unit"
+                    value={headUnitId}
+                    onChange={(id) => {
+                      setHeadUnitId(id);
+                      setFieldErrors(({ headUnitId: _cleared, ...rest }) => rest);
+                    }}
+                    units={props.scopeUnits}
+                    heads={props.headUnits.heads}
+                    personId={null}
+                    texts={props.headTexts}
+                    marker={text('required')}
+                    error={fieldErrors.headUnitId}
+                    disabled={pending}
+                    locale={props.uiLocale}
+                  />
+                ) : null}
+                {readsHeadedDepartments(roles, role) && !picksHead ? (
                   <Alert tone="info" data-testid="role-departments-hint">
                     {text('departmentsHint')}
                   </Alert>
@@ -642,6 +722,31 @@ export function InviteUserPanel(props: InviteUserFormProps) {
           </form>
         )}
       </SidePanel>
+      <HeadConfirmDialog
+        open={askReplace !== null && replacedHead !== null}
+        title={headText('replaceTitle', { unit: headUnitName })}
+        body={(() => {
+          const name = askReplace
+            ? createdName(props.uiLocale, {
+                ar: [askReplace.firstNameAr, askReplace.familyNameAr],
+                en: [askReplace.firstNameEn, askReplace.familyNameEn],
+              })
+            : '';
+          return replacedHead && replacedHead.name !== ''
+            ? headText('replaceBody', { unit: headUnitName, head: replacedHead.name, name })
+            : headText('replaceBodyUnnamed', { unit: headUnitName, name });
+        })()}
+        confirm={headText('replaceConfirm')}
+        cancel={headText('cancel')}
+        busy={pending}
+        onConfirm={() => {
+          if (askReplace) send({ ...askReplace, replaceHead: true });
+        }}
+        onCancel={() => {
+          if (!pending) setAskReplace(null);
+        }}
+        testId="head-replace-dialog"
+      />
       <DiscardDialog
         open={asking}
         texts={props.discardTexts}

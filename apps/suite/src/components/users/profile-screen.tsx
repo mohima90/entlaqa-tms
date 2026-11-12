@@ -39,13 +39,19 @@ import {
 import { authErrorTexts } from '../../lib/auth-texts';
 import { itemNames } from '../../lib/deactivate-form';
 import { reactivateLabels } from '../../lib/deactivation-texts';
+import { headUnitView } from '../../lib/head-unit';
 import { inviteCopyTexts } from '../../lib/invite-copy-texts';
 import { pageDates } from '../../lib/page-dates';
 import { personPhotoHref } from '../../lib/person-photo';
 import { formStateFrom } from '../../lib/profile-form';
 import { memberSecurityErrorTexts, profileErrorTexts } from '../../lib/profile-texts';
 import { roleOptions } from '../../lib/role-choice';
-import { editRoleLabels, roleSelectTexts, scopeUnitTexts } from '../../lib/role-texts';
+import {
+  editRoleLabels,
+  headUnitTexts,
+  roleSelectTexts,
+  scopeUnitTexts,
+} from '../../lib/role-texts';
 import { sessionLabels, sessionRows } from '../../lib/sessions-view';
 import {
   type LevelLabel,
@@ -1191,6 +1197,8 @@ async function rolePanel(
       options={roleOptions(view.choices, locale)}
       scopeUnits={scopeUnitChoices(view.scopeUnits.units, view.scopeUnits.levels, locale)}
       unitTexts={await scopeUnitTexts(locale, view.scopeUnits.structureVisible)}
+      headUnits={headUnitView(view.headUnits, locale)}
+      headTexts={await headUnitTexts(locale)}
     />
   );
 }

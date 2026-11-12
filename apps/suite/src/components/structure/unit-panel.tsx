@@ -197,6 +197,19 @@ export function UnitPanel({
       if (result.ok) {
         const name = locale === 'en' ? fields.nameEn.trim() : fields.nameAr.trim();
         router.refresh();
+        // The new head and the Department Head role (WP-FIX-03, «either door does both»): said at once.
+        const headRole = result.value.headRole ?? null;
+        if (headRole && headRole.kind !== 'already') {
+          const head = peopleChoices.find((p) => p.value === headRole.personId)?.label ?? '';
+          const key = {
+            given: 'toasts.headRole.given',
+            kept: 'toasts.headRole.kept',
+            not_allowed: 'toasts.headRole.notAllowed',
+            no_account: 'toasts.headRole.noAccount',
+          }[headRole.kind];
+          if (headRole.kind === 'given') toast.success(fill(key, { name: head }));
+          else toast.info(fill(key, { name: head }));
+        }
         if (mode.kind === 'edit') {
           toast.success(text('toasts.saved'));
           setOpen(false);

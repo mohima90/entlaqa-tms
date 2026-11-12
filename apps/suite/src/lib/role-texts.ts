@@ -76,3 +76,40 @@ export async function scopeUnitTexts(
     none: structureVisible ? t('none') : t('structureHidden'),
   };
 }
+
+const HEAD_UNIT_KEYS = [
+  'label',
+  'hint',
+  'keep',
+  'placeholder',
+  'inactive',
+  'none',
+  'listSeparator',
+  'takenBy',
+  'takenUnnamed',
+  'required',
+  'taken',
+  'notActive',
+  'notAllowed',
+  'replaceTitle',
+  'replaceBody',
+  'replaceBodyUnnamed',
+  'replaceConfirm',
+  'clearTitle',
+  'clearBody',
+  'clearConfirm',
+  'cancel',
+  'savedHead',
+  'savedCleared',
+  'savedNoUnit',
+  'invitedNoUnit',
+] as const;
+
+/**
+ * «Head of which department?» under the Department Head role (WP-FIX-03; shared by the invite form and
+ * the edit-role form). Raw texts: the forms fill `{name}`, `{unit}`, `{units}` and `{head}`.
+ */
+export async function headUnitTexts(locale: 'ar' | 'en'): Promise<Record<string, string>> {
+  const t = await getTranslations({ locale, namespace: 'editRoles.head' });
+  return Object.fromEntries(HEAD_UNIT_KEYS.map((key) => [key, String(t.raw(key))]));
+}

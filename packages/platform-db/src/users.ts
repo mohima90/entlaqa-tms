@@ -181,7 +181,16 @@ export function personScopePredicate(scope: PersonScope, actorPersonId: string |
 function scopeUnitOf(value: RoleScopeUnit | string | null): RoleScopeUnit | null {
   if (value === null) return null;
   const unit = typeof value === 'string' ? (JSON.parse(value) as RoleScopeUnit) : value;
-  return { id: unit.id, nameAr: unit.nameAr, nameEn: unit.nameEn ?? null, active: unit.active };
+  return {
+    id: unit.id,
+    nameAr: unit.nameAr,
+    nameEn: unit.nameEn ?? null,
+    // Its level, so that a unit below the first level is shown with its level's name («Academy ·
+    // Section»; guided-test feedback #3) — it was read and then dropped here (found by the nightly
+    // journeys, issue #95).
+    levelOrdinal: levelOrdinalOf(unit.levelOrdinal),
+    active: unit.active,
+  };
 }
 
 /** `like` pattern for user text: % _ and \ are matched literally (\ is PostgreSQL's default escape). */

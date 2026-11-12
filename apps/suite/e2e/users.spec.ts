@@ -476,7 +476,9 @@ test.describe('users pages', () => {
     await expect(headOf.locator('option:checked')).toHaveText('Academy (Section)');
     await headOf.selectOption({ label: 'Training and development (Department)' });
     // Another department is a question again; this one has a head (the Organization Admin).
-    await expect(headField.getByText('Becomes the head of')).toHaveCount(0);
+    // By its test id: the question's own hint also says «…becomes the head of this department…».
+    await expect(headField.getByTestId(/-becomes$/)).toHaveCount(0);
+    await expect(headField.getByText('Head of which department?')).toBeVisible();
     await expect(headField).toContainText(
       'Training and development (Department) already has a head',
     );

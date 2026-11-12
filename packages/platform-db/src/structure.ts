@@ -26,8 +26,12 @@ export interface StructureLevelRow {
   readonly id: string;
   /** 1 = the top level. */
   readonly ordinal: number;
-  readonly nameEn: string;
-  readonly nameAr: string;
+  /**
+   * One of the two may be missing (migration 20261113100000): the name in the organization's default language
+   * is required, the other one optional — readers show the name that exists.
+   */
+  readonly nameEn: string | null;
+  readonly nameAr: string | null;
   readonly version: number;
   /** Live units at this level. */
   readonly unitCount: number;
@@ -38,7 +42,8 @@ export type UnitStatus = 'active' | 'inactive';
 export interface StructureUnitRow {
   readonly id: string;
   readonly code: string;
-  readonly nameAr: string;
+  /** One of the two names may be missing, never both (migration 20261113100000). */
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
   readonly parentId: string | null;
   /** The unit's level (= its depth; null only before the backfill of 20261020090300). */
@@ -64,7 +69,7 @@ export interface StructureUnitRow {
 export interface StructureUnitOption {
   readonly id: string;
   readonly code: string;
-  readonly nameAr: string;
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
   readonly parentId: string | null;
   readonly levelOrdinal: number | null;
@@ -74,8 +79,8 @@ export interface StructureUnitOption {
 /** A level as a label (Arabic, English names) by ordinal. */
 export interface StructureLevelLabel {
   readonly ordinal: number;
-  readonly nameEn: string;
-  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly nameAr: string | null;
 }
 
 /** An active person as a head choice (names and employee number only). */
@@ -107,8 +112,8 @@ export async function listStructureLevels(tx: UserTx): Promise<readonly Structur
   const rows = await tx.execute<{
     id: string;
     ordinal: number;
-    name_en: string;
-    name_ar: string;
+    name_en: string | null;
+    name_ar: string | null;
     version: number;
     unit_count: number | string;
   }>(sql`
@@ -133,7 +138,11 @@ export async function listStructureLevelLabels(
   tx: UserTx,
 ): Promise<readonly StructureLevelLabel[]> {
   if (!(await structureLevelsExistCached(tx))) return [];
-  const rows = await tx.execute<{ ordinal: number; name_en: string; name_ar: string }>(sql`
+  const rows = await tx.execute<{
+    ordinal: number;
+    name_en: string | null;
+    name_ar: string | null;
+  }>(sql`
     select l.ordinal, l.name_en, l.name_ar from platform.structure_levels l order by l.ordinal`);
   return rows.map((r) => ({ ordinal: r.ordinal, nameEn: r.name_en, nameAr: r.name_ar }));
 }
@@ -175,7 +184,7 @@ export async function listStructureUnits(tx: UserTx): Promise<readonly Structure
   const rows = await tx.execute<{
     id: string;
     code: string;
-    name_ar: string;
+    name_ar: string | null;
     name_en: string | null;
     parent_id: string | null;
     level_ordinal: number | null;
@@ -203,7 +212,7 @@ export async function listStructureUnits(tx: UserTx): Promise<readonly Structure
     from platform.departments d
     left join platform.persons h on h.tenant_id = d.tenant_id and h.id = d.head_person_id
     where d.deleted_at is null
-    order by d.parent_id nulls first, d.sort_order, d.name_ar, d.id`);
+    order by d.parent_id nulls first, d.sort_order, coalesce(d.name_ar, d.name_en), d.id`);
   return rows.map((r) => ({
     id: r.id,
     code: r.code,
@@ -233,7 +242,7 @@ export async function listStructureUnitOptions(
   const rows = await tx.execute<{
     id: string;
     code: string;
-    name_ar: string;
+    name_ar: string | null;
     name_en: string | null;
     parent_id: string | null;
     level_ordinal: number | null;
@@ -242,7 +251,7 @@ export async function listStructureUnitOptions(
     select d.id, d.code, d.name_ar, d.name_en, d.parent_id, ${level} as level_ordinal, d.status
     from platform.departments d
     where d.deleted_at is null
-    order by d.parent_id nulls first, d.sort_order, d.name_ar, d.id`);
+    order by d.parent_id nulls first, d.sort_order, coalesce(d.name_ar, d.name_en), d.id`);
   return rows.map((r) => ({
     id: r.id,
     code: r.code,
@@ -272,6 +281,31 @@ export async function listActivePersonOptions(tx: UserTx): Promise<readonly Pers
     nameEn: r.display_name_en,
     employeeNumber: r.employee_number,
   }));
+}
+
+/** What the organization names in two languages on the Organization pages (one of the two may be missing). */
+export type NamedOrgThing = 'unit' | 'branch' | 'level' | 'cost_centre';
+
+/**
+ * The two names of a unit, branch, level or cost centre as stored (null: not found, or deleted) — what the
+ * default-language name rule compares a save with (packages/platform-rbac iam/default-language-name.ts: a
+ * save that leaves the names as they are is not refused). Row-level security keeps it in the organization.
+ */
+export async function getStoredNames(
+  tx: UserTx,
+  thing: NamedOrgThing,
+  id: string,
+): Promise<{ readonly nameAr: string | null; readonly nameEn: string | null } | null> {
+  const from = {
+    unit: sql`platform.departments t where t.deleted_at is null and`,
+    branch: sql`platform.branches t where t.deleted_at is null and`,
+    level: sql`platform.structure_levels t where`,
+    cost_centre: sql`platform.cost_centres t where`,
+  }[thing];
+  const [row] = await tx.execute<{ name_ar: string | null; name_en: string | null }>(
+    sql`select t.name_ar, t.name_en from ${from} t.id = ${id}::uuid`,
+  );
+  return row ? { nameAr: row.name_ar, nameEn: row.name_en } : null;
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -378,8 +412,8 @@ async function levelById(tx: UserTx, id: string): Promise<StructureLevelRow | nu
 }
 
 export interface LevelNames {
-  readonly nameEn: string;
-  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly nameAr: string | null;
 }
 
 /** Adds a level below the last one (BR-ORG-b). */
@@ -464,8 +498,9 @@ export async function removeStructureLevel(
 
 export interface UnitInput {
   readonly code: string;
-  readonly nameEn: string;
-  readonly nameAr: string;
+  /** One of the two may be null (the calling action requires the organization's default language's name). */
+  readonly nameEn: string | null;
+  readonly nameAr: string | null;
   readonly branchId: string | null;
   readonly headPersonId: string | null;
   /** WP-HR-01: written only once the column exists (deploy window). */

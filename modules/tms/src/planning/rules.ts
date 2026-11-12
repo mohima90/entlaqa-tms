@@ -170,6 +170,19 @@ export function earliestExtension(deadline: string, today: string): string {
 // Scope → departments (one form per department in scope, BR-PLN-a)
 // ---------------------------------------------------------------------------------------------------
 
+/**
+ * A unit's or a branch's two names as the planning pages carry them (`ar` always there). In the structure
+ * one of the two may be missing since migration 20261113100000 (the name in the organization's default
+ * language is required, the other optional): the name that exists fills `ar`, so every reader's fallback
+ * (the English name, else `ar`) shows it in both languages.
+ */
+export function structureName(unit: {
+  readonly nameAr: string | null;
+  readonly nameEn: string | null;
+}): { readonly ar: string; readonly en: string | null } {
+  return { ar: unit.nameAr ?? unit.nameEn ?? '', en: unit.nameEn };
+}
+
 export interface StructureUnit {
   readonly id: string;
   readonly parentId: string | null;

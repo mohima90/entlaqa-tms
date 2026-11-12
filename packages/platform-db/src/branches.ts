@@ -25,7 +25,8 @@ export interface BranchWorkingDay {
 export interface BranchRow {
   readonly id: string;
   readonly code: string;
-  readonly nameAr: string;
+  /** One of the two names may be missing, never both (migration 20261113100000). */
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
   readonly parentBranchId: string | null;
   readonly countryCode: string | null;
@@ -50,8 +51,9 @@ export interface BranchRow {
 
 export interface BranchInput {
   readonly code: string;
-  readonly nameAr: string;
-  readonly nameEn: string;
+  /** One of the two may be null (the calling action requires the organization's default language's name). */
+  readonly nameAr: string | null;
+  readonly nameEn: string | null;
   readonly parentBranchId: string | null;
   readonly countryCode: string | null;
   readonly cityAr: string | null;
@@ -111,7 +113,7 @@ export async function listBranches(tx: UserTx): Promise<readonly BranchRow[]> {
   const rows = await tx.execute<{
     id: string;
     code: string;
-    name_ar: string;
+    name_ar: string | null;
     name_en: string | null;
     parent_branch_id: string | null;
     country_code: string | null;
@@ -141,7 +143,7 @@ export async function listBranches(tx: UserTx): Promise<readonly BranchRow[]> {
             where e.tenant_id = b.tenant_id and e.branch_id = b.id and p.status = 'active') as people_count
     from platform.branches b
     where b.deleted_at is null
-    order by b.is_headquarters desc, b.name_ar, b.id`);
+    order by b.is_headquarters desc, coalesce(b.name_ar, b.name_en), b.id`);
   return rows.map((r) => ({
     id: r.id,
     code: r.code,

@@ -16,6 +16,7 @@ import { z } from 'zod';
 import type { ActionDefinition } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import { platformPermissions } from '../platform-permissions';
+import { defaultNameError, nameInOneLanguage } from './default-language-name';
 import { ORG_CODE } from './structure';
 
 /**
@@ -24,16 +25,13 @@ import { ORG_CODE } from './structure';
  * 11 Oct 2026). The database checks the code, the single headquarters (the flag moves to the new one), the
  * time zone, the branch tree and the delete rules (no sub-branches, units or active people left). Audited:
  * platform.org.branch_created / branch_updated / branch_status_changed / branch_deleted (before/after; no
- * personal data).
+ * personal data). Names (WP-UX-01 b; PO, 12 Nov 2026): a branch is named in the organization's default
+ * language; the other language is optional (default-language-name.ts).
  */
 const p = platformPermissions;
 
-const name = z
-  .string()
-  .trim()
-  .min(1)
-  .max(200)
-  .refine((value) => hasVisibleText(value), { message: 'invisible' });
+// One of the two names may be empty: which one is required is the handlers' rule (defaultNameError).
+const name = nameInOneLanguage(200);
 
 const optionalText = (max: number) =>
   z
@@ -269,7 +267,12 @@ export function createBranchActionDefinition(): ActionDefinition<
   return {
     permission: p['platform.org.manage'],
     input: BranchInput,
-    handler: async ({ ctx, input }) => result(await createBranch(ctx.tx, input)),
+    handler: async ({ ctx, input }) => {
+      // The name in the organization's default language is required (PO, 12 Nov 2026).
+      const nameError = await defaultNameError(ctx.tx, input);
+      if (nameError) return err(nameError);
+      return result(await createBranch(ctx.tx, input));
+    },
     audit: (_input, output) => ({
       action: 'platform.org.branch_created',
       entityType: 'branch',
@@ -290,6 +293,8 @@ export function updateBranchActionDefinition(): ActionDefinition<
     handler: async ({ ctx, input }) => {
       const { id, version, ...fields } = input;
       if (fields.parentBranchId === id) return err(validation('parentBranchId', 'BRANCH_TREE'));
+      const nameError = await defaultNameError(ctx.tx, fields, { thing: 'branch', id });
+      if (nameError) return err(nameError);
       return result(await updateBranch(ctx.tx, id, version, fields));
     },
     audit: (_input, output) => ({

@@ -6,6 +6,7 @@ import {
   addStructureLevel,
   createStructureUnit,
   deleteStructureUnit,
+  getStoredNames,
   hasUnitsBelowFirstLevel,
   listActivePersonOptions,
   listStructureLevelLabels,
@@ -102,6 +103,30 @@ describe('reads', () => {
     expect(fake.executed).toHaveLength(1);
     expect(fake.executed[0]?.sql).not.toContain('platform.departments');
     expect(fake.executed[0]?.sql).toContain('order by l.ordinal');
+  });
+
+  it('reads the stored names of a unit, branch, level or cost centre (one may be missing)', async () => {
+    const unit = fakeTx([[{ name_ar: null, name_en: 'Sales' }]]);
+    expect(await getStoredNames(unit.tx, 'unit', 'u1')).toEqual({ nameAr: null, nameEn: 'Sales' });
+    expect(unit.executed[0]?.sql).toContain('platform.departments t where t.deleted_at is null');
+    expect(unit.executed[0]?.params).toEqual(['u1']);
+    for (const [thing, table] of [
+      ['branch', 'platform.branches t where t.deleted_at is null'],
+      ['level', 'platform.structure_levels t where'],
+      ['cost_centre', 'platform.cost_centres t where'],
+    ] as const) {
+      const fake = fakeTx([[]]);
+      // Not found (or deleted): null.
+      expect(await getStoredNames(fake.tx, thing, 'x')).toBeNull();
+      expect(fake.executed[0]?.sql).toContain(table);
+    }
+  });
+
+  it('lists a unit named in English only, ordered by the name it has', async () => {
+    const fake = fakeTx([[unitRow('a', { name_ar: null, name_en: 'Sales' })]]);
+    const [unit] = await listStructureUnitOptions(fake.tx);
+    expect(unit).toMatchObject({ nameAr: null, nameEn: 'Sales' });
+    expect(fake.executed[0]?.sql).toContain('coalesce(d.name_ar, d.name_en)');
   });
 
   it('tells whether the organization has a live unit below the first level', async () => {

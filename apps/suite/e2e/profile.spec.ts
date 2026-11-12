@@ -68,7 +68,8 @@ test.describe('My profile', () => {
     const english = page.getByRole('group', { name: 'Name in English' });
     await expect(english.getByLabel('First name')).toHaveValue('Mona Saeed Alzahrani');
     await english.getByLabel('First name').fill('Mona');
-    await english.getByLabel("Father's name").fill('Saeed');
+    // By its id: «Father's name» is also part of «Grandfather's name».
+    await english.locator('#profile-fatherNameEn').fill('Saeed');
     await english.getByLabel('Family name').fill('Alzahrani');
     const arabic = page.getByRole('group', { name: 'Name in Arabic' });
     await arabic.getByLabel('First name').fill('منيرة');

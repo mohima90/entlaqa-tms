@@ -28,7 +28,7 @@ import { deactivatesWithUndo, parentIds, unitDeleteBlockers } from '../../lib/st
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { ConfirmDialog } from './confirm-dialog';
-import { failureOf } from './failure';
+import { useFailure } from './use-failure';
 import { MoveUnitDialog } from './move-unit-dialog';
 import {
   type Choice,
@@ -95,6 +95,7 @@ export function StructureTree(props: StructureTreeProps) {
     fillText(text(key), values, locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
+  const { actionFailure } = useFailure();
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(parentIds(units)));
   const [dialogState, setDialog] = useState<DialogState | null>(null);
   // «Add a <level> under it» right after adding: the new unit's row arrives with the refreshed tree, so the
@@ -138,6 +139,11 @@ export function StructureTree(props: StructureTreeProps) {
   const addingLevel =
     dialog?.kind === 'unit' && dialog.mode.kind === 'create' ? dialog.mode.levelName : '';
   const editing = dialog?.kind === 'unit' && dialog.mode.kind === 'edit' ? dialog.mode.unit : null;
+  // The unit a new one is added under stays open afterwards: what was just added must not disappear
+  // when the panel closes (a unit that had nothing under it starts closed).
+  if (addingUnder !== null && !expanded.has(addingUnder.id)) {
+    setExpanded(new Set([...expanded, addingUnder.id]));
+  }
 
   const toggle = (id: string) => {
     setExpanded((current) => {
@@ -150,7 +156,13 @@ export function StructureTree(props: StructureTreeProps) {
 
   function refusal(error: Parameters<typeof sessionRefused>[0]): string | null {
     if (sessionRefused(error)) return null;
-    const failure = failureOf(error, text, props.errors, unitFieldText);
+    const failure = actionFailure(error, text, props.errors, unitFieldText);
+    if (failure.latest) {
+      // The page now shows the latest version; the confirmation held the older row (review M4).
+      // Returning null closes the dialog the native way, so the focus goes back (second look L4).
+      if (failure.message) toast.warning(failure.message);
+      return null;
+    }
     return failure.message ?? Object.values(failure.fields)[0] ?? null;
   }
 

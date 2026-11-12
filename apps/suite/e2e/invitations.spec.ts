@@ -22,8 +22,9 @@ const rowsOf = (page: Page) =>
   page
     .locator('[data-testid="invitation-row"], [data-testid="invitations-cards"] > li')
     .filter({ visible: true });
-/** The toasts of the page (a polite live region). */
-const toasts = (page: Page) => page.getByRole('region', { name: 'Status messages' });
+/** The toasts of the page (a polite live region), named in the page's language. */
+const toasts = (page: Page) =>
+  page.getByRole('region', { name: /^(Status messages|رسائل الحالة)$/ });
 /** A row's ⋯ menu entry (Copy code, Resend invitation, Revoke invitation). */
 async function rowMenu(page: Page, row: ReturnType<typeof rowsOf>, name: string, entry: RegExp) {
   await row.getByRole('button', { name: `More actions for ${name}` }).click();
@@ -369,6 +370,8 @@ test.describe('organization structure (HR Manager)', () => {
   test.skip(!email || !password, 'SIGNED_IN_E2E_* not set');
 
   test('an HR Manager signs up and builds the levels and the tree', async ({ page, browser }) => {
+    // A long journey (sign-up, levels, cost centres, the tree, move, import, branches, Arabic).
+    test.setTimeout(120_000);
     const hr = `hr-structure-${run}@sovereign.example`;
     await signIn(page);
     await page.goto('/en/suite/admin/users/invite');
@@ -376,7 +379,8 @@ test.describe('organization structure (HR Manager)', () => {
     await form.locator('#invite-email').fill(hr);
     await form.locator('#invite-firstNameEn').fill('Hala');
     await form.locator('#invite-familyNameEn').fill('Resources');
-    await form.getByRole('combobox', { name: /^Role/ }).selectOption({ label: 'HR Manager' });
+    // By its code: the option reads «HR Manager (privileged)».
+    await form.getByRole('combobox', { name: /^Role/ }).selectOption('hr_manager');
     await form.getByRole('radio', { name: 'English' }).check();
     await sendInvitation(page).click();
     const panel = page.getByTestId('invitation-created-panel');
@@ -499,7 +503,12 @@ test.describe('organization structure (HR Manager)', () => {
 
     // A unit with a unit under it is not deleted: the dialog says what is left.
     await sales.getByTestId('unit-menu').first().click();
-    await hrPage.getByTestId('unit-menu-delete').click();
+    // Blocked: announced as unavailable with the reason next to it, and still opens the dialog that
+    // lists what is left (so the click skips Playwright's «enabled» check).
+    const blockedDelete = hrPage.getByTestId('unit-menu-delete');
+    await expect(blockedDelete).toHaveAttribute('aria-disabled', 'true');
+    await expect(blockedDelete.getByTestId('unit-delete-reason')).toBeVisible();
+    await blockedDelete.click({ force: true });
     const deleteDialog = hrPage.getByTestId('unit-delete-dialog');
     await expect(deleteDialog.getByTestId('unit-in-use')).toContainText('Departments under it: 1');
     await expect(deleteDialog.getByTestId('confirm-dialog-confirm')).toHaveCount(0);
@@ -535,6 +544,13 @@ test.describe('organization structure (HR Manager)', () => {
     await expect(hrPage.getByTestId('unit-status-dialog')).toHaveCount(0);
     await expect(hrPage.getByTestId('toast-action')).toHaveText('Undo');
     await expect(moved.getByTestId('unit-inactive')).toHaveText('Inactive');
+    // The message with «Undo» stays 20 seconds in the corner, over the end of the last rows: closed, as
+    // a person who goes on working there would.
+    await toasts(hrPage)
+      .getByRole('listitem')
+      .filter({ hasText: 'deactivated' })
+      .getByRole('button', { name: 'Close' })
+      .click();
     await moved.getByTestId('unit-menu').click();
     await hrPage.getByTestId('unit-menu-delete').click();
     await deleteDialog.getByTestId('confirm-dialog-confirm').click();

@@ -37,6 +37,11 @@ const ALLOWED: Readonly<Record<string, string>> = {
   // The standard role's name «Department head» / «رئيس القسم» (BRD §4.2, glossary #22).
   'deactivation.noCandidates': 'names the Department Head role',
   'structure.form.headHint': 'names the Department Head role',
+  // WP-FIX-03: what happened to the role of the person picked as a head.
+  'structure.toasts.headRole.given': 'names the Department Head role',
+  'structure.toasts.headRole.notAllowed': 'names the Department Head role',
+  // The import report: a row with the Department Head role (the import sets no head).
+  'userImport.codes.HEAD_NOT_SET': 'names the Department Head role',
   // Example level names an organization may choose (Sector → Department → Section).
   'structure.levels.example': 'example level names',
 };

@@ -122,21 +122,23 @@ function Toast({
             {actionHint.split('{action}').join(item.action.label)}
           </p>
         ) : null}
+        {item.action ? (
+          // The toast's one action (Undo, Reactivate, Load the latest version…): underlined text on the
+          // dark pill, 44 px on touch. It sits under the message, so a long label never squeezes the text
+          // into a one-word column (PO test, 12 Nov 2026).
+          <button
+            type="button"
+            onClick={() => {
+              store.dismiss(item.id);
+              item.action?.onClick();
+            }}
+            className="-ms-2.5 mt-1 inline-flex min-h-8.5 items-center self-start rounded-full px-2.5 text-start font-semibold underline underline-offset-3 hover:bg-inverse-text/20 pointer-coarse:min-h-11"
+            data-testid="toast-action"
+          >
+            {item.action.label}
+          </button>
+        ) : null}
       </div>
-      {item.action ? (
-        // The toast's one action (Undo, Reactivate…): underlined text on the dark pill, 44 px on touch.
-        <button
-          type="button"
-          onClick={() => {
-            store.dismiss(item.id);
-            item.action?.onClick();
-          }}
-          className="-my-1 inline-flex min-h-8.5 shrink-0 items-center rounded-full px-2.5 font-semibold underline underline-offset-3 hover:bg-inverse-text/20 pointer-coarse:min-h-11"
-          data-testid="toast-action"
-        >
-          {item.action.label}
-        </button>
-      ) : null}
       <button
         type="button"
         aria-label={closeLabel}

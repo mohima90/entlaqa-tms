@@ -27,13 +27,19 @@ import type { ReactNode } from 'react';
 import { ReturnedFocus } from '../../lib/focus-return';
 import { reactivateLabels } from '../../lib/deactivation-texts';
 import { canResend } from '../../lib/invite-form';
+import { headUnitView } from '../../lib/head-unit';
 import { inviteCopyTexts } from '../../lib/invite-copy-texts';
 import { personPhotoHref } from '../../lib/person-photo';
 import { expiryFrom, filterInvitations } from '../../lib/invitations-view';
 import { pageDates } from '../../lib/page-dates';
 import { profileErrorTexts } from '../../lib/profile-texts';
 import { roleOptions } from '../../lib/role-choice';
-import { editRoleLabels, roleSelectTexts, scopeUnitTexts } from '../../lib/role-texts';
+import {
+  editRoleLabels,
+  headUnitTexts,
+  roleSelectTexts,
+  scopeUnitTexts,
+} from '../../lib/role-texts';
 import {
   orgShowsUnitLevels,
   orgUnitsLabel,
@@ -395,6 +401,9 @@ async function UsersList({
           // The unit picker of department-limited custom roles (EP-ORG, T-M3-09).
           scopeUnits: scopeUnitChoices(view.scopeUnits.units, view.scopeUnits.levels, locale),
           unitTexts: await scopeUnitTexts(locale, view.scopeUnits.structureVisible),
+          // «Head of which department?» for the Department Head role (WP-FIX-03).
+          headUnits: headUnitView(view.headUnits, locale),
+          headTexts: await headUnitTexts(locale),
         }
       : null;
   const base = `/${locale}/suite/admin/users`;
@@ -448,6 +457,7 @@ async function UsersList({
             withLevels,
           )
         : null,
+      ownUnitId: row.departmentId,
       status: row.status,
       statusText: t(`status.${row.status}`),
       lastSignIn: row.lastSignInAt ? dates.dateTime(row.lastSignInAt) : t('never'),
@@ -940,6 +950,8 @@ async function invitePanel(
       roleTexts={await roleSelectTexts(locale)}
       scopeUnits={scopeUnitChoices(view.scopeUnits.units, view.scopeUnits.levels, locale)}
       unitTexts={await scopeUnitTexts(locale, view.scopeUnits.structureVisible)}
+      headUnits={headUnitView(view.headUnits, locale)}
+      headTexts={await headUnitTexts(locale)}
       labels={labels}
       fieldTexts={fieldTexts}
       errors={await profileErrorTexts(locale)}

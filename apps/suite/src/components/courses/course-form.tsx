@@ -16,6 +16,7 @@ import {
 } from '../../lib/courses-view';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
+import { LoadLatestVersion, useFormBase, useLatestVersion } from '../latest-version';
 import { SelectField } from '../select-field';
 
 export interface CourseFormSharedProps {
@@ -65,12 +66,26 @@ export function CourseForm(props: CourseFormProps) {
   };
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
+  const latestVersion = useLatestVersion();
   const [pending, startTransition] = useTransition();
   const [state, setState] = useState<CourseFormState>(
     course ? courseFormFrom(course) : EMPTY_COURSE_FORM,
   );
   const [errors, setErrors] = useState<CourseFormErrors>({});
   const [message, setMessage] = useState<{ tone: 'info' | 'danger'; text: string } | null>(null);
+  // The fields and the version they were read at stay together (second look L6): if the list reloads
+  // under an open form, an untouched form takes the latest course, a form with typed changes keeps the
+  // version it started from and is refused as a conflict.
+  const base = useFormBase(
+    { version: course?.version ?? 0, initial: course },
+    (initial) =>
+      JSON.stringify(state) !==
+      JSON.stringify(initial ? courseFormFrom(initial) : EMPTY_COURSE_FORM),
+    (latest) => {
+      setState(latest ? courseFormFrom(latest) : EMPTY_COURSE_FORM);
+      setErrors({});
+    },
+  );
   const idPrefix = `course-${course ? course.id : 'new'}`;
   const { onPending } = props;
   useEffect(() => {
@@ -106,7 +121,7 @@ export function CourseForm(props: CourseFormProps) {
     const values = parsed.values;
     startTransition(async () => {
       const result = course
-        ? await updateCourseAction({ ...values, id: course.id, version: course.version })
+        ? await updateCourseAction({ ...values, id: course.id, version: base.version })
         : await createCourseAction(values);
       if (result.ok) {
         toast.success(course ? text('saved') : text('created'));
@@ -115,8 +130,10 @@ export function CourseForm(props: CourseFormProps) {
         return;
       }
       if (sessionRefused(result.error)) return;
-      if (result.error.code === 'CONFLICT_VERSION') {
-        setMessage({ tone: 'danger', text: text('conflict') });
+      // An older copy of the course (WP-FIX-03): what was typed stays; «Load the latest version» is offered.
+      const latest = latestVersion.offer(result.error, text('conflict'));
+      if (latest !== null) {
+        setMessage({ tone: 'danger', text: latest });
         return;
       }
       if (result.error.code === 'NOT_FOUND') {
@@ -214,6 +231,7 @@ export function CourseForm(props: CourseFormProps) {
       {message ? (
         <Alert tone={message.tone} data-testid="course-form-message">
           {message.text}
+          <LoadLatestVersion message={message.text} />
         </Alert>
       ) : null}
       {group(
@@ -282,6 +300,7 @@ export function CourseForm(props: CourseFormProps) {
               id={`${idPrefix}-deliveryType`}
               label={text('form.deliveryType')}
               marker={required}
+              aria-required
               error={errorOf('deliveryType')}
               value={state.deliveryType}
               onChange={(event) => {

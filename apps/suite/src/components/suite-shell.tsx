@@ -17,6 +17,7 @@ import {
   parseThemeMode,
 } from '@jadarat/ui';
 import { getTranslations } from 'next-intl/server';
+import { LatestVersionProvider } from './latest-version';
 import { cookies, headers } from 'next/headers';
 import type { ReactNode } from 'react';
 import { getConfigStatus } from '../lib/config-status';
@@ -216,7 +217,15 @@ export async function SuiteShell({
     >
       <BrandStyle colors={brand} />
       {brand?.slug ? <RememberBrand slug={brand.slug} /> : null}
-      {children}
+      <LatestVersionProvider
+        texts={{
+          refreshed: t('latest.refreshed'),
+          offer: t('latest.offer'),
+          load: t('latest.load'),
+        }}
+      >
+        {children}
+      </LatestVersionProvider>
       <Toaster
         label={t('statusMessages')}
         closeLabel={t('close')}

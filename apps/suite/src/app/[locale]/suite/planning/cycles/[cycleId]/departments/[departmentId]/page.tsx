@@ -6,6 +6,7 @@ import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { NeedsPage } from '../../../../../../../../components/needs/needs-page';
+import { RefreshOnReturn } from '../../../../../../../../components/latest-version';
 import { SuiteShell } from '../../../../../../../../components/suite-shell';
 import { needsFormsTexts } from '../../../../../../../../lib/needs-forms-texts';
 import {
@@ -133,6 +134,7 @@ export default async function CycleDepartmentNeedsPage({
         description={description}
       />
       {content}
+      <RefreshOnReturn />
     </SuiteShell>
   );
 }

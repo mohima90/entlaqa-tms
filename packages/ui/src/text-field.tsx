@@ -11,10 +11,53 @@ export interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElemen
   /** Error message; marks the field invalid and is announced with it. */
   readonly error?: ReactNode;
   /**
-   * Text after the label: «(مطلوب)» / "(required)", or «(اختياري)» / "(optional)" — design principles §4:
-   * required is shown in words, never only by an asterisk. Pass the translated text.
+   * Text after the label: «(مطلوب)» / "(required)", or «(اختياري)» / "(optional)". Pass the translated
+   * text. A required field (`required` or `aria-required`) shows a red asterisk instead (PO, 12 Nov 2026;
+   * forms standard rule 8) and keeps this text for screen readers; an optional field shows the text.
    */
   readonly marker?: ReactNode;
+}
+
+/** Is the control required — natively (`required`) or said to assistive technology (`aria-required`)? */
+export function isRequiredField(props: {
+  readonly required?: boolean | undefined;
+  readonly 'aria-required'?: boolean | 'true' | 'false' | undefined;
+}): boolean {
+  return (
+    props.required === true || props['aria-required'] === true || props['aria-required'] === 'true'
+  );
+}
+
+/**
+ * What follows a field's label (PO, 12 Nov 2026; forms standard rule 8): a red asterisk for a required
+ * field — never the word «(required)» on screen — or the marker's text otherwise («(optional)»). The
+ * asterisk is hidden from assistive technology; the control itself says it is required, and the marker's
+ * words stay in the label for screen readers (so the accessible name still reads «… (required)»). The red
+ * is the danger text colour, which passes 4.5 : 1 on every surface and theme (token tests).
+ */
+export function FieldMarker({
+  marker,
+  required,
+  className,
+}: {
+  readonly marker?: ReactNode;
+  readonly required: boolean;
+  /** Spacing of the optional text (the label's own layout decides: inline text or a flex gap). */
+  readonly className?: string | undefined;
+}) {
+  if (required) {
+    return (
+      <>
+        <span aria-hidden="true" className="ms-0.5 font-semibold text-danger" data-required-mark="">
+          *
+        </span>
+        {marker ? <span className="sr-only"> {marker}</span> : null}
+      </>
+    );
+  }
+  return marker ? (
+    <span className={cn('font-normal text-text-subtle', className ?? 'ms-1')}>{marker}</span>
+  ) : null;
 }
 
 /**
@@ -42,7 +85,7 @@ export function FieldError({
 
 /**
  * Labelled text input (WCAG 2.2: visible label, programmatic hint/error; 48 px target). Direction C form
- * pattern: the label above (with «(required)» in words), the input, then the hint and the error under it
+ * pattern: the label above (a red asterisk when required), the input, then the hint and the error under it
  * — the error sits on the field (`aria-invalid`, described by it). Direction follows the document; pass
  * `dir="ltr"` for e-mail, URLs and codes that keep Latin order in Arabic.
  */
@@ -64,7 +107,7 @@ export function TextField({
     <div className={cn('flex flex-col gap-1.5', className)}>
       <label htmlFor={id} className="text-sm font-semibold">
         {label}
-        {marker ? <span className="ms-1 font-normal text-text-subtle">{marker}</span> : null}
+        <FieldMarker marker={marker} required={isRequiredField(props)} />
       </label>
       <input
         {...props}

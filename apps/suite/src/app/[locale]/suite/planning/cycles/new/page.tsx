@@ -45,6 +45,8 @@ export default async function NewPlanCyclePage({
   const form = (
     defaults: { periodStart: string; periodEnd: string; deadline: string },
     currency: string,
+    // The language whose name is required: the organization's default language (PO, 12 Nov 2026).
+    nameLanguage: 'ar' | 'en',
     needsForms: readonly {
       id: string;
       name: { ar: string; en: string | null };
@@ -70,6 +72,7 @@ export default async function NewPlanCyclePage({
         active: f.active,
       }))}
       currency={currency}
+      nameLanguage={nameLanguage}
       texts={texts}
       errors={errors}
       cancelHref={cyclesHref}
@@ -122,6 +125,7 @@ export default async function NewPlanCyclePage({
               deadline: defaultDeadline(today, period.end),
             },
             'SAR',
+            'en',
             [],
           ),
         )}
@@ -148,7 +152,12 @@ export default async function NewPlanCyclePage({
       }
     } else {
       content = surface(
-        form(result.value.defaults, result.value.currency, result.value.needsForms),
+        form(
+          result.value.defaults,
+          result.value.currency,
+          result.value.nameLanguage,
+          result.value.needsForms,
+        ),
       );
     }
   }

@@ -115,7 +115,9 @@ describe('listUsers', () => {
           role_name_ar: null,
           role_name_en: null,
           role_version: 'learner:r1:1',
-          role_scope_unit: '{"id":"u1","nameAr":"المبيعات","nameEn":"Sales","active":false}',
+          role_scope_unit:
+            '{"id":"u1","nameAr":"المبيعات","nameEn":"Sales","levelOrdinal":2,"active":false}',
+          department_id: D1,
           department_name_ar: 'التدريب',
           department_level_ordinal: 1,
           department_name_en: null,
@@ -149,7 +151,16 @@ describe('listUsers', () => {
         primaryRoleName: null,
         roleVersion: 'learner:r1:1',
         // The unit of a department-limited role, deactivated since (EP-ORG): shown so the giver is told.
-        roleScopeUnit: { id: 'u1', nameAr: 'المبيعات', nameEn: 'Sales', active: false },
+        // With its level: the list names it for a unit below the first level (issue #95).
+        roleScopeUnit: {
+          id: 'u1',
+          nameAr: 'المبيعات',
+          nameEn: 'Sales',
+          levelOrdinal: 2,
+          active: false,
+        },
+        // Their own department: the one the Department Head role makes them the head of.
+        departmentId: D1,
         departmentNameAr: 'التدريب',
         departmentNameEn: null,
         departmentLevelOrdinal: 1,

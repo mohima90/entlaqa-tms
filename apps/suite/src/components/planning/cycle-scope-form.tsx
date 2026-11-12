@@ -8,6 +8,7 @@ import { cycleHref } from '../../lib/planning-view';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { StepFooter } from './cycle-chain-forms';
+import { LoadLatestVersion, useFormBase } from '../latest-version';
 import { useUnsavedStep } from './setup-step-nav';
 import { usePlanningTexts } from './use-planning-texts';
 
@@ -51,7 +52,7 @@ const INDENT = ['ps-0', 'ps-6', 'ps-12', 'ps-18', 'ps-24'] as const;
  * warns about departments whose form reaches no head (EP-ORG: the nearest head above receives it).
  */
 export function CycleScopeForm(props: CycleScopeFormProps) {
-  const { t, message } = usePlanningTexts(props.texts, props.errors, props.locale);
+  const { t, formMessage } = usePlanningTexts(props.texts, props.errors, props.locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
@@ -60,10 +61,17 @@ export function CycleScopeForm(props: CycleScopeFormProps) {
   );
   const [branches, setBranches] = useState<ReadonlySet<string>>(new Set(props.initial.branchIds));
   const [notice, setNotice] = useState<string | null>(null);
-  useUnsavedStep(
-    !sameSet(departments, props.initial.departmentIds) ||
-      !sameSet(branches, props.initial.branchIds),
+  // The ticks and the version they were read at stay together (review H1).
+  const base = useFormBase(
+    { version: props.cycle.version, initial: props.initial },
+    (initial) =>
+      !sameSet(departments, initial.departmentIds) || !sameSet(branches, initial.branchIds),
+    (initial) => {
+      setDepartments(new Set(initial.departmentIds));
+      setBranches(new Set(initial.branchIds));
+    },
   );
+  useUnsavedStep(base.dirty);
 
   const structure = useMemo(
     () =>
@@ -97,7 +105,7 @@ export function CycleScopeForm(props: CycleScopeFormProps) {
     startTransition(async () => {
       const result = await savePlanCycleScopeAction({
         id: props.cycle.id,
-        version: props.cycle.version,
+        version: base.version,
         departmentIds: [...departments],
         branchIds: [...branches],
       });
@@ -107,7 +115,7 @@ export function CycleScopeForm(props: CycleScopeFormProps) {
         return;
       }
       if (sessionRefused(result.error)) return;
-      setNotice(message(result.error));
+      setNotice(formMessage(result.error));
     });
   }
 
@@ -146,7 +154,12 @@ export function CycleScopeForm(props: CycleScopeFormProps) {
 
   return (
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4" data-testid="cycle-scope">
-      {notice ? <Alert tone="danger">{notice}</Alert> : null}
+      {notice ? (
+        <Alert tone="danger">
+          {notice}
+          <LoadLatestVersion message={notice} />
+        </Alert>
+      ) : null}
       <Card title={t('setup.scope.title')} description={t('setup.scope.intro')}>
         <div className="grid grid-cols-1 items-start gap-5.5 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
           <fieldset className="m-0 min-w-0 border-0 p-0">

@@ -13,6 +13,7 @@ import {
   parseThemeMode,
 } from '@jadarat/ui';
 import { getTranslations } from 'next-intl/server';
+import { LatestVersionProvider } from '../latest-version';
 import { cookies } from 'next/headers';
 import type { ReactNode } from 'react';
 import { SignOutButton } from '../auth/sign-out-button';
@@ -118,7 +119,15 @@ export async function PlatformShell({
         </>
       }
     >
-      {children}
+      <LatestVersionProvider
+        texts={{
+          refreshed: shell('latest.refreshed'),
+          offer: shell('latest.offer'),
+          load: shell('latest.load'),
+        }}
+      >
+        {children}
+      </LatestVersionProvider>
       <Toaster
         label={shell('statusMessages')}
         closeLabel={shell('close')}

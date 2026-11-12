@@ -10,7 +10,14 @@ export {
 } from './button';
 export { Card, type CardProps } from './card';
 export { AppShell, type AppShellProps, PoweredBy, type PoweredByProps } from './app-shell';
-export { FieldError, TextField, type TextFieldProps, fieldInputClasses } from './text-field';
+export {
+  FieldError,
+  FieldMarker,
+  TextField,
+  type TextFieldProps,
+  fieldInputClasses,
+  isRequiredField,
+} from './text-field';
 export { Alert, type AlertProps, type AlertTone } from './alert';
 export { Badge, type BadgeProps, type BadgeTone } from './badge';
 export { ICON_NAMES, Icon, type IconName, type IconProps, JadaratMark } from './icons';

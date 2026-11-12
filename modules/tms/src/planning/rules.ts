@@ -42,8 +42,9 @@ export const DEFAULT_REMINDER_DAYS: readonly number[] = [7, 2];
 
 export interface ApprovalStep {
   readonly kind: StepKind;
-  readonly nameAr: string;
-  readonly nameEn: string;
+  /** One of the two may be missing: the organization's default language's name is required (nameIssues). */
+  readonly nameAr: string | null;
+  readonly nameEn: string | null;
   /** Named person steps only (null: not named yet). */
   readonly approverPersonId: string | null;
 }
@@ -346,6 +347,20 @@ export function basicsIssues(value: BasicsShape): { path: string; message: strin
     issues.push({ path: 'deadline', message: 'after_period' });
   }
   return issues;
+}
+
+/**
+ * The name the organization's default language requires (WP-FIX-03; PO, 12 Nov 2026 — the rule approved
+ * for people on 17 Oct 2026, applied to cycles and approval steps): with English as the default language
+ * the English name is required and the Arabic one optional, and the other way round.
+ */
+export function nameIssues(
+  defaultLocale: 'ar' | 'en',
+  value: { readonly nameAr: string | null; readonly nameEn: string | null },
+  prefix = '',
+): { path: string; message: string }[] {
+  const key = defaultLocale === 'ar' ? 'nameAr' : 'nameEn';
+  return value[key] === null ? [{ path: `${prefix}${key}`, message: 'required' }] : [];
 }
 
 /** Rule problems as field errors (SCREAMING_SNAKE codes, ADR 0011 §3) — checked by the handlers. */

@@ -33,7 +33,7 @@ export interface LaunchCycleButtonProps extends Common {
 
 /** «Launch cycle» (business flow B5): asks first; the server checks readiness again. */
 export function LaunchCycleButton(props: LaunchCycleButtonProps) {
-  const { t, message } = usePlanningTexts(props.texts, props.errors, props.locale);
+  const { t, actionMessage } = usePlanningTexts(props.texts, props.errors, props.locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
   const [open, setOpen] = useState(false);
@@ -51,7 +51,7 @@ export function LaunchCycleButton(props: LaunchCycleButtonProps) {
         return;
       }
       if (sessionRefused(result.error)) return;
-      setNotice(message(result.error));
+      setNotice(actionMessage(result.error));
     });
   }
 
@@ -114,7 +114,7 @@ export interface DeleteCycleButtonProps extends Common {
 
 /** «Delete draft»: only a draft is deleted (the database refuses a launched cycle). */
 export function DeleteCycleButton(props: DeleteCycleButtonProps) {
-  const { t, message } = usePlanningTexts(props.texts, props.errors, props.locale);
+  const { t, actionMessage } = usePlanningTexts(props.texts, props.errors, props.locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
   const [open, setOpen] = useState(false);
@@ -132,7 +132,7 @@ export function DeleteCycleButton(props: DeleteCycleButtonProps) {
         return;
       }
       if (sessionRefused(result.error)) return;
-      setNotice(message(result.error));
+      setNotice(actionMessage(result.error));
     });
   }
 
@@ -203,7 +203,11 @@ export interface ExtendDeadlineButtonProps extends Common {
  * passed (C-7): a later date in the period, today or later.
  */
 export function ExtendDeadlineButton(props: ExtendDeadlineButtonProps) {
-  const { t, message, fieldErrors } = usePlanningTexts(props.texts, props.errors, props.locale);
+  const { t, actionMessage, fieldErrors } = usePlanningTexts(
+    props.texts,
+    props.errors,
+    props.locale,
+  );
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
   const [open, setOpen] = useState(false);
@@ -238,7 +242,7 @@ export function ExtendDeadlineButton(props: ExtendDeadlineButtonProps) {
       }
       if (sessionRefused(result.error)) return;
       setError(fieldErrors(result.error).deadline);
-      setNotice(message(result.error));
+      setNotice(actionMessage(result.error));
     });
   }
 

@@ -27,6 +27,11 @@ import {
 } from './structure';
 
 const db = vi.hoisted(() => ({
+  // The head's Department Head role (WP-FIX-03, head-role.ts): nobody has an account unless a test says so.
+  getEditableRole: vi.fn((): Promise<unknown> => Promise.resolve(null)),
+  lockTenantRoles: vi.fn(() => Promise.resolve()),
+  replaceMemberRole: vi.fn(),
+  insertAuditEvent: vi.fn(() => Promise.resolve()),
   listStructureLevels: vi.fn(),
   listStructureUnits: vi.fn(),
   listOrgUnitOptions: vi.fn(),
@@ -331,6 +336,62 @@ describe('structure changes (platform.org.manage)', () => {
     const audited = JSON.stringify(writeAudit.mock.calls);
     expect(audited).not.toContain('منى');
     expect(audited).not.toContain('Mona');
+  });
+
+  it('a new head is given the Department Head role and the form is told (WP-FIX-03); an unchanged head is left alone', async () => {
+    const { rt } = runtime(['hr_manager']);
+    // The picked person has no account here (the default): nothing to change, said so.
+    db.createStructureUnit.mockResolvedValue({ ok: true, before: null, after: unit() });
+    const created = await createDefineAction(rt)(createStructureUnitActionDefinition())({
+      ...unitForm,
+      parentId: LEVEL,
+    });
+    expect(created.ok && created.value.headRole).toEqual({ kind: 'no_account', personId: HEAD });
+    expect(db.getEditableRole).toHaveBeenCalledWith(TX, HEAD);
+
+    // A member who holds another role keeps it (one role per person).
+    db.getEditableRole.mockResolvedValueOnce({
+      personId: HEAD,
+      membershipId: 'm1',
+      membershipStatus: 'active',
+      isSelf: false,
+      mayManage: true,
+      roleCode: 'training_manager',
+      scopeUnitId: null,
+      version: 'training_manager:5c1d2b3f-9a4e-4d2f-8b8c-3e6f7a8b9c0d:1',
+    });
+    const { parentId: _parent, ...fields } = unitForm;
+    db.updateStructureUnit.mockResolvedValue({
+      ok: true,
+      before: unit({ headPersonId: null }),
+      after: unit({ version: 2 }),
+    });
+    const update = createDefineAction(rt)(updateStructureUnitActionDefinition());
+    const picked = await update({ ...fields, id: UNIT, version: 1 });
+    expect(picked.ok && picked.value.headRole).toEqual({
+      kind: 'kept',
+      personId: HEAD,
+      roleCode: 'training_manager',
+    });
+    expect(db.replaceMemberRole).not.toHaveBeenCalled();
+
+    // The same head as before, or no head: the role is not looked at.
+    db.getEditableRole.mockClear();
+    db.updateStructureUnit.mockResolvedValue({
+      ok: true,
+      before: unit(),
+      after: unit({ nameEn: 'Sales & Marketing', version: 2 }),
+    });
+    const renamed = await update({ ...fields, id: UNIT, version: 1 });
+    expect(renamed.ok && renamed.value.headRole).toBeNull();
+    db.updateStructureUnit.mockResolvedValue({
+      ok: true,
+      before: unit(),
+      after: unit({ headPersonId: null, version: 2 }),
+    });
+    const cleared = await update({ ...fields, headPersonId: '', id: UNIT, version: 1 });
+    expect(cleared.ok && cleared.value.headRole).toBeNull();
+    expect(db.getEditableRole).not.toHaveBeenCalled();
   });
 
   it('refuses to delete a unit still in use, with what is left; below the last level on create', async () => {

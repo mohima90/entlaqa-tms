@@ -254,6 +254,7 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
       name={field}
       label={label}
       marker={extra.required ? props.common.required : undefined}
+      aria-required={extra.required ? true : undefined}
       tag={suggested(field)}
       hint={extra.hint}
       error={errorOf(field)}
@@ -483,7 +484,10 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
                     type="button"
                     id={`org-day-${String(day.value)}`}
                     aria-pressed={on}
-                    aria-label={day.long}
+                    // Named by its visible text (WCAG 2.5.3: «Sun» is not a word of «Sunday», so a
+                    // spoken «click Sun» would miss a button named by the long form); the full name is
+                    // its description and tooltip.
+                    title={day.long === day.short ? undefined : day.long}
                     disabled={disabled}
                     onClick={() => {
                       set('workingDays', toggleDay(values.workingDays, day.value));

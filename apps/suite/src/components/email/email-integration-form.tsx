@@ -18,6 +18,7 @@ import {
 } from '../../lib/email-settings-form';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
+import { LoadLatestVersion, useLatestVersion } from '../latest-version';
 import { LeaveGuard } from '../settings/leave-guard';
 import type { SettingsCommonTexts } from '../settings/settings-texts';
 import { StepUpBanner } from '../settings/step-up-banner';
@@ -140,6 +141,7 @@ export function EmailIntegrationForm(props: EmailIntegrationFormProps) {
     Object.entries(values).reduce((text, [k, v]) => text.replaceAll(`{${k}}`, v), t(key));
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
+  const latestVersion = useLatestVersion();
   const [pending, startTransition] = useTransition();
   const [provider, setProvider] = useState<ProviderFormValues>(providerFormValues(saved));
   const [fromName, setFromName] = useState(saved?.fromName ?? props.organizationName);
@@ -181,19 +183,19 @@ export function EmailIntegrationForm(props: EmailIntegrationFormProps) {
       (f) => f.path === 'form' || f.path === 'enabled',
     )?.code;
     const text =
-      error.code === 'CONFLICT_VERSION'
-        ? t('conflict')
-        : formCode === 'TOO_SOON'
-          ? t('testTooSoon')
-          : formCode === 'KEY_CHANGED'
-            ? t('keyChanged')
-            : formCode === 'NOT_SET_UP'
-              ? t('integration.keyMissing')
-              : formCode === 'NOT_VERIFIED'
-                ? t('integration.switchNeedsTest')
-                : formCode === 'NOT_CONFIGURED'
-                  ? t('integration.saveFirst')
-                  : errorText(error, errors);
+      // An older copy of the settings (WP-FIX-03): what was typed stays; «Load the latest version» is offered.
+      latestVersion.offer(error, t('conflict')) ??
+      (formCode === 'TOO_SOON'
+        ? t('testTooSoon')
+        : formCode === 'KEY_CHANGED'
+          ? t('keyChanged')
+          : formCode === 'NOT_SET_UP'
+            ? t('integration.keyMissing')
+            : formCode === 'NOT_VERIFIED'
+              ? t('integration.switchNeedsTest')
+              : formCode === 'NOT_CONFIGURED'
+                ? t('integration.saveFirst')
+                : errorText(error, errors));
     setMessage({ step, tone: 'danger', text });
   }
 
@@ -279,6 +281,7 @@ export function EmailIntegrationForm(props: EmailIntegrationFormProps) {
         data-testid="email-integration-message"
       >
         {message.text}
+        <LoadLatestVersion message={message.text} />
       </Alert>
     ) : null;
 
@@ -439,6 +442,7 @@ export function EmailIntegrationForm(props: EmailIntegrationFormProps) {
                       autoComplete="off"
                       label={t('sender.fromAddress')}
                       marker={t('provider.required')}
+                      aria-required
                       hint={t('sender.fromAddressHint')}
                       error={fieldErrors.fromAddress}
                       value={fromAddress}
@@ -454,6 +458,7 @@ export function EmailIntegrationForm(props: EmailIntegrationFormProps) {
                       autoComplete="off"
                       label={t('sender.fromName')}
                       marker={t('provider.required')}
+                      aria-required
                       error={fieldErrors.fromName}
                       value={fromName}
                       onChange={(event) => {
@@ -577,6 +582,7 @@ export function EmailIntegrationForm(props: EmailIntegrationFormProps) {
                         className="min-w-0 flex-[1_1_16rem]"
                         label={t('integration.testRecipient')}
                         marker={t('provider.required')}
+                        aria-required
                         error={recipientError}
                         value={recipient}
                         onChange={(event) => {

@@ -1,7 +1,14 @@
 'use client';
 import { ChoiceCard } from '@jadarat/ui';
 import { usePathname, useRouter } from 'next/navigation';
-import { type ReactNode, useEffect, useId, useSyncExternalStore, useTransition } from 'react';
+import {
+  type ReactNode,
+  useEffect,
+  useId,
+  useOptimistic,
+  useSyncExternalStore,
+  useTransition,
+} from 'react';
 
 export type ExistingChoice = 'skip' | 'upsert' | 'update_only';
 export type InvitationsChoice = 'send' | 'hold';
@@ -51,11 +58,19 @@ export function useOptionsChanging(): boolean {
   return useSyncExternalStore(subscribeChanging, anyChanging, () => false);
 }
 
-/** A change of option: the confirmation reads its counts again for it (no other state). */
+/**
+ * A change of option: the confirmation reads its counts again for it. The choice shows at once (`shown`)
+ * while the page loads the new counts — a control that waited for the server looked as if the click had
+ * not worked.
+ */
 function useChoose(options: ImportOptions) {
   const router = useRouter();
   const pathname = usePathname();
   const [pending, startTransition] = useTransition();
+  const [shown, show] = useOptimistic(options, (current, changes: Partial<ImportOptions>) => ({
+    ...current,
+    ...changes,
+  }));
   const id = useId();
   useEffect(() => {
     setChanging(id, pending);
@@ -65,10 +80,11 @@ function useChoose(options: ImportOptions) {
   }, [id, pending]);
   const choose = (changes: Partial<ImportOptions>) => {
     startTransition(() => {
+      show(changes);
       router.replace(confirmHref(pathname, { ...options, ...changes }), { scroll: false });
     });
   };
-  return { choose, pending };
+  return { choose, pending, shown };
 }
 
 /**
@@ -84,7 +100,7 @@ export function InvitationsChoiceCards({
   readonly labels: Readonly<Record<string, string>>;
 }) {
   const text = (key: string) => labels[key] ?? key;
-  const { choose, pending } = useChoose(options);
+  const { choose, pending, shown } = useChoose(options);
   return (
     <fieldset className="m-0 flex flex-col gap-2.5 border-0 p-0" aria-busy={pending || undefined}>
       <legend className="sr-only">{text('invitationsHeading')}</legend>
@@ -94,7 +110,7 @@ export function InvitationsChoiceCards({
           id={`invitations-${value}`}
           name="invitations"
           value={value}
-          checked={options.invitations === value}
+          checked={shown.invitations === value}
           onChange={() => {
             choose({ invitations: value });
           }}
@@ -119,7 +135,7 @@ export function ExistingChoiceCards({
   readonly labels: Readonly<Record<string, string>>;
 }) {
   const text = (key: string) => labels[key] ?? key;
-  const { choose, pending } = useChoose(options);
+  const { choose, pending, shown } = useChoose(options);
   return (
     <fieldset className="m-0 flex flex-col gap-2.5 border-0 p-0" aria-busy={pending || undefined}>
       <legend className="sr-only">{text('existingHeading')}</legend>
@@ -131,7 +147,7 @@ export function ExistingChoiceCards({
             id={`existing-${value}`}
             name="existing"
             value={value}
-            checked={options.existing === value}
+            checked={shown.existing === value}
             disabled={disabled}
             onChange={() => {
               choose({ existing: value });
@@ -160,7 +176,7 @@ export function DefaultRoleSelect({
   readonly extra?: ReactNode;
 }) {
   const text = (key: string) => labels[key] ?? key;
-  const { choose } = useChoose(options);
+  const { choose, shown } = useChoose(options);
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor="default-role" className="font-semibold">
@@ -169,7 +185,7 @@ export function DefaultRoleSelect({
       <select
         id="default-role"
         name="defaultRole"
-        value={options.defaultRole}
+        value={shown.defaultRole}
         onChange={(event) => {
           choose({ defaultRole: event.target.value });
         }}

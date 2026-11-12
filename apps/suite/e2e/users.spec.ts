@@ -34,7 +34,9 @@ const members = (page: Page) =>
 const member = (page: Page, name: string) => members(page).filter({ hasText: name });
 
 /** The toasts of the page (a polite live region). */
-const toasts = (page: Page) => page.getByRole('region', { name: 'Status messages' });
+/** The toast region, named in the page's language. */
+const toasts = (page: Page) =>
+  page.getByRole('region', { name: /^(Status messages|رسائل الحالة)$/ });
 
 /** Opens a person's ⋯ menu on Team members and picks an entry. */
 async function rowAction(page: Page, name: string, testId: string) {
@@ -319,7 +321,8 @@ test.describe('users pages', () => {
     await page.keyboard.press('Escape');
     const discard = page.getByTestId('discard-dialog');
     await expect(discard).toContainText('Discard your changes?');
-    await discard.getByRole('button', { name: 'Keep editing' }).click();
+    // The dialog's close button carries the same name (closing keeps editing): the footer button is last.
+    await discard.getByRole('button', { name: 'Keep editing' }).last().click();
     await expect(panel).toBeVisible();
 
     // Sarah's employee number is taken: the field says so and nothing is saved
@@ -334,6 +337,20 @@ test.describe('users pages', () => {
       .getByRole('textbox', { name: /Family name/ })
       .nth(0)
       .fill('Alshehri');
+    // The other language is all or nothing (WP-FIX-01 review): Khalid's whole Arabic name sat in «First
+    // name», so the admin splits it as the hint says — a name change with the family name empty is refused.
+    await form
+      .getByRole('textbox', { name: /First name/ })
+      .nth(1)
+      .fill('خالد');
+    await form
+      .getByRole('textbox', { name: /Father's name/ })
+      .nth(1)
+      .fill('إبراهيم');
+    await form
+      .getByRole('textbox', { name: /Family name/ })
+      .nth(1)
+      .fill('الشهري');
     await page.getByTestId('edit-user-save').click();
     await expect(form.getByText('This employee number belongs to someone else')).toBeVisible();
 
@@ -449,9 +466,25 @@ test.describe('users pages', () => {
     await expect(panel.getByRole('radio', { name: /^Organization Admin/ })).toBeEnabled();
     await expectNoSeriousA11yViolations(page);
 
-    // Department Head: the hint about the departments the person heads.
+    // Department Head (WP-FIX-03; PO, 12 Nov 2026): the role makes Sarah the head of HER OWN department
+    // — the panel says so instead of asking, whoever gives the role (here the Organization Admin, who
+    // does not manage the structure); another department can still be chosen. Not saved here: the tests
+    // below read Sarah's role.
     await panel.getByRole('radio', { name: /^Department Head/ }).check();
-    await expect(panel.getByTestId('role-departments-hint')).toBeVisible();
+    const headField = panel.getByTestId('head-unit-field');
+    await expect(headField).toContainText('Becomes the head of Academy (Section)');
+    await expect(headField.getByText('Head of which department?')).toHaveCount(0);
+    const headOf = headField.getByLabel('Head of', { exact: true });
+    await expect(headOf.locator('option:checked')).toHaveText('Academy (Section)');
+    await headOf.selectOption({ label: 'Training and development (Department)' });
+    // Another department is a question again; this one has a head (the Organization Admin).
+    // By its test id: the question's own hint also says «…becomes the head of this department…».
+    await expect(headField.getByTestId(/-becomes$/)).toHaveCount(0);
+    await expect(headField.getByText('Head of which department?')).toBeVisible();
+    await expect(headField).toContainText(
+      'Training and development (Department) already has a head',
+    );
+    await expectNoSeriousA11yViolations(page);
     await panel.getByRole('radio', { name: /^L&D Manager/ }).check();
     await panel.getByRole('button', { name: 'Save role' }).click();
     await expect(panel).toBeHidden();
@@ -572,7 +605,11 @@ test.describe('users pages', () => {
     // Leaving with unsaved changes asks first.
     await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link').first().click();
     await expect(page.getByTestId('discard-dialog')).toBeVisible();
-    await page.getByTestId('discard-dialog').getByRole('button', { name: 'Keep editing' }).click();
+    await page
+      .getByTestId('discard-dialog')
+      .getByRole('button', { name: 'Keep editing' })
+      .last()
+      .click();
     await page.getByTestId('save-bar').getByRole('button', { name: 'Save role' }).click();
     await expect(page).toHaveURL(/\/en\/suite\/admin\/roles$/);
     await expect(toasts(page)).toContainText('Role saved.');
@@ -607,6 +644,8 @@ test.describe('users pages', () => {
     await expect(page.getByRole('menuitem', { name: /Delete role/ })).toBeDisabled();
     await page.keyboard.press('Escape');
     await row.getByRole('link', { name, exact: true }).click();
+    // The address changes after the click (a client-side navigation): wait for it before reading it.
+    await page.waitForURL(/\/roles\/custom_[0-9a-f]{12}$/);
     const code = /\/roles\/(custom_[0-9a-f]{12})$/.exec(page.url())?.[1] ?? '';
     expect(code).toMatch(/^custom_[0-9a-f]{12}$/);
     await page.goto(`/ar/suite/admin/roles/${code}`);

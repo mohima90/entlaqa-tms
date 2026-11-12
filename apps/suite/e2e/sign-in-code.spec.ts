@@ -115,6 +115,10 @@ for (const locale of ['ar', 'en'] as const) {
 
       // Four more wrong codes: the fifth kills the code and pauses checks - the boxes stop, the password is offered.
       for (let i = 0; i < 4; i += 1) {
+        // The boxes come back (emptied, enabled) a moment after the answer shows: type only then — a key
+        // pressed into a box that is still disabled is lost.
+        await expect(page.locator('#sign-in-code-1')).toBeEnabled();
+        await expect(page.locator('#sign-in-code-1')).toHaveValue('');
         await page.locator('#sign-in-code-1').focus();
         await page.keyboard.type('111111');
         await page.getByRole('button', { name: t.submit }).click();

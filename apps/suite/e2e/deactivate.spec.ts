@@ -42,7 +42,9 @@ async function signIn(
 }
 
 /** The toasts of the page (a polite live region). */
-const toasts = (page: Page) => page.getByRole('region', { name: 'Status messages' });
+/** The toast region, named in the page's language. */
+const toasts = (page: Page) =>
+  page.getByRole('region', { name: /^(Status messages|رسائل الحالة)$/ });
 
 /** The profile's «Actions ▾» → «Deactivate user»: the dialog over the profile. */
 async function openDeactivate(page: Page) {
@@ -219,8 +221,9 @@ test.describe('deactivate and reactivate members', () => {
       .filter({ visible: true })
       .filter({ hasText: 'ريم ناصر العتيبي' });
     await row.getByRole('button', { name: /^إعادة التفعيل/ }).click();
-    // The confirmation is kept (it gives sign-in back).
-    const dialog = page.getByTestId('reactivate-dialog');
+    // The confirmation is kept (it gives sign-in back). Every row carries its own dialog (two people are
+    // deactivated here, each in the table and in the phone cards): the open one.
+    const dialog = page.locator('[data-testid="reactivate-dialog"][open]');
     await expect(dialog).toContainText(
       'إعادة تفعيل حساب ريم ناصر العتيبي؟ يعود الدخول إلى المنشأة بالأدوار نفسها.',
     );
@@ -238,7 +241,8 @@ test.describe('deactivate and reactivate members', () => {
     await page.getByTestId('reactivate-button').click();
     const dialog = page.getByTestId('reactivate-dialog');
     await expect(dialog).toContainText("Reactivate Huda Ali Alqarni's account?");
-    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    // The dialog's close button carries the same name (closing cancels): the footer button is last.
+    await dialog.getByRole('button', { name: 'Cancel' }).last().click();
     await expect(page.getByTestId('reactivate-button')).toBeFocused();
     await page.getByTestId('reactivate-button').click();
     await dialog.getByTestId('reactivate-confirm').click();

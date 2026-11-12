@@ -481,6 +481,16 @@ export {
 } from './events';
 export { type PersonalDetails, getPersonalDetails, updatePersonalDetails } from './my-profile';
 export {
+  type SetUnitHeadOutcome,
+  type UnitHead,
+  clearHeadedUnits,
+  getOwnUnitId,
+  listHeadedUnitIds,
+  listUnitHeads,
+  lockUnitHeadChange,
+  setUnitHead,
+} from './unit-heads';
+export {
   type EditableRole,
   type RoleOutcome,
   type RoleRefusal,

@@ -882,6 +882,7 @@ export function BrandingForm(props: BrandingFormProps) {
                 autoComplete="organization"
                 label={t('names.nameEn')}
                 marker={common.required}
+                aria-required
                 hint={t('names.hint')}
                 error={fieldErrors.nameEn}
                 value={values.nameEn}
@@ -897,6 +898,7 @@ export function BrandingForm(props: BrandingFormProps) {
                 lang="ar"
                 label={t('names.nameAr')}
                 marker={common.required}
+                aria-required
                 hint={t('names.hint')}
                 error={fieldErrors.nameAr}
                 value={values.nameAr}

@@ -168,3 +168,51 @@ Once a year the L&D Manager asks every Department Head what training their team 
 - (5) Better than Kawadir: answers validated on the server against the form, Arabic options shown in Arabic, fields can be moved up and down; answers stored by field ID.
 
 Screens: **Planning → Needs forms** (library: cards with default / locked / off badges) and the **form builder** (collapsible sections, field dialog, condition picker, move up/down) — L&D Manager. The department head's needs page renders the cycle's form.
+
+## 13. Simpler plan approval (PO, 12 Nov 2026 — amendment, **agreed in full 12 Nov 2026**; BRD v3.6; replaces §3 E steps 16–20 and the «Approval chain» step of the cycle set-up)
+
+**Why.** After the «simple way» test (`docs/delivery/test-feedback-2026-11-12.md` #4) the PO found the per-cycle approval chain too heavy: «as L&D I open the cycle, departments fill, and once the discussion is complete I submit it to the HR Manager for approval, then the Finance team for confirmation». Kawadir works the same way: approvals go to a **role** (every HR Manager is asked, the first decision settles it) and there is no approval set-up screen.
+
+**The flow.**
+1. L&D Manager opens the cycle; departments fill and submit their needs (§3 C, unchanged).
+2. L&D Manager discusses and consolidates (§3 D, unchanged; «Return for changes» is where a department is asked again).
+3. **L&D Manager → Submit for approval** → the plan is *In approval* and frozen.
+4. **HR Manager approves.** Every member holding the HR Manager role is asked; the first decision settles the step.
+5. **Finance confirms — only if the organization switched this step on.** Every member holding the ready-made **Finance** role is asked; the first decision settles the step.
+6. Approved → the plan is **Approved (v1)** and locked (§3 F, unchanged).
+
+**Decided by the PO (12 Nov 2026).**
+
+| # | Point | Decision |
+|---|---|---|
+| a | Who approves | **By role, not by named person**: the HR Manager role approves |
+| b | Who is «Finance» | A **ready-made Finance role**, given in Team members like any other role |
+| c | Is Finance always asked? | **No — optional per organization** («some enterprises use it and others will not») |
+| d | How the Finance step is switched on | **A switch in Planning settings** («Finance confirms the plan», off by default). On with nobody holding the Finance role → the L&D Manager is warned before submitting |
+| e | The cycle set-up | **No «Approval chain» step**: approval is the same for every cycle (set-up becomes one popup, forms standard rule 9) |
+
+**What follows from it (Claude, for the build of WP-LD-03).**
+- Department heads are **not asked again**: they had their say when they submitted. They are told the result (their department's approved and rejected lines) — replaces the built-in parallel heads step (Q11).
+- One person never approves their own submission: an L&D Manager who also holds the HR Manager role cannot approve the plan they submitted; another HR Manager must (if there is none, the product says so before submitting).
+- The named management approver and the reorderable chain (§3 B «Approval chain», Planning settings default chain) leave R1. Longer chains stay a later, plan-level option (product map row 12 «longer chain»); cycles created before this change keep working — their stored chain is ignored once WP-LD-03 ships.
+- «Replace an absent approver» (Q12) is no longer needed: any holder of the role can decide.
+- Revisions (Q13): the same two steps run again.
+- Audit: submission, every decision with its comment, the switch being turned on or off, and Finance role grants.
+- **Scope note:** a new standard role (Finance) and the simpler FR-PLN-08 / FR-WFL-01 R1 part change the BRD role list and requirement wording — BRD and feature list are updated together when this amendment is agreed in full.
+
+**Last question (answered).**
+
+| # | Question | Proposed answer | PO answer |
+|---|---|---|---|
+| 19 | What can the HR Manager and Finance do with the plan? | **Approve, or send back to the L&D Manager with a comment** (the plan becomes a draft again; after changes it is submitted again and goes through the same steps). No rejecting of single lines by approvers in the first version — the L&D Manager changes the lines after a send-back | **Approved («A», 12 Nov 2026)** |
+
+## 14. Who enters a department's needs (PO, 12 Nov 2026 — amendment to §2 and §3 C)
+
+**Decided (PO, «نسمح له طبعا», 12 Nov 2026):** the needs of a department are entered by its **head as picked in the structure** — its own head, else the nearest head above; a sub-department with its own head belongs to that head — **whatever role that person holds**. A person holds one role, so the HR Manager who also heads Human Resources, an L&D Manager who heads a department, or a head who accepted their invitation as an Employee before they were picked, would otherwise be a head who cannot enter their team's needs.
+
+- The role «Department Head» is what an **Employee** gets automatically when they are picked as a head (it also lets them see their team); a head with another role keeps that role and still enters the needs.
+- Giving the Department Head role in Team members asks «Head of which department?»; a department that has a head asks before replacing.
+- A head keeps their departments with any role **except Employee**: making a head an Employee asks first, and their departments are then left without a head.
+- Heads are picked by members who manage the structure (the HR Manager), or follow from the Department Head role (below). A structure manager may pick themselves as a head — the PO's own example is the HR Manager who heads Human Resources — which is a privileged, audited act. This applies to **every role, the Organization Admin included**: the role itself still carries no training feature (PO, 7 Oct 2026), but an Organization Admin who is the head of a department enters that department's needs as its head. Every other rule (cycle open, deadline, submitted, the envelope shown not blocking) is unchanged.
+- **Giving the Department Head role makes the person the head of their own department** (the department in their record), whoever gives the role — the HR Manager or the Organization Admin (PO, 12 Nov 2026: «he becomes the manager of the department according to what his department is»). The department is asked only when the person has none; a department that already has a head asks before replacing.
+- Built in WP-FIX-03 (migration `20261112100300`, `private.may_submit_plan_needs`; `packages/platform-rbac` `headshipGrant`).

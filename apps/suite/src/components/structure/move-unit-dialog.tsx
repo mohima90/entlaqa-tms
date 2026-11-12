@@ -8,7 +8,7 @@ import { fillText } from '../../lib/fill-text';
 import { unitFieldText } from '../../lib/structure-form';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
-import { failureOf } from './failure';
+import { useFailure } from './use-failure';
 import type { UnitView } from './unit-panel';
 
 export interface MoveUnitDialogProps {
@@ -41,6 +41,7 @@ export function MoveUnitDialog({
     fillText(text(key), values, locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
+  const { actionFailure } = useFailure();
   const [open, setOpen] = useState(true);
   const [pending, startTransition] = useTransition();
   const [search, setSearch] = useState('');
@@ -74,7 +75,13 @@ export function MoveUnitDialog({
 
   function refusal(error: Parameters<typeof sessionRefused>[0]): string | null {
     if (sessionRefused(error)) return null;
-    const failure = failureOf(error, text, errors, unitFieldText);
+    const failure = actionFailure(error, text, errors, unitFieldText);
+    if (failure.latest) {
+      // The page now shows the latest version; the confirmation held the older row (review M4).
+      setOpen(false);
+      if (failure.message) toast.warning(failure.message);
+      return null;
+    }
     return failure.message ?? Object.values(failure.fields)[0] ?? null;
   }
 

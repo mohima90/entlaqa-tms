@@ -419,7 +419,13 @@ export async function reviewStep(
     );
     table = (
       <>
-        <div className="max-h-[36rem] overflow-auto rounded-lg border border-border bg-surface">
+        <div
+          className="max-h-[36rem] overflow-auto rounded-lg border border-border bg-surface focus-visible:outline-2 focus-visible:outline-offset-2"
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrollable region takes focus
+          tabIndex={0}
+          role="region"
+          aria-label={t('review.caption', { tab: t(`review.tabs.${current}`) })}
+        >
           <table className="w-full border-collapse text-start" data-testid="review-table">
             <caption className="sr-only">
               {t('review.caption', { tab: t(`review.tabs.${current}`) })}
@@ -813,7 +819,13 @@ export async function confirmStep(
               labels={optionLabels}
             />
             {roleCounts.size > 0 ? (
-              <div className="overflow-x-auto">
+              <div
+                className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2"
+                // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrollable region takes focus
+                tabIndex={0}
+                role="region"
+                aria-label={t('confirm.rolesCaption')}
+              >
                 <table className="w-full border-collapse text-start">
                   <caption className="sr-only">{t('confirm.rolesCaption')}</caption>
                   <thead className="text-sm text-text-muted">
@@ -1362,7 +1374,13 @@ export async function resultView(
       <Card title={t('result.reportHeading')} data-testid="result-report">
         {report}
         {reasons.length > 0 ? (
-          <div className="mt-4 overflow-x-auto">
+          <div
+            className="mt-4 overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2"
+            // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrollable region takes focus
+            tabIndex={0}
+            role="region"
+            aria-label={t('result.reasonsCaption')}
+          >
             <table className="w-full border-collapse text-start">
               <caption className="mb-2 text-start font-medium">
                 {t('result.reasonsCaption')}

@@ -19,6 +19,7 @@ import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { FlagToast } from '../../../../../components/flag-toast';
 import { PlanningHeader } from '../../../../../components/planning/planning-header';
+import { RefreshOnReturn } from '../../../../../components/latest-version';
 import { SuiteShell } from '../../../../../components/suite-shell';
 import { dayFormatter } from '../../../../../lib/planning-format';
 import { planCyclesListQuery } from '../../../../../lib/planning-queries';
@@ -126,6 +127,7 @@ export default async function PlanningCyclesPage({
         }
       />
       <div className="flex flex-col gap-6">{content}</div>
+      <RefreshOnReturn />
     </SuiteShell>
   );
 }

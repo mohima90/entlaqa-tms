@@ -9,7 +9,9 @@ import { suggestUnitCode, unitDeleteBlockers } from '../../lib/structure-view';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { SelectField } from '../select-field';
-import { type Failure, failureOf } from './failure';
+import type { Failure } from './failure';
+import { LoadLatestVersion } from '../latest-version';
+import { useFailure } from './use-failure';
 
 /** A unit of the tree as the page shows it (names in the page's language, prepared on the server). */
 export interface UnitView {
@@ -109,6 +111,7 @@ export function UnitPanel({
     fillText(text(key), values, locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
+  const { formFailure } = useFailure();
   const [pending, startTransition] = useTransition();
   const [failure, setFailure] = useState<Failure>({ fields: {}, message: null });
   // Closing goes through the native dialog (focus returns to the button that opened it).
@@ -197,6 +200,19 @@ export function UnitPanel({
       if (result.ok) {
         const name = locale === 'en' ? fields.nameEn.trim() : fields.nameAr.trim();
         router.refresh();
+        // The new head and the Department Head role (WP-FIX-03, «either door does both»): said at once.
+        const headRole = result.value.headRole ?? null;
+        if (headRole && headRole.kind !== 'already') {
+          const head = peopleChoices.find((p) => p.value === headRole.personId)?.label ?? '';
+          const key = {
+            given: 'toasts.headRole.given',
+            kept: 'toasts.headRole.kept',
+            not_allowed: 'toasts.headRole.notAllowed',
+            no_account: 'toasts.headRole.noAccount',
+          }[headRole.kind];
+          if (headRole.kind === 'given') toast.success(fill(key, { name: head }));
+          else toast.info(fill(key, { name: head }));
+        }
         if (mode.kind === 'edit') {
           toast.success(text('toasts.saved'));
           setOpen(false);
@@ -207,7 +223,7 @@ export function UnitPanel({
         return;
       }
       if (sessionRefused(result.error)) return;
-      const next = failureOf(result.error, text, errors, unitFieldText);
+      const next = formFailure(result.error, text, errors, unitFieldText);
       setFailure(next);
       // A refused field under «More options» is shown, not hidden.
       const hidden = next.fields.code
@@ -476,6 +492,7 @@ export function UnitPanel({
           {failure.message ? (
             <Alert tone="danger" data-testid="unit-dialog-message">
               {failure.message}
+              <LoadLatestVersion message={failure.message} />
             </Alert>
           ) : null}
           {unit && (onStatus || onDelete) ? (

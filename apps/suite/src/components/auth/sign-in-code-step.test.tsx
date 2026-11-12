@@ -88,7 +88,7 @@ function mount(ui: ReactNode) {
   return container;
 }
 
-/** The boxes use `requestAnimationFrame` to move focus; let those frames run. */
+/** Lets pending effects and timers run (the focus itself moves at once, with the change). */
 async function frames() {
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 40));
@@ -205,6 +205,19 @@ describe.each(['en', 'ar'] as const)('sign-in code screen (%s)', (locale) => {
     typeInto(box(2), '2');
     await frames();
     expect(document.activeElement).toBe(box(3));
+  });
+
+  it('keeps every digit typed faster than the screen redraws (no frame between the keys)', () => {
+    setup(locale);
+    // Each key goes where the focus is at that moment, as in a browser; nothing waits for a frame.
+    for (const digit of '123456') {
+      typeInto(document.activeElement as HTMLInputElement, digit);
+    }
+    expect(
+      boxes()
+        .map((b) => b.value)
+        .join(''),
+    ).toBe('123456');
   });
 
   it('fills all six boxes from a pasted code', async () => {

@@ -12,7 +12,9 @@ import { levelFieldText } from '../../lib/structure-form';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { ConfirmDialog } from './confirm-dialog';
-import { type Failure, failureOf } from './failure';
+import type { Failure } from './failure';
+import { LoadLatestVersion } from '../latest-version';
+import { useFailure } from './use-failure';
 
 /** A level as the page shows it. */
 export interface LevelView {
@@ -61,6 +63,7 @@ export function LevelsCard(props: LevelsCardProps) {
     fillText(text(key), values, locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
+  const { actionFailure } = useFailure();
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const last = levels.at(-1);
   const full = levels.length >= props.maxLevels;
@@ -232,7 +235,13 @@ export function LevelsCard(props: LevelsCardProps) {
               return null;
             }
             if (sessionRefused(result.error)) return null;
-            const failure = failureOf(result.error, text, props.errors, levelFieldText);
+            const failure = actionFailure(result.error, text, props.errors, levelFieldText);
+            if (failure.latest) {
+              // The page now shows the latest version; this confirmation held the older level (review M4).
+              // Returning null closes the dialog the native way, so the focus goes back (second look L4).
+              if (failure.message) toast.warning(failure.message);
+              return null;
+            }
             const message = failure.message ?? Object.values(failure.fields)[0] ?? null;
             // The count of a level in use comes formatted from the server.
             return message === text('levels.inUse') ? dialog.level.inUseLabel : message;
@@ -266,8 +275,9 @@ function LevelDialog({
   readonly errors: ErrorTexts;
   readonly onClose: () => void;
   readonly onSaved: (message: string) => void;
-  readonly sessionRefused: (error: Parameters<typeof failureOf>[0]) => boolean;
+  readonly sessionRefused: ReturnType<typeof useSessionRefusal>;
 }) {
+  const { formFailure } = useFailure();
   const [open, setOpen] = useState(true);
   const [pending, startTransition] = useTransition();
   const [failure, setFailure] = useState<Failure>({ fields: {}, message: null });
@@ -291,7 +301,7 @@ function LevelDialog({
         return;
       }
       if (sessionRefused(result.error)) return;
-      setFailure(failureOf(result.error, text, errors, levelFieldText));
+      setFailure(formFailure(result.error, text, errors, levelFieldText));
     });
   }
 
@@ -343,6 +353,7 @@ function LevelDialog({
         {failure.message ? (
           <Alert tone="danger" data-testid="level-dialog-message">
             {failure.message}
+            <LoadLatestVersion message={failure.message} />
           </Alert>
         ) : null}
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

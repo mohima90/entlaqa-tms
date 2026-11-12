@@ -121,6 +121,7 @@ describe('roleErrorKey', () => {
     expect(roleErrorKey('ROLE_CONFLICT')).toBe('roleNotAllowed');
     expect(roleErrorKey('ROLE_UNKNOWN')).toBe('roleUnknown');
     expect(roleErrorKey('LAST_ADMIN')).toBe('lastAdmin');
+    expect(roleErrorKey('HEADS_NOT_YOURS')).toBe('headsNotYours');
     expect(roleErrorKey('INVALID_FORMAT')).toBe('roleRequired');
   });
 });

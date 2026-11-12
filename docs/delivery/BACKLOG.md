@@ -26,6 +26,25 @@
 |---|---|---|---|---|---|
 | T-M3-17 | **Clean-up pass** (role play, 27 Oct 2026): one word per thing (word list approved by the PO, applied EN + AR, «unit» → the level's own name); wider dialogs and panels, needed fields first; brand colours on every page for every role (stylesheet instead of the nonce'd inline style — bug); logo without the box; bigger 2FA QR; searchable country list; a new unit takes its parent's branch; Grades placement and the delivery-type list as the PO decides | WP-FIX-02 | Claude | 🟡 PR open (27 Oct 2026: all 13 feedback points handled; forms standard `docs/design/forms-standard.md`) | FR-ADM-07, FR-ADM-05, FR-CAT-01, FR-IAM-11. One PR; no data changes; migration only if the delivery-type check changes (`202611031xxxxx`) |
 
+#### WP-FIX-03 «Simple way» test fixes (12 Nov 2026)
+
+**Claimed by:** Claude (branch `claude/youthful-davinci-00yhgl`, 12 Nov 2026) · **Business flow:** not needed — fixes approved by the PO («Fixes first», 12 Nov 2026; `test-feedback-2026-11-12.md` #1–3) · **Depends on:** — (the nightly self-hosted gate, issue #95, is repaired in this same work package)
+
+| ID | Task | WP | Owner | Status | Notes / PR |
+|---|---|---|---|---|---|
+| T-M3-18 | **«Simple way» test fixes 1–3**: the Department Head role and a department's «Head» set each other (either door does both; replacing asks, removing warns; import and deactivation follow); a refused change from an older copy of a page loads the latest version by itself, pages reload when the tab is shown again; the cycle's set-up asks for the name in the default language only (the other language optional); a red asterisk marks required fields on every form instead of «(required)» (PO, 12 Nov 2026) | WP-FIX-03 | Claude | 🟣 In review (PR #100, 12 Nov 2026) | FR-ADM-05, FR-IAM-03/04, FR-PLN-02, FR-PLN-03. Four fixes + the PO's two decisions of 12 Nov 2026 (a department's head enters its needs whatever their role; the Department Head role makes the person the head of their own department, whoever gives it) on the branch; migrations `20261112100000`–`100400`. Review 0 Critical / 1 High (fixed, confirmed closed by the second look) / Mediums and Lows fixed. Security look at the role-giver database rule done (no Critical / High / Medium; Lows → T-M3-22). Nightly gate (issue #95) repaired on the same branch: `infra/docker/smoke.sh` passes end to end locally, ten product defects it had hidden fixed (STATUS §6, 12 Nov 2026). Lead checks green on the final state. PR #100 opened on the PO's «yes» (12 Nov 2026) |
+| T-M3-22 | **Head rule: follow-ups from the security look** (12 Nov 2026; all Low, no privilege or tenant-isolation hole): (1) revoking the invitation of an invited Department Head leaves them as the department's head — clear it on revoke and do not count an expired invitation; (2) the deactivation hand-over lets the new head be anyone in the candidate list, with or without the Department Head role — bind the database rule to a leaver and to people the actor manages; (3) more refusal tests: role validity dates, a suspended membership, a revoked or expired invitation, a clear by a member who may deactivate but not give roles, an inactive department | WP-FIX-03 | Claude | ⚪ To do (after the WP-FIX-03 merge) | FR-ADM-05, FR-IAM-03/04/05. Migration range of the next work package; one PR with its own review |
+
+#### WP-UX-01 The Kawadir experience across the product (PO, 12 Nov 2026)
+
+**Claimed by:** Claude (12 Nov 2026) · **Business flow:** not needed — the pattern is `docs/design/forms-standard.md` rules 8–9, approved by the PO from the «Cycle set-up pilot» mock-up (12 Nov 2026) and extended to the whole product the same day · **Depends on:** WP-FIX-03 merged; the cycle set-up part also on EP-PLN §13 agreed in full
+
+| ID | Task | WP | Owner | Status | Notes / PR |
+|---|---|---|---|---|---|
+| T-M3-19 | **Inventory and roll-out order**: every create / add / invite / edit interaction, how it is presented today (dialog, side panel, wizard, full page), what changes to reach the Kawadir pattern, size, tests to update | WP-UX-01 | Claude | 🟢 | Done 12 Nov 2026: `docs/design/kawadir-rollout.md` (39 interactions; five waves: pilot + foundations → organization set-up → L&D → platform → settings pages and lists) |
+| T-M3-20 | **Pilot: planning cycle set-up** — one popup to create, launch from the row menu with a confirmation, an optional settings page; the «Approval chain» step leaves the cycle (EP-PLN §13) | WP-UX-01 | Claude | ⚪ | FR-PLN-02. After WP-FIX-03 and EP-PLN §13 |
+| T-M3-21 | **Roll-out to every other create / add / invite / edit interaction** in the order of T-M3-19; screenshots EN + AR to the PO before each PR merges | WP-UX-01 | Claude | ⚪ | FR-STE-08; no behaviour or data changes |
+
 #### WP-FIX-01 Test feedback fixes 1–3
 
 **Claimed by:** tech lead session (17 Oct 2026) · **Business flow:** not needed — fixes approved by the PO (`test-feedback-2026-10-17.md` #1–3) · **Depends on:** —

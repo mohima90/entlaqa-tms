@@ -1,5 +1,5 @@
 'use client';
-import { FieldError, Icon, cn, fieldInputClasses } from '@jadarat/ui';
+import { FieldError, FieldMarker, Icon, cn, fieldInputClasses } from '@jadarat/ui';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 
 export interface ComboboxOption {
@@ -97,7 +97,7 @@ export function ComboboxField({
         className="flex flex-wrap items-center gap-x-1 gap-y-1 text-sm font-semibold"
       >
         {label}
-        {marker ? <span className="font-normal text-text-subtle">{marker}</span> : null}
+        <FieldMarker marker={marker} required={required === true} className="" />
         {tag}
       </label>
       <div className="relative">

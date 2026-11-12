@@ -1061,8 +1061,10 @@ unset ADMIN_KEY
 # before and after (no other organization touched).
 [[ "$(q "select s.country_code || ':' || s.industry || ':' || s.currency_code || ':' || s.timezone || ':' || s.date_display || ':' || s.default_locale || ':' || s.fiscal_year_start_month || ':' || array_to_string(s.working_days, ',') || ':' || (s.updated_by is not null) || ':' || (s.version >= 3) from platform.tenant_settings s join platform.tenants t on t.id = s.tenant_id where t.slug = 'sovereign-smoke'")" == "SA:banking_financial:SAR:Asia/Riyadh:hijri:en:4:0,1,2,3,4,6:true:true" ]] ||
   { echo "smoke: the organization profile was not saved as the journey set it" >&2; exit 1; }
-[[ "$(q "select name_en || '|' || name_ar from platform.tenants where slug = 'sovereign-smoke'")" == "Sovereign Smoke Holding|شركة الاختبار السيادي القابضة المحدودة" ]] ||
-  { echo "smoke: the organization's display names were not saved" >&2; exit 1; }
+# The display names are edited on Branding since WP-ADM-02 (FR-ADM-02): saving General settings leaves
+# them as provisioned.
+[[ "$(q "select name_en || '|' || name_ar from platform.tenants where slug = 'sovereign-smoke'")" == "Sovereign Smoke|منشأة الاختبار السيادي" ]] ||
+  { echo "smoke: saving General settings changed the organization's display names" >&2; exit 1; }
 [[ "$(q "select count(*) from platform.audit_events where action = 'platform.tenant.profile_changed' and actor_user_id = '$USER_ID' and data -> 'changed' ? 'countryCode' and data -> 'before' ->> 'dateDisplay' = 'gregorian' and data -> 'after' ->> 'dateDisplay' = 'dual'")" == "1" &&
    "$(q "select count(*) from platform.audit_events where action = 'platform.tenant.profile_changed'")" == "2" ]] ||
   { echo "smoke: expected the two profile changes in the audit log, with the values before and after" >&2; exit 1; }

@@ -34,6 +34,7 @@ import { NEEDS_TONE } from '../../lib/needs-view';
 import { dayFormatter, formatAmount } from '../../lib/planning-format';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
+import { LoadLatestVersion, useFormBase, useLatestVersion } from '../latest-version';
 import { NeedsFormRenderer, type NeedsFormAnswers } from '../needs-forms/needs-form-renderer';
 import { NeedPanel } from './need-panel';
 import { useNeedsTexts } from './use-needs-texts';
@@ -65,6 +66,19 @@ export function NeedsPage(props: NeedsPageProps) {
   const { t, message, fieldErrors } = useNeedsTexts(props.texts, props.errors, locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
+  const latestVersion = useLatestVersion();
+  /**
+   * How a refused action reads. From an older copy of the page (WP-FIX-03; PO, 12 Nov 2026) the latest
+   * version is loaded here, by itself, and the text says so: nobody is asked to refresh by hand.
+   */
+  const messageOrLatest = (error: Parameters<typeof message>[0]) =>
+    latestVersion.refresh(error, message(error)) ?? message(error);
+  /**
+   * The same for a dialog that holds typed text (the note of «Return for changes»): nothing is reloaded
+   * under it — the note stays and «Load the latest version» is offered (second look L5).
+   */
+  const messageOrOffer = (error: Parameters<typeof message>[0]) =>
+    latestVersion.offer(error, message(error)) ?? message(error);
   const day = dayFormatter(locale, props.display);
   const amount = (value: string | number) => formatAmount(locale, value, view.cycle.currency);
   const when = (iso: string) =>
@@ -84,6 +98,9 @@ export function NeedsPage(props: NeedsPageProps) {
   const [recalling, setRecalling] = useState(false);
   const [returning, setReturning] = useState(false);
   const [extending, setExtending] = useState(false);
+  // «Return for changes» is for a submitted department: once the page no longer offers it (the head
+  // recalled, someone else returned it), the question closes with it (second look L5).
+  if (returning && !view.can.return) setReturning(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -108,7 +125,7 @@ export function NeedsPage(props: NeedsPageProps) {
         return;
       }
       if (sessionRefused(result.error)) return;
-      setNotice(message(result.error));
+      setNotice(messageOrLatest(result.error));
     });
   }
 
@@ -498,7 +515,14 @@ export function NeedsPage(props: NeedsPageProps) {
           if (!pending) setRemoving(null);
         }}
         title={t('page.removeTitle')}
-        description={removing ? t('page.removeBody', { topic: removing.topic }) : undefined}
+        description={
+          removing
+            ? t('page.removeBody', {
+                // The need as the page holds it now (its topic may have changed; second look L7).
+                topic: (view.needs.find((n) => n.id === removing.id) ?? removing).topic,
+              })
+            : undefined
+        }
         closeLabel={t('panel.close')}
         size="sm"
         tone="danger"
@@ -519,7 +543,13 @@ export function NeedsPage(props: NeedsPageProps) {
               disabled={pending}
               onClick={() => {
                 if (!removing) return;
-                const need = removing;
+                // The need as the page holds it now: after an automatic reload the confirmation would
+                // otherwise send the older version again and be refused again (review M4).
+                const need = view.needs.find((n) => n.id === removing.id);
+                if (!need) {
+                  setRemoving(null);
+                  return;
+                }
                 run(
                   () =>
                     deleteNeedAction({
@@ -673,7 +703,7 @@ export function NeedsPage(props: NeedsPageProps) {
           departmentLabel={props.departmentLabel}
           departmentRef={ref}
           t={t}
-          message={message}
+          message={messageOrOffer}
           fieldErrors={fieldErrors}
           sessionRefused={sessionRefused}
         />
@@ -692,7 +722,7 @@ export function NeedsPage(props: NeedsPageProps) {
           periodEnd={view.cycle.periodEnd}
           day={day}
           t={t}
-          message={message}
+          message={messageOrLatest}
           fieldErrors={fieldErrors}
           sessionRefused={sessionRefused}
         />
@@ -763,6 +793,17 @@ function DepartmentAnswers({
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
   const [answers, setAnswers] = useState<NeedsFormAnswers>(view.answers as NeedsFormAnswers);
+  // Unsaved answers: the page does not reload itself over them (RefreshOnReturn, WP-FIX-03).
+  const [unsaved, setUnsaved] = useState(false);
+  // Untouched answers follow the latest copy the page loads (a row action, coming back to the tab);
+  // typed answers stay as they are (review H1).
+  useFormBase(
+    { version: view.department.version, initial: view.answers },
+    () => unsaved,
+    (latest) => {
+      setAnswers(latest as NeedsFormAnswers);
+    },
+  );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -815,6 +856,7 @@ function DepartmentAnswers({
               });
               if (result.ok) {
                 setErrors({});
+                setUnsaved(false);
                 toast.success(t('page.departmentAnswersSaved'));
                 router.refresh();
                 return;
@@ -832,17 +874,24 @@ function DepartmentAnswers({
         </Button>
       }
     >
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3" data-unsaved={unsaved ? 'true' : undefined}>
         {notice ? <Alert tone="danger">{notice}</Alert> : null}
-        <NeedsFormRenderer
-          form={form}
-          locale={locale}
-          answers={answers}
-          onChange={setAnswers}
-          texts={formTexts}
-          errors={errors}
-          idPrefix="dept"
-        />
+        {/* Nothing is typed while a save is on its way: the saved answers are exactly what was sent, and
+            «unsaved» is never cleared over newer typing (second look L1). */}
+        <fieldset disabled={pending} className="m-0 min-w-0 border-0 p-0">
+          <NeedsFormRenderer
+            form={form}
+            locale={locale}
+            answers={answers}
+            onChange={(next) => {
+              setAnswers(next);
+              setUnsaved(true);
+            }}
+            texts={formTexts}
+            errors={errors}
+            idPrefix="dept"
+          />
+        </fieldset>
       </div>
     </Card>
   );
@@ -913,7 +962,12 @@ function ReturnDialog(props: {
       }
     >
       <div className="flex flex-col gap-3">
-        {notice ? <Alert tone="danger">{notice}</Alert> : null}
+        {notice ? (
+          <Alert tone="danger">
+            {notice}
+            <LoadLatestVersion message={notice} />
+          </Alert>
+        ) : null}
         <div className="flex flex-col gap-1.5">
           <label htmlFor="needs-return-note" className="text-sm font-semibold">
             {t('manager.returnLabel')}

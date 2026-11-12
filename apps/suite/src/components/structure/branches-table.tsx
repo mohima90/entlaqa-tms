@@ -33,7 +33,7 @@ import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { BranchPanel, type BranchPanelProps, type BranchView } from './branch-panel';
 import { ConfirmDialog } from './confirm-dialog';
-import { failureOf } from './failure';
+import { useFailure } from './use-failure';
 import type { Choice } from './unit-panel';
 
 export interface BranchesTableProps {
@@ -85,6 +85,7 @@ export function BranchesTable(props: BranchesTableProps) {
     fillText(text(key), values, locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
+  const { actionFailure } = useFailure();
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [highlight, setHighlight] = useState<string | null>(null);
   const close = () => {
@@ -97,7 +98,13 @@ export function BranchesTable(props: BranchesTableProps) {
 
   function refusal(error: Parameters<typeof sessionRefused>[0]): string | null {
     if (sessionRefused(error)) return null;
-    const failure = failureOf(error, text, props.errors, branchFieldText);
+    const failure = actionFailure(error, text, props.errors, branchFieldText);
+    if (failure.latest) {
+      // The page now shows the latest version; the confirmation held the older row (review M4).
+      // Returning null closes the dialog the native way, so the focus goes back (second look L4).
+      if (failure.message) toast.warning(failure.message);
+      return null;
+    }
     return failure.message ?? Object.values(failure.fields)[0] ?? null;
   }
 

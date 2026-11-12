@@ -35,6 +35,7 @@ import { CycleScopeForm } from '../../../../../../components/planning/cycle-scop
 import { PlanningHeader } from '../../../../../../components/planning/planning-header';
 import { ProgressTable } from '../../../../../../components/planning/progress-table';
 import { SetupStepNav } from '../../../../../../components/planning/setup-step-nav';
+import { RefreshOnReturn } from '../../../../../../components/latest-version';
 import { SuiteShell } from '../../../../../../components/suite-shell';
 import { toDrafts } from '../../../../../../lib/planning-chain';
 import { cycleDepartmentHref } from '../../../../../../lib/needs-view';
@@ -212,6 +213,7 @@ export default async function PlanCyclePage({
     <SuiteShell locale={locale} context={context} current="planningCycles" path={path}>
       <PlanningHeader locale={locale} title={title} description={description} actions={actions} />
       <div className="flex flex-col gap-6">{content}</div>
+      <RefreshOnReturn />
     </SuiteShell>
   );
 }
@@ -294,8 +296,8 @@ async function SetUp({
           locale={locale}
           editing={cycle}
           initial={{
-            nameAr: view.cycle.nameAr,
-            nameEn: view.cycle.nameEn,
+            nameAr: view.cycle.nameAr ?? '',
+            nameEn: view.cycle.nameEn ?? '',
             periodStart: view.cycle.periodStart,
             periodEnd: view.cycle.periodEnd,
             deadline: view.cycle.deadline,
@@ -309,6 +311,7 @@ async function SetUp({
             active: f.active,
           }))}
           currency={view.cycle.currency}
+          nameLanguage={view.nameLanguage}
           texts={texts}
           errors={errors}
           cancelHref={`/${locale}${PLANNING_PATHS.cycles}`}
@@ -377,6 +380,7 @@ async function SetUp({
       form = (
         <CycleStepsForm
           locale={locale}
+          nameLanguage={view.nameLanguage}
           cycle={cycle}
           initial={toDrafts(view.steps)}
           names={approverNames}

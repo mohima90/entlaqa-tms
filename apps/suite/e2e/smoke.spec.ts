@@ -416,3 +416,73 @@ for (const locale of ['en', 'ar'] as const) {
     await expectReadableTables(page);
   });
 }
+
+// WP-FIX-03 (PO, 12 Nov 2026) on the «New planning cycle» form, which renders without data in the preview:
+// a red asterisk marks the required fields instead of the word (forms standard rule 8), and only the name
+// in the organization's default language is required — the other language is optional.
+for (const locale of ['en', 'ar'] as const) {
+  test(`${locale}: required fields carry a red asterisk; the other language's name is optional`, async ({
+    page,
+  }) => {
+    await page.goto(`/${locale}/suite/planning/cycles/new`);
+    const texts =
+      locale === 'en'
+        ? {
+            en: 'Name in English',
+            ar: 'Name in Arabic',
+            required: '(required)',
+            optional: '(optional)',
+          }
+        : {
+            en: 'الاسم بالإنجليزية',
+            ar: 'الاسم بالعربية',
+            required: '(مطلوب)',
+            optional: '(اختياري)',
+          };
+    // English is the default language of an organization (PO, 14 Oct 2026): its name is required and first.
+    const required = page.locator('label[for="cycle-name-en"]');
+    const mark = required.locator('[data-required-mark]');
+    await expect(mark).toHaveText('*');
+    await expect(mark).toBeVisible();
+    await expect(mark).toHaveAttribute('aria-hidden', 'true');
+    // The word is not on screen (visually hidden), yet the accessible name still says it.
+    await expect(required.locator('.sr-only')).toHaveText(texts.required);
+    const box = await required.locator('.sr-only').boundingBox();
+    expect(box === null || (box.width <= 1 && box.height <= 1)).toBe(true);
+    // (By role: the accessible name leaves the hidden asterisk out and keeps the word.)
+    await expect(
+      page.getByRole('textbox', { name: `${texts.en} ${texts.required}`, exact: true }),
+    ).toHaveAttribute('required', '');
+    // The asterisk is red: the danger colour, not the label's own colour.
+    const colours = await required.evaluate((label) => {
+      const star = label.querySelector('[data-required-mark]');
+      return [getComputedStyle(label).color, star ? getComputedStyle(star).color : ''];
+    });
+    expect(colours[1]).not.toBe(colours[0]);
+    // The Arabic name is optional: said in words, no asterisk, not required.
+    const optional = page.locator('label[for="cycle-name-ar"]');
+    await expect(optional).toContainText(texts.optional);
+    await expect(optional.locator('[data-required-mark]')).toHaveCount(0);
+    await expect(page.locator('#cycle-name-ar')).not.toHaveAttribute('required', '');
+    // The required name comes first.
+    const order = await page
+      .locator('#cycle-name-en, #cycle-name-ar')
+      .evaluateAll((inputs) => inputs.map((input) => input.id));
+    expect(order).toEqual(['cycle-name-en', 'cycle-name-ar']);
+    const scan = await new AxeBuilder({ page }).analyze();
+    expect(
+      scan.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical'),
+    ).toEqual([]);
+  });
+}
+
+// WP-FIX-03: pages that show what others may change reload when the person comes back to the tab.
+test('Home, the needs list and the cycles list reload on return to the tab', async ({ page }) => {
+  for (const path of ['/en/suite', '/en/suite/my-team/needs', '/en/suite/planning/cycles']) {
+    await page.goto(path);
+    await expect(page.locator('[data-refresh-on-return]')).toHaveCount(1);
+  }
+  // A settings page with its own form does not.
+  await page.goto('/en/suite/planning/settings');
+  await expect(page.locator('[data-refresh-on-return]')).toHaveCount(0);
+});

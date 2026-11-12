@@ -18,6 +18,7 @@ import { PLANNING_PATHS, cycleHref, fieldErrorKey } from '../../lib/planning-vie
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { ApprovalChainEditor, ReminderDaysEditor } from './chain-editors';
+import { LoadLatestVersion, useFormBase } from '../latest-version';
 import { useUnsavedStep } from './setup-step-nav';
 import { usePlanningTexts } from './use-planning-texts';
 
@@ -31,8 +32,9 @@ interface Common {
 function chainErrors(
   steps: readonly StepDraft[],
   t: (key: string) => string,
+  nameLanguage: 'ar' | 'en',
 ): Record<string, string> {
-  const errors = stepNameErrors(steps, t('setup.fieldErrors.required'));
+  const errors = stepNameErrors(steps, t('setup.fieldErrors.required'), nameLanguage);
   for (const issue of toFieldErrors(chainIssues(fromDrafts(steps), false))) {
     errors[issue.path] ??= t(fieldErrorKey(issue.code));
   }
@@ -105,6 +107,8 @@ export function StepFooter({
 }
 
 export interface CycleStepsFormProps extends Common {
+  /** The language whose step names are required: the organization's default language (PO, 12 Nov 2026). */
+  readonly nameLanguage: 'ar' | 'en';
   readonly cycle: { readonly id: string; readonly version: number };
   readonly initial: readonly StepDraft[];
   /** Names of the active members already named in the chain (C-M3: others are searched). */
@@ -115,19 +119,28 @@ export interface CycleStepsFormProps extends Common {
 
 /** Step 4 — Approval chain of the cycle (business flow B4): copied from the settings, named people. */
 export function CycleStepsForm(props: CycleStepsFormProps) {
-  const { t, message, fieldErrors } = usePlanningTexts(props.texts, props.errors, props.locale);
+  const { t, formMessage, fieldErrors } = usePlanningTexts(props.texts, props.errors, props.locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
   const [steps, setSteps] = useState<StepDraft[]>([...props.initial]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
-  useUnsavedStep(chainShape(steps) !== chainShape(props.initial));
+  // The steps and the version they were read at stay together (review H1).
+  const base = useFormBase(
+    { version: props.cycle.version, initial: props.initial },
+    (initial) => chainShape(steps) !== chainShape(initial),
+    (initial) => {
+      setSteps([...initial]);
+      setErrors({});
+    },
+  );
+  useUnsavedStep(base.dirty);
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     setNotice(null);
-    const found = chainErrors(steps, t);
+    const found = chainErrors(steps, t, props.nameLanguage);
     if (Object.keys(found).length > 0) {
       setErrors(found);
       return;
@@ -135,7 +148,7 @@ export function CycleStepsForm(props: CycleStepsFormProps) {
     startTransition(async () => {
       const result = await savePlanCycleStepsAction({
         id: props.cycle.id,
-        version: props.cycle.version,
+        version: base.version,
         steps: fromDrafts(steps),
       });
       if (result.ok) {
@@ -145,16 +158,22 @@ export function CycleStepsForm(props: CycleStepsFormProps) {
       }
       if (sessionRefused(result.error)) return;
       setErrors(fieldErrors(result.error));
-      setNotice(message(result.error));
+      setNotice(formMessage(result.error));
     });
   }
 
   return (
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4" data-testid="cycle-steps">
-      {notice ? <Alert tone="danger">{notice}</Alert> : null}
+      {notice ? (
+        <Alert tone="danger">
+          {notice}
+          <LoadLatestVersion message={notice} />
+        </Alert>
+      ) : null}
       <Card title={t('setup.approvals.title')} description={t('setup.approvals.intro')}>
         <div className="flex flex-col gap-3.5">
           <ApprovalChainEditor
+            nameLanguage={props.nameLanguage}
             locale={props.locale}
             steps={steps}
             onChange={(next) => {
@@ -194,14 +213,23 @@ export interface CycleRemindersFormProps extends Common {
  * continue» saves them and goes on to Review & launch (redesign package 4; before, it saved and stayed).
  */
 export function CycleRemindersForm(props: CycleRemindersFormProps) {
-  const { t, message } = usePlanningTexts(props.texts, props.errors, props.locale);
+  const { t, formMessage } = usePlanningTexts(props.texts, props.errors, props.locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
   const [days, setDays] = useState<string[]>(props.initial.map(String));
   const [error, setError] = useState<string | undefined>(undefined);
   const [notice, setNotice] = useState<string | null>(null);
-  useUnsavedStep(days.join(',') !== props.initial.join(','));
+  // The days and the version they were read at stay together (review H1).
+  const base = useFormBase(
+    { version: props.cycle.version, initial: props.initial },
+    (initial) => days.join(',') !== initial.join(','),
+    (initial) => {
+      setDays(initial.map(String));
+      setError(undefined);
+    },
+  );
+  useUnsavedStep(base.dirty);
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -214,7 +242,7 @@ export function CycleRemindersForm(props: CycleRemindersFormProps) {
     startTransition(async () => {
       const result = await savePlanCycleRemindersAction({
         id: props.cycle.id,
-        version: props.cycle.version,
+        version: base.version,
         reminderDays: parsed.days,
       });
       if (result.ok) {
@@ -223,7 +251,7 @@ export function CycleRemindersForm(props: CycleRemindersFormProps) {
         return;
       }
       if (sessionRefused(result.error)) return;
-      setNotice(message(result.error));
+      setNotice(formMessage(result.error));
     });
   }
 
@@ -234,7 +262,12 @@ export function CycleRemindersForm(props: CycleRemindersFormProps) {
       className="flex flex-col gap-4"
       data-testid="cycle-reminders"
     >
-      {notice ? <Alert tone="danger">{notice}</Alert> : null}
+      {notice ? (
+        <Alert tone="danger">
+          {notice}
+          <LoadLatestVersion message={notice} />
+        </Alert>
+      ) : null}
       <Card title={t('setup.reminders.title')} description={t('setup.reminders.intro')}>
         <div className="flex flex-col gap-4">
           <ReminderDaysEditor
@@ -264,6 +297,8 @@ export function CycleRemindersForm(props: CycleRemindersFormProps) {
 }
 
 export interface PlanningSettingsFormProps extends Common {
+  /** The language whose step names are required: the organization's default language (PO, 12 Nov 2026). */
+  readonly nameLanguage: 'ar' | 'en';
   readonly initialDays: readonly number[];
   readonly initialSteps: readonly StepDraft[];
   /** Names of the active members already named in the chain (C-M3: others are searched). */
@@ -279,7 +314,7 @@ const SETTINGS_FORM = 'planning-settings';
  * changed (Discard / Save settings) and a toast confirms the save.
  */
 export function PlanningSettingsForm(props: PlanningSettingsFormProps) {
-  const { t, message, fieldErrors } = usePlanningTexts(props.texts, props.errors, props.locale);
+  const { t, formMessage, fieldErrors } = usePlanningTexts(props.texts, props.errors, props.locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
@@ -299,7 +334,7 @@ export function PlanningSettingsForm(props: PlanningSettingsFormProps) {
     event.preventDefault();
     setNotice(null);
     const parsed = parseReminderDays(days);
-    const found = chainErrors(steps, t);
+    const found = chainErrors(steps, t, props.nameLanguage);
     setDaysError(parsed.ok ? undefined : t(parsed.key));
     setErrors(found);
     if (!parsed.ok || Object.keys(found).length > 0) return;
@@ -316,7 +351,7 @@ export function PlanningSettingsForm(props: PlanningSettingsFormProps) {
       }
       if (sessionRefused(result.error)) return;
       setErrors(fieldErrors(result.error));
-      setNotice(message(result.error));
+      setNotice(formMessage(result.error));
     });
   }
 
@@ -336,10 +371,16 @@ export function PlanningSettingsForm(props: PlanningSettingsFormProps) {
       className="flex flex-col gap-4"
       data-testid="planning-settings"
     >
-      {notice ? <Alert tone="danger">{notice}</Alert> : null}
+      {notice ? (
+        <Alert tone="danger">
+          {notice}
+          <LoadLatestVersion message={notice} />
+        </Alert>
+      ) : null}
       <div className="grid grid-cols-1 items-start gap-4 2xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
         <Card title={t('settings.chainTitle')} description={t('setup.approvals.intro')}>
           <ApprovalChainEditor
+            nameLanguage={props.nameLanguage}
             locale={props.locale}
             steps={steps}
             onChange={(next) => {

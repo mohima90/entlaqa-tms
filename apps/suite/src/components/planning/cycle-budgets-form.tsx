@@ -8,6 +8,7 @@ import { cycleHref, sumAmounts } from '../../lib/planning-view';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { StepFooter } from './cycle-chain-forms';
+import { LoadLatestVersion, useFormBase } from '../latest-version';
 import { useUnsavedStep } from './setup-step-nav';
 import { usePlanningTexts } from './use-planning-texts';
 
@@ -33,23 +34,31 @@ export interface CycleBudgetsFormProps {
   readonly backHref: string;
 }
 
+const amountsOf = (rows: readonly BudgetRow[]): Record<string, string> =>
+  Object.fromEntries(rows.map((row) => [row.departmentId, row.amount ?? '']));
+
 /**
  * Step 3 — Budget (EP-PLN B4; Q2: optional): a budget envelope per unit in scope, in the
  * organization's currency (BR-PLN-i). Empty = no envelope.
  */
 export function CycleBudgetsForm(props: CycleBudgetsFormProps) {
-  const { t, message, fieldErrors } = usePlanningTexts(props.texts, props.errors, props.locale);
+  const { t, formMessage, fieldErrors } = usePlanningTexts(props.texts, props.errors, props.locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
-  const [amounts, setAmounts] = useState<Record<string, string>>(
-    Object.fromEntries(props.rows.map((row) => [row.departmentId, row.amount ?? ''])),
-  );
+  const [amounts, setAmounts] = useState<Record<string, string>>(() => amountsOf(props.rows));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
-  useUnsavedStep(
-    props.rows.some((row) => (amounts[row.departmentId] ?? '') !== (row.amount ?? '')),
+  // The amounts and the version they were read at stay together (review H1).
+  const base = useFormBase(
+    { version: props.cycle.version, initial: props.rows },
+    (rows) => rows.some((row) => (amounts[row.departmentId] ?? '') !== (row.amount ?? '')),
+    (rows) => {
+      setAmounts(amountsOf(rows));
+      setErrors({});
+    },
   );
+  useUnsavedStep(base.dirty);
   const total = sumAmounts(Object.values(amounts));
   const totalText = new Intl.NumberFormat(`${props.locale}-u-nu-latn`, {
     style: 'currency',
@@ -73,7 +82,7 @@ export function CycleBudgetsForm(props: CycleBudgetsFormProps) {
     startTransition(async () => {
       const result = await savePlanCycleBudgetsAction({
         id: props.cycle.id,
-        version: props.cycle.version,
+        version: base.version,
         budgets: props.rows.map((row) => ({
           departmentId: row.departmentId,
           amount: amounts[row.departmentId] ?? '',
@@ -92,7 +101,7 @@ export function CycleBudgetsForm(props: CycleBudgetsFormProps) {
         if (text) mapped[row.departmentId] = text;
       });
       setErrors(mapped);
-      setNotice(message(result.error));
+      setNotice(formMessage(result.error));
     });
   }
 
@@ -120,7 +129,12 @@ export function CycleBudgetsForm(props: CycleBudgetsFormProps) {
       className="flex flex-col gap-4"
       data-testid="cycle-budgets"
     >
-      {notice ? <Alert tone="danger">{notice}</Alert> : null}
+      {notice ? (
+        <Alert tone="danger">
+          {notice}
+          <LoadLatestVersion message={notice} />
+        </Alert>
+      ) : null}
       <Card title={t('setup.budget.title')} description={t('setup.budget.intro')}>
         <div className="flex flex-col gap-4">
           <p

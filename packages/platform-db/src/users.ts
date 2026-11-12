@@ -90,6 +90,11 @@ export interface UserListRow {
    * the roles are not visible.
    */
   readonly roleScopeUnit: RoleScopeUnit | null;
+  /**
+   * The person's own department (their record's): the one the Department Head role makes them the head of
+   * (PO, 12 Nov 2026); null without one.
+   */
+  readonly departmentId: string | null;
   readonly departmentNameAr: string | null;
   readonly departmentNameEn: string | null;
   /** The unit's level (ordinal): its name labels the field (guided-test feedback #3). */
@@ -176,7 +181,16 @@ export function personScopePredicate(scope: PersonScope, actorPersonId: string |
 function scopeUnitOf(value: RoleScopeUnit | string | null): RoleScopeUnit | null {
   if (value === null) return null;
   const unit = typeof value === 'string' ? (JSON.parse(value) as RoleScopeUnit) : value;
-  return { id: unit.id, nameAr: unit.nameAr, nameEn: unit.nameEn ?? null, active: unit.active };
+  return {
+    id: unit.id,
+    nameAr: unit.nameAr,
+    nameEn: unit.nameEn ?? null,
+    // Its level, so that a unit below the first level is shown with its level's name («Academy ·
+    // Section»; guided-test feedback #3) — it was read and then dropped here (found by the nightly
+    // journeys, issue #95).
+    levelOrdinal: levelOrdinalOf(unit.levelOrdinal),
+    active: unit.active,
+  };
 }
 
 /** `like` pattern for user text: % _ and \ are matched literally (\ is PostgreSQL's default escape). */
@@ -314,6 +328,7 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
     role_name_en: string | null;
     role_version: string | null;
     role_scope_unit: RoleScopeUnit | string | null;
+    department_id: string | null;
     department_name_ar: string | null;
     department_name_en: string | null;
     department_level_ordinal: number | null;
@@ -326,7 +341,7 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
            p.employee_number, m.status, ${roles},
            ${filter.includeManageable ? sql`private.actor_may_manage_person(p.tenant_id, p.id)` : sql`false`} as may_manage,
            ${filter.includeManageable ? sql`private.membership_is_privileged(m.tenant_id, m.id)` : sql`false`} as privileged,
-           d.name_ar as department_name_ar, d.name_en as department_name_en,
+           d.id as department_id, d.name_ar as department_name_ar, d.name_en as department_name_en,
            d.level_ordinal as department_level_ordinal,
            (select max(a.occurred_at) from platform.audit_events a
              where a.actor_user_id = m.user_id and a.action = 'platform.auth.signed_in') as last_sign_in_at,
@@ -354,6 +369,7 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
           : null,
       roleVersion: r.role_version ?? '',
       roleScopeUnit: scopeUnitOf(r.role_scope_unit ?? null),
+      departmentId: r.department_id ?? null,
       departmentNameAr: r.department_name_ar,
       departmentNameEn: r.department_name_en,
       departmentLevelOrdinal: levelOrdinalOf(r.department_level_ordinal),

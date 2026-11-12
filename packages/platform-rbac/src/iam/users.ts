@@ -21,7 +21,7 @@ import type { QueryDefinition } from '../define-query';
 import { personResourceAttributes, personScopeFromGrants } from '../person-scope';
 import { platformPermissions } from '../platform-permissions';
 import { type LifecycleOffer, NO_LIFECYCLE_OFFER, lifecycleOffer } from './deactivation';
-import { ROLE_CODE } from './edit-roles';
+import { type HeadUnitChoices, NO_HEAD_UNITS, ROLE_CODE, loadHeadUnitChoices } from './edit-roles';
 import { type RoleChoice, loadRoleChoices } from './role-catalogue';
 import { NO_SCOPE_UNITS, type ScopeUnitChoices, loadScopeUnitChoices } from './scope-units';
 import { type PersonRecordView, loadPersonRecordView } from './person-record';
@@ -93,6 +93,8 @@ export interface UsersListView {
   readonly canAssignRoles: boolean;
   /** The unit picker of the edit-role dialog for department-limited roles (EP-ORG; with role.assign). */
   readonly scopeUnits: ScopeUnitChoices;
+  /** «Head of which department?» for the Department Head role (WP-FIX-03; with role.assign). */
+  readonly headUnits: HeadUnitChoices;
   /** Privileged roles may be given here (the Organization Admin). */
   readonly canAssignPrivileged: boolean;
   /**
@@ -163,6 +165,7 @@ export function usersListQueryDefinition(): QueryDefinition<
         roles: canReadRoles ? await loadRoleChoices(ctx) : null,
         canAssignRoles,
         scopeUnits: canAssignRoles ? await loadScopeUnitChoices(ctx) : NO_SCOPE_UNITS,
+        headUnits: canAssignRoles ? await loadHeadUnitChoices(ctx, null) : NO_HEAD_UNITS,
         canAssignPrivileged: ctx.can(p['platform.role.assign_privileged'], 'tenant'),
         canEditDetails,
         selfPersonId: ctx.actor.personId ?? null,

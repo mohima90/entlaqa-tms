@@ -129,6 +129,11 @@ describe('default defineAction runtime', () => {
         scope: { type: 'direct_reports' },
         validUntil: new Date('2027-01-01T00:00:00Z'),
       },
+      // The head of a unit enters its training needs whatever their role (PO, 12 Nov 2026).
+      {
+        permission: 'tms.plan_needs.submit',
+        scope: { type: 'org_units', orgUnitIds: ['d1'], includeDescendants: true },
+      },
       // Every member: their own profile (FR-IAM-16).
       { permission: 'platform.profile.manage_own', scope: { type: 'own' } },
     ]);

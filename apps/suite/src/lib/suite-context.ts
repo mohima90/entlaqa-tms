@@ -91,8 +91,8 @@ export interface SuiteNavigationAccess {
   /** Planning → Needs forms (T-M3-10): members who read the needs forms organization-wide. */
   readonly needsForms: boolean;
   /**
-   * My team's needs (WP-LD-01): a Department Head who may enter the needs of the departments they head
-   * (`tms.plan_needs.submit` in any scope — the role grants it for the headed departments).
+   * My team's needs (WP-LD-01): the head of a department enters its needs, whatever their role (PO,
+   * 12 Nov 2026) — `tms.plan_needs.submit` in any scope, which heading a department carries by itself.
    */
   readonly needsEntry: boolean;
   /**

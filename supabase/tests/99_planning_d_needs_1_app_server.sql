@@ -27,21 +27,27 @@ begin
   perform tests.assert_eq(private.plan_department_head(a, 'a3000000-0000-4000-8000-000000000003'),
     'a1000000-0000-4000-8000-000000000c08'::uuid, 'OPS: its own head (set by 99_people_0), a root unit');
 end $$;
--- uA: heads TD in the structure, but the Organization Admin holds no Department Head role.
+-- uA: heads TD in the structure and holds the Organization Admin role, not the Department Head role: the
+-- head of a unit enters its needs whatever their role (PO, 12 Nov 2026; migration 20261112100300) — and
+-- only the needs of the units they head.
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
 do $$
 begin
-  perform tests.assert(not private.may_submit_plan_needs('a0000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001'),
-    'a head without the Department Head role enters nothing (deny by default)');
+  perform tests.assert(private.may_submit_plan_needs('a0000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001'),
+    'the head of TD enters its needs although their role is Organization Admin');
+  perform tests.assert(not private.may_submit_plan_needs('a0000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000004'),
+    'the head of TD never enters SAL''s needs (another head)');
+  perform tests.assert(not private.may_submit_plan_needs('b0000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001'),
+    'never through another organization''s id');
 end $$;
--- uL: the L&D Manager reads and manages cycles, enters no needs.
+-- uL: the L&D Manager reads and manages cycles and heads no unit: enters no needs.
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-00000000e0a1', '10000000-0000-4000-8000-00000000e0a1',
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-00000000e0a1'));
 do $$
 begin
   perform tests.assert(not private.may_submit_plan_needs('a0000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000004'),
-    'the L&D Manager enters no department''s needs');
+    'the L&D Manager, who heads nothing, enters no department''s needs');
 end $$;
 rollback;
 

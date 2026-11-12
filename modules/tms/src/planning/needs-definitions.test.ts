@@ -296,7 +296,7 @@ afterEach(() => {
 
 describe('who may do what (deny by default; the effective head)', () => {
   it.each(['learner', 'hr_manager', 'training_manager', 'training_coordinator', 'tenant_admin'])(
-    '%s enters no needs (403)',
+    '%s who heads no department enters no needs (403)',
     async (role) => {
       const { query, action, audits } = runtime(role);
       const view = await query(defs.departmentNeedsQueryDefinition())({
@@ -310,6 +310,34 @@ describe('who may do what (deny by default; the effective head)', () => {
       expect(!mine.ok && mine.error.code).toBe('FORBIDDEN');
       expect(repo.insertNeed).not.toHaveBeenCalled();
       expect(audits).toEqual([]);
+    },
+  );
+
+  // PO, 12 Nov 2026 (WP-FIX-03): the head of a department enters its needs whatever their role — a
+  // person holds one role, so the HR Manager who heads Human Resources keeps it and is still the head.
+  it.each(['learner', 'hr_manager', 'training_manager', 'training_coordinator', 'tenant_admin'])(
+    '%s who heads Sales enters its needs, and only there',
+    async (role) => {
+      const { query, action } = runtime(role, [SALES]);
+      const view = await query(defs.departmentNeedsQueryDefinition())({
+        cycleId: CYCLE,
+        departmentId: SALES,
+      });
+      expect(view.ok && view.value.role).toBe('head');
+      const mine = await query(defs.myNeedsQueryDefinition())({});
+      expect(mine.ok).toBe(true);
+      // Ops has another head: not theirs, whatever their role (404, as for a Department Head).
+      const ops = await query(defs.departmentNeedsQueryDefinition())({
+        cycleId: CYCLE,
+        departmentId: OPS,
+      });
+      expect(!ops.ok && ops.error.code).toBe('NOT_FOUND');
+      const opsNeed = await action(defs.addNeedActionDefinition())({
+        ...baseNeed,
+        departmentId: OPS,
+      });
+      expect(!opsNeed.ok && opsNeed.error.code).toBe('NOT_FOUND');
+      expect(repo.insertNeed).not.toHaveBeenCalled();
     },
   );
 

@@ -205,7 +205,26 @@ describe('listReplacementCandidates', () => {
       { person_id: 'old', name_ar: 'ع', name_en: null, active: false, department_ids: [] },
     ]);
     expect(await listReplacementCandidates(fake.tx, X)).toEqual([
-      { personId: Y, nameAr: 'ص', nameEn: 'S' },
+      { personId: Y, nameAr: 'ص', nameEn: 'S', self: false },
+    ]);
+  });
+
+  it('marks the member who deactivates: offered for the direct reports, never for the units (second look M3)', async () => {
+    const rows = [
+      { person_id: X, name_ar: 'س', name_en: null, active: true, department_ids: [] },
+      { person_id: Y, name_ar: 'ص', name_en: 'S', active: true, department_ids: ['d1'] },
+      { person_id: 'me', name_ar: 'أنا', name_en: null, active: true, department_ids: ['d2'] },
+    ];
+    expect(await listReplacementCandidates(fakeTx(rows).tx, X, 'me')).toEqual([
+      { personId: Y, nameAr: 'ص', nameEn: 'S', self: false },
+      { personId: 'me', nameAr: 'أنا', nameEn: null, self: true },
+    ]);
+    // Without an actor (a caller that has none) nobody is marked.
+    expect(
+      (await listReplacementCandidates(fakeTx(rows).tx, X, null)).map((c) => [c.personId, c.self]),
+    ).toEqual([
+      [Y, false],
+      ['me', false],
     ]);
   });
 });

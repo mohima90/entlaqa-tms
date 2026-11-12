@@ -92,6 +92,7 @@ export function SectionInspector(props: SectionDialogProps) {
           id="section-name-en"
           label={text('sectionNameEn')}
           marker={text('markerRequired')}
+          aria-required
           dir="ltr"
           maxLength={NEEDS_FORM_LIMITS.nameLength}
           value={values.nameEn}
@@ -104,6 +105,7 @@ export function SectionInspector(props: SectionDialogProps) {
           id="section-name-ar"
           label={text('sectionNameAr')}
           marker={text('markerRequired')}
+          aria-required
           dir="rtl"
           lang="ar"
           maxLength={NEEDS_FORM_LIMITS.nameLength}

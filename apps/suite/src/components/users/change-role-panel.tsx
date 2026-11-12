@@ -5,6 +5,15 @@ import { type SyntheticEvent, useCallback, useId, useState, useTransition } from
 import { updateMemberPrivilegedRolesAction, updateMemberRolesAction } from '../../actions/users';
 import { fillText } from '../../lib/fill-text';
 import {
+  DEPARTMENT_HEAD_ROLE,
+  EMPLOYEE_ROLE,
+  headUnitDefault,
+  type HeadUnitView,
+  NO_HEAD_UNIT_VIEW,
+  headUnitErrorKey,
+  unitLabel,
+} from '../../lib/head-unit';
+import {
   type RoleOption,
   needsScopeUnit,
   readsHeadedDepartments,
@@ -16,6 +25,7 @@ import type { ScopeUnitChoice } from '../../lib/structure-view';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { fieldErrorCodes } from '../profile/field-errors';
+import { HeadConfirmDialog, HeadUnitField, type HeadUnitTexts } from './head-unit-field';
 import type { RoleSelectTexts } from './role-select';
 import { ScopeUnitSelect, type ScopeUnitTexts } from './scope-unit-select';
 
@@ -42,6 +52,9 @@ export interface ChangeRolePanelProps {
   readonly selectTexts: RoleSelectTexts;
   readonly scopeUnits: readonly ScopeUnitChoice[];
   readonly unitTexts: ScopeUnitTexts;
+  /** «Head of which department?» for the Department Head role (WP-FIX-03); absent: never asked. */
+  readonly headUnits?: HeadUnitView | undefined;
+  readonly headTexts?: HeadUnitTexts | undefined;
   /** Texts of namespace `editRoles` (translated on the server; `{name}` / `{role}` filled here). */
   readonly labels: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
@@ -62,6 +75,12 @@ export interface ChangeRolePanelProps {
  * change back through the same action and checks, so it writes its own audit entry (PO, 21 Oct 2026). The
  * PO asked for about 10 seconds; the review of 21 Oct 2026 keeps a toast with an action until it is closed
  * (WCAG 2.2.1 / 2.1.1: keyboard and screen-reader users must be able to reach it).
+ *
+ * «Either door does both» (WP-FIX-03; PO, 12 Nov 2026): the Department Head role makes the person the
+ * head of THEIR OWN department — the panel says «Becomes the head of {department}» and lets another one be
+ * chosen; only a person without a department is asked «Head of which department?». Whoever gives the role
+ * sets the head with it (HR Manager or Organization Admin). A department that has another head asks before
+ * replacing; making a head an Employee warns which departments are left without one.
  */
 export function ChangeRolePanel(props: ChangeRolePanelProps) {
   const { labels, options, target } = props;
@@ -77,6 +96,33 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
   const [roleError, setRoleError] = useState<string | undefined>(undefined);
   const [unitError, setUnitError] = useState<string | undefined>(undefined);
   const withUnit = needsScopeUnit(options, role);
+  // «Head of which department?» (WP-FIX-03).
+  const headUnits = props.headUnits ?? NO_HEAD_UNIT_VIEW;
+  const headTexts = props.headTexts ?? {};
+  const headText = (key: string, values: Record<string, string> = {}) =>
+    fillText(headTexts[key] ?? key, values, props.locale);
+  const [pickedHeadUnit, setHeadUnit] = useState('');
+  const [headError, setHeadError] = useState<string | undefined>(undefined);
+  const [asking, setAsking] = useState<'replace' | 'clear' | null>(null);
+  const picksHead = headUnits.canPick && role === DEPARTMENT_HEAD_ROLE;
+  const headed = headUnits.heads.filter((h) => h.personId === target.personId);
+  // Their own department unless another one is picked (PO, 12 Nov 2026).
+  const headUnit = headUnitDefault({
+    picked: pickedHeadUnit,
+    ownUnitId: headUnits.ownUnitId,
+    headsSomething: headed.length > 0,
+    units: props.scopeUnits,
+  });
+  const unitName = (unitId: string) =>
+    unitLabel(props.scopeUnits.find((u) => u.id === unitId)?.label ?? '');
+  const headedNames = headed.map((h) => unitName(h.unitId)).join(headText('listSeparator'));
+  const replaced =
+    picksHead && headUnit !== ''
+      ? (headUnits.heads.find((h) => h.unitId === headUnit && h.personId !== target.personId) ??
+        null)
+      : null;
+  // A head keeps their departments with any role but Employee (PO, 12 Nov 2026); see edit-roles.ts.
+  const leavesUnits = headUnits.canPick && role === EMPLOYEE_ROLE && headed.length > 0;
   const currentUnitInactive =
     target.currentUnit !== null &&
     role === target.currentRole &&
@@ -125,6 +171,7 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
     setMessage(null);
     setRoleError(undefined);
     setUnitError(undefined);
+    setHeadError(undefined);
     if (role === '') {
       setRoleError(text('roleRequired'));
       return;
@@ -133,11 +180,34 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
       setUnitError(text('unit.unitRequired'));
       return;
     }
+    if (picksHead && headUnit === '' && headed.length === 0) {
+      setHeadError(headText('required'));
+      return;
+    }
     const scopeUnitId = withUnit ? unit : '';
-    if (role === target.currentRole && scopeUnitId === (target.currentUnit ?? '')) {
+    if (
+      role === target.currentRole &&
+      scopeUnitId === (target.currentUnit ?? '') &&
+      !(picksHead && headUnit !== '')
+    ) {
       setMessage({ tone: 'info', text: text('noChanges') });
       return;
     }
+    // A department with another head, or departments left without one: ask first (a small popup).
+    if (replaced) {
+      setAsking('replace');
+      return;
+    }
+    if (leavesUnits) {
+      setAsking('clear');
+      return;
+    }
+    send({ replaceHead: false, clearHeads: false });
+  }
+
+  function send(confirmed: { readonly replaceHead: boolean; readonly clearHeads: boolean }) {
+    const scopeUnitId = withUnit ? unit : '';
+    const headUnitId = picksHead ? headUnit : '';
     const action =
       roleActionPath(options, role, target.currentRole) === 'privileged'
         ? updateMemberPrivilegedRolesAction
@@ -148,13 +218,48 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
         version: target.version,
         role,
         scopeUnitId,
+        headUnitId,
+        replaceHead: confirmed.replaceHead,
+        clearHeads: confirmed.clearHeads,
       });
+      setAsking(null);
       if (result.ok) {
-        // Undo only for someone allowed to give the previous role back (PO, 21 Oct 2026).
+        const { headSet, headsCleared } = result.value;
+        if (headSet !== null || headsCleared.length > 0) {
+          // A head changed with the role: said in the toast; no Undo (the role alone would not undo it).
+          toast.success(
+            headSet !== null
+              ? headText('savedHead', { name: target.name, unit: unitName(headSet.unitId) })
+              : headText('savedCleared', {
+                  units: headsCleared.map(unitName).join(headText('listSeparator')),
+                }),
+          );
+          setShown(false);
+          router.refresh();
+          return;
+        }
+        // A Department Head who heads nothing yet, given by a member who does not see the structure (a
+        // custom role that gives roles without the Organization pages — the HR Manager and the
+        // Organization Admin set the head with the role): say who picks the department.
+        if (
+          role === DEPARTMENT_HEAD_ROLE &&
+          !headUnits.canPick &&
+          headed.length === 0 &&
+          headTexts.savedNoUnit !== undefined
+        ) {
+          toast.info(headText('savedNoUnit', { name: target.name }));
+          setShown(false);
+          router.refresh();
+          return;
+        }
+        // Undo only for someone allowed to give the previous role back (PO, 21 Oct 2026) — and never back
+        // to Department Head: that role asks «Head of which department?», which one click cannot answer
+        // (review L2: the server refused the Undo with a message about a missing department).
         const previous = target.currentRole;
         const undoTo =
           result.value.changed &&
           previous !== null &&
+          previous !== DEPARTMENT_HEAD_ROLE &&
           options.some((o) => o.code === previous && o.assignable)
             ? previous
             : null;
@@ -179,13 +284,27 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
         setUnitError(text(`unit.${scopeUnitErrorKey(unitCode)}`));
         return;
       }
+      // The head changed since the page was loaded: the same questions, from the server's answer.
+      const headCode = fieldErrorCodes(result.error).headUnitId;
+      if (headCode !== undefined) {
+        setHeadError(headText(headUnitErrorKey(headCode)));
+        router.refresh();
+        return;
+      }
+      if (fieldErrorCodes(result.error).role === 'HEADS_LEFT') {
+        router.refresh();
+        setAsking('clear');
+        return;
+      }
       const codes = Object.values(fieldErrorCodes(result.error));
       const first = codes[0];
       if (first !== undefined) {
         const key = roleErrorKey(first);
-        // The last Organization Admin is about the change, not the choice: a message in the panel.
-        if (key === 'lastAdmin') setMessage({ tone: 'danger', text: text(key) });
-        else setRoleError(text(key));
+        // The last Organization Admin, or a head whose departments this member cannot leave without one,
+        // is about the change, not the choice: a message in the panel.
+        if (key === 'lastAdmin' || key === 'headsNotYours') {
+          setMessage({ tone: 'danger', text: text(key) });
+        } else setRoleError(text(key));
         return;
       }
       setMessage({ tone: 'danger', text: errorText(result.error, props.errors) });
@@ -204,9 +323,11 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
         setRole(code);
         setRoleError(undefined);
         setUnitError(undefined);
+        setHeadError(undefined);
         setMessage(null);
         // A unit goes only with a department-limited role (the server refuses it otherwise).
         if (!needsScopeUnit(options, code)) setUnit('');
+        if (code !== DEPARTMENT_HEAD_ROLE) setHeadUnit('');
       }}
       title={option.name}
       description={option.description}
@@ -237,6 +358,25 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
           texts={props.unitTexts}
           error={unitError}
           disabled={pending}
+        />
+      ) : null}
+      {headUnits.canPick && option.code === DEPARTMENT_HEAD_ROLE && role === option.code ? (
+        <HeadUnitField
+          id={`${formId}-head-unit`}
+          value={headUnit}
+          onChange={(id) => {
+            setHeadUnit(id);
+            setHeadError(undefined);
+            setMessage(null);
+          }}
+          units={props.scopeUnits}
+          heads={headUnits.heads}
+          personId={target.personId}
+          ownUnitId={headUnits.ownUnitId}
+          texts={headTexts}
+          error={headError}
+          disabled={pending}
+          locale={props.locale}
         />
       ) : null}
     </ChoiceCard>
@@ -322,7 +462,7 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
               {text('unit.currentInactive')}
             </Alert>
           ) : null}
-          {readsHeadedDepartments(options, role) ? (
+          {readsHeadedDepartments(options, role) && !picksHead ? (
             <Alert tone="info" data-testid="role-departments-hint">
               {text('departmentsHint')}
             </Alert>
@@ -341,6 +481,44 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
           ) : null}
         </form>
       )}
+      <HeadConfirmDialog
+        open={asking === 'replace' && replaced !== null}
+        title={headText('replaceTitle', { unit: unitName(headUnit) })}
+        body={
+          replaced && replaced.name !== ''
+            ? headText('replaceBody', {
+                unit: unitName(headUnit),
+                head: replaced.name,
+                name: target.name,
+              })
+            : headText('replaceBodyUnnamed', { unit: unitName(headUnit), name: target.name })
+        }
+        confirm={headText('replaceConfirm')}
+        cancel={headText('cancel')}
+        busy={pending}
+        onConfirm={() => {
+          send({ replaceHead: true, clearHeads: false });
+        }}
+        onCancel={() => {
+          if (!pending) setAsking(null);
+        }}
+        testId="head-replace-dialog"
+      />
+      <HeadConfirmDialog
+        open={asking === 'clear'}
+        title={headText('clearTitle', { units: headedNames })}
+        body={headText('clearBody', { name: target.name, units: headedNames })}
+        confirm={headText('clearConfirm')}
+        cancel={headText('cancel')}
+        busy={pending}
+        onConfirm={() => {
+          send({ replaceHead: false, clearHeads: true });
+        }}
+        onCancel={() => {
+          if (!pending) setAsking(null);
+        }}
+        testId="head-clear-dialog"
+      />
     </SidePanel>
   );
 }

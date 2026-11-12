@@ -11,6 +11,7 @@ import {
   type StructureUnit,
   addDays,
   basicsIssues,
+  nameIssues,
   canExtendDeadline,
   canRecallNeeds,
   canSubmitNeeds,
@@ -238,13 +239,33 @@ describe('input rules', () => {
     expect(parsed.instructionsAr).toBeNull();
     expect(parsed.instructionsEn).toBe('Hi');
     expect(CreateCycleInput.parse(basics).instructionsEn).toBeNull();
-    expect(CreateCycleInput.safeParse({ ...basics, nameEn: ' ' }).success).toBe(false);
+    // One name may be empty (WP-FIX-03; PO, 12 Nov 2026): which one is required is the handler's rule
+    // (nameIssues, the organization's default language). An empty name is stored as none.
+    expect(CreateCycleInput.parse({ ...basics, nameEn: ' ' }).nameEn).toBeNull();
+    expect(CreateCycleInput.parse({ ...basics, nameAr: '' }).nameAr).toBeNull();
+    expect(CreateCycleInput.parse({ ...basics, nameAr: null }).nameAr).toBeNull();
+    expect(CreateCycleInput.parse({ ...basics, nameAr: '  خطة  ' }).nameAr).toBe('خطة');
+    expect(CreateCycleInput.safeParse({ ...basics, nameAr: '\u200f' }).success).toBe(false);
     expect(CreateCycleInput.safeParse({ ...basics, nameEn: 'a‮b' }).success).toBe(false);
     expect(CreateCycleInput.safeParse({ ...basics, nameAr: 'خ'.repeat(121) }).success).toBe(false);
     expect(CreateCycleInput.safeParse({ ...basics, periodStart: '2027-02-30' }).success).toBe(
       false,
     );
     expect(CreateCycleInput.safeParse({ ...basics, extra: 1 }).success).toBe(false);
+  });
+
+  it('requires the name of the default language only (PO, 12 Nov 2026)', () => {
+    const named = { nameAr: 'خطة', nameEn: 'Plan' };
+    expect(nameIssues('en', named)).toEqual([]);
+    expect(nameIssues('ar', named)).toEqual([]);
+    expect(nameIssues('en', { nameAr: null, nameEn: 'Plan' })).toEqual([]);
+    expect(nameIssues('ar', { nameAr: 'خطة', nameEn: null })).toEqual([]);
+    expect(toFieldErrors(nameIssues('en', { nameAr: 'خطة', nameEn: null }))).toEqual([
+      { path: 'nameEn', code: 'REQUIRED' },
+    ]);
+    expect(toFieldErrors(nameIssues('ar', { nameAr: null, nameEn: 'Plan' }, 'steps.2.'))).toEqual([
+      { path: 'steps.2.nameAr', code: 'REQUIRED' },
+    ]);
   });
 
   it('checks the period and the deadline like the database', () => {

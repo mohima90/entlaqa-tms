@@ -303,11 +303,20 @@ describe('update user details', () => {
     ];
     for (const [refusal, code, path] of cases) {
       db.updateUserDetails.mockResolvedValue({ ok: false, refusal });
+      db.getTenantDefaultLocale.mockClear();
       const result = await createDefineAction(runtime(['tenant_admin']).rt)(
         updateUserDetailsActionDefinition(),
       )(form);
       expect(!result.ok && result.error.code, refusal).toBe(code);
       if (path) expect(!result.ok && result.error.fieldErrors?.[0]?.path).toBe(path);
+      // A database refusal leaves the transaction aborted: nothing is read after it (a read would fail
+      // with 25P02 and the member would see «a problem on our side» instead of the reason). Only «name
+      // required», decided before any statement, asks for the default language.
+      const refusedAt = db.updateUserDetails.mock.invocationCallOrder.at(-1) ?? 0;
+      const readsAfterRefusal = db.getTenantDefaultLocale.mock.invocationCallOrder.filter(
+        (order) => order > refusedAt,
+      ).length;
+      if (refusal !== 'name_required') expect(readsAfterRefusal, refusal).toBe(0);
     }
     db.updateUserDetails.mockResolvedValue({ ok: true, changed: [] });
     const { rt, writeAudit } = runtime(['tenant_admin']);

@@ -66,6 +66,7 @@ test.describe('signed-in flow', () => {
       /^Email settings/,
       /^Security/,
       /^Grades/,
+      /^Subscription/,
     ]);
     // The greeting and the team's figures (each a link to Team members on its tab).
     await expect(page.getByRole('heading', { level: 1 })).toContainText(/^Welcome, /);

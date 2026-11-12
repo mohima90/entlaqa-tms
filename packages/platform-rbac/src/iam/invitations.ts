@@ -7,14 +7,18 @@ import {
   type UserTx,
   createInvitation,
   getInvitationRoles,
+  insertAuditEvent,
   invitationCode,
   listInvitations,
   listManagerOptions,
   listOrgUnitOptions,
   listStructureLevelLabels,
   listStructureUnitOptions,
+  listUnitHeads,
+  lockUnitHeadChange,
   requestInvitationResend,
   revokeInvitation,
+  setUnitHead,
 } from '@jadarat/platform-db';
 import { hasVisibleText, normalizeDigits } from '@jadarat/platform-i18n';
 import { z } from 'zod';
@@ -22,7 +26,13 @@ import type { ActionContext, ActionDefinition } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import type { PermissionDefinition } from '../permissions';
 import { platformPermissions } from '../platform-permissions';
-import { ROLE_CODE } from './edit-roles';
+import {
+  type HeadUnitChoices,
+  ROLE_CODE,
+  loadHeadUnitChoices,
+  maySetRoleHeads,
+} from './edit-roles';
+import { DEPARTMENT_HEAD_ROLE } from './head-role';
 import { namePart, nameRuleError } from './my-profile';
 import { type RoleChoice, canGive, findRole, loadRoleChoices } from './role-catalogue';
 import {
@@ -98,6 +108,11 @@ export const InviteUserInput = z.strictObject({
   role: z.string().max(40).regex(ROLE_CODE),
   // The unit of a custom role limited to «A department» (EP-ORG, T-M3-09); empty for every other role.
   scopeUnitId: ScopeUnitField.default(null),
+  // The unit a new Department Head heads (WP-FIX-03, «either door does both»). Empty means «their own
+  // department» — the Department of this same form (PO, 12 Nov 2026); `replaceHead` once the form asked
+  // about the unit's current head.
+  headUnitId: ScopeUnitField.default(null),
+  replaceHead: z.boolean().default(false),
   locale: z.enum(['ar', 'en']),
 });
 
@@ -148,6 +163,8 @@ export interface InvitationCreated {
   readonly role: string;
   /** The unit given with a department-limited role (EP-ORG), or null. */
   readonly scopeUnitId: string | null;
+  /** The unit the new Department Head heads (WP-FIX-03), and whom they replaced there; or null. */
+  readonly headSet: { readonly unitId: string; readonly replaced: string | null } | null;
   /**
    * The invitation's first code (Kawadir: shown right away with «نسخ الرمز» / «نسخ الرابط») and the
    * language its link opens in. Returned to the inviter only — never audited or logged.
@@ -185,6 +202,7 @@ async function invite(
     personId: created.personId,
     role: input.role,
     scopeUnitId: input.scopeUnitId,
+    headSet: null,
     inviteCode: created.inviteCode,
     locale: input.locale,
     inviteLink: inviteLinkOf(input.locale, created.inviteCode),
@@ -201,6 +219,12 @@ function inviteAction(
     permission,
     input: InviteUserInput,
     handler: async ({ ctx, input }) => {
+      // An invitation that also makes the person a unit's head takes the structure's locks first (the
+      // global lock order: departments → person_employment → role_assignments; WP-FIX-03).
+      // The Department Head role always may: its holder becomes the head of their own department.
+      if (input.role === DEPARTMENT_HEAD_ROLE || input.headUnitId !== null) {
+        await lockUnitHeadChange(ctx.tx);
+      }
       const nameProblem = await nameRuleError(ctx.tx, input);
       if (nameProblem) return err(nameProblem);
       const role = await findRole(ctx.tx, input.role);
@@ -221,8 +245,59 @@ function inviteAction(
         input.scopeUnitId === null ? [] : await listStructureUnitOptions(ctx.tx),
       );
       if (unitProblem) return err(fieldError('scopeUnitId', unitProblem));
+      // «Either door does both» (WP-FIX-03): a Department Head is invited as the head of a unit — the one
+      // picked, else THEIR OWN department, the Department of this form (PO, 12 Nov 2026: «he becomes the
+      // manager of the department according to what his department is»). Whoever gives the role sets the
+      // head with it (`maySetRoleHeads`: the HR Manager and the Organization Admin alike); every rule
+      // before the first write.
+      const becomesHead = role.code === DEPARTMENT_HEAD_ROLE;
+      const managesUnits = await maySetRoleHeads(ctx);
+      if (input.headUnitId !== null && (!becomesHead || !managesUnits)) {
+        return err(fieldError('headUnitId', 'UNIT_NOT_ALLOWED'));
+      }
+      const headUnitId =
+        becomesHead && managesUnits ? (input.headUnitId ?? input.departmentId) : null;
+      // Asked only of a person without a department.
+      if (becomesHead && managesUnits && headUnitId === null) {
+        return err(fieldError('headUnitId', 'HEAD_UNIT_REQUIRED'));
+      }
+      if (headUnitId !== null && !input.replaceHead) {
+        const taken = (await listUnitHeads(ctx.tx)).some((h) => h.unitId === headUnitId);
+        if (taken) return err(fieldError('headUnitId', 'HEAD_TAKEN'));
+      }
       try {
-        return ok(await invite(ctx, input, inviteLinkOf, queueEmail));
+        const created = await invite(ctx, input, inviteLinkOf, queueEmail);
+        if (headUnitId === null) return ok(created);
+        const set = await setUnitHead(ctx.tx, headUnitId, created.personId, {
+          replace: input.replaceHead,
+        });
+        if (!set.ok) {
+          // Nothing is kept: the action's transaction is rolled back with the invitation.
+          return err(
+            fieldError(
+              'headUnitId',
+              set.refusal === 'head_taken'
+                ? 'HEAD_TAKEN'
+                : set.refusal === 'person_not_active'
+                  ? 'HEAD_NOT_ACTIVE'
+                  : set.refusal === 'not_allowed'
+                    ? // The database's refusal: this head is not this member's to change.
+                      'HEAD_NOT_YOURS'
+                    : 'UNIT_NOT_ALLOWED',
+            ),
+          );
+        }
+        await insertAuditEvent(ctx.tx, ctx.actor, {
+          action: 'platform.org.unit_updated',
+          entityType: 'structure_unit',
+          entityId: set.unitId,
+          data: {
+            before: { headPersonId: set.before },
+            after: { headPersonId: created.personId },
+            reason: 'department_head_role',
+          },
+        });
+        return ok({ ...created, headSet: { unitId: set.unitId, replaced: set.before } });
       } catch (error) {
         const code = invitationRefusalCode(error);
         if (code === null) throw error;
@@ -239,6 +314,7 @@ function inviteAction(
         personId: output.personId,
         role: output.role,
         ...(output.scopeUnitId !== null ? { scopeUnitId: output.scopeUnitId } : {}),
+        ...(output.headSet !== null ? { headUnitId: output.headSet.unitId } : {}),
       },
     }),
   };
@@ -489,6 +565,8 @@ export interface InviteFormView {
   readonly roles: readonly RoleChoice[];
   /** The unit picker of department-limited custom roles (EP-ORG, T-M3-09). */
   readonly scopeUnits: ScopeUnitChoices;
+  /** «Head of which department?» for the Department Head role (WP-FIX-03). */
+  readonly headUnits: HeadUnitChoices;
 }
 
 export const InviteFormInput = z.strictObject({});
@@ -518,6 +596,7 @@ export function inviteFormQueryDefinition(): QueryDefinition<
           : 'denied',
         roles: await loadRoleChoices(ctx),
         scopeUnits: await loadScopeUnitChoices(ctx),
+        headUnits: await loadHeadUnitChoices(ctx, null),
       });
     },
   };

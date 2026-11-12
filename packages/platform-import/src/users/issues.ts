@@ -449,6 +449,21 @@ export const ISSUES: Catalogue = {
       'Each person has one role: the additional roles are ignored and only the primary role is given.',
     ),
   },
+  // WP-FIX-03 (PO, 12 Nov 2026): giving the Department Head role makes the person the head of their own
+  // department — in Team members and in an invitation. An import gives the role only: it never changes who
+  // heads a department (a file must not replace heads row by row, and «Undo import» does not put a head
+  // back), so the row says what to do next.
+  HEAD_NOT_SET: {
+    severity: 'w',
+    review: both(
+      'يُسند دور «رئيس القسم»، لكن الاستيراد لا يعيّن رئيسًا لأي إدارة. بعد الاستيراد افتح الشخص من أعضاء الفريق ← تغيير الدور واحفظ فيصبح رئيس إدارته، أو اختر الرئيس من المنظمة ← الإدارات.',
+      'The Department Head role is given, but an import never makes anyone the head of a department. After the import, open the person in Team members → Change role and save (they become the head of their own department), or pick the head in Organization → Departments.',
+    ),
+    result: both(
+      'أُسند دور «رئيس القسم» دون تعيين رئيس لأي إدارة: افتح الشخص من أعضاء الفريق ← تغيير الدور واحفظ فيصبح رئيس إدارته، أو اختر الرئيس من المنظمة ← الإدارات.',
+      'The Department Head role was given without making them the head of a department: open the person in Team members → Change role and save (they become the head of their own department), or pick the head in Organization → Departments.',
+    ),
+  },
 
   // Information (review only).
   ROLE_REPEATED: {

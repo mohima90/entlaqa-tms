@@ -32,7 +32,7 @@ Every pair is checked in light and dark for the shipped theme and for hundreds o
 | `ViewCards` | The status views of a list with big numbers; each a link (own address), the current one on the gradient. Replace the summary cards + tabs on lists (Team members first; other lists adopt them in their packages). |
 | `TabNav variant="underline"` | Views of one object (profile sections). |
 | `ListSearch`, `FilterPill`, `FilterBar`, `SortHeader`, `Pagination`, `TableSkeleton`, `ListCards` / `ListCard` | Table patterns: search pill, filter pills (dashed until set, solid with × when set), sortable headers (`aria-sort`), the range with Previous / Next, loading rows (one status line for screen readers), one card per row on phones. |
-| `TextField`, `FieldError`, `fieldInputClasses` | Label above with «(required)» in words, 48 px input, hint and **error under the field** (`aria-invalid`, described by it). |
+| `TextField`, `FieldError`, `fieldInputClasses` | Label above with a red asterisk when required (`FieldMarker`; the word stays for screen readers — PO, 12 Nov 2026), 48 px input, hint and **error under the field** (`aria-invalid`, described by it). |
 | `FormSection`, `SaveBar` | Two-column settings sections; the floating save bar (unsaved → dark pill with Cancel / Save; saving → busy; at rest "Last changed by …"). |
 | `SidePanel`, `Dialog` (`tone`) | See below. |
 | `EmptyState` (`steps`), `Alert` (`action`), `Badge` (`dot`, `brand`), `Toaster` | First use with numbered steps / no results; banners info · success · warning (with an action) · danger; status pills; dark toasts. |

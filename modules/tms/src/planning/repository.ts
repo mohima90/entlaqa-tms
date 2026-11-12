@@ -68,8 +68,8 @@ export async function organizationToday(tx: UserTx): Promise<string> {
 
 export interface CycleSummaryRow {
   readonly id: string;
-  readonly nameAr: string;
-  readonly nameEn: string;
+  readonly nameAr: string | null;
+  readonly nameEn: string | null;
   readonly periodStart: string;
   readonly periodEnd: string;
   readonly deadline: string;
@@ -97,8 +97,8 @@ export async function listCycles(tx: UserTx): Promise<CycleSummaryRow[]> {
     limit 500`);
   return rows.map((r: Row) => ({
     id: String(r.id),
-    nameAr: String(r.name_ar),
-    nameEn: String(r.name_en),
+    nameAr: text(r.name_ar),
+    nameEn: text(r.name_en),
     periodStart: day(r.period_start_on),
     periodEnd: day(r.period_end_on),
     deadline: day(r.deadline_on),
@@ -113,8 +113,8 @@ export async function listCycles(tx: UserTx): Promise<CycleSummaryRow[]> {
 
 export interface CycleRecord {
   readonly id: string;
-  readonly nameAr: string;
-  readonly nameEn: string;
+  readonly nameAr: string | null;
+  readonly nameEn: string | null;
   readonly periodStart: string;
   readonly periodEnd: string;
   readonly deadline: string;
@@ -160,8 +160,8 @@ export async function getCycle(tx: UserTx, id: string): Promise<CycleRecord | nu
     where cycle_id = ${id} order by position`);
   return {
     id: String(row.id),
-    nameAr: String(row.name_ar),
-    nameEn: String(row.name_en),
+    nameAr: text(row.name_ar),
+    nameEn: text(row.name_en),
     periodStart: day(row.period_start_on),
     periodEnd: day(row.period_end_on),
     deadline: day(row.deadline_on),
@@ -193,8 +193,8 @@ export async function getCycle(tx: UserTx, id: string): Promise<CycleRecord | nu
     })),
     steps: steps.map((s: Row) => ({
       kind: s.kind === 'department_heads' ? 'department_heads' : 'person',
-      nameAr: String(s.name_ar),
-      nameEn: String(s.name_en),
+      nameAr: text(s.name_ar),
+      nameEn: text(s.name_en),
       approverPersonId: text(s.approver_person_id),
     })),
   };
@@ -234,8 +234,8 @@ export async function getSettings(tx: UserTx): Promise<PlanningSettingsRecord> {
       steps.length > 0
         ? steps.map((s: Row) => ({
             kind: s.kind === 'department_heads' ? 'department_heads' : 'person',
-            nameAr: String(s.name_ar),
-            nameEn: String(s.name_en),
+            nameAr: text(s.name_ar),
+            nameEn: text(s.name_en),
             approverPersonId: text(s.approver_person_id),
           }))
         : DEFAULT_CHAIN,
@@ -247,8 +247,8 @@ export async function getSettings(tx: UserTx): Promise<PlanningSettingsRecord> {
 // ---------------------------------------------------------------------------------------------------
 
 export interface CycleBasics {
-  readonly nameAr: string;
-  readonly nameEn: string;
+  readonly nameAr: string | null;
+  readonly nameEn: string | null;
   readonly periodStart: string;
   readonly periodEnd: string;
   readonly deadline: string;
@@ -892,8 +892,8 @@ export async function listDepartmentProgress(
 
 export interface MyDepartmentRow {
   readonly cycleId: string;
-  readonly cycleNameAr: string;
-  readonly cycleNameEn: string;
+  readonly cycleNameAr: string | null;
+  readonly cycleNameEn: string | null;
   readonly cycleDeadline: string;
   readonly periodStart: string;
   readonly periodEnd: string;
@@ -930,8 +930,8 @@ export async function listMyDepartments(tx: UserTx): Promise<MyDepartmentRow[]> 
     limit 100`);
   return rows.map((r: Row) => ({
     cycleId: String(r.cycle_id),
-    cycleNameAr: String(r.name_ar),
-    cycleNameEn: String(r.name_en),
+    cycleNameAr: text(r.name_ar),
+    cycleNameEn: text(r.name_en),
     cycleDeadline: day(r.cycle_deadline),
     periodStart: day(r.period_start_on),
     periodEnd: day(r.period_end_on),

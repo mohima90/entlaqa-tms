@@ -9,7 +9,7 @@ import {
   expect,
   test,
 } from '@playwright/test';
-import { afterSignIn, fillSignIn } from './sign-in';
+import { afterSignIn, fillSignIn, signOutFromMenu } from './sign-in';
 import { freshCode, wrongCode } from './totp';
 
 /**
@@ -513,7 +513,8 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     await expect(page).toHaveURL(/\/ar\/suite$/, afterSignIn);
 
     // The next sign-in asks for the app's code; a wrong code is refused.
-    await page.getByRole('button', { name: 'تسجيل الخروج' }).click();
+    // Sign-out sits in the account menu (Kawadir shell).
+    await signOutFromMenu(page);
     await expect(page).toHaveURL(/\/ar\/sign-in$/);
     await signIn(page, 'ar', memberEmail, memberPassword);
     await expect(page).toHaveURL(/\/ar\/mfa$/, afterSignIn);
@@ -615,7 +616,8 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText("Mona Saeed Alzahrani's authenticator app will be removed");
     await expectNoSeriousA11yViolations(page);
-    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    // The dialog's close button carries the same name (closing cancels): the footer button is last.
+    await dialog.getByRole('button', { name: 'Cancel' }).last().click();
     await expect(dialog).toBeHidden();
     await expect(page.getByTestId('user-mfa-status')).toContainText('On · authenticator app since');
     await page.getByTestId('user-mfa-reset-open').click();

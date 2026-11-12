@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { NEEDS_LIMITS, PLAN_LIMITS, STEP_KINDS, budgetAmountText, isCalendarDay } from './rules';
+import { NEEDS_LIMITS, PLAN_LIMITS, budgetAmountText, isCalendarDay } from './rules';
 
 export * from './rules';
 
@@ -24,7 +24,7 @@ const name = (max: number) =>
     });
 
 /**
- * A cycle's or a step's name in ONE language: may be empty (WP-FIX-03; PO, 12 Nov 2026 — the name in the
+ * A cycle's name in ONE language: may be empty (WP-FIX-03; PO, 12 Nov 2026 — the name in the
  * organization's default language is required, the other one optional; which one is the handler's rule,
  * rules.ts `nameIssues`). A given name is checked as before.
  */
@@ -71,7 +71,20 @@ export const CycleBasicsFields = z.strictObject({
     .transform((v) => v ?? null),
 });
 
-export const CreateCycleInput = CycleBasicsFields;
+/** Units or branches picked as a cycle's scope (each once). */
+const scopeIds = z
+  .array(Id)
+  .max(PLAN_LIMITS.maxScopeUnits)
+  .transform((ids) => [...new Set(ids)]);
+
+/**
+ * A new cycle with its scope (WP-UX-01 a, T-M3-20: creating is one popup — the names, the period, the
+ * deadline, the departments and the needs form). The scope may be left out (nothing picked yet).
+ */
+export const CreateCycleInput = CycleBasicsFields.extend({
+  departmentIds: scopeIds.optional().transform((ids) => ids ?? []),
+  branchIds: scopeIds.optional().transform((ids) => ids ?? []),
+});
 export type CreateCycleInput = z.output<typeof CreateCycleInput>;
 
 export const UpdateCycleBasicsInput = CycleBasicsFields.extend({ id: Id, version: Version });
@@ -83,14 +96,8 @@ export const CycleVersionRef = z.strictObject({ id: Id, version: Version });
 export const SaveScopeInput = z.strictObject({
   id: Id,
   version: Version,
-  departmentIds: z
-    .array(Id)
-    .max(PLAN_LIMITS.maxScopeUnits)
-    .transform((ids) => [...new Set(ids)]),
-  branchIds: z
-    .array(Id)
-    .max(PLAN_LIMITS.maxScopeUnits)
-    .transform((ids) => [...new Set(ids)]),
+  departmentIds: scopeIds,
+  branchIds: scopeIds,
 });
 export type SaveScopeInput = z.output<typeof SaveScopeInput>;
 
@@ -108,19 +115,6 @@ export const SaveBudgetsInput = z.strictObject({
     .max(PLAN_LIMITS.maxScopeUnits),
 });
 export type SaveBudgetsInput = z.output<typeof SaveBudgetsInput>;
-
-export const StepInput = z.strictObject({
-  kind: z.enum(STEP_KINDS),
-  nameAr: nameInOneLanguage(PLAN_LIMITS.stepNameMax),
-  nameEn: nameInOneLanguage(PLAN_LIMITS.stepNameMax),
-  approverPersonId: Id.nullable(),
-});
-
-/** The chain as sent (its rules — chainIssues — are checked by the handler, with precise field errors). */
-const steps = z.array(StepInput).min(1).max(PLAN_LIMITS.maxSteps);
-
-export const SaveStepsInput = z.strictObject({ id: Id, version: Version, steps });
-export type SaveStepsInput = z.output<typeof SaveStepsInput>;
 
 export const ReminderDays = z
   .array(z.int().min(PLAN_LIMITS.reminderMinDays).max(PLAN_LIMITS.reminderMaxDays))
@@ -142,7 +136,8 @@ export const ExtendDeadlineInput = z.strictObject({
 });
 export type ExtendDeadlineInput = z.output<typeof ExtendDeadlineInput>;
 
-export const SaveSettingsInput = z.strictObject({ reminderDays: ReminderDays, steps });
+/** Planning settings: the default reminders (the default approval chain left the screens — EP-PLN §13). */
+export const SaveSettingsInput = z.strictObject({ reminderDays: ReminderDays });
 export type SaveSettingsInput = z.output<typeof SaveSettingsInput>;
 
 export const CyclesListInput = z.strictObject({});

@@ -7,17 +7,13 @@ import {
   ok,
 } from '@jadarat/platform-core';
 import {
-  type MemberOption,
   type OrgStructure,
   type StructureLevelLabel,
   type UserTx,
-  MEMBER_SEARCH,
-  getMemberOptionsByIds,
   getOrganizationProfile,
   getTenantDefaultLocale,
   listOrgStructure,
   listStructureLevelLabels,
-  searchMemberOptions,
 } from '@jadarat/platform-db';
 import {
   type ActionDefinition,
@@ -25,7 +21,6 @@ import {
   type QueryDefinition,
   tmsPlanningPermissions,
 } from '@jadarat/platform-rbac';
-import { z } from 'zod';
 import {
   type ApprovalStep,
   CreateCycleInput,
@@ -40,14 +35,13 @@ import {
   SaveRemindersInput,
   SaveScopeInput,
   SaveSettingsInput,
-  SaveStepsInput,
+  type ScopeSelection,
   type StructureUnit,
   UpdateCycleBasicsInput,
   basicsIssues,
   nameIssues,
   canExtendDeadline,
   canonicalAmount,
-  chainIssues,
   defaultDeadline,
   defaultPeriod,
   departmentDeadline,
@@ -68,7 +62,10 @@ import * as repo from './repository';
  * unit-tested with a fake runtime. Every change is audited (BR-PLN-j); the database repeats the rules.
  *
  *   read   tms.plan_cycle.read    (L&D Manager, Training Coordinator) — list, cycle, progress, settings
- *   write  tms.plan_cycle.manage  (L&D Manager) — create, set-up steps, launch, extend, delete, settings
+ *   write  tms.plan_cycle.manage  (L&D Manager) — create, cycle settings, launch, extend, delete, settings
+ *
+ * The approval chain left the cycle (EP-PLN §13 e; PO, 12 Nov 2026 — WP-UX-01 a, T-M3-20): no view carries
+ * it, no action edits it and the launch does not ask for it. Stored chains stay in the database.
  */
 
 const p = tmsPlanningPermissions;
@@ -99,7 +96,7 @@ export interface PersonName {
 }
 
 /**
- * A cycle's or an approval step's name: the organization's default language's name is there, the other one
+ * A cycle's name: the organization's default language's name is there, the other one
  * may be missing (never both; WP-FIX-03, PO 12 Nov 2026). Readers show the other language when one is missing.
  */
 export interface CycleName {
@@ -117,6 +114,58 @@ export interface CycleListItem {
   readonly status: CycleStatus;
   readonly departmentCount: number;
   readonly submittedCount: number;
+  /**
+   * A draft the member may change (WP-UX-01 a, T-M3-20): what «Edit» (the popup, pre-filled), «Launch cycle»
+   * and «Delete draft» of its row need. Null for launched cycles and for members who only read.
+   */
+  readonly draft: CycleDraft | null;
+}
+
+export interface CycleDraft {
+  readonly version: number;
+  readonly needsFormId: string | null;
+  /** The cycle's own form when it was switched off since (it is not among `setup.needsForms`; C-6). */
+  readonly needsFormOff: NeedsFormOption | null;
+  /** Kept as they are when the popup saves (they are edited on the cycle's Settings page). */
+  readonly instructionsAr: string | null;
+  readonly instructionsEn: string | null;
+  readonly scope: ScopeSelection;
+  /** What stops the launch today, with the departments the scope covers NOW (as the launch counts them). */
+  readonly problems: readonly LaunchProblem[];
+}
+
+/** Who receives a unit's needs form: its own head, or the nearest head above (`via`: that unit's name). */
+export interface UnitHead {
+  readonly name: PersonName;
+  readonly via: LocalizedName | null;
+}
+
+/**
+ * What the «New cycle» / «Edit» popup offers (the L&D Manager only): the suggested period and deadline, the
+ * structure with each unit's head, the branches and the active needs forms.
+ */
+export interface CycleSetupOptions {
+  readonly defaults: {
+    readonly periodStart: string;
+    readonly periodEnd: string;
+    readonly deadline: string;
+  };
+  /**
+   * The language whose name is required (the organization's default language; WP-FIX-03, PO 12 Nov 2026):
+   * the forms ask for it first and mark the other language optional.
+   */
+  readonly nameLanguage: 'ar' | 'en';
+  readonly units: readonly ScopeUnitOption[];
+  readonly branches: readonly BranchOption[];
+  /** The organization's own level names (FR-ADM-05). */
+  readonly levels: readonly StructureLevelLabel[];
+  readonly needsForms: readonly NeedsFormOption[];
+}
+
+export interface BranchOption {
+  readonly id: string;
+  readonly name: LocalizedName;
+  readonly active: boolean;
 }
 
 export interface CyclesListView {
@@ -124,6 +173,8 @@ export interface CyclesListView {
   readonly cycles: readonly CycleListItem[];
   readonly counts: Readonly<Record<'all' | 'draft' | 'open' | 'closed', number>>;
   readonly canManage: boolean;
+  /** For members who manage cycles: what the popup offers. Null for readers. */
+  readonly setup: CycleSetupOptions | null;
 }
 
 export interface CycleDepartmentView {
@@ -152,19 +203,10 @@ export interface CycleDepartmentView {
   /** For the manager's actions on the row (return, extend): the department row's version. */
   readonly version: number;
   /** Who receives the form (own head or nearest above); null: nobody — warned. */
-  readonly head: {
-    readonly name: PersonName;
-    /** The head comes from a unit above (its name), or null when it is the unit's own head. */
-    readonly via: LocalizedName | null;
-  } | null;
+  readonly head: UnitHead | null;
 }
 
-export interface StepView extends ApprovalStep {
-  readonly approverName: PersonName | null;
-  readonly approverActive: boolean;
-}
-
-/** One unit of the structure for the scope step (depth for indentation; tree order). */
+/** One unit of the structure for the departments picker (depth for indentation; tree order). */
 export interface ScopeUnitOption {
   readonly id: string;
   readonly parentId: string | null;
@@ -175,6 +217,8 @@ export interface ScopeUnitOption {
   readonly depth: number;
   readonly active: boolean;
   readonly hasHead: boolean;
+  /** Who receives the unit's form (own head or nearest above); null: nobody. */
+  readonly head: UnitHead | null;
 }
 
 export interface CycleView {
@@ -182,7 +226,7 @@ export interface CycleView {
   readonly cycle: Omit<repo.CycleRecord, 'departments' | 'steps' | 'launchedBy'>;
   readonly status: CycleStatus;
   readonly canManage: boolean;
-  /** A draft and the member manages cycles: the set-up steps are editable. */
+  /** A draft and the member manages cycles: its settings are editable. */
   readonly editable: boolean;
   readonly canExtend: boolean;
   /**
@@ -193,49 +237,22 @@ export interface CycleView {
   readonly departments: readonly CycleDepartmentView[];
   /** The organization's own level names (FR-ADM-05): the pages say them instead of «Department». */
   readonly levels: readonly StructureLevelLabel[];
-  readonly steps: readonly StepView[];
   readonly problems: readonly LaunchProblem[];
   /** Departments in scope whose form reaches nobody (no head up the tree) — a warning, not a block. */
   readonly withoutHead: number;
-  /** Set-up only (editable): the structure for the scope step and the people for named approvers. */
+  /** Editable drafts only: the structure for the departments picker and the needs forms to choose from. */
   readonly setup: {
     readonly units: readonly ScopeUnitOption[];
-    readonly branches: readonly {
-      readonly id: string;
-      readonly name: LocalizedName;
-      readonly active: boolean;
-    }[];
-    /** Needs forms of the forms library (stub: none until it merges — needs-forms.ts). */
+    readonly branches: readonly BranchOption[];
+    /** The active needs forms, plus the cycle's own form if it was switched off since (C-6). */
     readonly needsForms: readonly NeedsFormOption[];
   } | null;
 }
 
 export interface SettingsView {
-  readonly settings: repo.PlanningSettingsRecord;
-  readonly steps: readonly StepView[];
+  /** The default reminders every new cycle starts from. */
+  readonly reminderDays: readonly number[];
   readonly canManage: boolean;
-  /**
-   * The language whose name is required (the organization's default language; WP-FIX-03, PO 12 Nov 2026):
-   * the forms ask for it first and mark the other language optional.
-   */
-  readonly nameLanguage: 'ar' | 'en';
-}
-
-export interface NewCycleView {
-  readonly today: string;
-  readonly defaults: {
-    readonly periodStart: string;
-    readonly periodEnd: string;
-    readonly deadline: string;
-  };
-  readonly currency: string;
-  /**
-   * The language whose name is required (the organization's default language; WP-FIX-03, PO 12 Nov 2026):
-   * the forms ask for it first and mark the other language optional.
-   */
-  readonly nameLanguage: 'ar' | 'en';
-  /** Needs forms of the forms library (stub: none until it merges — needs-forms.ts). */
-  readonly needsForms: readonly NeedsFormOption[];
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -254,6 +271,25 @@ function units(structure: OrgStructure): StructureUnit[] {
   }));
 }
 
+/** Who receives a unit's form: its own head, else the nearest head above (EP-ORG); null: nobody. */
+function unitHead(
+  structure: OrgStructure,
+  tree: readonly StructureUnit[],
+  departmentId: string,
+): UnitHead | null {
+  const head = effectiveHead(tree, departmentId);
+  const headUnit = head
+    ? structure.departments.find((d) => d.id === head.fromDepartmentId)
+    : undefined;
+  const person = headUnit?.head;
+  if (!head || !headUnit || !person) return null;
+  return {
+    name: { ar: person.nameAr, en: person.nameEn },
+    via:
+      head.fromDepartmentId === departmentId ? null : { ar: headUnit.nameAr, en: headUnit.nameEn },
+  };
+}
+
 function scopeUnitOptions(structure: OrgStructure): ScopeUnitOption[] {
   const all = units(structure);
   const byId = new Map(structure.departments.map((d) => [d.id, d]));
@@ -270,28 +306,35 @@ function scopeUnitOptions(structure: OrgStructure): ScopeUnitOption[] {
             depth,
             active: d.active,
             hasHead: effectiveHead(all, id) !== null,
+            head: unitHead(structure, all, id),
           },
         ]
       : [];
   });
 }
 
-function memberMap(members: readonly (MemberOption & { readonly active: boolean })[]) {
-  return new Map(members.map((m) => [m.personId, m]));
-}
+const branchOptions = (structure: OrgStructure): BranchOption[] =>
+  structure.branches.map((b) => ({
+    id: b.id,
+    name: { ar: b.nameAr, en: b.nameEn },
+    active: b.active,
+  }));
 
-function stepViews(
-  steps: readonly ApprovalStep[],
-  members: ReadonlyMap<string, MemberOption & { readonly active: boolean }>,
-): StepView[] {
-  return steps.map((step) => {
-    const person = step.approverPersonId ? members.get(step.approverPersonId) : undefined;
-    return {
-      ...step,
-      approverName: person ? { ar: person.nameAr, en: person.nameEn } : null,
-      approverActive: person?.active ?? false,
-    };
-  });
+/** Ids of a scope that are not in the structure (any more), as field errors by path. */
+function unknownScopeIds(
+  structure: OrgStructure,
+  scope: ScopeSelection,
+): { path: string; code: string }[] {
+  const knownDepartments = new Set(structure.departments.map((d) => d.id));
+  const knownBranches = new Set(structure.branches.map((b) => b.id));
+  return [
+    ...scope.departmentIds.flatMap((id, i) =>
+      knownDepartments.has(id) ? [] : [{ path: `departmentIds.${String(i)}`, code: 'UNKNOWN' }],
+    ),
+    ...scope.branchIds.flatMap((id, i) =>
+      knownBranches.has(id) ? [] : [{ path: `branchIds.${String(i)}`, code: 'UNKNOWN' }],
+    ),
+  ];
 }
 
 /** Maps a failed "touch" of the cycle to the action's error. */
@@ -314,21 +357,6 @@ async function touch(
 ): Promise<Result<number, AppError>> {
   const touched = await repo.touchCycle(tx, id, version, { draftOnly });
   return touched.outcome === 'ok' ? ok(touched.version) : err(touchError(touched.outcome));
-}
-
-/** Named approvers must be active members of the organization (business flow B4). */
-async function approverProblems(
-  tx: UserTx,
-  steps: readonly ApprovalStep[],
-): Promise<{ path: string; code: string }[]> {
-  const named = steps.flatMap((s) => (s.approverPersonId ? [s.approverPersonId] : []));
-  if (named.length === 0) return [];
-  const members = memberMap(await getMemberOptionsByIds(tx, named));
-  return steps.flatMap((step, index) =>
-    step.approverPersonId && !members.get(step.approverPersonId)?.active
-      ? [{ path: `steps.${String(index)}.approverPersonId`, code: 'NOT_A_MEMBER' }]
-      : [],
-  );
 }
 
 /** The chosen needs form must be one of the organization's (forms library adapter). */
@@ -364,6 +392,42 @@ export function planCyclesListQueryDefinition(): QueryDefinition<
     handler: async ({ ctx }) => {
       const today = await repo.organizationToday(ctx.tx);
       const rows = await repo.listCycles(ctx.tx);
+      const canManage = ctx.can(MANAGE, 'tenant');
+      // Members who manage cycles: the popup's choices, and each draft's own data for its row menu.
+      const structure = canManage ? await listOrgStructure(ctx.tx) : null;
+      const tree = structure ? units(structure) : [];
+      const activeForms = canManage ? await listNeedsFormOptions(ctx.tx) : [];
+      const drafts = new Map<string, CycleDraft>();
+      if (canManage) {
+        for (const row of rows.filter((r) => r.status === 'draft')) {
+          const record = await repo.getCycle(ctx.tx, row.id);
+          if (!record) continue;
+          const open = await repo.openCycle(ctx.tx, record.id);
+          const ownForm =
+            record.needsFormId !== null && !activeForms.some((f) => f.id === record.needsFormId)
+              ? (await listNeedsFormOptions(ctx.tx, record.needsFormId)).find(
+                  (f) => f.id === record.needsFormId,
+                )
+              : undefined;
+          drafts.set(row.id, {
+            version: record.version,
+            needsFormId: record.needsFormId,
+            needsFormOff: ownForm ?? null,
+            instructionsAr: record.instructionsAr,
+            instructionsEn: record.instructionsEn,
+            scope: record.scope,
+            problems: launchProblems({
+              status: record.status,
+              deadline: record.deadline,
+              today,
+              needsFormId: record.needsFormId,
+              // One form per department in scope NOW, as the launch counts them.
+              departmentCount: departmentsInScope(tree, record.scope).length,
+              anotherOpen: open !== null && open.deadline >= today,
+            }),
+          });
+        }
+      }
       const cycles = rows.map((r) => ({
         id: r.id,
         name: { ar: r.nameAr, en: r.nameEn },
@@ -374,8 +438,26 @@ export function planCyclesListQueryDefinition(): QueryDefinition<
         status: effectiveCycleStatus(r.status, r.latestDeadline, today),
         departmentCount: r.departmentCount,
         submittedCount: r.submittedCount,
+        draft: drafts.get(r.id) ?? null,
       }));
       const count = (status: CycleStatus) => cycles.filter((c) => c.status === status).length;
+      let setup: CycleSetupOptions | null = null;
+      if (structure) {
+        const profile = await getOrganizationProfile(ctx.tx);
+        const period = defaultPeriod(today, profile?.fiscalYearStartMonth ?? 1);
+        setup = {
+          defaults: {
+            periodStart: period.start,
+            periodEnd: period.end,
+            deadline: defaultDeadline(today, period.end),
+          },
+          nameLanguage: await getTenantDefaultLocale(ctx.tx),
+          units: scopeUnitOptions(structure),
+          branches: branchOptions(structure),
+          levels: await listStructureLevelLabels(ctx.tx),
+          needsForms: activeForms,
+        };
+      }
       return ok({
         today,
         cycles,
@@ -383,36 +465,11 @@ export function planCyclesListQueryDefinition(): QueryDefinition<
           all: cycles.length,
           draft: count('draft'),
           open: count('open'),
-          closed: count('closed'),
+          // Everything that is neither a draft nor open (closed, consolidated, archived).
+          closed: cycles.length - count('draft') - count('open'),
         },
-        canManage: ctx.can(MANAGE, 'tenant'),
-      });
-    },
-  };
-}
-
-export function newPlanCycleQueryDefinition(): QueryDefinition<
-  typeof CyclesListInput,
-  NewCycleView,
-  UserTx
-> {
-  return {
-    permission: MANAGE,
-    input: CyclesListInput,
-    handler: async ({ ctx }) => {
-      const today = await repo.organizationToday(ctx.tx);
-      const profile = await getOrganizationProfile(ctx.tx);
-      const period = defaultPeriod(today, profile?.fiscalYearStartMonth ?? 1);
-      return ok({
-        today,
-        defaults: {
-          periodStart: period.start,
-          periodEnd: period.end,
-          deadline: defaultDeadline(today, period.end),
-        },
-        currency: profile?.currencyCode ?? 'SAR',
-        nameLanguage: await getTenantDefaultLocale(ctx.tx),
-        needsForms: await listNeedsFormOptions(ctx.tx),
+        canManage,
+        setup,
       });
     },
   };
@@ -431,9 +488,6 @@ export function planCycleQueryDefinition(): QueryDefinition<typeof CycleRef, Cyc
       const structure = await listOrgStructure(ctx.tx);
       const tree = units(structure);
       const byId = new Map(structure.departments.map((d) => [d.id, d]));
-      const named = record.steps.flatMap((s) => (s.approverPersonId ? [s.approverPersonId] : []));
-      const members = await getMemberOptionsByIds(ctx.tx, named);
-      const people = memberMap(members);
       // Tree order (rows are written in one statement; their own order says nothing).
       const position = new Map(treeOrder(tree).map((entry, index) => [entry.id, index]));
       const rows = [...record.departments].sort(
@@ -449,9 +503,6 @@ export function planCycleQueryDefinition(): QueryDefinition<typeof CycleRef, Cyc
       );
       const departments: CycleDepartmentView[] = rows.map((row) => {
         const department = byId.get(row.departmentId);
-        const head = effectiveHead(tree, row.departmentId);
-        const headUnit = head ? byId.get(head.fromDepartmentId) : undefined;
-        const headDepartment = headUnit?.head;
         const figures = progress.get(row.departmentId);
         const deadline = departmentDeadline(record.deadline, row.deadline);
         return {
@@ -473,16 +524,7 @@ export function planCycleQueryDefinition(): QueryDefinition<typeof CycleRef, Cyc
           },
           lastActivityAt: figures?.lastActivityAt?.toISOString() ?? null,
           version: figures?.version ?? 1,
-          head:
-            head && headDepartment
-              ? {
-                  name: { ar: headDepartment.nameAr, en: headDepartment.nameEn },
-                  via:
-                    head.fromDepartmentId === row.departmentId
-                      ? null
-                      : { ar: headUnit.nameAr, en: headUnit.nameEn },
-                }
-              : null,
+          head: unitHead(structure, tree, row.departmentId),
         };
       });
       const open = await repo.openCycle(ctx.tx, record.id);
@@ -494,8 +536,6 @@ export function planCycleQueryDefinition(): QueryDefinition<typeof CycleRef, Cyc
               today,
               needsFormId: record.needsFormId,
               departmentCount: record.departments.length,
-              steps: record.steps,
-              activeMemberIds: new Set(members.filter((m) => m.active).map((m) => m.personId)),
               anotherOpen: open !== null && open.deadline >= today,
             })
           : [];
@@ -510,17 +550,12 @@ export function planCycleQueryDefinition(): QueryDefinition<typeof CycleRef, Cyc
         nameLanguage: await getTenantDefaultLocale(ctx.tx),
         departments,
         levels: await listStructureLevelLabels(ctx.tx),
-        steps: stepViews(record.steps, people),
         problems,
         withoutHead: departments.filter((d) => d.head === null).length,
         setup: editable
           ? {
               units: scopeUnitOptions(structure),
-              branches: structure.branches.map((b) => ({
-                id: b.id,
-                name: { ar: b.nameAr, en: b.nameEn },
-                active: b.active,
-              })),
+              branches: branchOptions(structure),
               needsForms: await listNeedsFormOptions(ctx.tx, record.needsFormId),
             }
           : null,
@@ -539,14 +574,7 @@ export function planningSettingsQueryDefinition(): QueryDefinition<
     input: CyclesListInput,
     handler: async ({ ctx }) => {
       const settings = await repo.getSettings(ctx.tx);
-      const named = settings.steps.flatMap((s) => (s.approverPersonId ? [s.approverPersonId] : []));
-      const members = await getMemberOptionsByIds(ctx.tx, named);
-      return ok({
-        settings,
-        steps: stepViews(settings.steps, memberMap(members)),
-        canManage: ctx.can(MANAGE, 'tenant'),
-        nameLanguage: await getTenantDefaultLocale(ctx.tx),
-      });
+      return ok({ reminderDays: settings.reminderDays, canManage: ctx.can(MANAGE, 'tenant') });
     },
   };
 }
@@ -554,15 +582,6 @@ export function planningSettingsQueryDefinition(): QueryDefinition<
 // ---------------------------------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------------------------------
-
-/** Every step is named in the organization's default language (the other language is optional). */
-async function stepNameIssues(
-  tx: UserTx,
-  steps: readonly { readonly nameAr: string | null; readonly nameEn: string | null }[],
-): Promise<{ path: string; message: string }[]> {
-  const locale = await getTenantDefaultLocale(tx);
-  return steps.flatMap((step, index) => nameIssues(locale, step, `steps.${String(index)}.`));
-}
 
 const audit = (action: string, id: string, data: Record<string, unknown>): AuditRecord => ({
   action: `tms.plan_cycle.${action}`,
@@ -576,9 +595,13 @@ export interface Saved {
   readonly version: number;
 }
 
-/** A new draft: the needs form it stores (the organization's default when none was chosen). */
+/**
+ * A new draft: the needs form it stores (the organization's default when none was chosen) and how many
+ * departments its scope covers.
+ */
 export interface CycleCreated extends Saved {
   readonly needsFormId: string | null;
+  readonly departmentCount: number;
 }
 
 export function createPlanCycleActionDefinition(): ActionDefinition<
@@ -590,14 +613,25 @@ export function createPlanCycleActionDefinition(): ActionDefinition<
     permission: MANAGE,
     input: CreateCycleInput,
     handler: async ({ ctx, input }) => {
+      // The popup creates the cycle with its departments (WP-UX-01 a, T-M3-20): the scope is checked as
+      // the scope action checks it, and saved in the same transaction.
+      const structure = await listOrgStructure(ctx.tx);
+      const { departmentIds: pickedDepartments, branchIds, ...basics } = input;
+      const scope = { departmentIds: pickedDepartments, branchIds };
       const issues = [
         // The name in the organization's default language is required (PO, 12 Nov 2026).
         ...toFieldErrors(nameIssues(await getTenantDefaultLocale(ctx.tx), input)),
         ...toFieldErrors(basicsIssues(input)),
         ...(await needsFormProblems(ctx.tx, input.needsFormId)),
+        ...unknownScopeIds(structure, scope),
       ];
       if (issues.length > 0) return validation(issues);
-      return ok(await repo.insertCycle(ctx.tx, input));
+      const created = await repo.insertCycle(ctx.tx, basics);
+      const departmentIds = departmentsInScope(units(structure), scope);
+      if (scope.departmentIds.length > 0 || scope.branchIds.length > 0) {
+        await repo.replaceScope(ctx.tx, created.id, scope, departmentIds);
+      }
+      return ok({ ...created, departmentCount: departmentIds.length });
     },
     audit: (input, output) =>
       audit('created', output.id, {
@@ -609,6 +643,10 @@ export function createPlanCycleActionDefinition(): ActionDefinition<
           deadline: input.deadline,
           // C-10: what the cycle stores (read back), not what was sent.
           needsFormId: output.needsFormId,
+          // The scope picked in the popup, as «scope_changed» records it.
+          departmentIds: input.departmentIds,
+          branchIds: input.branchIds,
+          departments: output.departmentCount,
         },
       }),
   };
@@ -691,16 +729,7 @@ export function savePlanCycleScopeActionDefinition(): ActionDefinition<
       const before = await repo.getCycle(ctx.tx, input.id);
       if (!before) return err(appError('NOT_FOUND'));
       const structure = await listOrgStructure(ctx.tx);
-      const knownDepartments = new Set(structure.departments.map((d) => d.id));
-      const knownBranches = new Set(structure.branches.map((b) => b.id));
-      const unknown = [
-        ...input.departmentIds.flatMap((id, i) =>
-          knownDepartments.has(id) ? [] : [{ path: `departmentIds.${String(i)}`, code: 'UNKNOWN' }],
-        ),
-        ...input.branchIds.flatMap((id, i) =>
-          knownBranches.has(id) ? [] : [{ path: `branchIds.${String(i)}`, code: 'UNKNOWN' }],
-        ),
-      ];
+      const unknown = unknownScopeIds(structure, input);
       if (unknown.length > 0) return validation(unknown);
       const touched = await touch(ctx.tx, input.id, input.version);
       if (!touched.ok) return touched;
@@ -765,42 +794,6 @@ export function savePlanCycleBudgetsActionDefinition(): ActionDefinition<
   };
 }
 
-export interface StepsSaved extends Saved {
-  readonly before: readonly ApprovalStep[];
-}
-
-export function savePlanCycleStepsActionDefinition(): ActionDefinition<
-  typeof SaveStepsInput,
-  StepsSaved,
-  UserTx
-> {
-  return {
-    permission: MANAGE,
-    input: SaveStepsInput,
-    handler: async ({ ctx, input }) => {
-      const issues = [
-        ...(await stepNameIssues(ctx.tx, input.steps)),
-        ...chainIssues(input.steps, false),
-      ];
-      if (issues.length > 0) return validation(toFieldErrors(issues));
-      const before = await repo.getCycle(ctx.tx, input.id);
-      if (!before) return err(appError('NOT_FOUND'));
-      const notMembers = await approverProblems(ctx.tx, input.steps);
-      if (notMembers.length > 0) return validation(notMembers);
-      const touched = await touch(ctx.tx, input.id, input.version);
-      if (!touched.ok) return touched;
-      await repo.replaceSteps(ctx.tx, input.id, input.steps);
-      return ok({ id: input.id, version: touched.value, before: before.steps });
-    },
-    // Approver changes are audited with person ids (BR-PLN-j), never names.
-    audit: (input, output) =>
-      audit('approval_chain_changed', output.id, {
-        before: stepsForAudit(output.before),
-        after: stepsForAudit(input.steps),
-      }),
-  };
-}
-
 export interface RemindersSaved extends Saved {
   readonly before: readonly number[];
 }
@@ -853,16 +846,13 @@ export function launchPlanCycleActionDefinition(): ActionDefinition<
       // An open cycle past its deadline is closed first (Q1: one open cycle at a time).
       const closedCycleIds = await repo.closeDueCycles(ctx.tx);
       const today = await repo.organizationToday(ctx.tx);
-      const named = record.steps.flatMap((s) => (s.approverPersonId ? [s.approverPersonId] : []));
-      const members = await getMemberOptionsByIds(ctx.tx, named);
+      // No approval chain is asked for (EP-PLN §13 e): a stored one is ignored — and still audited below.
       const problems = launchProblems({
         status: record.status,
         deadline: record.deadline,
         today,
         needsFormId: record.needsFormId,
         departmentCount: departmentIds.length,
-        steps: record.steps,
-        activeMemberIds: new Set(members.filter((m) => m.active).map((m) => m.personId)),
         anotherOpen: (await repo.openCycle(ctx.tx, input.id)) !== null,
       });
       if (problems.includes('another_open'))
@@ -972,12 +962,13 @@ export function deletePlanCycleActionDefinition(): ActionDefinition<
 
 export interface SettingsSaved {
   readonly version: number;
-  readonly before: {
-    readonly reminderDays: readonly number[];
-    readonly steps: readonly ApprovalStep[];
-  };
+  readonly before: { readonly reminderDays: readonly number[] };
 }
 
+/**
+ * Planning settings: the default reminders. The default approval chain is no longer set here (EP-PLN §13;
+ * PO, 12 Nov 2026): approval is by role and the same for every cycle. A stored default chain stays.
+ */
 export function savePlanningSettingsActionDefinition(): ActionDefinition<
   typeof SaveSettingsInput,
   SettingsSaved,
@@ -987,63 +978,17 @@ export function savePlanningSettingsActionDefinition(): ActionDefinition<
     permission: MANAGE,
     input: SaveSettingsInput,
     handler: async ({ ctx, input }) => {
-      const issues = [
-        ...(await stepNameIssues(ctx.tx, input.steps)),
-        ...chainIssues(input.steps, false),
-      ];
-      if (issues.length > 0) return validation(toFieldErrors(issues));
-      const notMembers = await approverProblems(ctx.tx, input.steps);
-      if (notMembers.length > 0) return validation(notMembers);
       const before = await repo.getSettings(ctx.tx);
-      const version = await repo.saveSettings(ctx.tx, input.reminderDays, input.steps);
-      return ok({ version, before: { reminderDays: before.reminderDays, steps: before.steps } });
+      const version = await repo.saveSettings(ctx.tx, input.reminderDays);
+      return ok({ version, before: { reminderDays: before.reminderDays } });
     },
     audit: (input, output) => ({
       action: 'tms.planning_settings.changed',
       entityType: 'planning_settings',
       data: {
-        before: {
-          reminderDays: output.before.reminderDays,
-          steps: stepsForAudit(output.before.steps),
-        },
-        after: { reminderDays: input.reminderDays, steps: stepsForAudit(input.steps) },
+        before: { reminderDays: output.before.reminderDays },
+        after: { reminderDays: input.reminderDays },
       },
     }),
-  };
-}
-
-// ---------------------------------------------------------------------------------------------------
-// Approver search (C-M3)
-// ---------------------------------------------------------------------------------------------------
-
-export const ApproverSearchInput = z.strictObject({
-  q: z.string().trim().min(MEMBER_SEARCH.minLength).max(MEMBER_SEARCH.maxLength),
-});
-
-export interface ApproverSearchResult {
-  readonly members: readonly { readonly personId: string; readonly name: PersonName }[];
-}
-
-/**
- * The person picker of the approval chain (cycle step 4, planning settings): active members whose name
- * contains the text, at most MEMBER_SEARCH.limit (code review C-M3: a capped list of every member left
- * people of a large organization out). A read for those who set chains up (tms.plan_cycle.manage); names
- * only. Not audited (nothing changes).
- */
-export function searchPlanApproversActionDefinition(): ActionDefinition<
-  typeof ApproverSearchInput,
-  ApproverSearchResult,
-  UserTx
-> {
-  return {
-    permission: MANAGE,
-    input: ApproverSearchInput,
-    handler: async ({ ctx, input }) =>
-      ok({
-        members: (await searchMemberOptions(ctx.tx, input.q)).map((m) => ({
-          personId: m.personId,
-          name: { ar: m.nameAr, en: m.nameEn },
-        })),
-      }),
   };
 }

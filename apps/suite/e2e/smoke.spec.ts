@@ -417,28 +417,19 @@ for (const locale of ['en', 'ar'] as const) {
   });
 }
 
-// WP-FIX-03 (PO, 12 Nov 2026) on the «New planning cycle» form, which renders without data in the preview:
+// WP-FIX-03 (PO, 12 Nov 2026) on the «New planning cycle» popup, which opens without data in the preview:
 // a red asterisk marks the required fields instead of the word (forms standard rule 8), and only the name
 // in the organization's default language is required — the other language is optional.
 for (const locale of ['en', 'ar'] as const) {
   test(`${locale}: required fields carry a red asterisk; the other language's name is optional`, async ({
     page,
   }) => {
+    // The old address of the form: it opens the cycles list with the popup (WP-UX-01 a, T-M3-20).
     await page.goto(`/${locale}/suite/planning/cycles/new`);
     const texts =
       locale === 'en'
-        ? {
-            en: 'Name in English',
-            ar: 'Name in Arabic',
-            required: '(required)',
-            optional: '(optional)',
-          }
-        : {
-            en: 'الاسم بالإنجليزية',
-            ar: 'الاسم بالعربية',
-            required: '(مطلوب)',
-            optional: '(اختياري)',
-          };
+        ? { en: 'Cycle name (English)', ar: 'Cycle name (Arabic)', required: '(required)' }
+        : { en: 'اسم الحملة (بالإنجليزية)', ar: 'اسم الحملة (بالعربية)', required: '(مطلوب)' };
     // English is the default language of an organization (PO, 14 Oct 2026): its name is required and first.
     const required = page.locator('label[for="cycle-name-en"]');
     const mark = required.locator('[data-required-mark]');
@@ -459,9 +450,9 @@ for (const locale of ['en', 'ar'] as const) {
       return [getComputedStyle(label).color, star ? getComputedStyle(star).color : ''];
     });
     expect(colours[1]).not.toBe(colours[0]);
-    // The Arabic name is optional: said in words, no asterisk, not required.
+    // The Arabic name is optional: its label says the name only — no asterisk, not required.
     const optional = page.locator('label[for="cycle-name-ar"]');
-    await expect(optional).toContainText(texts.optional);
+    await expect(optional).toHaveText(texts.ar);
     await expect(optional.locator('[data-required-mark]')).toHaveCount(0);
     await expect(page.locator('#cycle-name-ar')).not.toHaveAttribute('required', '');
     // The required name comes first.

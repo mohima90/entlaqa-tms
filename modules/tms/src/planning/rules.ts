@@ -51,8 +51,9 @@ export interface ApprovalStep {
 
 /**
  * The built-in default chain (business flow A3): Unit heads → Finance → Management. The heads step is named
- * after no fixed level (guided-test feedback #3, PO 17 Oct 2026: organizations name their own levels); chains
- * saved before keep the names they were saved with, and every name can be edited.
+ * after no fixed level (guided-test feedback #3, PO 17 Oct 2026: organizations name their own levels).
+ * Since EP-PLN §13 (PO, 12 Nov 2026) no screen shows or edits a chain and the launch does not ask for one:
+ * a new cycle still stores a copy of the organization's default chain (data as before), which is ignored.
  */
 export const DEFAULT_CHAIN: readonly ApprovalStep[] = [
   {
@@ -279,13 +280,15 @@ export function effectiveHead(
 // Launch readiness (business flow B5)
 // ---------------------------------------------------------------------------------------------------
 
+/**
+ * What can stop a launch. The approval chain is not among them any more (EP-PLN §13 e; PO, 12 Nov 2026 —
+ * approval is the same for every cycle; migration 20261112110000 took the same checks out of the database
+ * guard): a cycle's stored chain, if it has one, is ignored.
+ */
 export const LAUNCH_PROBLEMS = [
   'deadline_past',
   'no_needs_form',
   'no_departments',
-  'no_approver_step',
-  'approver_missing',
-  'approver_inactive',
   'another_open',
 ] as const;
 export type LaunchProblem = (typeof LAUNCH_PROBLEMS)[number];
@@ -297,29 +300,16 @@ export interface LaunchFacts {
   /** The cycle's needs form (T-M3-10): required to launch, locked by the launch. */
   readonly needsFormId: string | null;
   readonly departmentCount: number;
-  readonly steps: readonly ApprovalStep[];
-  /** Persons who are active members now. */
-  readonly activeMemberIds: ReadonlySet<string>;
   /** Another cycle of the organization is open with its deadline not passed (a passed one is closed first). */
   readonly anotherOpen: boolean;
 }
 
-/** What stops the launch, in the order the set-up page shows it (same checks as the database guard). */
+/** What stops the launch, in the order the launch question shows it (same checks as the database guard). */
 export function launchProblems(facts: LaunchFacts): LaunchProblem[] {
   const problems: LaunchProblem[] = [];
   if (facts.deadline < facts.today) problems.push('deadline_past');
   if (facts.needsFormId === null) problems.push('no_needs_form');
   if (facts.departmentCount === 0) problems.push('no_departments');
-  const people = facts.steps.filter((s) => s.kind === 'person');
-  if (people.length === 0) problems.push('no_approver_step');
-  if (people.some((s) => s.approverPersonId === null)) problems.push('approver_missing');
-  if (
-    people.some(
-      (s) => s.approverPersonId !== null && !facts.activeMemberIds.has(s.approverPersonId),
-    )
-  ) {
-    problems.push('approver_inactive');
-  }
   if (facts.anotherOpen) problems.push('another_open');
   return problems;
 }
@@ -351,16 +341,15 @@ export function basicsIssues(value: BasicsShape): { path: string; message: strin
 
 /**
  * The name the organization's default language requires (WP-FIX-03; PO, 12 Nov 2026 — the rule approved
- * for people on 17 Oct 2026, applied to cycles and approval steps): with English as the default language
+ * for people on 17 Oct 2026, applied to cycles): with English as the default language
  * the English name is required and the Arabic one optional, and the other way round.
  */
 export function nameIssues(
   defaultLocale: 'ar' | 'en',
   value: { readonly nameAr: string | null; readonly nameEn: string | null },
-  prefix = '',
 ): { path: string; message: string }[] {
   const key = defaultLocale === 'ar' ? 'nameAr' : 'nameEn';
-  return value[key] === null ? [{ path: `${prefix}${key}`, message: 'required' }] : [];
+  return value[key] === null ? [{ path: key, message: 'required' }] : [];
 }
 
 /** Rule problems as field errors (SCREAMING_SNAKE codes, ADR 0011 §3) — checked by the handlers. */
@@ -374,39 +363,6 @@ export function toFieldErrors(
     path: typeof issue.path === 'string' ? issue.path : issue.path.map(String).join('.'),
     code: issue.message.toUpperCase(),
   }));
-}
-
-/** Chain rules (BR-PLN-g and the database's unique indexes); `requireNamed`: every person step named. */
-export function chainIssues(
-  steps: readonly ApprovalStep[],
-  requireNamed: boolean,
-): { path: (string | number)[]; message: string }[] {
-  const issues: { path: (string | number)[]; message: string }[] = [];
-  let heads = 0;
-  const seen = new Map<string, number>();
-  steps.forEach((step, index) => {
-    if (step.kind === 'department_heads') {
-      heads += 1;
-      if (heads > 1) issues.push({ path: ['steps', index, 'kind'], message: 'second_heads_step' });
-      if (step.approverPersonId !== null) {
-        issues.push({ path: ['steps', index, 'approverPersonId'], message: 'heads_step_named' });
-      }
-      return;
-    }
-    if (step.approverPersonId === null) {
-      if (requireNamed) {
-        issues.push({ path: ['steps', index, 'approverPersonId'], message: 'required' });
-      }
-      return;
-    }
-    if (seen.has(step.approverPersonId)) {
-      // BR-PLN-g: one person cannot be the approver of two steps in the same chain.
-      issues.push({ path: ['steps', index, 'approverPersonId'], message: 'duplicate_approver' });
-    } else {
-      seen.set(step.approverPersonId, index);
-    }
-  });
-  return issues;
 }
 
 /** An amount as typed: digits with up to 3 decimals, separators ignored; '' = no envelope (Q2). */

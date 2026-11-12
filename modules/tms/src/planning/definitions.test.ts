@@ -10,9 +10,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const db = vi.hoisted(() => ({
   listOrgStructure: vi.fn(),
-  getMemberOptionsByIds: vi.fn(),
-  searchMemberOptions: vi.fn(),
-  MEMBER_SEARCH: { minLength: 2, maxLength: 100, limit: 50 },
   getOrganizationProfile: vi.fn(),
   // The organization's default language (WP-FIX-03): English unless a test says otherwise.
   getTenantDefaultLocale: vi.fn((): Promise<'ar' | 'en'> => Promise.resolve('en')),
@@ -44,7 +41,6 @@ const repo = vi.hoisted(() => ({
   replaceScope: vi.fn(),
   syncDepartments: vi.fn(),
   updateBudgets: vi.fn(),
-  replaceSteps: vi.fn(),
   updateReminders: vi.fn(),
   closeDueCycles: vi.fn(),
   listDepartmentProgress: vi.fn(),
@@ -174,11 +170,6 @@ const record = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-const members = [
-  { personId: CFO, nameAr: 'المالي', nameEn: 'CFO', active: true },
-  { personId: GM, nameAr: 'المدير', nameEn: 'GM', active: true },
-];
-
 beforeEach(() => {
   repo.organizationToday.mockResolvedValue('2026-10-17');
   repo.getCycle.mockResolvedValue(record());
@@ -188,7 +179,6 @@ beforeEach(() => {
   repo.listDepartmentProgress.mockResolvedValue([]);
   db.listOrgStructure.mockResolvedValue(structure);
   db.listStructureLevelLabels.mockResolvedValue(LEVELS);
-  db.getMemberOptionsByIds.mockResolvedValue(members);
   db.getOrganizationProfile.mockResolvedValue({ fiscalYearStartMonth: 7, currencyCode: 'AED' });
   db.getTenantDefaultLocale.mockResolvedValue('en');
   forms.listNeedsFormOptions.mockResolvedValue([]);
@@ -222,7 +212,7 @@ describe('who may do what (deny by default)', () => {
         basics,
         { id: CYCLE, version: 3 },
         { id: CYCLE, version: 3 },
-        { reminderDays: [7], steps: [...chain] },
+        { reminderDays: [7] },
       ];
       for (const [index, definition] of manageActions().entries()) {
         const result = await action(definition as never)(inputs[index]);
@@ -254,10 +244,32 @@ describe('who may do what (deny by default)', () => {
     const one = await query(defs.planCycleQueryDefinition())({ id: CYCLE });
     expect(one.ok && one.value.editable).toBe(false);
     expect(one.ok && one.value.setup).toBeNull();
+    expect(list.ok && list.value.setup).toBeNull();
     const settings = await query(defs.planningSettingsQueryDefinition())({});
-    expect(settings.ok && settings.value.canManage).toBe(false);
-    const fresh = await query(defs.newPlanCycleQueryDefinition())({});
-    expect(!fresh.ok && fresh.error.code).toBe('FORBIDDEN');
+    // The default reminders only: the default approval chain is not part of the view (EP-PLN §13).
+    expect(settings.ok && settings.value).toEqual({ reminderDays: [7, 2], canManage: false });
+  });
+
+  it('a reader gets no draft data for the row menus (Edit, Launch and Delete are the manager’s)', async () => {
+    repo.listCycles.mockResolvedValue([
+      {
+        id: CYCLE,
+        nameAr: 'خطة',
+        nameEn: 'Plan',
+        periodStart: '2027-01-01',
+        periodEnd: '2027-12-31',
+        deadline: '2026-11-30',
+        latestDeadline: '2026-11-30',
+        status: 'draft',
+        departmentCount: 2,
+        submittedCount: 0,
+      },
+    ]);
+    const { query } = runtime('training_coordinator');
+    const list = await query(defs.planCyclesListQueryDefinition())({});
+    expect(list.ok && list.value.cycles.map((c) => c.draft)).toEqual([null]);
+    expect(repo.getCycle).not.toHaveBeenCalled();
+    expect(db.listOrgStructure).not.toHaveBeenCalled();
   });
 
   it('validates untrusted input before any database work (422)', async () => {
@@ -289,28 +301,109 @@ describe('L&D Manager: list, new cycle, cycle view', () => {
       launchedAt: new Date(),
       createdAt: new Date(),
     };
-    repo.listCycles.mockResolvedValue([row, { ...row, id: 'd', status: 'draft' }]);
+    repo.listCycles.mockResolvedValue([
+      row,
+      { ...row, id: 'd', status: 'draft' },
+      { ...row, id: 'a', status: 'archived' },
+    ]);
     const { query } = runtime('training_manager');
     const result = await query(defs.planCyclesListQueryDefinition())({});
-    expect(result.ok && result.value.cycles.map((c) => c.status)).toEqual(['closed', 'draft']);
-    expect(result.ok && result.value.counts).toEqual({ all: 2, draft: 1, open: 0, closed: 1 });
+    expect(result.ok && result.value.cycles.map((c) => c.status)).toEqual([
+      'closed',
+      'draft',
+      'archived',
+    ]);
+    // «Closed» counts everything that is neither a draft nor open, as the Closed filter lists it.
+    expect(result.ok && result.value.counts).toEqual({ all: 3, draft: 1, open: 0, closed: 2 });
     expect(result.ok && result.value.canManage).toBe(true);
   });
 
-  it('proposes the next fiscal year and a deadline; the currency is the organization’s', async () => {
+  it('gives the popup its choices: the next fiscal year, a deadline, the structure with heads, the forms', async () => {
+    repo.listCycles.mockResolvedValue([]);
+    const form = { id: FORM, name: { ar: 'نموذج', en: 'Form' }, isDefault: true, active: true };
+    forms.listNeedsFormOptions.mockResolvedValue([form]);
     const { query } = runtime('training_manager');
-    const result = await query(defs.newPlanCycleQueryDefinition())({});
-    expect(result.ok && result.value).toEqual({
-      today: '2026-10-17',
+    const result = await query(defs.planCyclesListQueryDefinition())({});
+    if (!result.ok) throw new Error(result.error.code);
+    expect(result.value.setup).toEqual({
       defaults: { periodStart: '2027-07-01', periodEnd: '2028-06-30', deadline: '2026-11-16' },
-      currency: 'AED',
       // The language whose name the form requires (WP-FIX-03): the organization's default language.
       nameLanguage: 'en',
-      needsForms: [],
+      units: [
+        expect.objectContaining({
+          id: SALES,
+          depth: 0,
+          hasHead: true,
+          head: { name: { ar: 'رئيس', en: 'Head' }, via: null },
+        }),
+        // No head of its own: the form goes to the nearest head above.
+        expect.objectContaining({
+          id: EAST,
+          depth: 1,
+          hasHead: true,
+          head: { name: { ar: 'رئيس', en: 'Head' }, via: { ar: 'المبيعات', en: 'Sales' } },
+        }),
+      ],
+      branches: [{ id: JED, name: { ar: 'جدة', en: 'Jeddah' }, active: true }],
+      levels: LEVELS,
+      needsForms: [form],
     });
   });
 
-  it('shows a draft with its departments, heads (own or from above), steps and readiness', async () => {
+  it('gives each draft what its row menu needs: version, scope, form, and what stops the launch', async () => {
+    const row = {
+      id: CYCLE,
+      nameAr: 'خطة',
+      nameEn: 'Plan',
+      periodStart: '2027-01-01',
+      periodEnd: '2027-12-31',
+      deadline: '2026-11-30',
+      latestDeadline: '2026-11-30',
+      status: 'draft',
+      departmentCount: 2,
+      submittedCount: 0,
+    };
+    repo.listCycles.mockResolvedValue([row, { ...row, id: 'open', status: 'open' }]);
+    const off = {
+      id: FORM,
+      name: { ar: 'نموذج', en: 'Old form' },
+      isDefault: false,
+      active: false,
+    };
+    // The cycle's own form was switched off since: it is not among the active forms (C-6).
+    forms.listNeedsFormOptions.mockImplementation((_tx: unknown, current?: string | null) =>
+      Promise.resolve(current ? [off] : []),
+    );
+    const { query } = runtime('training_manager');
+    const ready = await query(defs.planCyclesListQueryDefinition())({});
+    if (!ready.ok) throw new Error(ready.error.code);
+    expect(ready.value.cycles.map((c) => c.draft)).toEqual([
+      {
+        version: 3,
+        needsFormId: FORM,
+        needsFormOff: off,
+        instructionsAr: null,
+        instructionsEn: 'Old words',
+        scope: { departmentIds: [SALES], branchIds: [] },
+        // The stored chain names nobody the launch would check: nothing stops it (EP-PLN §13 e).
+        problems: [],
+      },
+      null,
+    ]);
+    // Launch problems count the departments the scope covers NOW and see the other open cycle.
+    repo.getCycle.mockResolvedValue(
+      record({ scope: { departmentIds: [], branchIds: [] }, deadline: '2026-10-01', steps: [] }),
+    );
+    repo.openCycle.mockResolvedValue({ id: 'other', deadline: '2026-12-01' });
+    const blocked = await query(defs.planCyclesListQueryDefinition())({});
+    expect(blocked.ok && blocked.value.cycles[0]?.draft?.problems).toEqual([
+      'deadline_past',
+      'no_departments',
+      'another_open',
+    ]);
+  });
+
+  it('shows a draft with its departments, heads (own or from above) and readiness — no chain', async () => {
     const { query } = runtime('training_manager');
     const result = await query(defs.planCycleQueryDefinition())({ id: CYCLE });
     if (!result.ok) throw new Error(result.error.code);
@@ -324,7 +417,9 @@ describe('L&D Manager: list, new cycle, cycle view', () => {
       [EAST, 'not_started', 'Sales'],
     ]);
     expect(view.withoutHead).toBe(0);
-    expect(view.steps.map((s) => s.approverName?.en ?? null)).toEqual([null, 'CFO', 'GM']);
+    // The approval chain is not part of the view any more (EP-PLN §13 e): the stored one is not shown.
+    expect(view).not.toHaveProperty('steps');
+    expect(view.departments.map((d) => d.head?.name.en ?? null)).toEqual(['Head', 'Head']);
     expect(view.setup?.units.map((u) => [u.id, u.depth, u.levelOrdinal])).toEqual([
       [SALES, 0, 1],
       [EAST, 1, 2],
@@ -332,7 +427,6 @@ describe('L&D Manager: list, new cycle, cycle view', () => {
     // The level of each row and the organization's level names, for the tables' labels.
     expect(view.departments.map((d) => d.levelOrdinal)).toEqual([1, 2]);
     expect(view.levels).toEqual(LEVELS);
-    expect(db.getMemberOptionsByIds).toHaveBeenCalledWith(expect.anything(), expect.any(Array));
     expect(view.setup?.needsForms).toEqual([]);
   });
 
@@ -349,6 +443,7 @@ describe('L&D Manager: list, new cycle, cycle view', () => {
     expect(open.ok && open.value.setup).toBeNull();
 
     repo.getCycle.mockResolvedValue(
+      // A stored chain without a named person stops nothing any more (EP-PLN §13 e).
       record({ departments: [], steps: [chain[0]], deadline: '2026-10-01', needsFormId: null }),
     );
     repo.openCycle.mockResolvedValue({ id: 'other', deadline: '2026-12-01' });
@@ -357,9 +452,15 @@ describe('L&D Manager: list, new cycle, cycle view', () => {
       'deadline_past',
       'no_needs_form',
       'no_departments',
-      'no_approver_step',
       'another_open',
     ]);
+    // A draft whose stored chain names nobody, or someone who left, is ready all the same.
+    repo.openCycle.mockResolvedValue(null);
+    repo.getCycle.mockResolvedValue(
+      record({ steps: [chain[0], { ...chain[1], approverPersonId: null }] }),
+    );
+    const unnamed = await query(defs.planCycleQueryDefinition())({ id: CYCLE });
+    expect(unnamed.ok && unnamed.value.problems).toEqual([]);
   });
 
   it('answers 404 for a cycle it cannot see (another organization: RLS returns nothing)', async () => {
@@ -370,7 +471,7 @@ describe('L&D Manager: list, new cycle, cycle view', () => {
   });
 });
 
-describe('L&D Manager: set-up steps', () => {
+describe('L&D Manager: create and cycle settings', () => {
   it('creates a draft and audits it', async () => {
     // No form chosen: the database stores the default one, and the audit records it (C-10).
     repo.insertCycle.mockResolvedValue({ id: CYCLE, version: 1, needsFormId: FORM });
@@ -379,15 +480,75 @@ describe('L&D Manager: set-up steps', () => {
       ...basics,
       needsFormId: null,
     });
-    expect(result.ok && result.value).toEqual({ id: CYCLE, version: 1, needsFormId: FORM });
+    expect(result.ok && result.value).toEqual({
+      id: CYCLE,
+      version: 1,
+      needsFormId: FORM,
+      departmentCount: 0,
+    });
+    // No scope picked: nothing is written for it.
+    expect(repo.replaceScope).not.toHaveBeenCalled();
     expect(audits).toEqual([
       {
         action: 'tms.plan_cycle.created',
         entityType: 'plan_cycle',
         entityId: CYCLE,
-        data: { after: { ...basics, needsFormId: FORM } },
+        data: {
+          after: { ...basics, needsFormId: FORM, departmentIds: [], branchIds: [], departments: 0 },
+        },
       },
     ]);
+  });
+
+  it('creates a draft with its departments in the same transaction (the popup); unknown units refused', async () => {
+    repo.insertCycle.mockResolvedValue({ id: CYCLE, version: 1, needsFormId: FORM });
+    const { action, audits } = runtime('training_manager');
+    const create = action(defs.createPlanCycleActionDefinition());
+    const result = await create({ ...basics, needsFormId: null, departmentIds: [SALES] });
+    // A unit includes its sub-units: two forms.
+    expect(result.ok && result.value.departmentCount).toBe(2);
+    // The cycle itself is inserted with the basics only…
+    expect(repo.insertCycle).toHaveBeenCalledWith(
+      {},
+      { ...basics, instructionsAr: null, instructionsEn: null, needsFormId: null },
+    );
+    // …then its scope, as the scope action writes it.
+    expect(repo.replaceScope).toHaveBeenCalledWith(
+      {},
+      CYCLE,
+      { departmentIds: [SALES], branchIds: [] },
+      [SALES, EAST],
+    );
+    expect(audits).toEqual([
+      expect.objectContaining({
+        action: 'tms.plan_cycle.created',
+        data: {
+          after: {
+            ...basics,
+            needsFormId: FORM,
+            departmentIds: [SALES],
+            branchIds: [],
+            departments: 2,
+          },
+        },
+      }),
+    ]);
+    // A branch covers its departments.
+    const byBranch = await create({ ...basics, needsFormId: null, branchIds: [JED] });
+    expect(byBranch.ok && byBranch.value.departmentCount).toBe(1);
+    // A unit or branch that is not in the structure (any more): refused before anything is written.
+    repo.insertCycle.mockClear();
+    const unknown = await create({
+      ...basics,
+      needsFormId: null,
+      departmentIds: [SALES, CFO],
+      branchIds: [GM],
+    });
+    expect(!unknown.ok && unknown.error.fieldErrors).toEqual([
+      { path: 'departmentIds.1', code: 'UNKNOWN' },
+      { path: 'branchIds.0', code: 'UNKNOWN' },
+    ]);
+    expect(repo.insertCycle).not.toHaveBeenCalled();
   });
 
   it('asks for the name in the default language only; the other language is optional (PO, 12 Nov 2026)', async () => {
@@ -417,7 +578,7 @@ describe('L&D Manager: set-up steps', () => {
     expect(!noArabic.ok && noArabic.error.fieldErrors).toEqual([
       { path: 'nameAr', code: 'REQUIRED' },
     ]);
-    // The basics of an existing cycle and the approval steps follow the same rule.
+    // The basics of an existing cycle follow the same rule.
     const basicsSaved = await action(defs.updatePlanCycleBasicsActionDefinition())({
       ...basics,
       nameAr: null,
@@ -427,24 +588,6 @@ describe('L&D Manager: set-up steps', () => {
     });
     expect(!basicsSaved.ok && basicsSaved.error.fieldErrors).toEqual([
       { path: 'nameAr', code: 'REQUIRED' },
-    ]);
-    const steps = await action(defs.savePlanCycleStepsActionDefinition())({
-      id: CYCLE,
-      version: 3,
-      steps: [
-        { kind: 'department_heads', nameAr: 'رؤساء الإدارات', nameEn: '', approverPersonId: null },
-        { kind: 'person', nameAr: '', nameEn: 'Finance', approverPersonId: null },
-      ],
-    });
-    expect(!steps.ok && steps.error.fieldErrors).toEqual([
-      { path: 'steps.1.nameAr', code: 'REQUIRED' },
-    ]);
-    const settings = await action(defs.savePlanningSettingsActionDefinition())({
-      reminderDays: [7],
-      steps: [{ kind: 'department_heads', nameAr: '', nameEn: 'Heads', approverPersonId: null }],
-    });
-    expect(!settings.ok && settings.error.fieldErrors).toEqual([
-      { path: 'steps.0.nameAr', code: 'REQUIRED' },
     ]);
   });
 
@@ -585,50 +728,6 @@ describe('L&D Manager: set-up steps', () => {
     ]);
   });
 
-  it('saves the approval chain: BR-PLN-g, approvers must be active members; audited with ids', async () => {
-    const { action, audits } = runtime('training_manager');
-    const twice = await action(defs.savePlanCycleStepsActionDefinition())({
-      id: CYCLE,
-      version: 3,
-      steps: [chain[1], { ...chain[2], approverPersonId: CFO }],
-    });
-    expect(!twice.ok && twice.error.fieldErrors).toEqual([
-      { path: 'steps.1.approverPersonId', code: 'DUPLICATE_APPROVER' },
-    ]);
-    db.getMemberOptionsByIds.mockResolvedValue([{ ...members[0], active: false }, members[1]]);
-    const gone = await action(defs.savePlanCycleStepsActionDefinition())({
-      id: CYCLE,
-      version: 3,
-      steps: [...chain],
-    });
-    expect(!gone.ok && gone.error.fieldErrors).toEqual([
-      { path: 'steps.1.approverPersonId', code: 'NOT_A_MEMBER' },
-    ]);
-    db.getMemberOptionsByIds.mockResolvedValue(members);
-    const saved = await action(defs.savePlanCycleStepsActionDefinition())({
-      id: CYCLE,
-      version: 3,
-      steps: [chain[0], { ...chain[1], approverPersonId: null }],
-    });
-    expect(saved.ok).toBe(true);
-    expect(audits).toEqual([
-      expect.objectContaining({
-        action: 'tms.plan_cycle.approval_chain_changed',
-        data: {
-          before: [
-            { kind: 'department_heads', approverPersonId: null },
-            { kind: 'person', approverPersonId: CFO },
-            { kind: 'person', approverPersonId: GM },
-          ],
-          after: [
-            { kind: 'department_heads', approverPersonId: null },
-            { kind: 'person', approverPersonId: null },
-          ],
-        },
-      }),
-    ]);
-  });
-
   it('saves reminder days sorted from the earliest', async () => {
     repo.updateReminders.mockResolvedValue(4);
     const { action, audits } = runtime('training_manager');
@@ -644,7 +743,7 @@ describe('L&D Manager: set-up steps', () => {
 });
 
 describe('L&D Manager: launch, extend, delete, settings', () => {
-  it('launches: departments re-synced, due cycles closed first, audited', async () => {
+  it('launches: departments re-synced, due cycles closed first, audited (the stored chain too)', async () => {
     repo.closeDueCycles.mockResolvedValue(['old']);
     repo.launch.mockResolvedValue({ outcome: 'launched', version: 5 });
     const { action, audits } = runtime('training_manager');
@@ -676,26 +775,49 @@ describe('L&D Manager: launch, extend, delete, settings', () => {
     const busy = await action(defs.launchPlanCycleActionDefinition())({ id: CYCLE, version: 3 });
     expect(!busy.ok && busy.error.code).toBe('PLAN_CYCLE_OPEN_EXISTS');
     repo.openCycle.mockResolvedValue(null);
-    repo.getCycle.mockResolvedValue(
-      record({ steps: [chain[0], { ...chain[1], approverPersonId: null }] }),
-    );
+    // Not ready: the deadline has passed and no needs form is chosen.
+    repo.getCycle.mockResolvedValue(record({ deadline: '2026-10-16', needsFormId: null }));
     const notReady = await action(defs.launchPlanCycleActionDefinition())({
       id: CYCLE,
       version: 3,
     });
     expect(!notReady.ok && notReady.error).toMatchObject({
       code: 'PLAN_CYCLE_NOT_READY',
-      params: { reasons: 'approver_missing' },
+      params: { reasons: 'deadline_past,no_needs_form' },
     });
+    // Not ready: the scope covers no department any more.
+    repo.getCycle.mockResolvedValue(record({ scope: { departmentIds: [], branchIds: [] } }));
+    const empty = await action(defs.launchPlanCycleActionDefinition())({ id: CYCLE, version: 3 });
+    expect(!empty.ok && empty.error.params).toEqual({ reasons: 'no_departments' });
     expect(repo.launch).not.toHaveBeenCalled();
     repo.getCycle.mockResolvedValue(record());
     repo.launch.mockResolvedValue({ outcome: 'another_open' });
     const race = await action(defs.launchPlanCycleActionDefinition())({ id: CYCLE, version: 3 });
     expect(!race.ok && race.error.code).toBe('PLAN_CYCLE_OPEN_EXISTS');
-    repo.launch.mockResolvedValue({ outcome: 'not_ready', reason: 'approver_inactive' });
+    // The database has the last word (it checks again): its reason is passed on.
+    repo.launch.mockResolvedValue({ outcome: 'not_ready', reason: 'no_needs_form' });
     const late = await action(defs.launchPlanCycleActionDefinition())({ id: CYCLE, version: 3 });
-    expect(!late.ok && late.error.params).toEqual({ reasons: 'approver_inactive' });
+    expect(!late.ok && late.error.params).toEqual({ reasons: 'no_needs_form' });
     expect(audits).toEqual([]);
+  });
+
+  it('launches without an approval chain: none, unnamed or naming someone who left (EP-PLN §13 e)', async () => {
+    repo.launch.mockResolvedValue({ outcome: 'launched', version: 5 });
+    const { action, audits } = runtime('training_manager');
+    const launch = action(defs.launchPlanCycleActionDefinition());
+    for (const steps of [
+      [],
+      [chain[0]],
+      [chain[0], { ...chain[1], approverPersonId: null }],
+      // Nobody checks whether a stored approver is still a member.
+      [{ ...chain[1], approverPersonId: HEAD }],
+    ]) {
+      repo.getCycle.mockResolvedValue(record({ steps }));
+      const result = await launch({ id: CYCLE, version: 3 });
+      expect(result.ok, JSON.stringify(steps)).toBe(true);
+    }
+    expect(repo.launch).toHaveBeenCalledTimes(4);
+    expect(audits).toHaveLength(4);
   });
 
   it('extends the deadline of an open cycle only to a later date within the period', async () => {
@@ -761,25 +883,6 @@ describe('L&D Manager: launch, extend, delete, settings', () => {
     expect(!closed.ok && closed.error.code).toBe('PLAN_CYCLE_DEADLINE_REFUSED');
   });
 
-  it('searches approvers by name for those who set chains up (C-M3)', async () => {
-    db.searchMemberOptions.mockResolvedValue([{ personId: CFO, nameAr: 'المالية', nameEn: 'CFO' }]);
-    const found = await runtime('training_manager').action(
-      defs.searchPlanApproversActionDefinition(),
-    )({ q: ' cf ' });
-    expect(found.ok && found.value).toEqual({
-      members: [{ personId: CFO, name: { ar: 'المالية', en: 'CFO' } }],
-    });
-    expect(db.searchMemberOptions).toHaveBeenLastCalledWith(expect.anything(), 'cf');
-    const short = await runtime('training_manager').action(
-      defs.searchPlanApproversActionDefinition(),
-    )({ q: 'c' });
-    expect(!short.ok && short.error.code).toBe('VALIDATION_FAILED');
-    const coordinator = await runtime('training_coordinator').action(
-      defs.searchPlanApproversActionDefinition(),
-    )({ q: 'cf' });
-    expect(!coordinator.ok && coordinator.error.code).toBe('FORBIDDEN');
-  });
-
   it('deletes a draft (audited with its names); a launched one is refused', async () => {
     repo.deleteDraft.mockResolvedValue(true);
     const { action, audits } = runtime('training_manager');
@@ -796,22 +899,27 @@ describe('L&D Manager: launch, extend, delete, settings', () => {
     expect(!refused.ok && refused.error.code).toBe('PLAN_CYCLE_NOT_DRAFT');
   });
 
-  it('saves the planning settings (default reminders and chain), audited', async () => {
+  it('saves the planning settings (the default reminders), audited; the stored chain is left alone', async () => {
     repo.getSettings.mockResolvedValue({ version: null, reminderDays: [7, 2], steps: chain });
     repo.saveSettings.mockResolvedValue(1);
     const { action, audits } = runtime('training_manager');
     const result = await action(defs.savePlanningSettingsActionDefinition())({
-      reminderDays: [10],
-      steps: [chain[0], chain[1]],
+      reminderDays: [10, 3],
     });
     expect(result.ok && result.value.version).toBe(1);
-    expect(audits).toEqual([expect.objectContaining({ action: 'tms.planning_settings.changed' })]);
-    const twice = await action(defs.savePlanningSettingsActionDefinition())({
-      reminderDays: [10],
-      steps: [chain[0], chain[0]],
-    });
-    expect(!twice.ok && twice.error.fieldErrors).toEqual([
-      { path: 'steps.1.kind', code: 'SECOND_HEADS_STEP' },
+    expect(repo.saveSettings).toHaveBeenCalledWith({}, [10, 3]);
+    expect(audits).toEqual([
+      {
+        action: 'tms.planning_settings.changed',
+        entityType: 'planning_settings',
+        data: { before: { reminderDays: [7, 2] }, after: { reminderDays: [10, 3] } },
+      },
     ]);
+    // A chain is not part of the settings any more: sending one is refused as unknown input.
+    const withChain = await action(defs.savePlanningSettingsActionDefinition())({
+      reminderDays: [10],
+      steps: [chain[0]],
+    } as never);
+    expect(!withChain.ok && withChain.error.code).toBe('VALIDATION_FAILED');
   });
 });

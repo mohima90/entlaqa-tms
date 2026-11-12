@@ -1,6 +1,6 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
-import { structureCompletionExists } from './custom-roles-present';
+import { storableStructureNames, structureCompletionExists } from './custom-roles-present';
 import { pgError } from './user-admin';
 import type { UserTx } from './with-user-tx';
 
@@ -241,6 +241,8 @@ async function clearHeadquarters(tx: UserTx, except: string | null): Promise<str
 
 export async function createBranch(tx: UserTx, input: BranchInput): Promise<BranchOutcome> {
   await lockBranches(tx);
+  // One name only once the database takes it (deploy window: storableStructureNames).
+  const names = await storableStructureNames(tx, input);
   let id: string;
   let movedFrom: string | null = null;
   try {
@@ -248,7 +250,7 @@ export async function createBranch(tx: UserTx, input: BranchInput): Promise<Bran
     const [row] = await tx.execute<{ id: string }>(sql`
       insert into platform.branches (code, name_ar, name_en, parent_branch_id, country_code, city_ar, city_en,
                                      timezone, is_headquarters)
-      values (${input.code}, ${input.nameAr}, ${input.nameEn}, ${input.parentBranchId}::uuid, ${input.countryCode},
+      values (${input.code}, ${names.nameAr}, ${names.nameEn}, ${input.parentBranchId}::uuid, ${input.countryCode},
               ${input.cityAr}, ${input.cityEn}, ${input.timezone}, ${input.isHeadquarters})
       returning id`);
     if (!row) throw new Error('createBranch: no row returned');
@@ -292,10 +294,11 @@ export function updateBranch(
   let movedFrom: string | null = null;
   const written = writeBranch(tx, id, version, async () => {
     if (input.isHeadquarters) movedFrom = await clearHeadquarters(tx, id);
+    const names = await storableStructureNames(tx, input);
     return tx
       .execute(
         sql`update platform.branches
-      set code = ${input.code}, name_ar = ${input.nameAr}, name_en = ${input.nameEn},
+      set code = ${input.code}, name_ar = ${names.nameAr}, name_en = ${names.nameEn},
           parent_branch_id = ${input.parentBranchId}::uuid, country_code = ${input.countryCode},
           city_ar = ${input.cityAr}, city_en = ${input.cityEn}, timezone = ${input.timezone},
           is_headquarters = ${input.isHeadquarters}

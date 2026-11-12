@@ -1,6 +1,6 @@
 import 'server-only';
 import { type SQL, sql } from 'drizzle-orm';
-import { structureCompletionExists } from './custom-roles-present';
+import { storableStructureNames, structureCompletionExists } from './custom-roles-present';
 import { listStructureLevels, listStructureUnits, structureRefusalOf } from './structure';
 import type { StructureRefusal } from './structure';
 import { getTenantDefaultLocale } from './tenants';
@@ -180,10 +180,12 @@ export async function applyUnitImport(
         const sortOrder = await orderOf(parentId);
         const costCentreColumn = completed ? sql`, default_cost_centre_id` : sql``;
         const costCentreValue = completed ? sql`, ${op.defaultCostCentreId}::uuid` : sql``;
+        // One name only once the database takes it (deploy window: storableStructureNames).
+        const names = await storableStructureNames(tx, op);
         const [row] = await tx.execute<{ id: string }>(sql`
           insert into platform.departments (code, name_ar, name_en, parent_id, branch_id, head_person_id, sort_order
                                             ${costCentreColumn})
-          values (${op.code}, ${op.nameAr}, ${op.nameEn}, ${parentId}::uuid, ${op.branchId}::uuid,
+          values (${op.code}, ${names.nameAr}, ${names.nameEn}, ${parentId}::uuid, ${op.branchId}::uuid,
                   ${op.headPersonId}::uuid, ${sortOrder} ${costCentreValue})
           returning id`);
         if (!row) throw new Error('applyUnitImport: no row returned');

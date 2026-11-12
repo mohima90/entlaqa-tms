@@ -77,6 +77,44 @@ export async function storableArabicDisplayName(
   return (await englishOnlyNamesExist(tx)) ? null : displayNameEn;
 }
 
+/** Once seen true, it stays true (expand-first): asked once per process. */
+let oneNameStructureSeen = false;
+
+/**
+ * May a unit, a branch or a structure level be saved with a name in one language only yet (migration
+ * 20261113100000: platform.departments.name_ar lost NOT NULL; FR-ADM-04, FR-ADM-05, PO 12 Nov 2026)? The app
+ * deploys in parallel with the database, so new code can run minutes before the migration: until then the
+ * writers store the name that was given in the empty slot too (storableStructureNames) — what readers show
+ * for a missing name anyway. A catalog lookup, never a failing write. Cached once true.
+ */
+export async function oneNameStructureExists(tx: ClaimsTx): Promise<boolean> {
+  if (oneNameStructureSeen) return true;
+  const [row] = await tx.execute<{ present: boolean }>(
+    sql`select coalesce((select not a.attnotnull from pg_catalog.pg_attribute a
+                         where a.attrelid = to_regclass('platform.departments') and a.attname = 'name_ar'
+                           and not a.attisdropped), false) as present`,
+  );
+  oneNameStructureSeen = row?.present === true;
+  return oneNameStructureSeen;
+}
+
+/**
+ * The two names of a unit, branch or level as the database can store them now: as given — or, before
+ * migration 20261113100000, with the Arabic slot filled from the English name (`both`: the English slot
+ * from the Arabic name too — structure levels required both names).
+ */
+export async function storableStructureNames(
+  tx: ClaimsTx,
+  names: { readonly nameAr: string | null; readonly nameEn: string | null },
+  both = false,
+): Promise<{ readonly nameAr: string | null; readonly nameEn: string | null }> {
+  if (await oneNameStructureExists(tx)) return { nameAr: names.nameAr, nameEn: names.nameEn };
+  return {
+    nameAr: names.nameAr ?? names.nameEn,
+    nameEn: both ? (names.nameEn ?? names.nameAr) : names.nameEn,
+  };
+}
+
 /** Once seen, platform.structure_levels stays (expand-first): asked once per process by the labels read. */
 let structureLevelsSeen = false;
 
@@ -111,6 +149,7 @@ export function forgetSchemaPresenceForTests(): void {
   englishOnlyNamesSeen = false;
   structureLevelsSeen = false;
   structureCompletionSeen = false;
+  oneNameStructureSeen = false;
 }
 
 /** Tests only: answer structureCompletionExists without a query (null: ask the database again). */

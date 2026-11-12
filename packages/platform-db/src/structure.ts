@@ -6,6 +6,7 @@ import {
   structureCompletionExists,
   structureLevelsExist,
   structureLevelsExistCached,
+  storableStructureNames,
 } from './custom-roles-present';
 import { pgError } from './user-admin';
 import type { UserTx } from './with-user-tx';
@@ -426,11 +427,13 @@ export async function addStructureLevel(
   const levels = await listStructureLevels(tx);
   const ordinal = (levels.at(-1)?.ordinal ?? 0) + 1;
   if (ordinal > MAX_STRUCTURE_LEVELS) return { ok: false, refusal: 'too_many_levels' };
+  // One name only once the database takes it (deploy window: storableStructureNames).
+  const stored = await storableStructureNames(tx, names, true);
   let id: string;
   try {
     const [row] = await tx.execute<{ id: string }>(sql`
       insert into platform.structure_levels (ordinal, name_en, name_ar)
-      values (${ordinal}, ${names.nameEn}, ${names.nameAr})
+      values (${ordinal}, ${stored.nameEn}, ${stored.nameAr})
       returning id`);
     if (!row) throw new Error('addStructureLevel: no row returned');
     id = row.id;
@@ -451,9 +454,10 @@ export async function renameStructureLevel(
   const before = await levelById(tx, id);
   if (!before) return { ok: false, refusal: 'not_found' };
   if (before.version !== version) return { ok: false, refusal: 'version_conflict' };
+  const stored = await storableStructureNames(tx, names, true);
   try {
     const rows = await tx.execute(sql`update platform.structure_levels
-      set name_en = ${names.nameEn}, name_ar = ${names.nameAr}
+      set name_en = ${stored.nameEn}, name_ar = ${stored.nameAr}
       where id = ${id}::uuid and version = ${version}
       returning id`);
     if (rows.length === 0) return { ok: false, refusal: 'version_conflict' };
@@ -528,12 +532,14 @@ export async function createStructureUnit(
   const completed = await structureCompletionExists(tx);
   const costCentreColumn = completed ? sql`, default_cost_centre_id` : sql``;
   const costCentreValue = completed ? sql`, ${input.defaultCostCentreId}::uuid` : sql``;
+  // One name only once the database takes it (deploy window: storableStructureNames).
+  const names = await storableStructureNames(tx, input);
   let id: string;
   try {
     const [row] = await tx.execute<{ id: string }>(sql`
       insert into platform.departments (code, name_ar, name_en, parent_id, branch_id, head_person_id, sort_order
                                         ${costCentreColumn})
-      values (${input.code}, ${input.nameAr}, ${input.nameEn}, ${parentId}::uuid, ${input.branchId}::uuid,
+      values (${input.code}, ${names.nameAr}, ${names.nameEn}, ${parentId}::uuid, ${input.branchId}::uuid,
               ${input.headPersonId}::uuid, ${sortOrder} ${costCentreValue})
       returning id`);
     if (!row) throw new Error('createStructureUnit: no row returned');
@@ -574,8 +580,9 @@ export function updateStructureUnit(
     const costCentre = (await structureCompletionExists(tx))
       ? sql`, default_cost_centre_id = ${input.defaultCostCentreId}::uuid`
       : sql``;
+    const names = await storableStructureNames(tx, input);
     return tx.execute(sql`update platform.departments
-      set code = ${input.code}, name_ar = ${input.nameAr}, name_en = ${input.nameEn},
+      set code = ${input.code}, name_ar = ${names.nameAr}, name_en = ${names.nameEn},
           branch_id = ${input.branchId}::uuid, head_person_id = ${input.headPersonId}::uuid ${costCentre}
       where id = ${id}::uuid and version = ${version} and deleted_at is null
       returning id`);

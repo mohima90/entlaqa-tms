@@ -337,6 +337,31 @@ describe('levels', () => {
 });
 
 describe('units', () => {
+  it('stores a unit named in English only; before migration 20261113100000 the name fills the Arabic slot', async () => {
+    const input = {
+      code: 'C2',
+      nameEn: 'Child',
+      nameAr: null,
+      branchId: null,
+      headPersonId: null,
+      defaultCostCentreId: null,
+    };
+    forgetSchemaPresenceForTests();
+    const stored = unitRow('c2', { name_ar: null, name_en: 'Child' });
+    const after = fakeTx([[], [], [{ id: 'c2' }], [stored]]);
+    expect(await createStructureUnit(after.tx, null, input)).toMatchObject({
+      ok: true,
+      after: { nameAr: null, nameEn: 'Child' },
+    });
+    expect(after.executed.find(isWrite)?.params.slice(0, 3)).toEqual(['C2', null, 'Child']);
+    // The deploy window: the column still refuses NULL.
+    forgetSchemaPresenceForTests();
+    const before = fakeTx([[], [], [{ id: 'c2' }], [unitRow('c2')]], true);
+    expect((await createStructureUnit(before.tx, null, input)).ok).toBe(true);
+    expect(before.executed.find(isWrite)?.params.slice(0, 3)).toEqual(['C2', 'Child', 'Child']);
+    forgetSchemaPresenceForTests();
+  });
+
   it('creates a unit under its parent, last among its siblings', async () => {
     const units = [unitRow('p'), unitRow('c1', { parent_id: 'p', sort_order: 4 })];
     const fake = fakeTx([[], units, [{ id: 'c2' }], [...units, unitRow('c2', { parent_id: 'p' })]]);

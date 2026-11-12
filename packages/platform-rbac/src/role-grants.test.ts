@@ -87,6 +87,11 @@ describe('grantsForAssignments', () => {
   it('limits a custom role scoped to «A department» to the unit picked for the assignment and everything under it (EP-ORG, T-M3-09)', () => {
     const departments: CustomRoleDefinition = { ...reviewer, dataScope: 'departments' };
     const context = { headedDepartmentIds: ['headed'], customRoles: [departments] };
+    // What heading a unit carries by itself (PO, 12 Nov 2026): entering that unit's training needs.
+    const headship = {
+      permission: 'tms.plan_needs.submit',
+      scope: { type: 'org_units', orgUnitIds: ['headed'], includeDescendants: true },
+    };
     // The picked unit with its descendants — never the departments the member happens to head.
     expect(
       grantsForAssignments([{ roleCode: departments.code, scopeUnitId: 'sales' }], context),
@@ -96,6 +101,7 @@ describe('grantsForAssignments', () => {
         scope: { type: 'org_units', orgUnitIds: ['sales'], includeDescendants: true },
       },
       { permission: 'platform.org.read', scope: { type: 'tenant' } },
+      headship,
     ]);
     // No unit (not picked yet, or deactivated / deleted since): nothing scoped, the structure's names only.
     for (const assignment of [
@@ -104,6 +110,7 @@ describe('grantsForAssignments', () => {
     ]) {
       expect(grantsForAssignments([assignment], context)).toEqual([
         { permission: 'platform.org.read', scope: { type: 'tenant' } },
+        headship,
       ]);
     }
     // A unit stored on a role that is not limited to a department is ignored.
@@ -126,6 +133,47 @@ describe('grantsForAssignments', () => {
     expect(scopeNeedsUnit('departments')).toBe(true);
     expect(scopeNeedsUnit('team')).toBe(false);
     expect(scopeNeedsUnit('organization')).toBe(false);
+  });
+
+  it('the head of a unit enters its training needs whatever their role, and only there (PO, 12 Nov 2026)', () => {
+    const needs = (grants: ReturnType<typeof grantsForAssignments>) =>
+      grants.filter((g) => g.permission === 'tms.plan_needs.submit');
+    const headed = { headedDepartmentIds: ['hr-unit'] };
+    const scope = { type: 'org_units', orgUnitIds: ['hr-unit'], includeDescendants: true };
+    // The HR Manager who heads Human Resources, the L&D Manager, the Organization Admin, a Training
+    // Coordinator, an Employee who accepted before being picked: one role each, and the head's right.
+    for (const roleCode of [
+      'hr_manager',
+      'lnd_manager',
+      'tenant_admin',
+      'training_coordinator',
+      'learner',
+    ]) {
+      expect(needs(grantsForAssignments([{ roleCode }], headed))).toEqual([
+        { permission: 'tms.plan_needs.submit', scope },
+      ]);
+    }
+    // A member with no role at all who heads a unit.
+    expect(needs(grantsForAssignments([], headed))).toEqual([
+      { permission: 'tms.plan_needs.submit', scope },
+    ]);
+    // Nobody who heads nothing gains it — whatever their role (deny by default); the Department Head
+    // role by itself, without a unit, grants nothing either.
+    for (const roleCode of [
+      'hr_manager',
+      'lnd_manager',
+      'tenant_admin',
+      'learner',
+      'department_head',
+    ]) {
+      expect(needs(grantsForAssignments([{ roleCode }], none))).toEqual([]);
+    }
+    // The head's right does not widen anything else the role gives.
+    expect(
+      grantsForAssignments([{ roleCode: 'learner' }], headed).filter(
+        (g) => g.scope.type === 'org_units' && g.permission !== 'tms.plan_needs.submit',
+      ),
+    ).toEqual([]);
   });
 
   it('ignores unknown roles: former system roles, deleted custom roles (deny by default)', () => {

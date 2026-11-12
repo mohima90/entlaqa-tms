@@ -39,9 +39,7 @@ const ALLOWED: Readonly<Record<string, string>> = {
   'structure.form.headHint': 'names the Department Head role',
   // WP-FIX-03: what happened to the role of the person picked as a head.
   'structure.toasts.headRole.given': 'names the Department Head role',
-  'structure.toasts.headRole.kept': 'names the Department Head role',
   'structure.toasts.headRole.notAllowed': 'names the Department Head role',
-  'structure.toasts.headRole.noAccount': 'names the Department Head role',
   // Example level names an organization may choose (Sector → Department → Section).
   'structure.levels.example': 'example level names',
 };

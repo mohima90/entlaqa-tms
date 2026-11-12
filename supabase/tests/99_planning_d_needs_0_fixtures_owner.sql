@@ -3,7 +3,8 @@
 -- and 99_planning_d_needs_2_owner.sql, and the catalogue checks that need the owner connection.
 --   uH  (…e0a4) Department Head of tenant A, session sH in A; heads the new department SALES-NEEDS (a3…04);
 --       uE (the Employee, 99_planning_a) now works in SAL under uH — a person uH may name for a need
---   uA  heads TD in the structure but holds no Department Head role (the Organization Admin): never enters needs
+--   uA  heads TD in the structure and holds the Organization Admin role: enters TD's needs as its head, whatever
+--       the role (WP-FIX-03, PO 12 Nov 2026), and no other department's
 --   Nothing else changes for the earlier test files (this file runs after them).
 \set ON_ERROR_STOP on
 

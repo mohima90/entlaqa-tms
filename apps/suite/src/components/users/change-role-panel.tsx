@@ -6,6 +6,7 @@ import { updateMemberPrivilegedRolesAction, updateMemberRolesAction } from '../.
 import { fillText } from '../../lib/fill-text';
 import {
   DEPARTMENT_HEAD_ROLE,
+  EMPLOYEE_ROLE,
   type HeadUnitView,
   NO_HEAD_UNIT_VIEW,
   headUnitErrorKey,
@@ -110,11 +111,8 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
       ? (headUnits.heads.find((h) => h.unitId === headUnit && h.personId !== target.personId) ??
         null)
       : null;
-  const leavesUnits =
-    headUnits.canPick &&
-    target.currentRole === DEPARTMENT_HEAD_ROLE &&
-    role !== DEPARTMENT_HEAD_ROLE &&
-    headed.length > 0;
+  // A head keeps their departments with any role but Employee (PO, 12 Nov 2026); see edit-roles.ts.
+  const leavesUnits = headUnits.canPick && role === EMPLOYEE_ROLE && headed.length > 0;
   const currentUnitInactive =
     target.currentUnit !== null &&
     role === target.currentRole &&

@@ -9,6 +9,9 @@ import type { HeadUnitChoices } from '@jadarat/platform-rbac';
 /** The standard role a head holds (packages/platform-rbac system-roles). */
 export const DEPARTMENT_HEAD_ROLE = 'department_head';
 
+/** The Employee role: the one role a head cannot keep their departments with (they would be a Department Head). */
+export const EMPLOYEE_ROLE = 'learner';
+
 /** A department's head as the forms show it. */
 export interface HeadOfUnit {
   readonly unitId: string;

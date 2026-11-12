@@ -21,7 +21,7 @@ import type { QueryDefinition } from '../define-query';
 import type { PermissionDefinition } from '../permissions';
 import { platformPermissions } from '../platform-permissions';
 import { SYSTEM_ROLES } from '../system-roles';
-import { DEPARTMENT_HEAD_ROLE } from './head-role';
+import { DEPARTMENT_HEAD_ROLE, EMPLOYEE_ROLE } from './head-role';
 import { type RoleChoice, canGive, findRole, loadRoleChoices } from './role-catalogue';
 import {
   type ScopeUnitChoices,
@@ -250,8 +250,11 @@ function roleAction(
       if (becomesHead && managesUnits && input.headUnitId === null && headed.length === 0) {
         return err(fieldError('HEAD_UNIT_REQUIRED', 'headUnitId'));
       }
-      const leavesUnits =
-        current?.roleCode === DEPARTMENT_HEAD_ROLE && !becomesHead && headed.length > 0;
+      // A head keeps their units with any role but Employee (PO, 12 Nov 2026: the head of a department
+      // enters its needs whatever their role — e.g. the HR Manager who heads Human Resources). Making a
+      // head an Employee is the one change that means «no longer the head»: an Employee who heads a unit
+      // is a Department Head (head-role.ts), so the form asks and the units are left without a head.
+      const leavesUnits = wanted.code === EMPLOYEE_ROLE && headed.length > 0;
       if (leavesUnits && managesUnits && !input.clearHeads) {
         return err(
           appError('VALIDATION_FAILED', {

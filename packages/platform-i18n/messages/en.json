@@ -829,7 +829,7 @@
       "replaceBodyUnnamed": "{unit} has a head now. {name} becomes the head instead.",
       "replaceConfirm": "Replace the head",
       "clearTitle": "Leave {units} without a head?",
-      "clearBody": "{name} is the head of {units}. With another role they stop being the head, and nobody can enter the training needs there until a new head is picked in Organization → Departments.",
+      "clearBody": "{name} is the head of {units}. As an Employee they stop being the head, and nobody can enter the training needs there until a new head is picked in Organization → Departments.",
       "clearConfirm": "Change the role",
       "cancel": "Cancel",
       "savedHead": "Role saved. {name} is now the head of {unit}.",
@@ -3033,7 +3033,7 @@
       "noBranch": "No branch",
       "head": "Head",
       "noHead": "No head yet",
-      "headHint": "Any active person. An employee you pick gets the Department Head role; someone with another role keeps it.",
+      "headHint": "Any active person. The head enters the department's training needs. An employee you pick gets the Department Head role; someone with another role keeps it.",
       "create": "Add",
       "save": "Save changes",
       "saving": "Saving…",
@@ -3105,9 +3105,9 @@
       "reordered": "{name} moved.",
       "headRole": {
         "given": "{name} is now a Department Head.",
-        "kept": "{name} keeps their current role, because a person has one role. Only someone with the Department Head role enters a department's training needs.",
-        "notAllowed": "{name} still needs the Department Head role. The Organization Admin or HR gives it in Team members.",
-        "noAccount": "{name} has no account in the organization yet. Invite them as a Department Head so they can enter the department's training needs."
+        "kept": "{name} keeps their current role, because a person has one role. As the head, they enter the department's training needs.",
+        "notAllowed": "{name} is the head and enters the department's training needs. The Department Head role, given in Team members by the Organization Admin or HR, also lets them see their team.",
+        "noAccount": "{name} has no account in the organization yet. Invite them so they can enter the department's training needs."
       }
     },
     "levels": {

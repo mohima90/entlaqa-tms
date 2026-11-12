@@ -522,9 +522,13 @@ begin
     'plan_cycle_departments: insert with tenant B tenant_id is rejected by RLS');
   perform tests.assert_eq(tests.rows_affected($q$update tms.plan_cycle_departments set budget_amount = 1 where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
     0::bigint, 'plan_cycle_departments: RLS filters tenant B rows');
-  -- The form status is a department head's (WP-LD-01): granted, and RLS keeps everyone else (here the
-  -- Organization Admin, who heads TD without the Department Head role) from every row.
-  perform tests.assert_eq(tests.rows_affected($q$update tms.plan_cycle_departments set status = 'submitted'$q$),
+  -- The form status is a department head's (WP-LD-01). Whoever heads a unit reaches its rows whatever
+  -- their role (WP-FIX-03, migration 20261112100300) — here the Organization Admin, who heads TD and, with
+  -- it, TD-PRG, which has no head of its own. A draft cycle's rows are the L&D Manager's alone (the guard
+  -- refuses), and RLS keeps a head from every other row.
+  perform tests.assert_fails($q$update tms.plan_cycle_departments set status = 'submitted'$q$,
+    array['JK001'], 'plan_cycle_departments: a head moves nothing in a draft cycle');
+  perform tests.assert_eq(tests.rows_affected($q$update tms.plan_cycle_departments set status = 'submitted' where department_id not in ('a3000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000002')$q$),
     0::bigint, 'plan_cycle_departments: the form status moves only for the department''s head');
   perform tests.assert_privilege_denied($q$update tms.plan_cycle_departments set cycle_id = 'be000000-0000-4000-8000-000000000001'$q$,
     'plan_cycle_departments: cycle_id is not updatable');

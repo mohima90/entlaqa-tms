@@ -630,6 +630,40 @@ describe('the Department Head role and the unit they head (WP-FIX-03, «either d
     db.listHeadedUnitIds.mockResolvedValue([]);
   });
 
+  it('a head keeps their units with any role but Employee: no question, nothing cleared (PO, 12 Nov 2026)', async () => {
+    const save = createDefineAction(runtime(['hr_manager']).rt)(
+      updateMemberRolesActionDefinition(),
+    );
+    const HEAD_TOKEN = 'department_head:5c1d2b3f-9a4e-4d2f-8b8c-3e6f7a8b9c0d:1';
+    db.getEditableRole.mockResolvedValue(
+      editable({ roleCode: 'department_head', version: HEAD_TOKEN }),
+    );
+    db.listHeadedUnitIds.mockResolvedValue([SALES]);
+    // The head of Sales becomes a Training Coordinator: still the head, still enters its needs.
+    const kept = await save({ ...form('training_coordinator'), version: HEAD_TOKEN });
+    expect(kept.ok && kept.value.headsCleared).toEqual([]);
+    expect(db.clearHeadedUnits).not.toHaveBeenCalled();
+    db.listHeadedUnitIds.mockResolvedValue([]);
+  });
+
+  it('any head made an Employee is asked about their units, whatever role they held', async () => {
+    const save = createDefineAction(runtime(['hr_manager']).rt)(
+      updateMemberRolesActionDefinition(),
+    );
+    const TOKEN = 'training_coordinator:5c1d2b3f-9a4e-4d2f-8b8c-3e6f7a8b9c0d:1';
+    db.getEditableRole.mockResolvedValue(
+      editable({ roleCode: 'training_coordinator', version: TOKEN }),
+    );
+    db.listHeadedUnitIds.mockResolvedValue([SALES]);
+    const warned = await save({ ...form('learner'), version: TOKEN });
+    expect(!warned.ok && warned.error).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      fieldErrors: [{ path: 'role', code: 'HEADS_LEFT' }],
+    });
+    expect(db.replaceMemberRole).not.toHaveBeenCalled();
+    db.listHeadedUnitIds.mockResolvedValue([]);
+  });
+
   it('a member who does not manage the structure changes the role and leaves the units as they are', async () => {
     const admin = createDefineAction(runtime(['tenant_admin']).rt)(
       updateMemberRolesActionDefinition(),

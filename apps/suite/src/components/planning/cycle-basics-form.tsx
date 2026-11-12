@@ -11,6 +11,7 @@ import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { SelectField } from '../select-field';
 import { StepFooter } from './cycle-chain-forms';
+import { useFormBase } from '../latest-version';
 import { useUnsavedStep } from './setup-step-nav';
 import { usePlanningTexts } from './use-planning-texts';
 
@@ -79,10 +80,18 @@ export function CycleBasicsForm(props: CycleBasicsFormProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const day = dayFormatter(props.locale, props.display);
   const isDay = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
-  useUnsavedStep(
-    props.editing !== null &&
-      (Object.keys(values) as Field[]).some((field) => values[field] !== props.initial[field]),
+  // The fields and the version they were read at stay together (review H1); a new cycle has no version.
+  const base = useFormBase(
+    { version: props.editing?.version ?? 0, initial: props.initial },
+    (initial) =>
+      props.editing !== null &&
+      (Object.keys(values) as Field[]).some((field) => values[field] !== initial[field]),
+    (initial) => {
+      setValues(initial);
+      setErrors({});
+    },
   );
+  useUnsavedStep(base.dirty);
 
   function update(field: Field, value: string) {
     setValues((current) => ({ ...current, [field]: value }));
@@ -119,7 +128,7 @@ export function CycleBasicsForm(props: CycleBasicsFormProps) {
         ? await updatePlanCycleBasicsAction({
             ...input,
             id: props.editing.id,
-            version: props.editing.version,
+            version: base.version,
           })
         : await createPlanCycleAction(input);
       if (result.ok) {

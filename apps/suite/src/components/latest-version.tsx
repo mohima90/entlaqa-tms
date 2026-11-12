@@ -2,8 +2,21 @@
 import type { AppError } from '@jadarat/platform-core';
 import { toast } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
-import { type ReactNode, createContext, useCallback, useContext, useEffect, useRef } from 'react';
-import { REFRESH_ON_RETURN, isVersionConflict, mayRefreshOnReturn } from '../lib/latest-version';
+import {
+  type ReactNode,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
+import {
+  REFRESH_ON_RETURN,
+  formTakesLatest,
+  isVersionConflict,
+  mayRefreshOnReturn,
+} from '../lib/latest-version';
 
 /** Texts of the shell (namespace `shell.latest`), translated on the server. */
 export interface LatestVersionTexts {
@@ -73,6 +86,35 @@ export function useLatestVersion(): {
     [texts],
   );
   return { refresh, offer };
+}
+
+/**
+ * The copy of the data a form's fields were read from, and its version (review H1). A form keeps its fields
+ * in state, read once; when the page loads a newer copy underneath (`router.refresh()`, `RefreshOnReturn`)
+ * the form must not send the newer version with its older fields. So:
+ *
+ *   - nothing typed → the form takes the latest copy: `take(latest)` resets its fields, and it sends the
+ *     latest version;
+ *   - something typed → it keeps the copy and the version it started from; saving is refused as a conflict
+ *     and the person is offered «Load the latest version», as before the automatic reload existed.
+ *
+ * `isDirty(initial)` compares the fields with the copy they came from (not with the latest props, or an
+ * untouched form would look unsaved after a reload).
+ */
+export function useFormBase<T>(
+  current: { readonly version: number; readonly initial: T },
+  isDirty: (initial: T) => boolean,
+  take: (latest: T) => void,
+): { readonly version: number; readonly initial: T; readonly dirty: boolean } {
+  const [base, setBase] = useState(current);
+  const dirty = isDirty(base.initial);
+  if (formTakesLatest({ base: base.version, current: current.version, dirty })) {
+    // Adjusting state while rendering, as React documents for «a prop changed»: one extra render.
+    setBase(current);
+    take(current.initial);
+    return { version: current.version, initial: current.initial, dirty: false };
+  }
+  return { version: base.version, initial: base.initial, dirty };
 }
 
 /**

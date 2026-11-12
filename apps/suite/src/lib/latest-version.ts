@@ -8,6 +8,23 @@ export function isVersionConflict(error: { readonly code: string }): boolean {
   return error.code === 'CONFLICT_VERSION';
 }
 
+/**
+ * Does a form take the newer copy the page just loaded? Only when nothing was typed in it: its fields then
+ * show the latest values and it sends the latest version. A form with typed entries keeps the version its
+ * fields were read at, so saving it is still refused as a conflict and «Load the latest version» is offered
+ * — a reload must never put a newer version under older fields (review H1, 12 Nov 2026: the next save
+ * would overwrite the other person's change unseen).
+ */
+export function formTakesLatest(state: {
+  /** The version the form's fields were read at. */
+  readonly base: number;
+  /** The version the page holds now. */
+  readonly current: number;
+  readonly dirty: boolean;
+}): boolean {
+  return state.current > state.base && !state.dirty;
+}
+
 /** When a page reloads its data as the person comes back to the tab. */
 export const REFRESH_ON_RETURN = {
   /** The tab was away at least this long (a glance at another tab changes nothing). */

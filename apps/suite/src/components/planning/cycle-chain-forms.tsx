@@ -18,6 +18,7 @@ import { PLANNING_PATHS, cycleHref, fieldErrorKey } from '../../lib/planning-vie
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { ApprovalChainEditor, ReminderDaysEditor } from './chain-editors';
+import { useFormBase } from '../latest-version';
 import { useUnsavedStep } from './setup-step-nav';
 import { usePlanningTexts } from './use-planning-texts';
 
@@ -125,7 +126,16 @@ export function CycleStepsForm(props: CycleStepsFormProps) {
   const [steps, setSteps] = useState<StepDraft[]>([...props.initial]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
-  useUnsavedStep(chainShape(steps) !== chainShape(props.initial));
+  // The steps and the version they were read at stay together (review H1).
+  const base = useFormBase(
+    { version: props.cycle.version, initial: props.initial },
+    (initial) => chainShape(steps) !== chainShape(initial),
+    (initial) => {
+      setSteps([...initial]);
+      setErrors({});
+    },
+  );
+  useUnsavedStep(base.dirty);
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -138,7 +148,7 @@ export function CycleStepsForm(props: CycleStepsFormProps) {
     startTransition(async () => {
       const result = await savePlanCycleStepsAction({
         id: props.cycle.id,
-        version: props.cycle.version,
+        version: base.version,
         steps: fromDrafts(steps),
       });
       if (result.ok) {
@@ -205,7 +215,16 @@ export function CycleRemindersForm(props: CycleRemindersFormProps) {
   const [days, setDays] = useState<string[]>(props.initial.map(String));
   const [error, setError] = useState<string | undefined>(undefined);
   const [notice, setNotice] = useState<string | null>(null);
-  useUnsavedStep(days.join(',') !== props.initial.join(','));
+  // The days and the version they were read at stay together (review H1).
+  const base = useFormBase(
+    { version: props.cycle.version, initial: props.initial },
+    (initial) => days.join(',') !== initial.join(','),
+    (initial) => {
+      setDays(initial.map(String));
+      setError(undefined);
+    },
+  );
+  useUnsavedStep(base.dirty);
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -218,7 +237,7 @@ export function CycleRemindersForm(props: CycleRemindersFormProps) {
     startTransition(async () => {
       const result = await savePlanCycleRemindersAction({
         id: props.cycle.id,
-        version: props.cycle.version,
+        version: base.version,
         reminderDays: parsed.days,
       });
       if (result.ok) {

@@ -34,7 +34,7 @@ import { NEEDS_TONE } from '../../lib/needs-view';
 import { dayFormatter, formatAmount } from '../../lib/planning-format';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
-import { useLatestVersion } from '../latest-version';
+import { useFormBase, useLatestVersion } from '../latest-version';
 import { NeedsFormRenderer, type NeedsFormAnswers } from '../needs-forms/needs-form-renderer';
 import { NeedPanel } from './need-panel';
 import { useNeedsTexts } from './use-needs-texts';
@@ -773,6 +773,15 @@ function DepartmentAnswers({
   const [answers, setAnswers] = useState<NeedsFormAnswers>(view.answers as NeedsFormAnswers);
   // Unsaved answers: the page does not reload itself over them (RefreshOnReturn, WP-FIX-03).
   const [unsaved, setUnsaved] = useState(false);
+  // Untouched answers follow the latest copy the page loads (a row action, coming back to the tab);
+  // typed answers stay as they are (review H1).
+  useFormBase(
+    { version: view.department.version, initial: view.answers },
+    () => unsaved,
+    (latest) => {
+      setAnswers(latest as NeedsFormAnswers);
+    },
+  );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();

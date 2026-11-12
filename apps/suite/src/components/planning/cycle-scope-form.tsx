@@ -8,6 +8,7 @@ import { cycleHref } from '../../lib/planning-view';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { StepFooter } from './cycle-chain-forms';
+import { useFormBase } from '../latest-version';
 import { useUnsavedStep } from './setup-step-nav';
 import { usePlanningTexts } from './use-planning-texts';
 
@@ -60,10 +61,17 @@ export function CycleScopeForm(props: CycleScopeFormProps) {
   );
   const [branches, setBranches] = useState<ReadonlySet<string>>(new Set(props.initial.branchIds));
   const [notice, setNotice] = useState<string | null>(null);
-  useUnsavedStep(
-    !sameSet(departments, props.initial.departmentIds) ||
-      !sameSet(branches, props.initial.branchIds),
+  // The ticks and the version they were read at stay together (review H1).
+  const base = useFormBase(
+    { version: props.cycle.version, initial: props.initial },
+    (initial) =>
+      !sameSet(departments, initial.departmentIds) || !sameSet(branches, initial.branchIds),
+    (initial) => {
+      setDepartments(new Set(initial.departmentIds));
+      setBranches(new Set(initial.branchIds));
+    },
   );
+  useUnsavedStep(base.dirty);
 
   const structure = useMemo(
     () =>
@@ -97,7 +105,7 @@ export function CycleScopeForm(props: CycleScopeFormProps) {
     startTransition(async () => {
       const result = await savePlanCycleScopeAction({
         id: props.cycle.id,
-        version: props.cycle.version,
+        version: base.version,
         departmentIds: [...departments],
         branchIds: [...branches],
       });

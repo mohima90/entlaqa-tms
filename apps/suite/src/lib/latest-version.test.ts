@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { REFRESH_ON_RETURN, isVersionConflict, mayRefreshOnReturn } from './latest-version';
+import {
+  REFRESH_ON_RETURN,
+  formTakesLatest,
+  isVersionConflict,
+  mayRefreshOnReturn,
+} from './latest-version';
 
 describe('the automatic reload (WP-FIX-03)', () => {
   it('knows a version conflict from any other refusal', () => {
@@ -33,5 +38,22 @@ describe('the automatic reload (WP-FIX-03)', () => {
   it('never reloads under an open dialog or panel, or over unsaved entries', () => {
     expect(mayRefreshOnReturn({ ...back, dialogOpen: true })).toBe(false);
     expect(mayRefreshOnReturn({ ...back, unsaved: true })).toBe(false);
+  });
+});
+
+describe('formTakesLatest (review H1)', () => {
+  it('an untouched form takes the newer copy the page loaded', () => {
+    expect(formTakesLatest({ base: 4, current: 5, dirty: false })).toBe(true);
+  });
+
+  it('a form with typed entries keeps the version its fields were read at', () => {
+    // Otherwise version 5 would sit under version-4 fields and the save would overwrite the other
+    // person's change without a conflict.
+    expect(formTakesLatest({ base: 4, current: 5, dirty: true })).toBe(false);
+  });
+
+  it('nothing changes while the page holds the same or an older copy', () => {
+    expect(formTakesLatest({ base: 5, current: 5, dirty: false })).toBe(false);
+    expect(formTakesLatest({ base: 5, current: 4, dirty: false })).toBe(false);
   });
 });

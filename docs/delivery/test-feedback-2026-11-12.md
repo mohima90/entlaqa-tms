@@ -1,0 +1,19 @@
+# «Simple way» test feedback — 12 Nov 2026 (PO, production)
+
+The PO ran the «simple way» test of WP-LD-01 with Claude guiding step by step (cycle «2027 Cycle», department Finance):
+the Department Head enters needs and submits; the L&D Manager views, returns with a note, extends one department; the
+head sees the note, changes a need, submits over the envelope, recalls and submits again. **The journey passed.** Seven
+comments came out of it.
+
+**Decision (PO, 12 Nov 2026): «Fixes first»** — points 1–3 are built as one small package before consolidation
+(**WP-FIX-03**), after the nightly self-hosted gate is green again (issue #95). Points 4–5 need the PO's answers first.
+
+| # | Area | Feedback | Finding | Handling | Status |
+|---|---|---|---|---|---|
+| 1 | Departments ↔ Team members | «Once I've added a user to be Department Head it should reflect here directly» — the cycle's Scope step showed «No head» for Finance although its head held the Department Head role | **Design gap.** The role (Team members) and the department's «Head» field (Departments) are separate and both are needed; neither sets the other | One rule, either door does both: picking a head gives the Department Head role; giving the role asks «Head of which department?» and fills the field; replacing a head asks first; taking the role away warns which departments are left without a head; import and deactivation follow | 🔵 WP-FIX-03 |
+| 2 | Any page with a version | «Why didn't the refresh happen automatically?!» — «Recall» from an older copy of the page was refused with «Someone else changed this item… Refresh» | **Design gap.** The refusal is right (the page was older than the L&D Manager's return and extension), asking the person to refresh by hand is not | On a conflict the page loads the latest version itself and says so; pages reload quietly when the tab is shown again | 🔵 WP-FIX-03 |
+| 3 | Cycle set-up | «Creating a cycle requires Arabic names and it is mandatory — I didn't like it» | The rule approved on 17 Oct 2026 (the required name follows the default language; the other language optional) was applied to people only | Apply the same rule to the cycle's set-up (cycle name, approval step names); list the other forms that still require both languages for the PO | 🔵 WP-FIX-03 |
+| 4 | Plan approval | «The approval chain needs to be simpler: as L&D I open the cycle, departments fill, and once the discussion is complete I submit to the HR Manager for approval, then the Finance team for confirmation» | The agreed flow (EP-PLN §E, 17 Oct 2026) is Department Heads → named Finance approver → named management approver, set per cycle in a set-up step | Claude's view given to the PO (simpler default: HR Manager approves → Finance confirms; no chain step in the cycle set-up; department heads are informed, not asked again). Needs the PO's answers, then an amendment of EP-PLN before WP-LD-03 | ⏳ PO |
+| 5 | Look and feel, everywhere | «I'm still not satisfied with UI & UX at all; Kawadir was leading this part super professionally» (also 27 Oct 2026, point 13) | Direction. Since 21 Oct 2026 the look comes from Mobbin references; Kawadir is the reference for behaviour only | Claude's recommendation put to the PO: Kawadir becomes the reference for the look and the organization of screens again, starting with one pilot screen shown side by side; needs the PO's decision (and a CLAUDE.md change with the PO's explicit yes) | ⏳ PO |
+
+Status: 🔵 in progress · ⏳ waiting on the PO · 🟢 done.

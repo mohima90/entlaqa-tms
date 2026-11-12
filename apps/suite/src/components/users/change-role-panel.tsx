@@ -243,11 +243,14 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
           router.refresh();
           return;
         }
-        // Undo only for someone allowed to give the previous role back (PO, 21 Oct 2026).
+        // Undo only for someone allowed to give the previous role back (PO, 21 Oct 2026) — and never back
+        // to Department Head: that role asks «Head of which department?», which one click cannot answer
+        // (review L2: the server refused the Undo with a message about a missing department).
         const previous = target.currentRole;
         const undoTo =
           result.value.changed &&
           previous !== null &&
+          previous !== DEPARTMENT_HEAD_ROLE &&
           options.some((o) => o.code === previous && o.assignable)
             ? previous
             : null;

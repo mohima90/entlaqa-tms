@@ -31,6 +31,7 @@ import {
   readsHeadedDepartments,
   roleActionPath,
 } from '../../lib/role-choice';
+import { missingNameFields } from '@jadarat/platform-i18n';
 import { fillText } from '../../lib/fill-text';
 import {
   DEPARTMENT_HEAD_ROLE,
@@ -319,6 +320,12 @@ export function InviteUserPanel(props: InviteUserFormProps) {
           }
           const { field: name, key } = inviteFieldError(path, code);
           errors[name] ??= fieldTexts[key] ?? fieldTexts.name ?? '';
+        }
+        // The names rule runs in the action after the other fields' checks: a form sent with another
+        // mistake hears about its missing names in the same answer, not on the next try (the action
+        // still decides).
+        for (const name of missingNameFields(nameLanguage, input)) {
+          errors[name] ??= fieldTexts.required ?? '';
         }
         const suffix = otherLanguage === 'ar' ? 'Ar' : 'En';
         if (errors[`firstName${suffix}`] ?? errors[`familyName${suffix}`]) setShowOther(true);

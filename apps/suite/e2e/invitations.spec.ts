@@ -378,7 +378,8 @@ test.describe('organization structure (HR Manager)', () => {
     await form.locator('#invite-email').fill(hr);
     await form.locator('#invite-firstNameEn').fill('Hala');
     await form.locator('#invite-familyNameEn').fill('Resources');
-    await form.getByRole('combobox', { name: /^Role/ }).selectOption({ label: 'HR Manager' });
+    // By its code: the option reads «HR Manager (privileged)».
+    await form.getByRole('combobox', { name: /^Role/ }).selectOption('hr_manager');
     await form.getByRole('radio', { name: 'English' }).check();
     await sendInvitation(page).click();
     const panel = page.getByTestId('invitation-created-panel');

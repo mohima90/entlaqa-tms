@@ -1,5 +1,6 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
+import { pgError } from './pg-error';
 import type { UserTx } from './with-user-tx';
 
 /**
@@ -48,6 +49,21 @@ export async function listHeadedUnitIds(tx: UserTx, personId: string): Promise<r
 }
 
 /**
+ * The person's own department as their record has it (platform.person_employment.department_id) — only
+ * while that unit is live and active — or null. Giving the Department Head role makes the person the head
+ * of this unit (PO, 12 Nov 2026: «he becomes the manager of the department according to what his
+ * department is»).
+ */
+export async function getOwnUnitId(tx: UserTx, personId: string): Promise<string | null> {
+  const [row] = await tx.execute<{ id: string }>(sql`
+    select d.id
+    from platform.person_employment e
+    join platform.departments d on d.tenant_id = e.tenant_id and d.id = e.department_id
+    where e.person_id = ${personId}::uuid and d.deleted_at is null and d.status = 'active'`);
+  return row?.id ?? null;
+}
+
+/**
  * Before a role change that also changes a unit's head (WP-FIX-03): the per-organization locks in the
  * global order — departments → (branches) → person_employment → role_assignments (migration
  * 20261011090000) — so it never waits for a structure change, a deactivation or a new direct manager that
@@ -70,7 +86,13 @@ export type SetUnitHeadOutcome =
     }
   | {
       readonly ok: false;
-      readonly refusal: 'unit_not_found' | 'unit_inactive' | 'person_not_active' | 'head_taken';
+      readonly refusal:
+        | 'unit_not_found'
+        | 'unit_inactive'
+        | 'person_not_active'
+        | 'head_taken'
+        /** The database refused the write (private.check_department_writer): not this member's to set. */
+        | 'not_allowed';
       /** `head_taken`: who heads the unit now. */
       readonly headPersonId?: string;
     };
@@ -101,21 +123,40 @@ export async function setUnitHead(
   if (unit.head_person_id !== null && !options.replace) {
     return { ok: false, refusal: 'head_taken', headPersonId: unit.head_person_id };
   }
-  const written = await tx.execute<{ id: string }>(sql`
-    update platform.departments set head_person_id = ${personId}::uuid
-    where id = ${unitId}::uuid and deleted_at is null
-    returning id`);
+  let written: { id: string }[];
+  try {
+    written = await tx.execute<{ id: string }>(sql`
+      update platform.departments set head_person_id = ${personId}::uuid
+      where id = ${unitId}::uuid and deleted_at is null
+      returning id`);
+  } catch (error) {
+    // The guard's refusal (42501) aborts the transaction: the caller returns an error and rolls back.
+    if (pgError(error)?.code === '42501') return { ok: false, refusal: 'not_allowed' };
+    throw error;
+  }
   // A row the actor may read but not write is filtered by the update policy without an error: never
   // report a head that was not written (review M5).
   if (written.length === 0) return { ok: false, refusal: 'unit_not_found' };
   return { ok: true, unitId, before: unit.head_person_id, changed: true };
 }
 
-/** Leaves every live unit the person heads without a head; returns their ids. */
-export async function clearHeadedUnits(tx: UserTx, personId: string): Promise<readonly string[]> {
-  const rows = await tx.execute<{ id: string }>(sql`
-    update platform.departments set head_person_id = null
-    where head_person_id = ${personId}::uuid and deleted_at is null
-    returning id`);
-  return rows.map((r) => r.id).sort();
+/**
+ * Leaves every live unit the person heads without a head; returns their ids — or null when the database
+ * refused the write (private.check_department_writer, 42501: the transaction is aborted, the caller returns
+ * an error and rolls back).
+ */
+export async function clearHeadedUnits(
+  tx: UserTx,
+  personId: string,
+): Promise<readonly string[] | null> {
+  try {
+    const rows = await tx.execute<{ id: string }>(sql`
+      update platform.departments set head_person_id = null
+      where head_person_id = ${personId}::uuid and deleted_at is null
+      returning id`);
+    return rows.map((r) => r.id).sort();
+  } catch (error) {
+    if (pgError(error)?.code === '42501') return null;
+    throw error;
+  }
 }

@@ -202,6 +202,8 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
       status: 'active',
       primaryRole: 'training_coordinator',
       primaryRoleName: null,
+      // Their own department: the one the Department Head role makes them the head of.
+      departmentId: dept.academy,
       departmentNameAr: 'الأكاديمية',
       lastSignInAt: new Date('2026-10-05T08:40:00Z'),
     });

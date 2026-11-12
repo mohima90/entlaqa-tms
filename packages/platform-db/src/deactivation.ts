@@ -235,15 +235,20 @@ export interface ReplacementCandidate {
 /**
  * Who can take over: the organization's active members with a managing role in force (Department Head),
  * the heads of departments and the people with direct reports (the reporting line, EP-ROLES) — the people
- * the direct-manager picker offers (T-M2-13) — without the person being deactivated.
+ * the direct-manager picker offers (T-M2-13) — without the person being deactivated, and without the
+ * member who deactivates them (`actorPersonId`; second look M3, 12 Nov 2026): a unit's head enters its
+ * training needs, so nobody hands a leaver's units to themselves in passing — the database refuses it too
+ * (private.check_department_writer, migration 20261112100400). A structure manager who should head a unit
+ * picks themselves in the Departments form, a privileged and audited act.
  */
 export async function listReplacementCandidates(
   tx: UserTx,
   personId: string,
+  actorPersonId: string | null = null,
 ): Promise<readonly ReplacementCandidate[]> {
   const managers = await listManagerOptions(tx);
   return managers
-    .filter((m) => m.active && m.personId !== personId)
+    .filter((m) => m.active && m.personId !== personId && m.personId !== actorPersonId)
     .map((m) => ({ personId: m.personId, nameAr: m.nameAr, nameEn: m.nameEn }));
 }
 

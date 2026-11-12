@@ -11,8 +11,9 @@
 --   * whose organization's plan includes planning,
 --   * who is the department's EFFECTIVE head (its own head, else the nearest head above; a unit with its own
 --     head belongs to that head — private.plan_department_head, unchanged).
--- Who picks heads is unchanged (platform.org.manage; private.check_department_writer), so nobody gains the
--- right by themselves. Every other rule of needs entry (cycle open, deadline, submitted, caps) is unchanged:
+-- Heads are picked by members who manage the structure (platform.org.manage; private.check_department_writer).
+-- A structure manager may pick THEMSELVES as a head — a privileged, audited act (the PO's own example is the
+-- HR Manager who heads Human Resources). Every other rule of needs entry (cycle open, deadline, submitted, caps) is unchanged:
 -- they sit in the guards and policies that call this function (20261105100100).
 -- Expand-first: the previous release asks the same function; its Department Heads keep entering.
 create or replace function private.may_submit_plan_needs(p_tenant_id uuid, p_department_id uuid)

@@ -208,6 +208,21 @@ describe('listReplacementCandidates', () => {
       { personId: Y, nameAr: 'ص', nameEn: 'S' },
     ]);
   });
+
+  it('never offers the member who deactivates (second look M3: nobody hands units to themselves)', async () => {
+    const rows = [
+      { person_id: X, name_ar: 'س', name_en: null, active: true, department_ids: [] },
+      { person_id: Y, name_ar: 'ص', name_en: 'S', active: true, department_ids: ['d1'] },
+      { person_id: 'me', name_ar: 'أنا', name_en: null, active: true, department_ids: ['d2'] },
+    ];
+    expect(await listReplacementCandidates(fakeTx(rows).tx, X, 'me')).toEqual([
+      { personId: Y, nameAr: 'ص', nameEn: 'S' },
+    ]);
+    // Without an actor (a caller that has none) the list is as before.
+    expect(
+      (await listReplacementCandidates(fakeTx(rows).tx, X, null)).map((c) => c.personId),
+    ).toEqual([Y, 'me']);
+  });
 });
 
 describe('revokePendingInvitationsOf', () => {

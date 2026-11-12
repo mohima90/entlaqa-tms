@@ -484,6 +484,7 @@ export {
   type SetUnitHeadOutcome,
   type UnitHead,
   clearHeadedUnits,
+  getOwnUnitId,
   listHeadedUnitIds,
   listUnitHeads,
   lockUnitHeadChange,

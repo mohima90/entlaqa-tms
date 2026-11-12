@@ -382,8 +382,18 @@ begin
     array['42501'], 'hand-over: the head only, nothing else in the same change');
   perform tests.assert_fails($q$update platform.departments set name_en = 'Renamed' where id = '9d300000-0000-4000-8000-000000000001'$q$,
     array['42501'], 'the Organization Admin does not rename units');
-  perform tests.assert_fails($q$update platform.departments set head_person_id = null where id = '9d300000-0000-4000-8000-000000000001'$q$,
-    array['42501'], 'hand-over: a unit is handed to someone, never left without its head');
+  -- Since 20261112100400 (WP-FIX-03) a member who gives the Department Head role may leave a unit without
+  -- its head when that head is an Employee (uX is one: the role forms ask first, then clear); the hand-over
+  -- itself never clears. Undone here (the checks below need the head); every other case — a head with
+  -- another role, the actor's own unit — is refused in 99_unit_heads_role_givers_owner.sql.
+  begin
+    perform tests.assert_eq(tests.rows_affected($q$update platform.departments set head_person_id = null where id = '9d300000-0000-4000-8000-000000000001'$q$),
+      1::bigint, 'a head who is an Employee: the unit may be left without one by a member who gives the Department Head role');
+    raise exception 'undo' using errcode = 'JK0UN';
+  exception when sqlstate 'JK0UN' then null;
+  end;
+  perform tests.assert((select head_person_id = '9d100000-0000-4000-8000-0000000000a1' from platform.departments
+                        where id = '9d300000-0000-4000-8000-000000000001'), 'undone: uX heads DX again');
   perform tests.assert_fails($q$update platform.departments set head_person_id = '9d100000-0000-4000-8000-0000000000a2' where id = '9d300000-0000-4000-8000-000000000002'$q$,
     array['42501'], 'hand-over: a unit without a head gets one from the structure managers only');
   perform tests.assert_fails($q$update platform.departments set head_person_id = '9d100000-0000-4000-8000-0000000000a2' where id = 'a3000000-0000-4000-8000-000000000001'$q$,

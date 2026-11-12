@@ -179,6 +179,7 @@ export function FieldInspector(props: FieldDialogProps) {
             id="field-label-en"
             label={text('labelEn')}
             marker={text('markerRequired')}
+            aria-required
             dir="ltr"
             maxLength={200}
             value={values.labelEn}
@@ -191,6 +192,7 @@ export function FieldInspector(props: FieldDialogProps) {
             id="field-label-ar"
             label={text('labelAr')}
             marker={text('markerRequired')}
+            aria-required
             dir="rtl"
             lang="ar"
             maxLength={200}

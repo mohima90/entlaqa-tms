@@ -1,4 +1,4 @@
-import { cn } from '@jadarat/ui';
+import { FieldMarker, cn, isRequiredField } from '@jadarat/ui';
 import type { InputHTMLAttributes, ReactNode, Ref } from 'react';
 import { AuthIcon, type AuthIconName } from './auth-icons';
 
@@ -56,7 +56,7 @@ export function AuthField({
       <div className="flex items-baseline justify-between gap-3">
         <label htmlFor={id} className="text-sm font-semibold text-text">
           {label}
-          {marker ? <span className="ms-1 font-normal text-text-subtle">{marker}</span> : null}
+          <FieldMarker marker={marker} required={isRequiredField(props)} />
         </label>
         {labelEnd}
       </div>

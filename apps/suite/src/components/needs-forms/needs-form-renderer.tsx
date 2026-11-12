@@ -1,5 +1,5 @@
 'use client';
-import { Button, Icon, TextField } from '@jadarat/ui';
+import { Button, FieldMarker, Icon, TextField } from '@jadarat/ui';
 import {
   type Entry,
   type NeedsFormDefinition,
@@ -35,7 +35,7 @@ export interface NeedsFormRendererProps {
  * shown sections, repeatable ones with «Add another» / «Remove entry» within their limits, and in each entry
  * only the fields shown now (conditions evaluated live: a field appears on its trigger's answer and its stale
  * answer is dropped by the server). Labels, placeholders and options in the page's language (fix (b) over
- * Kawadir). Every control is labelled; required fields say so in words; errors are tied to their field.
+ * Kawadir). Every control is labelled; required fields carry a red asterisk (the word stays for screen readers); errors are tied to their field.
  */
 export function NeedsFormRenderer(props: NeedsFormRendererProps) {
   const { form, locale, answers, texts } = props;
@@ -208,7 +208,7 @@ export function FieldControl({
     >
       <legend className="p-0 text-sm font-medium">
         {label}
-        <span className="ms-1 font-normal text-text-muted">{marker}</span>
+        <FieldMarker marker={marker} required={field.required} />
       </legend>
       {hint ? <p className="m-0 text-sm text-text-muted">{hint}</p> : null}
       {children}
@@ -226,7 +226,7 @@ export function FieldControl({
         <div className="flex flex-col gap-1" data-testid={testId}>
           <label htmlFor={id} className="text-sm font-medium">
             {label}
-            <span className="ms-1 font-normal text-text-muted">{marker}</span>
+            <FieldMarker marker={marker} required={field.required} />
           </label>
           <textarea
             id={id}
@@ -254,6 +254,7 @@ export function FieldControl({
             id={id}
             label={label}
             marker={marker}
+            aria-required={field.required ? true : undefined}
             error={errorText}
             value={str}
             onChange={(e) => {
@@ -366,6 +367,7 @@ export function FieldControl({
             id={id}
             label={label}
             marker={marker}
+            aria-required={field.required ? true : undefined}
             error={errorText}
             type={inputType[field.type] ?? 'text'}
             dir={latin ? 'ltr' : undefined}

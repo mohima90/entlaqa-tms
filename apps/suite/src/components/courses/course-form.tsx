@@ -282,6 +282,7 @@ export function CourseForm(props: CourseFormProps) {
               id={`${idPrefix}-deliveryType`}
               label={text('form.deliveryType')}
               marker={required}
+              aria-required
               error={errorOf('deliveryType')}
               value={state.deliveryType}
               onChange={(event) => {

@@ -254,6 +254,7 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
       name={field}
       label={label}
       marker={extra.required ? props.common.required : undefined}
+      aria-required={extra.required ? true : undefined}
       tag={suggested(field)}
       hint={extra.hint}
       error={errorOf(field)}

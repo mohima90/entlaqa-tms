@@ -223,13 +223,46 @@ describe('TextField', () => {
     expect(html).toContain('border-danger');
   });
 
-  it('shows the required marker in words and keeps the caller descriptions', () => {
+  it('marks a required field with a red asterisk and keeps the word for screen readers', () => {
+    // PO, 12 Nov 2026 (forms standard rule 8): never «(required)» on screen.
     const html = renderToStaticMarkup(
-      <TextField id="name" label="الاسم" marker="(مطلوب)" hint="h" aria-describedby="summary" />,
+      <TextField
+        id="name"
+        label="الاسم"
+        marker="(مطلوب)"
+        required
+        aria-describedby="summary"
+        hint="h"
+      />,
     );
-    expect(html).toContain('(مطلوب)');
+    expect(html).toContain('<span aria-hidden="true" class="ms-0.5 font-semibold text-danger"');
+    expect(html).toContain('>*</span>');
+    // The word stays in the label, visually hidden: the accessible name still says it.
+    expect(html).toContain('<span class="sr-only"> (مطلوب)</span>');
+    expect(html).not.toContain('font-normal text-text-subtle');
+    expect(html).toContain('required=""');
     expect(html).toContain('aria-describedby="summary name-hint"');
-    expect(html).toContain('ms-1');
+  });
+
+  it('marks a field required for assistive technology only (aria-required) the same way', () => {
+    const html = renderToStaticMarkup(
+      <TextField id="name" label="Name" marker="(required)" aria-required />,
+    );
+    expect(html).toContain('data-required-mark=""');
+    expect(html).toContain('<span class="sr-only"> (required)</span>');
+    expect(html).toContain('aria-required="true"');
+  });
+
+  it('shows the optional marker in words, without an asterisk', () => {
+    const html = renderToStaticMarkup(<TextField id="name" label="الاسم" marker="(اختياري)" />);
+    expect(html).toContain('<span class="font-normal text-text-subtle ms-1">(اختياري)</span>');
+    expect(html).not.toContain('data-required-mark');
+  });
+
+  it('a required field without marker text still gets the asterisk', () => {
+    const html = renderToStaticMarkup(<TextField id="name" label="Name" required />);
+    expect(html).toContain('data-required-mark=""');
+    expect(html).not.toContain('sr-only');
   });
 
   it('has no description or invalid state without hint and error', () => {

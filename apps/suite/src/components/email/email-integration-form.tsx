@@ -439,6 +439,7 @@ export function EmailIntegrationForm(props: EmailIntegrationFormProps) {
                       autoComplete="off"
                       label={t('sender.fromAddress')}
                       marker={t('provider.required')}
+                      aria-required
                       hint={t('sender.fromAddressHint')}
                       error={fieldErrors.fromAddress}
                       value={fromAddress}
@@ -454,6 +455,7 @@ export function EmailIntegrationForm(props: EmailIntegrationFormProps) {
                       autoComplete="off"
                       label={t('sender.fromName')}
                       marker={t('provider.required')}
+                      aria-required
                       error={fieldErrors.fromName}
                       value={fromName}
                       onChange={(event) => {
@@ -577,6 +579,7 @@ export function EmailIntegrationForm(props: EmailIntegrationFormProps) {
                         className="min-w-0 flex-[1_1_16rem]"
                         label={t('integration.testRecipient')}
                         marker={t('provider.required')}
+                        aria-required
                         error={recipientError}
                         value={recipient}
                         onChange={(event) => {

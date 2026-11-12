@@ -1,4 +1,4 @@
-import { FieldError, cn } from '@jadarat/ui';
+import { FieldError, FieldMarker, cn, isRequiredField } from '@jadarat/ui';
 import type { ReactNode, SelectHTMLAttributes } from 'react';
 
 /**
@@ -10,7 +10,7 @@ const selectClasses =
 
 /**
  * Labelled native select with hint and error — the same contract and look as TextField (direction C,
- * redesign packages 1–2): the label above (with «(required)» in words and an optional tag such as
+ * redesign packages 1–2): the label above (a red asterisk when required, and an optional tag such as
  * «مقترح» / "Suggested"), the 48 px field, then the hint and the error under it.
  */
 export function SelectField({
@@ -43,7 +43,7 @@ export function SelectField({
         className="flex flex-wrap items-center gap-x-1 gap-y-1 text-sm font-semibold"
       >
         {label}
-        {marker ? <span className="font-normal text-text-subtle">{marker}</span> : null}
+        <FieldMarker marker={marker} required={isRequiredField(props)} className="" />
         {tag}
       </label>
       <select

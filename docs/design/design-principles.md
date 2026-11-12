@@ -164,7 +164,7 @@ Rules
 
 ### 4.1 General
 - One column on mobile; up to two columns on desktop only for short, related fields (date + time, first + family name).
-- Labels above fields (never placeholder-only labels). Required fields marked with «(مطلوب)» / "(required)" text, not only an asterisk; optional fields are the exception and are marked «(اختياري)».
+- Labels above fields (never placeholder-only labels). Required fields carry a **red asterisk** after the label (PO, 12 Nov 2026; `forms-standard.md` rule 8) — never the word «(مطلوب)» / "(required)" on screen. The asterisk is hidden from assistive technology: the control itself is `required` / `aria-required`, and the word stays in the label for screen readers (`FieldMarker` in `packages/ui`). Optional fields are the exception and are marked «(اختياري)» / "(optional)" in words.
 - Helper text under the label when the format is not obvious. Errors appear under the field, start with what to do, and are linked from an error summary at the top on submit (SC 3.3.1, 3.3.3).
 - Validate on blur and on submit, not on every keystroke. Never clear what the user typed.
 - Forgiving input: accept Eastern and Western digits, spaces and dashes in phone/ID fields, and normalize. Accept both «ى/ي» and «ة/ه» variants in search.

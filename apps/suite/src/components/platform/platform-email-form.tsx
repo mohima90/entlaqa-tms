@@ -192,6 +192,7 @@ export function PlatformEmailForm({
                 autoComplete="off"
                 label={t('sender.fromAddress')}
                 marker={t('provider.required')}
+                aria-required
                 hint={t('sender.fromAddressHint')}
                 error={fieldErrors.fromAddress}
                 value={fromAddress}
@@ -207,6 +208,7 @@ export function PlatformEmailForm({
                 autoComplete="off"
                 label={t('sender.fromName')}
                 marker={t('provider.required')}
+                aria-required
                 error={fieldErrors.fromName}
                 value={fromName}
                 onChange={(event) => {
@@ -229,6 +231,7 @@ export function PlatformEmailForm({
                   autoComplete="email"
                   label={t('platform.testTo')}
                   marker={t('provider.required')}
+                  aria-required
                   error={fieldErrors.testTo}
                   value={testTo}
                   onChange={(event) => {

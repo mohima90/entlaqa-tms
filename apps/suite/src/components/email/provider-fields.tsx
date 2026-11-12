@@ -75,6 +75,7 @@ export function ProviderFields({
             spellCheck={false}
             label={t('provider.apiKey')}
             marker={required}
+            aria-required={secretState !== 'saved'}
             hint={`${t(`provider.apiKeyHint.${values.provider}`)} ${secretHint()}`}
             value={values.apiKey}
             onChange={(event) => {
@@ -154,6 +155,7 @@ export function ProviderFields({
             inputMode={name === 'smtpPort' ? 'numeric' : undefined}
             label={t(`provider.${name}`)}
             marker={name === 'smtpUsername' ? t('provider.optional') : t('provider.required')}
+            aria-required={name !== 'smtpUsername'}
             hint={hints[name] ?? (secret ? secretHint() : undefined)}
             value={values[name]}
             onChange={(event) => {

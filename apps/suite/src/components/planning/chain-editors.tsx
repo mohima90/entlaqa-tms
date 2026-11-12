@@ -242,6 +242,7 @@ export function ApprovalChainEditor(props: ApprovalChainEditorProps) {
                       id={`${base}-name-en`}
                       label={t('setup.approvals.nameEn')}
                       marker={t('setup.required')}
+                      aria-required
                       value={step.nameEn}
                       onChange={(event) => {
                         set(index, { nameEn: event.target.value });
@@ -257,6 +258,7 @@ export function ApprovalChainEditor(props: ApprovalChainEditorProps) {
                       id={`${base}-name-ar`}
                       label={t('setup.approvals.nameAr')}
                       marker={t('setup.required')}
+                      aria-required
                       value={step.nameAr}
                       onChange={(event) => {
                         set(index, { nameAr: event.target.value });

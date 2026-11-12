@@ -332,6 +332,7 @@ export function SignUpView({
             icon="key"
             label={texts.codeLabel}
             marker={texts.required}
+            aria-required
             placeholder={texts.codePlaceholder}
             value={code.length === 43 ? code : displayInviteCode(code)}
             readOnly={fromLink}

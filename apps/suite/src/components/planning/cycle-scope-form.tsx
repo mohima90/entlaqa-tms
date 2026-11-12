@@ -8,7 +8,7 @@ import { cycleHref } from '../../lib/planning-view';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { StepFooter } from './cycle-chain-forms';
-import { useFormBase } from '../latest-version';
+import { LoadLatestVersion, useFormBase } from '../latest-version';
 import { useUnsavedStep } from './setup-step-nav';
 import { usePlanningTexts } from './use-planning-texts';
 
@@ -154,7 +154,12 @@ export function CycleScopeForm(props: CycleScopeFormProps) {
 
   return (
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4" data-testid="cycle-scope">
-      {notice ? <Alert tone="danger">{notice}</Alert> : null}
+      {notice ? (
+        <Alert tone="danger">
+          {notice}
+          <LoadLatestVersion message={notice} />
+        </Alert>
+      ) : null}
       <Card title={t('setup.scope.title')} description={t('setup.scope.intro')}>
         <div className="grid grid-cols-1 items-start gap-5.5 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
           <fieldset className="m-0 min-w-0 border-0 p-0">

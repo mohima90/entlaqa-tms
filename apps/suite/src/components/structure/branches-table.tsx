@@ -101,7 +101,7 @@ export function BranchesTable(props: BranchesTableProps) {
     const failure = actionFailure(error, text, props.errors, branchFieldText);
     if (failure.latest) {
       // The page now shows the latest version; the confirmation held the older row (review M4).
-      setDialog(null);
+      // Returning null closes the dialog the native way, so the focus goes back (second look L4).
       if (failure.message) toast.warning(failure.message);
       return null;
     }

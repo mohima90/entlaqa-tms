@@ -73,8 +73,10 @@ export function useLatestVersion(): {
     (error: AppError, fallback = '') => {
       if (!isVersionConflict(error)) return null;
       if (!texts) return fallback;
-      // Inside a side panel or a dialog (a modal) the page's messages cannot be reached: the form shows
-      // the button itself, with `LoadLatestVersion` (review M3).
+      // Every form that offers shows the button under its own message (`LoadLatestVersion`; review M3,
+      // second look L3) — that is what the person can always reach. The page's message is an extra for
+      // forms on the page itself: under a side panel or a dialog (a modal) it could not be reached, so it
+      // is left out there.
       if (document.querySelector('dialog:modal')) return texts.offer;
       toast.warning(texts.offer, {
         action: {
@@ -127,6 +129,10 @@ export function LoadLatestVersion({ message }: { readonly message: string | null
  *
  * `isDirty(initial)` compares the fields with the copy they came from (not with the latest props, or an
  * untouched form would look unsaved after a reload).
+ *
+ * The department answers of the needs page use it for the first half only: that save carries no version
+ * (the answers are written by the department's head alone, so only the same head in two tabs can collide
+ * and the last save wins) — untouched answers follow the latest copy, typed ones stay (second look L2).
  */
 export function useFormBase<T>(
   current: { readonly version: number; readonly initial: T },

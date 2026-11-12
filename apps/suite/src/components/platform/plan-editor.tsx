@@ -6,7 +6,7 @@ import { type SyntheticEvent, useId, useState, useTransition } from 'react';
 import { savePlanAction } from '../../auth/platform-plans';
 import { PLAN_FEATURE_CODES } from '../../lib/platform-plans-input';
 import { type ErrorTexts, errorText } from '../auth/error-text';
-import { useLatestVersion } from '../latest-version';
+import { LoadLatestVersion, useLatestVersion } from '../latest-version';
 import { fieldErrorCodes } from '../profile/field-errors';
 
 /** Raw texts by dotted key (formatted on the server, filled here). */
@@ -278,6 +278,7 @@ export function PlanEditor({
           {errors.form ? (
             <Alert tone="danger" data-testid="plan-error">
               {errors.form}
+              <LoadLatestVersion message={errors.form} />
             </Alert>
           ) : null}
         </form>

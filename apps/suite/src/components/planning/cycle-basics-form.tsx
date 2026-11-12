@@ -11,7 +11,7 @@ import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { SelectField } from '../select-field';
 import { StepFooter } from './cycle-chain-forms';
-import { useFormBase } from '../latest-version';
+import { LoadLatestVersion, useFormBase } from '../latest-version';
 import { useUnsavedStep } from './setup-step-nav';
 import { usePlanningTexts } from './use-planning-texts';
 
@@ -176,6 +176,7 @@ export function CycleBasicsForm(props: CycleBasicsFormProps) {
       {notice ? (
         <Alert tone="danger" data-testid="cycle-basics-error">
           {notice}
+          <LoadLatestVersion message={notice} />
         </Alert>
       ) : null}
       <Card

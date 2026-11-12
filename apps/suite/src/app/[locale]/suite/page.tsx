@@ -89,11 +89,9 @@ export default async function SuiteHomePage({ params }: { params: Promise<{ loca
   const plan = home.kind === 'setup' && context.live ? await organizationPlanQuery({}) : null;
   const notices = plan?.ok ? planNotices(plan.value, locale) : [];
   const plans = await getTranslations({ locale, namespace: 'plans' });
-  // A Department Head's one planning task (WP-LD-01, design screen 1): the banner and the task card.
-  const needs =
-    home.kind === 'training' && context.live && context.navigation.needsEntry
-      ? await myNeedsQuery({})
-      : null;
+  // A department head's one planning task (WP-LD-01, design screen 1): the banner and the task card —
+  // for whoever heads a department, whatever their role and whichever home they have (PO, 12 Nov 2026).
+  const needs = context.live && context.navigation.needsEntry ? await myNeedsQuery({}) : null;
   const tasks = needs?.ok ? needs.value.tasks : [];
   const needsT = await getTranslations({ locale, namespace: 'needsEntry' });
   const needsDay = dayFormatter(locale, context.regional.dateDisplay);
@@ -178,6 +176,73 @@ export default async function SuiteHomePage({ params }: { params: Promise<{ loca
     </section>
   );
 
+  // The head's planning task — the banner and the task cards — on either home: whoever heads a department
+  // enters its needs whatever their role, the Organization Admin included (PO, 12 Nov 2026).
+  const needsBlock = (
+    <>
+      {needsBanner ? (
+        <Alert
+          tone={needsBanner.status === 'late' ? 'danger' : 'warning'}
+          data-testid="home-needs-banner"
+          action={
+            <a
+              href={`/${locale}${NEEDS_PATHS.mine}/${needsBanner.cycleId}/${needsBanner.departmentId}`}
+              className={buttonClasses({ variant: 'secondary', size: 'sm' })}
+            >
+              {needsT(needsBanner.status === 'not_started' ? 'task.enter' : 'task.continue')}
+            </a>
+          }
+        >
+          {needsBanner.status === 'late'
+            ? needsT('home.bannerLate', {
+                cycle: localName(locale, needsBanner.cycleName),
+                department: localName(locale, needsBanner.departmentName),
+                date: needsDay(needsBanner.deadline),
+              })
+            : needsBanner.status === 'returned'
+              ? needsT('home.bannerReturned', {
+                  cycle: localName(locale, needsBanner.cycleName),
+                  department: localName(locale, needsBanner.departmentName),
+                })
+              : needsT('home.bannerDue', {
+                  cycle: localName(locale, needsBanner.cycleName),
+                  department: localName(locale, needsBanner.departmentName),
+                  due: needsT('task.dueIn', { count: Math.max(needsBanner.daysLeft, 0) }),
+                })}
+        </Alert>
+      ) : null}
+      {tasks.length > 0 && needs?.ok ? (
+        <section
+          aria-labelledby="home-needs-title"
+          className="rounded-2xl border border-border bg-surface px-5 py-5.5 shadow-2 md:px-7 md:py-6.5"
+          data-testid="home-needs"
+        >
+          <header className="mb-5 flex items-start gap-4">
+            <span
+              aria-hidden="true"
+              className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-primary-subtle text-primary-text"
+            >
+              <Icon name="form" className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <h2 id="home-needs-title" className="m-0 text-[22px] font-bold">
+                {needsT('home.cardTitle')}
+              </h2>
+              <p className="m-0 mt-1 text-text-muted">{needsT('home.cardIntro')}</p>
+            </div>
+          </header>
+          <NeedsTaskCards
+            locale={locale}
+            tasks={tasks}
+            levels={needs.value.levels}
+            display={context.regional.dateDisplay}
+            testId="home-needs-tasks"
+          />
+        </section>
+      ) : null}
+    </>
+  );
+
   return (
     <SuiteShell locale={locale} context={context} current="home" path="/suite">
       <PageHeader
@@ -214,6 +279,7 @@ export default async function SuiteHomePage({ params }: { params: Promise<{ loca
               })}
             </Alert>
           ))}
+          {needsBlock}
           {counts ? (
             <TeamStats
               locale={locale}
@@ -255,66 +321,7 @@ export default async function SuiteHomePage({ params }: { params: Promise<{ loca
         </div>
       ) : (
         <div className="flex flex-col gap-5.5">
-          {needsBanner ? (
-            <Alert
-              tone={needsBanner.status === 'late' ? 'danger' : 'warning'}
-              data-testid="home-needs-banner"
-              action={
-                <a
-                  href={`/${locale}${NEEDS_PATHS.mine}/${needsBanner.cycleId}/${needsBanner.departmentId}`}
-                  className={buttonClasses({ variant: 'secondary', size: 'sm' })}
-                >
-                  {needsT(needsBanner.status === 'not_started' ? 'task.enter' : 'task.continue')}
-                </a>
-              }
-            >
-              {needsBanner.status === 'late'
-                ? needsT('home.bannerLate', {
-                    cycle: localName(locale, needsBanner.cycleName),
-                    department: localName(locale, needsBanner.departmentName),
-                    date: needsDay(needsBanner.deadline),
-                  })
-                : needsBanner.status === 'returned'
-                  ? needsT('home.bannerReturned', {
-                      cycle: localName(locale, needsBanner.cycleName),
-                      department: localName(locale, needsBanner.departmentName),
-                    })
-                  : needsT('home.bannerDue', {
-                      cycle: localName(locale, needsBanner.cycleName),
-                      department: localName(locale, needsBanner.departmentName),
-                      due: needsT('task.dueIn', { count: Math.max(needsBanner.daysLeft, 0) }),
-                    })}
-            </Alert>
-          ) : null}
-          {tasks.length > 0 && needs?.ok ? (
-            <section
-              aria-labelledby="home-needs-title"
-              className="rounded-2xl border border-border bg-surface px-5 py-5.5 shadow-2 md:px-7 md:py-6.5"
-              data-testid="home-needs"
-            >
-              <header className="mb-5 flex items-start gap-4">
-                <span
-                  aria-hidden="true"
-                  className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-primary-subtle text-primary-text"
-                >
-                  <Icon name="form" className="size-5" />
-                </span>
-                <div className="min-w-0">
-                  <h2 id="home-needs-title" className="m-0 text-[22px] font-bold">
-                    {needsT('home.cardTitle')}
-                  </h2>
-                  <p className="m-0 mt-1 text-text-muted">{needsT('home.cardIntro')}</p>
-                </div>
-              </header>
-              <NeedsTaskCards
-                locale={locale}
-                tasks={tasks}
-                levels={needs.value.levels}
-                display={context.regional.dateDisplay}
-                testId="home-needs-tasks"
-              />
-            </section>
-          ) : null}
+          {needsBlock}
           {pageTiles.length > 0 ? null : empty}
           <HomeTiles
             headingId="home-pages-title"

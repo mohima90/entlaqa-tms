@@ -12,7 +12,7 @@ import {
   secretStateFor,
 } from '../../lib/email-settings-form';
 import { type ErrorTexts, errorText } from '../auth/error-text';
-import { useLatestVersion } from '../latest-version';
+import { LoadLatestVersion, useLatestVersion } from '../latest-version';
 import { ProviderFields } from '../email/provider-fields';
 
 /**
@@ -170,6 +170,7 @@ export function PlatformEmailForm({
         {message ? (
           <Alert tone={message.tone} className="mt-5" data-testid="platform-email-message">
             {message.text}
+            <LoadLatestVersion message={message.text} />
           </Alert>
         ) : null}
         <ol className="m-0 list-none p-0">

@@ -8,7 +8,7 @@ import { cycleHref, sumAmounts } from '../../lib/planning-view';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { StepFooter } from './cycle-chain-forms';
-import { useFormBase } from '../latest-version';
+import { LoadLatestVersion, useFormBase } from '../latest-version';
 import { useUnsavedStep } from './setup-step-nav';
 import { usePlanningTexts } from './use-planning-texts';
 
@@ -129,7 +129,12 @@ export function CycleBudgetsForm(props: CycleBudgetsFormProps) {
       className="flex flex-col gap-4"
       data-testid="cycle-budgets"
     >
-      {notice ? <Alert tone="danger">{notice}</Alert> : null}
+      {notice ? (
+        <Alert tone="danger">
+          {notice}
+          <LoadLatestVersion message={notice} />
+        </Alert>
+      ) : null}
       <Card title={t('setup.budget.title')} description={t('setup.budget.intro')}>
         <div className="flex flex-col gap-4">
           <p

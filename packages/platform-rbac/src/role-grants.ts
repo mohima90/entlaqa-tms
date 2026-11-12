@@ -115,9 +115,11 @@ export function grantsForAssignments(
  * needs of the units they head (`tms.plan_needs.submit`). A person holds ONE role, so the HR Manager who
  * heads Human Resources, or a head who accepted their invitation as an Employee, would otherwise be a head
  * who cannot enter their team's needs. Heads are picked by members who manage the structure
- * (`platform.org.manage`), so nobody gains this by themselves; the plan filter (`grantsWithinPlan`) and the
- * needs rules (effective head, cycle open, deadline) still apply, and the database decides the same way
- * (private.may_submit_plan_needs, migration 20261112100300).
+ * (`platform.org.manage`) — a structure manager may pick themselves, a privileged and audited act — or
+ * come with the Department Head role (migration 20261112100400). The plan filter (`grantsWithinPlan`) and
+ * the needs rules (effective head, cycle open, deadline) still apply, and the database decides the same
+ * way (private.may_submit_plan_needs, migration 20261112100300). The grant has no validity window: it
+ * lasts exactly as long as the person is stored as a head (second look L9).
  */
 function headshipGrant(context: GrantContext): Grant | null {
   if (context.headedDepartmentIds.length === 0) return null;

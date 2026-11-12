@@ -18,7 +18,7 @@ import { PLANNING_PATHS, cycleHref, fieldErrorKey } from '../../lib/planning-vie
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { ApprovalChainEditor, ReminderDaysEditor } from './chain-editors';
-import { useFormBase } from '../latest-version';
+import { LoadLatestVersion, useFormBase } from '../latest-version';
 import { useUnsavedStep } from './setup-step-nav';
 import { usePlanningTexts } from './use-planning-texts';
 
@@ -164,7 +164,12 @@ export function CycleStepsForm(props: CycleStepsFormProps) {
 
   return (
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4" data-testid="cycle-steps">
-      {notice ? <Alert tone="danger">{notice}</Alert> : null}
+      {notice ? (
+        <Alert tone="danger">
+          {notice}
+          <LoadLatestVersion message={notice} />
+        </Alert>
+      ) : null}
       <Card title={t('setup.approvals.title')} description={t('setup.approvals.intro')}>
         <div className="flex flex-col gap-3.5">
           <ApprovalChainEditor
@@ -257,7 +262,12 @@ export function CycleRemindersForm(props: CycleRemindersFormProps) {
       className="flex flex-col gap-4"
       data-testid="cycle-reminders"
     >
-      {notice ? <Alert tone="danger">{notice}</Alert> : null}
+      {notice ? (
+        <Alert tone="danger">
+          {notice}
+          <LoadLatestVersion message={notice} />
+        </Alert>
+      ) : null}
       <Card title={t('setup.reminders.title')} description={t('setup.reminders.intro')}>
         <div className="flex flex-col gap-4">
           <ReminderDaysEditor
@@ -361,7 +371,12 @@ export function PlanningSettingsForm(props: PlanningSettingsFormProps) {
       className="flex flex-col gap-4"
       data-testid="planning-settings"
     >
-      {notice ? <Alert tone="danger">{notice}</Alert> : null}
+      {notice ? (
+        <Alert tone="danger">
+          {notice}
+          <LoadLatestVersion message={notice} />
+        </Alert>
+      ) : null}
       <div className="grid grid-cols-1 items-start gap-4 2xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
         <Card title={t('settings.chainTitle')} description={t('setup.approvals.intro')}>
           <ApprovalChainEditor

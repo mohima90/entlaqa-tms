@@ -16,7 +16,7 @@ import {
 } from '../../lib/courses-view';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
-import { LoadLatestVersion, useLatestVersion } from '../latest-version';
+import { LoadLatestVersion, useFormBase, useLatestVersion } from '../latest-version';
 import { SelectField } from '../select-field';
 
 export interface CourseFormSharedProps {
@@ -73,6 +73,19 @@ export function CourseForm(props: CourseFormProps) {
   );
   const [errors, setErrors] = useState<CourseFormErrors>({});
   const [message, setMessage] = useState<{ tone: 'info' | 'danger'; text: string } | null>(null);
+  // The fields and the version they were read at stay together (second look L6): if the list reloads
+  // under an open form, an untouched form takes the latest course, a form with typed changes keeps the
+  // version it started from and is refused as a conflict.
+  const base = useFormBase(
+    { version: course?.version ?? 0, initial: course },
+    (initial) =>
+      JSON.stringify(state) !==
+      JSON.stringify(initial ? courseFormFrom(initial) : EMPTY_COURSE_FORM),
+    (latest) => {
+      setState(latest ? courseFormFrom(latest) : EMPTY_COURSE_FORM);
+      setErrors({});
+    },
+  );
   const idPrefix = `course-${course ? course.id : 'new'}`;
   const { onPending } = props;
   useEffect(() => {
@@ -108,7 +121,7 @@ export function CourseForm(props: CourseFormProps) {
     const values = parsed.values;
     startTransition(async () => {
       const result = course
-        ? await updateCourseAction({ ...values, id: course.id, version: course.version })
+        ? await updateCourseAction({ ...values, id: course.id, version: base.version })
         : await createCourseAction(values);
       if (result.ok) {
         toast.success(course ? text('saved') : text('created'));

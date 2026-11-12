@@ -31,7 +31,7 @@ import {
 } from '../../lib/role-builder';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
-import { useLatestVersion } from '../latest-version';
+import { LoadLatestVersion, useLatestVersion } from '../latest-version';
 import { DiscardDialog } from '../users/discard-dialog';
 import { SelectField } from '../select-field';
 
@@ -513,6 +513,7 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
           {message ? (
             <Alert tone="danger" data-testid="role-builder-message">
               {message}
+              <LoadLatestVersion message={message} />
             </Alert>
           ) : null}
         </form>

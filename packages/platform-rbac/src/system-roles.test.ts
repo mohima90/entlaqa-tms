@@ -179,6 +179,10 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
     // no core training feature. Every permission it is granted must be on this reviewed allow-list of
     // setup permissions; a module permission (tms.*, M3+) or a new platform permission fails here until
     // it is reviewed. Never add a training permission to this list.
+    // The ROLE carries no training permission and that stays true. Separate and deliberate (PO, 12 Nov
+    // 2026): whoever is picked as the head of a department enters that department's training needs,
+    // whatever their role — the Organization Admin included. That right comes from heading a unit
+    // (role-grants.ts `headshipGrant`), not from this role, and ends when they stop being the head.
     const SETUP_PERMISSIONS = [
       'platform.user.read',
       'platform.user.invite',

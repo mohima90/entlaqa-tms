@@ -18,7 +18,7 @@ import {
 } from '../../lib/email-settings-form';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
-import { useLatestVersion } from '../latest-version';
+import { LoadLatestVersion, useLatestVersion } from '../latest-version';
 import { LeaveGuard } from '../settings/leave-guard';
 import type { SettingsCommonTexts } from '../settings/settings-texts';
 import { StepUpBanner } from '../settings/step-up-banner';
@@ -281,6 +281,7 @@ export function EmailIntegrationForm(props: EmailIntegrationFormProps) {
         data-testid="email-integration-message"
       >
         {message.text}
+        <LoadLatestVersion message={message.text} />
       </Alert>
     ) : null;
 

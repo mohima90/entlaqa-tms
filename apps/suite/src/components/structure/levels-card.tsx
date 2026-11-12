@@ -238,7 +238,7 @@ export function LevelsCard(props: LevelsCardProps) {
             const failure = actionFailure(result.error, text, props.errors, levelFieldText);
             if (failure.latest) {
               // The page now shows the latest version; this confirmation held the older level (review M4).
-              setDialog(null);
+              // Returning null closes the dialog the native way, so the focus goes back (second look L4).
               if (failure.message) toast.warning(failure.message);
               return null;
             }

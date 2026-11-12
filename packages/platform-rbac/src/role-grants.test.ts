@@ -144,7 +144,7 @@ describe('grantsForAssignments', () => {
     // Coordinator, an Employee who accepted before being picked: one role each, and the head's right.
     for (const roleCode of [
       'hr_manager',
-      'lnd_manager',
+      'training_manager',
       'tenant_admin',
       'training_coordinator',
       'learner',
@@ -161,7 +161,7 @@ describe('grantsForAssignments', () => {
     // role by itself, without a unit, grants nothing either.
     for (const roleCode of [
       'hr_manager',
-      'lnd_manager',
+      'training_manager',
       'tenant_admin',
       'learner',
       'department_head',

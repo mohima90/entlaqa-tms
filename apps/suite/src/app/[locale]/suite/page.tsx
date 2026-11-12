@@ -64,6 +64,7 @@ const SETUP_DESCRIPTION: Partial<Record<NavLabelKey, string>> = {
   general: 'setupStep.general',
   emailIntegration: 'setupStep.email',
   security: 'setupStep.security',
+  subscription: 'setupStep.subscription',
 };
 
 /**

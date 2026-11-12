@@ -319,7 +319,8 @@ test.describe('users pages', () => {
     await page.keyboard.press('Escape');
     const discard = page.getByTestId('discard-dialog');
     await expect(discard).toContainText('Discard your changes?');
-    await discard.getByRole('button', { name: 'Keep editing' }).click();
+    // The dialog's close button carries the same name (closing keeps editing): the footer button is last.
+    await discard.getByRole('button', { name: 'Keep editing' }).last().click();
     await expect(panel).toBeVisible();
 
     // Sarah's employee number is taken: the field says so and nothing is saved
@@ -334,6 +335,20 @@ test.describe('users pages', () => {
       .getByRole('textbox', { name: /Family name/ })
       .nth(0)
       .fill('Alshehri');
+    // The other language is all or nothing (WP-FIX-01 review): Khalid's whole Arabic name sat in «First
+    // name», so the admin splits it as the hint says — a name change with the family name empty is refused.
+    await form
+      .getByRole('textbox', { name: /First name/ })
+      .nth(1)
+      .fill('خالد');
+    await form
+      .getByRole('textbox', { name: /Father's name/ })
+      .nth(1)
+      .fill('إبراهيم');
+    await form
+      .getByRole('textbox', { name: /Family name/ })
+      .nth(1)
+      .fill('الشهري');
     await page.getByTestId('edit-user-save').click();
     await expect(form.getByText('This employee number belongs to someone else')).toBeVisible();
 
@@ -586,7 +601,11 @@ test.describe('users pages', () => {
     // Leaving with unsaved changes asks first.
     await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link').first().click();
     await expect(page.getByTestId('discard-dialog')).toBeVisible();
-    await page.getByTestId('discard-dialog').getByRole('button', { name: 'Keep editing' }).click();
+    await page
+      .getByTestId('discard-dialog')
+      .getByRole('button', { name: 'Keep editing' })
+      .last()
+      .click();
     await page.getByTestId('save-bar').getByRole('button', { name: 'Save role' }).click();
     await expect(page).toHaveURL(/\/en\/suite\/admin\/roles$/);
     await expect(toasts(page)).toContainText('Role saved.');

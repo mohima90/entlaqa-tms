@@ -248,7 +248,13 @@ export function updateUserDetailsActionDefinition(): ActionDefinition<
           input.costCentreId === undefined ? (before?.costCentreId ?? null) : input.costCentreId,
       });
       if (!outcome.ok) {
-        return err(refusalError(outcome.refusal, await getTenantDefaultLocale(ctx.tx)));
+        // A refusal by the database (employee number taken, manager loop, …) leaves the transaction
+        // aborted: no further query may run in it (it would fail with 25P02 and hide the reason behind
+        // «a problem on our side»). Only «name required» needs the default language, and it is decided
+        // before any statement runs.
+        const nameLanguage =
+          outcome.refusal === 'name_required' ? await getTenantDefaultLocale(ctx.tx) : 'ar';
+        return err(refusalError(outcome.refusal, nameLanguage));
       }
       return ok({ personId: input.personId, changed: outcome.changed });
     },

@@ -66,7 +66,8 @@
       "general": "Name, industry, country and defaults",
       "email": "Who sends your organization's e-mails",
       "security": "Sign-in and password policy",
-      "grades": "Grade codes for your people"
+      "grades": "Grade codes for your people",
+      "subscription": "What your plan includes and its limits"
     },
     "comingSoon": "Coming soon",
     "roles": "Roles & permissions",
@@ -869,7 +870,7 @@
     "noDescription": "No description",
     "view": "View",
     "viewRole": "View {name}",
-    "editRole": "Edit {name}",
+    "editRole": "Edit role {name}",
     "deleteRole": "Delete {name}",
     "deleteTitle": "Delete {name}?",
     "viewUsers": "View users",

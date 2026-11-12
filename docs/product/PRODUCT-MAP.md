@@ -47,7 +47,7 @@ Status on 27 Oct 2026: ✅ exists · 🟡 partly · ⬜ not built.
 | 9 | Create and launch the planning cycle | L&D Manager | name, period, departments in scope, deadline | budget per department, reminders | no budget: no cost check; no reminders: manual follow-up | ✅ reminders wait for notifications (WP-PLT-01) |
 | 10 | Department Head receives the cycle and enters needs | Department Heads | topic, people (count or names) | priority, quarter, cost, reason | the department drops out of the plan | ⬜ **next to build (WP-LD-01)** |
 | 11 | Consolidate needs into plan lines (topic, branch, month; cost vs budget) | L&D Manager | a decision per line | link a line to an existing course | — | ⬜ WP-LD-02 |
-| 12 | Plan approval (heads → Finance → management) | named approvers | ≥ 1 approval | longer chain, comments | a plan without approval is a draft | ⬜ WP-LD-03 |
+| 12 | Plan approval (HR Manager → Finance where the organization uses it; PO, 12 Nov 2026) | HR Manager, Finance role | the HR Manager's approval | the Finance step (a switch), comments | a plan without approval is a draft | ⬜ WP-LD-03 |
 | 13 | Plan → courses → draft sessions on the calendar (who, when) | L&D Manager | a course and a date per approved line | instructor, venue | — | ⬜ WP-LD-04 |
 
 ### Phase 3 — Delivery (all year; Training Coordinator, instructors, employees)

@@ -169,7 +169,7 @@ Once a year the L&D Manager asks every Department Head what training their team 
 
 Screens: **Planning → Needs forms** (library: cards with default / locked / off badges) and the **form builder** (collapsible sections, field dialog, condition picker, move up/down) — L&D Manager. The department head's needs page renders the cycle's form.
 
-## 13. Simpler plan approval (PO, 12 Nov 2026 — amendment; replaces §3 E steps 16–20 and the «Approval chain» step of the cycle set-up)
+## 13. Simpler plan approval (PO, 12 Nov 2026 — amendment, **agreed in full 12 Nov 2026**; BRD v3.6; replaces §3 E steps 16–20 and the «Approval chain» step of the cycle set-up)
 
 **Why.** After the «simple way» test (`docs/delivery/test-feedback-2026-11-12.md` #4) the PO found the per-cycle approval chain too heavy: «as L&D I open the cycle, departments fill, and once the discussion is complete I submit it to the HR Manager for approval, then the Finance team for confirmation». Kawadir works the same way: approvals go to a **role** (every HR Manager is asked, the first decision settles it) and there is no approval set-up screen.
 
@@ -200,8 +200,8 @@ Screens: **Planning → Needs forms** (library: cards with default / locked / of
 - Audit: submission, every decision with its comment, the switch being turned on or off, and Finance role grants.
 - **Scope note:** a new standard role (Finance) and the simpler FR-PLN-08 / FR-WFL-01 R1 part change the BRD role list and requirement wording — BRD and feature list are updated together when this amendment is agreed in full.
 
-**Open question (one left).**
+**Last question (answered).**
 
 | # | Question | Proposed answer | PO answer |
 |---|---|---|---|
-| 19 | What can the HR Manager and Finance do with the plan? | **Approve, or send back to the L&D Manager with a comment** (the plan becomes a draft again; after changes it is submitted again and goes through the same steps). No rejecting of single lines by approvers in the first version — the L&D Manager changes the lines after a send-back | — |
+| 19 | What can the HR Manager and Finance do with the plan? | **Approve, or send back to the L&D Manager with a comment** (the plan becomes a draft again; after changes it is submitted again and goes through the same steps). No rejecting of single lines by approvers in the first version — the L&D Manager changes the lines after a send-back | **Approved («A», 12 Nov 2026)** |

@@ -106,7 +106,8 @@ test.describe('request a reset link', () => {
     await expect(sent).toBeVisible();
     await expect(sent.getByRole('heading', { level: 2 })).toHaveText('الرسالة في الطريق');
     await expect(sent).toContainText(resetEmail ?? '');
-    await expect(sent).toContainText('10 دقائق');
+    // The reset link lives 60 minutes (Auth's own one-time code); the 10 minutes belong to the e-mailed sign-in code.
+    await expect(sent).toContainText('60 دقيقة');
     // Send again only after a minute.
     await expect(page.getByTestId('forgot-resend')).toBeDisabled();
     await expect(page.getByTestId('forgot-resend')).toContainText('إعادة الإرسال (بعد');

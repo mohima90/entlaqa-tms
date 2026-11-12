@@ -148,24 +148,6 @@ export function SignUpView({
     [errors],
   );
 
-  // The code of the link: read once, removed from the address bar, looked up.
-  useEffect(() => {
-    if (started.current) return;
-    started.current = true;
-    const { hash, pathname, search } = window.location;
-    const fromHash = inviteCodeFromHash(hash);
-    if (hash !== '') window.history.replaceState(window.history.state, '', `${pathname}${search}`);
-    if (fromHash) {
-      const value = fromHash.trim().length === 43 ? fromHash.trim() : typedInviteCode(fromHash);
-      // Shown and looked up once the effect has run (the address bar is already clean).
-      void Promise.resolve(value).then((settled) => {
-        setCode(settled);
-        setFromLink(true);
-        return describe(settled);
-      });
-    }
-  }, [describe]);
-
   // A typed code: looked up once complete, after a short pause (Kawadir: 500 ms).
   const timer = useRef<number | undefined>(undefined);
   useEffect(
@@ -174,6 +156,37 @@ export function SignUpView({
     },
     [],
   );
+
+  // The code of the link: read, removed from the address bar, looked up — on arrival, and again when
+  // another invitation link is opened in the same tab (only the part after # changes, so the page does
+  // not load again: the older e-mail's link first, then the newer one's).
+  useEffect(() => {
+    const read = () => {
+      const { hash, pathname, search } = window.location;
+      const fromHash = inviteCodeFromHash(hash);
+      if (hash !== '') {
+        window.history.replaceState(window.history.state, '', `${pathname}${search}`);
+      }
+      if (!fromHash) return;
+      const value = fromHash.trim().length === 43 ? fromHash.trim() : typedInviteCode(fromHash);
+      // Shown and looked up once the effect has run (the address bar is already clean).
+      void Promise.resolve(value).then((settled) => {
+        window.clearTimeout(timer.current);
+        setCode(settled);
+        setFromLink(true);
+        return describe(settled);
+      });
+    };
+    if (!started.current) {
+      started.current = true;
+      read();
+    }
+    window.addEventListener('hashchange', read);
+    return () => {
+      window.removeEventListener('hashchange', read);
+    };
+  }, [describe]);
+
   const onType = (raw: string) => {
     const value = typedInviteCode(raw);
     setCode(value);

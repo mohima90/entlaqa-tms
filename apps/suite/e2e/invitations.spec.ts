@@ -22,8 +22,7 @@ const rowsOf = (page: Page) =>
   page
     .locator('[data-testid="invitation-row"], [data-testid="invitations-cards"] > li')
     .filter({ visible: true });
-/** The toasts of the page (a polite live region). */
-/** The toast region, named in the page's language. */
+/** The toasts of the page (a polite live region), named in the page's language. */
 const toasts = (page: Page) =>
   page.getByRole('region', { name: /^(Status messages|رسائل الحالة)$/ });
 /** A row's ⋯ menu entry (Copy code, Resend invitation, Revoke invitation). */

@@ -139,6 +139,11 @@ export function StructureTree(props: StructureTreeProps) {
   const addingLevel =
     dialog?.kind === 'unit' && dialog.mode.kind === 'create' ? dialog.mode.levelName : '';
   const editing = dialog?.kind === 'unit' && dialog.mode.kind === 'edit' ? dialog.mode.unit : null;
+  // The unit a new one is added under stays open afterwards: what was just added must not disappear
+  // when the panel closes (a unit that had nothing under it starts closed).
+  if (addingUnder !== null && !expanded.has(addingUnder.id)) {
+    setExpanded(new Set([...expanded, addingUnder.id]));
+  }
 
   const toggle = (id: string) => {
     setExpanded((current) => {

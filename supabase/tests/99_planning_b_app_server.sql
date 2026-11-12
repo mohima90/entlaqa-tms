@@ -1,8 +1,9 @@
 -- db-test: run-as=app_server
 -- Planning cycles (EP-PLN, T-M3-04; FR-PLN-02, FR-WFL-01/02 R1 part): permissions, tenant isolation as an L&D
 -- Manager (cross-tenant inserts and composite foreign keys), constraints, BR-PLN-g, the state model (launch
--- checks, one open cycle — Q1, extend, close, draft-only children) and draft deletion. Fixtures:
--- 00_helpers_and_fixtures.sql and 99_planning_a_fixtures_owner.sql. Each block is rolled back.
+-- checks — without the approval chain since 20261112110000 —, one open cycle — Q1, extend, close, draft-only
+-- children) and draft deletion. Fixtures: 00_helpers_and_fixtures.sql and 99_planning_a_fixtures_owner.sql.
+-- Each block is rolled back.
 -- Dates are the organization's calendar day (private.plan_cycle_today, Asia/Riyadh here), as the guards use —
 -- never current_date (UTC): between 21:00 and 24:00 UTC they differ by a day.
 \set ON_ERROR_STOP on
@@ -232,19 +233,39 @@ begin
   perform tests.assert_fails(v_launch, array['JK003'], 'not ready: no department in scope');
   insert into tms.plan_cycle_scope (cycle_id, department_id) values (v_id, 'a3000000-0000-4000-8000-000000000003');
   insert into tms.plan_cycle_departments (cycle_id, department_id, budget_amount) values (v_id, 'a3000000-0000-4000-8000-000000000003', 1200.50);
-  perform tests.assert_fails(v_launch, array['JK003'], 'not ready: no approval step with a person');
+  -- The approval chain is not part of the cycle any more (EP-PLN §13 e; migration 20261112110000): the launch
+  -- no longer asks for one. Each state that used to be refused now launches (tried, then undone):
+  -- (1) no approval step at all;
+  begin
+    perform tests.assert_eq(tests.rows_affected(v_launch), 1::bigint, 'launches without any approval step');
+    raise exception 'undo the trial launch' using errcode = 'JKT01';
+  exception when sqlstate 'JKT01' then null;
+  end;
+  perform tests.assert((select status = 'draft' from tms.plan_cycles where id = v_id), 'the trial launch was undone (1)');
+  -- (2) a stored chain whose person step names nobody (a cycle created before the change);
   insert into tms.plan_cycle_steps (cycle_id, position, kind, name_ar, name_en)
     values (v_id, 1, 'department_heads', 'رؤساء الأقسام', 'Department Heads'),
            (v_id, 2, 'person', 'اعتماد المالية', 'Finance approval');
-  perform tests.assert_fails(v_launch, array['JK003'], 'not ready: the Finance approver is not named');
-  -- uSus (a1…a3) is a suspended member of A: not an approver.
+  begin
+    perform tests.assert_eq(tests.rows_affected(v_launch), 1::bigint, 'launches with an unnamed approver step');
+    raise exception 'undo the trial launch' using errcode = 'JKT01';
+  exception when sqlstate 'JKT01' then null;
+  end;
+  perform tests.assert((select status = 'draft' from tms.plan_cycles where id = v_id), 'the trial launch was undone (2)');
+  -- (3) a stored chain that names a member who is no longer active — uSus (a1…a3) is suspended in A.
   delete from tms.plan_cycle_steps where cycle_id = v_id and position = 2;
   insert into tms.plan_cycle_steps (cycle_id, position, kind, name_ar, name_en, approver_person_id)
     values (v_id, 2, 'person', 'اعتماد المالية', 'Finance approval', 'a1000000-0000-4000-8000-0000000000a3');
-  perform tests.assert_fails(v_launch, array['JK003'], 'not ready: the approver is not an active member');
-  delete from tms.plan_cycle_steps where cycle_id = v_id and position = 2;
-  insert into tms.plan_cycle_steps (cycle_id, position, kind, name_ar, name_en, approver_person_id)
-    values (v_id, 2, 'person', 'اعتماد المالية', 'Finance approval', 'a1000000-0000-4000-8000-00000000e0a3');
+  begin
+    perform tests.assert_eq(tests.rows_affected(v_launch), 1::bigint, 'launches with an inactive stored approver');
+    raise exception 'undo the trial launch' using errcode = 'JKT01';
+  exception when sqlstate 'JKT01' then null;
+  end;
+  perform tests.assert((select status = 'draft' from tms.plan_cycles where id = v_id), 'the trial launch was undone (3)');
+  -- The other refusals stay: a passed deadline and an empty scope (above), no needs form
+  -- (99_planning_c_needs_forms_app_server.sql) and a second open cycle (below). The stored chain is kept as it is.
+  perform tests.assert_eq((select count(*) from tms.plan_cycle_steps where cycle_id = v_id), 2::bigint,
+    'the stored approval chain stays');
 
   perform tests.assert_eq(tests.rows_affected(v_launch), 1::bigint, 'launch: draft → open');
   perform tests.assert((select launched_at is not null and launched_by = 'a1000000-0000-4000-8000-00000000e0a1'::uuid

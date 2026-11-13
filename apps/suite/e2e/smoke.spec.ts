@@ -68,7 +68,8 @@ const pages = [
   // A standard role's page (EP-ROLES): view only, without a database too.
   { path: '/en/suite/admin/roles/hr_manager', lang: 'en', dir: 'ltr', heading: 'HR Manager' },
   { path: '/ar/suite/admin/roles/learner', lang: 'ar', dir: 'rtl', heading: 'موظف' },
-  { path: '/en/suite/admin/roles/new', lang: 'en', dir: 'ltr', heading: 'Create role' },
+  // The former create page opens Roles & permissions («Create role» is a popup there; WP-UX-01 c).
+  { path: '/en/suite/admin/roles/new', lang: 'en', dir: 'ltr', heading: 'Roles & permissions' },
   // Planning → Needs forms (T-M3-10), the library on the preview copy.
   { path: '/ar/suite/planning/needs-forms', lang: 'ar', dir: 'rtl', heading: 'نماذج الاحتياجات' },
   { path: '/en/suite/planning/needs-forms', lang: 'en', dir: 'ltr', heading: 'Needs forms' },

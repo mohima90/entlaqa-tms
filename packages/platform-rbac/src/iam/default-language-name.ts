@@ -37,6 +37,22 @@ export function defaultNameField(locale: 'ar' | 'en'): 'nameAr' | 'nameEn' {
 }
 
 /**
+ * The field of the default-language name that is required and missing, or null when the rule is satisfied —
+ * for a thing whose stored names the caller already holds (a custom role; WP-UX-01 c). With `before`: a save
+ * that leaves both names as they are passes whatever they are, as in `defaultNameError`.
+ */
+export function missingDefaultName(
+  locale: 'ar' | 'en',
+  names: NamePair,
+  before?: NamePair | null,
+): 'nameAr' | 'nameEn' | null {
+  const field = defaultNameField(locale);
+  if (names[field] !== null) return null;
+  if (before?.nameAr === names.nameAr && before.nameEn === names.nameEn) return null;
+  return field;
+}
+
+/**
  * A VALIDATION_FAILED error with a REQUIRED field error on the missing default-language name (the forms show
  * it next to the field), or null when the rule is satisfied. With `stored` (an existing thing): a save that
  * leaves both names as they are passes whatever they are — things named before the rule, or before the

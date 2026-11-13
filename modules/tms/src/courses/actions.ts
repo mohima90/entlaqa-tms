@@ -1,19 +1,26 @@
 import 'server-only';
-import { type AppError, type Result, ok } from '@jadarat/platform-core';
-import { type UserTx, getTenantCurrencyCode } from '@jadarat/platform-db';
+import { type AppError, type Result, appError, err, ok } from '@jadarat/platform-core';
+import { type UserTx, getTenantCurrencyCode, getTenantDefaultLocale } from '@jadarat/platform-db';
 import {
   type ActionDefinition,
   type QueryDefinition,
   coursePermissions,
 } from '@jadarat/platform-rbac';
 import { z } from 'zod';
-import { COURSE_LIST_LIMIT, countCourseStatuses, listCourseCategories, listCourses } from './db';
+import {
+  COURSE_LIST_LIMIT,
+  countCourseStatuses,
+  getCourse,
+  listCourseCategories,
+  listCourses,
+} from './db';
 import {
   COURSE_STATUSES,
   type CourseCategoryRow,
   type CourseCounts,
   type CourseRow,
   CourseValuesInput,
+  CreateCourseInput,
   DELIVERY_TYPES,
 } from './model';
 import { type CourseSaved, createCourse, setCourseStatus, updateCourse } from './service';
@@ -53,6 +60,8 @@ export interface CoursesPageView {
   readonly canArchive: boolean;
   /** Costs are sent only to holders of tms.course_cost.read. */
   readonly canSeeCosts: boolean;
+  /** The language whose title is required: the organization's default language (PO, 12 Nov 2026). */
+  readonly nameLanguage: 'ar' | 'en';
 }
 
 export function coursesPageQueryDefinition(): QueryDefinition<
@@ -75,6 +84,50 @@ export function coursesPageQueryDefinition(): QueryDefinition<
         canManage: ctx.can(c['tms.course.manage'], 'tenant'),
         canArchive: ctx.can(c['tms.course.archive'], 'tenant'),
         canSeeCosts,
+        nameLanguage: await getTenantDefaultLocale(ctx.tx),
+      });
+    },
+  };
+}
+
+/** One course by its id (untrusted, from the address). */
+export const CourseSettingsInput = z.strictObject({ id: z.uuid() });
+
+/** A course's settings page (WP-UX-01 c): the course and what its form needs. */
+export interface CourseSettingsView {
+  readonly course: CourseRow;
+  readonly categories: readonly CourseCategoryRow[];
+  readonly currency: string;
+  /** Without tms.course.manage the page is not offered (the library's read panel shows the course). */
+  readonly canManage: boolean;
+  readonly canSeeCosts: boolean;
+  readonly nameLanguage: 'ar' | 'en';
+}
+
+/**
+ * The settings page of one course (WP-UX-01 c; FR-CAT-01): the same permission as the library
+ * (`tms.course.read`, organization-wide), the costs only for holders of `tms.course_cost.read`. An unknown
+ * course — or another organization's, which row-level security never returns — is NOT_FOUND.
+ */
+export function courseSettingsQueryDefinition(): QueryDefinition<
+  typeof CourseSettingsInput,
+  CourseSettingsView,
+  UserTx
+> {
+  return {
+    permission: c['tms.course.read'],
+    input: CourseSettingsInput,
+    handler: async ({ ctx, input }) => {
+      const course = await getCourse(ctx.tx, input.id);
+      if (!course) return err(appError('NOT_FOUND'));
+      const canSeeCosts = ctx.can(c['tms.course_cost.read'], 'tenant');
+      return ok({
+        course: canSeeCosts ? course : withoutCosts(course),
+        categories: await listCourseCategories(ctx.tx),
+        currency: await getTenantCurrencyCode(ctx.tx),
+        canManage: ctx.can(c['tms.course.manage'], 'tenant'),
+        canSeeCosts,
+        nameLanguage: await getTenantDefaultLocale(ctx.tx),
       });
     },
   };
@@ -156,14 +209,14 @@ function auditData(output: CourseSaved) {
 }
 
 export function createCourseActionDefinition(): ActionDefinition<
-  typeof CourseValuesInput,
+  typeof CreateCourseInput,
   CourseActionOutput,
   UserTx,
   CourseSaved
 > {
   return {
     permission: c['tms.course.manage'],
-    input: CourseValuesInput,
+    input: CreateCourseInput,
     handler: ({ ctx, input }) => {
       const costsVisible = ctx.can(c['tms.course_cost.read'], 'tenant');
       return withCostVisibility(

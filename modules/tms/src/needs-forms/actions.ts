@@ -1,10 +1,11 @@
 import 'server-only';
 import { type AppError, type Result, appError, err, ok } from '@jadarat/platform-core';
-import type { UserTx } from '@jadarat/platform-db';
+import { type UserTx, getTenantDefaultLocale } from '@jadarat/platform-db';
 import type { ActionDefinition, AuditRecord, QueryDefinition } from '@jadarat/platform-rbac';
 import { z } from 'zod';
 import * as db from '../db/needs-forms';
 import { tmsPermissions } from '../permissions';
+import { nameIssues, toFieldErrors } from '../planning/rules';
 import {
   CreateNeedsFormInput,
   DuplicateNeedsFormInput,
@@ -39,6 +40,8 @@ const manage = tmsPermissions['tms.needs_form.manage'];
 export interface NeedsFormsLibraryView {
   readonly forms: readonly NeedsFormSummary[];
   readonly canManage: boolean;
+  /** The language whose form name is required: the organization's default language (PO, 12 Nov 2026). */
+  readonly nameLanguage: 'ar' | 'en';
 }
 
 export interface NeedsFormView {
@@ -119,7 +122,11 @@ export function needsFormsLibraryQueryDefinition(): QueryDefinition<
     permission: read,
     input: EmptyInput,
     handler: async ({ ctx }) =>
-      ok({ forms: await db.listNeedsForms(ctx.tx), canManage: ctx.can(manage, 'tenant') }),
+      ok({
+        forms: await db.listNeedsForms(ctx.tx),
+        canManage: ctx.can(manage, 'tenant'),
+        nameLanguage: await getTenantDefaultLocale(ctx.tx),
+      }),
   };
 }
 
@@ -145,6 +152,24 @@ async function libraryChanged(tx: UserTx, formId: string): Promise<LibraryChange
   return { formId, forms: await db.listNeedsForms(tx) };
 }
 
+/**
+ * A form is named in the organization's default language; the other language is optional (WP-UX-01 c; PO,
+ * 12 Nov 2026 — the rule of people and planning cycles). The refusal for the screen, or null. With `before`
+ * (the stored names, '' for a missing one): names left as they are pass — a form named before the
+ * organization changed its default language can still be saved.
+ */
+async function formNameProblem(
+  tx: UserTx,
+  names: db.FormNames,
+  before?: { readonly en: string; readonly ar: string },
+): Promise<AppError | null> {
+  if (before && (before.en || null) === names.nameEn && (before.ar || null) === names.nameAr) {
+    return null;
+  }
+  const fieldErrors = toFieldErrors(nameIssues(await getTenantDefaultLocale(tx), names));
+  return fieldErrors.length > 0 ? appError('VALIDATION_FAILED', { fieldErrors }) : null;
+}
+
 export function createNeedsFormActionDefinition(): ActionDefinition<
   typeof CreateNeedsFormInput,
   LibraryChanged,
@@ -154,6 +179,8 @@ export function createNeedsFormActionDefinition(): ActionDefinition<
     permission: manage,
     input: CreateNeedsFormInput,
     handler: async ({ ctx, input }) => {
+      const problem = await formNameProblem(ctx.tx, input);
+      if (problem) return err(problem);
       const created = await attempt(() => db.createNeedsForm(ctx.tx, input));
       return created.ok ? ok(await libraryChanged(ctx.tx, created.value)) : created;
     },
@@ -170,6 +197,8 @@ export function duplicateNeedsFormActionDefinition(): ActionDefinition<
     permission: manage,
     input: DuplicateNeedsFormInput,
     handler: async ({ ctx, input }) => {
+      const problem = await formNameProblem(ctx.tx, input);
+      if (problem) return err(problem);
       const copied = await attempt(() => db.duplicateNeedsForm(ctx.tx, input.formId, input));
       if (!copied.ok) return copied;
       if (copied.value === null) return err(appError('NOT_FOUND'));
@@ -190,6 +219,9 @@ export function renameNeedsFormActionDefinition(): ActionDefinition<
     permission: manage,
     input: RenameNeedsFormInput,
     handler: async ({ ctx, input }) => {
+      const stored = (await db.listNeedsForms(ctx.tx)).find((f) => f.id === input.formId);
+      const problem = await formNameProblem(ctx.tx, input, stored?.name);
+      if (problem) return err(problem);
       const renamed = await attempt(() =>
         db.renameNeedsForm(ctx.tx, input.formId, input.version, input),
       );

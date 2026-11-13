@@ -32,6 +32,8 @@ export default async function NeedsFormsPage({ params }: { params: Promise<{ loc
         locale={locale}
         initialForms={[]}
         canManage
+        // Without a database there is no organization: the page's language is asked first.
+        nameLanguage={locale}
         texts={texts}
         errors={errors}
         builderHref={builderHref}
@@ -61,6 +63,7 @@ export default async function NeedsFormsPage({ params }: { params: Promise<{ loc
           locale={locale}
           initialForms={result.value.forms}
           canManage={result.value.canManage}
+          nameLanguage={result.value.nameLanguage}
           texts={texts}
           errors={errors}
           builderHref={builderHref}

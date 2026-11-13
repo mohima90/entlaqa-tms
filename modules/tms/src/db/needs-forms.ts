@@ -1,5 +1,5 @@
 import 'server-only';
-import type { UserTx } from '@jadarat/platform-db';
+import { type UserTx, storableNamePair } from '@jadarat/platform-db';
 import { sql } from 'drizzle-orm';
 import type {
   FieldOption,
@@ -89,14 +89,20 @@ export function needsFormRefusalOf(error: unknown): NeedsFormRefusal {
 
 interface RawForm extends Record<string, unknown> {
   id: string;
-  name_en: string;
-  name_ar: string;
+  name_en: string | null;
+  name_ar: string | null;
   is_default: boolean;
   is_active: boolean;
   locked_at: string | Date | null;
   version: number;
   section_count: number | string;
   field_count: number | string;
+}
+
+/** A form's names as stored: one of the two may be missing (migration 20261113110200). */
+interface RawFormNames {
+  name_en: string | null;
+  name_ar: string | null;
 }
 
 interface RawSection extends Record<string, unknown> {
@@ -134,7 +140,8 @@ const iso = (value: string | Date | null): string | null =>
 function toSummary(r: RawForm): NeedsFormSummary {
   return {
     id: r.id,
-    name: { en: r.name_en, ar: r.name_ar },
+    // A form named in one language only: the other is '' — `localized` then shows the name that exists.
+    name: formName(r),
     isDefault: r.is_default,
     isActive: r.is_active,
     lockedAt: iso(r.locked_at),
@@ -142,6 +149,10 @@ function toSummary(r: RawForm): NeedsFormSummary {
     sectionCount: Number(r.section_count),
     fieldCount: Number(r.field_count),
   };
+}
+
+function formName(r: RawFormNames): { en: string; ar: string } {
+  return { en: r.name_en ?? '', ar: r.name_ar ?? '' };
 }
 
 function toField(r: RawField): NeedsFormField {
@@ -178,7 +189,7 @@ const SUMMARY = sql`
 /** The organization's forms: the default first, then by English name. */
 export async function listNeedsForms(tx: UserTx): Promise<readonly NeedsFormSummary[]> {
   const rows = await tx.execute<RawForm>(
-    sql`${SUMMARY} order by f.is_default desc, lower(f.name_en), f.id`,
+    sql`${SUMMARY} order by f.is_default desc, lower(coalesce(f.name_en, f.name_ar)), f.id`,
   );
   return rows.map(toSummary);
 }
@@ -218,13 +229,18 @@ export async function getNeedsForm(
   return { ...toSummary(form), sections: sections.map(toSection) };
 }
 
+/** The names of a form: the one in the organization's default language is there, the other may be null. */
 export interface FormNames {
-  readonly nameEn: string;
-  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly nameAr: string | null;
 }
 
+/** One name only once the database takes it (deploy window of 20261113110200: storableNamePair). */
+const NAME_SLOT = { table: 'tms.needs_forms', column: 'name_ar' } as const;
+
 /** A new, blank form (the «Training needs» section with the two system fields); its id. */
-export async function createNeedsForm(tx: UserTx, names: FormNames): Promise<string> {
+export async function createNeedsForm(tx: UserTx, given: FormNames): Promise<string> {
+  const names = await storableNamePair(tx, NAME_SLOT, given);
   const [row] = await tx.execute<{ id: string }>(sql`
     select private.seed_needs_form(private.current_tenant_id(), ${names.nameEn}, ${names.nameAr}, false, false) as id`);
   if (!row?.id) throw new Error('createNeedsForm: no form returned');
@@ -235,8 +251,9 @@ export async function createNeedsForm(tx: UserTx, names: FormNames): Promise<str
 export async function duplicateNeedsForm(
   tx: UserTx,
   formId: string,
-  names: FormNames,
+  given: FormNames,
 ): Promise<string | null> {
+  const names = await storableNamePair(tx, NAME_SLOT, given);
   const [row] = await tx.execute<{ id: string | null }>(sql`
     select private.duplicate_needs_form(${formId}::uuid, ${names.nameEn}, ${names.nameAr}) as id`);
   return row?.id ?? null;
@@ -247,8 +264,9 @@ export async function renameNeedsForm(
   tx: UserTx,
   formId: string,
   version: number,
-  names: FormNames,
+  given: FormNames,
 ): Promise<void> {
+  const names = await storableNamePair(tx, NAME_SLOT, given);
   const rows = await tx.execute<{ version: number }>(sql`
     select version from tms.needs_forms where id = ${formId}::uuid for update`);
   const current = rows[0];

@@ -1,6 +1,8 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
 import {
+  CUSTOM_ROLE_NAME_AR,
+  CUSTOM_ROLE_NAME_EN,
   departmentLevelsExist,
   roleScopeUnitsExist,
   structureCompletionExists,
@@ -754,7 +756,8 @@ export async function previewStructureUnitMove(
           unit_id: string;
         }>(sql`
           select p.id as person_id, p.display_name_ar as name_ar, p.display_name_en as name_en,
-                 cr.name_en as role_name_en, cr.name_ar as role_name_ar, ra.scope_unit_id as unit_id
+                 ${CUSTOM_ROLE_NAME_EN} as role_name_en, ${CUSTOM_ROLE_NAME_AR} as role_name_ar,
+                 ra.scope_unit_id as unit_id
           from platform.role_assignments ra
           join platform.tenant_memberships m on m.tenant_id = ra.tenant_id and m.id = ra.membership_id
           join platform.persons p on p.tenant_id = m.tenant_id and p.id = m.person_id

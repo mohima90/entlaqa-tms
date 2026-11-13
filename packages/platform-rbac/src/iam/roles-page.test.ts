@@ -16,6 +16,7 @@ const db = vi.hoisted(() => ({
   countMembersByRole: vi.fn(),
   listCustomRoles: vi.fn(),
   getCustomRole: vi.fn(),
+  getTenantDefaultLocale: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -64,6 +65,7 @@ beforeEach(() => {
   db.countMembersByRole.mockResolvedValue({ learner: 3, [reviewer.code]: 2 });
   db.listCustomRoles.mockResolvedValue([reviewer]);
   db.getCustomRole.mockResolvedValue(reviewer);
+  db.getTenantDefaultLocale.mockResolvedValue('en');
 });
 
 describe('roles page query (EP-ROLES)', () => {
@@ -103,6 +105,31 @@ describe('roles page query (EP-ROLES)', () => {
       {},
     );
     expect(result.ok && result.value.canManage).toBe(true);
+    // «Create role» asks the name in the organization's default language first.
+    expect(result.ok && result.value.nameLanguage).toBe('en');
+  });
+
+  it('a role named in one language shows that name in both (never its code)', async () => {
+    db.getTenantDefaultLocale.mockResolvedValue('ar');
+    db.listCustomRoles.mockResolvedValue([
+      { ...reviewer, nameEn: null },
+      {
+        ...reviewer,
+        id: 'r2',
+        code: 'custom_a00000000002',
+        nameAr: null,
+        nameEn: 'Budget reviewer',
+      },
+    ]);
+    const result = await createDefineQuery(forRoles(['tenant_admin']))(rolesPageQueryDefinition())(
+      {},
+    );
+    const custom = result.ok ? result.value.roles.filter((r) => r.kind === 'custom') : [];
+    expect(custom.map((r) => r.name)).toEqual([
+      { ar: 'مراجع الدورات', en: 'مراجع الدورات' },
+      { ar: 'Budget reviewer', en: 'Budget reviewer' },
+    ]);
+    expect(result.ok && result.value.nameLanguage).toBe('ar');
   });
 
   it('without user.read tenant-wide: no counts; scoped or no role.read: FORBIDDEN', async () => {

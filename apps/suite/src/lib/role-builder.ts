@@ -30,7 +30,10 @@ export interface BuilderGroup {
   readonly permissions: readonly BuilderPermission[];
 }
 
-/** What the form holds. */
+/**
+ * What the form holds. One of the two names may be '' (the organization's default language's name is
+ * required, the other optional — PO, 12 Nov 2026).
+ */
 export interface BuilderValues {
   readonly nameEn: string;
   readonly nameAr: string;
@@ -152,7 +155,13 @@ export function builderFieldError(
     case 'nameAr':
       return {
         field: path,
-        key: code === 'NAME_TAKEN' ? 'nameTaken' : code === 'TOO_SMALL' ? 'required' : 'name',
+        // REQUIRED: the name the organization's default language requires (PO, 12 Nov 2026).
+        key:
+          code === 'NAME_TAKEN'
+            ? 'nameTaken'
+            : code === 'TOO_SMALL' || code === 'REQUIRED'
+              ? 'required'
+              : 'name',
       };
     case 'description':
       return { field: 'description', key: 'description' };

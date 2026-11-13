@@ -1,6 +1,7 @@
 import { normalizeDigits } from '@jadarat/platform-i18n/text';
 import {
   COURSE_CODE_RE,
+  COURSE_DEFAULTS,
   COURSE_LIMITS,
   COURSE_STATUSES,
   type CourseCategoryRow,
@@ -13,7 +14,8 @@ import {
 
 /**
  * Courses page helpers (T-M3-03) — client-safe: the list's URL parameters, the preview data shown without
- * a database, and the add / edit form (raw text fields → the values the action validates again).
+ * a database, «Add course» (the popup's four fields) and the course's settings form (raw text fields → the
+ * values the action validates again).
  */
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -70,6 +72,30 @@ export function coursesPath(params: CoursesParams): string {
 
 export function coursesHref(locale: string, params: CoursesParams): string {
   return `/${locale}${coursesPath(params)}`;
+}
+
+/** The sections of a course's settings page (WP-UX-01 c): the tabs at its side, in order. */
+export const COURSE_SETTINGS_TABS = ['about', 'delivery', 'capacity'] as const;
+export type CourseSettingsTab = (typeof COURSE_SETTINGS_TABS)[number];
+
+/** The section `?tab=` names (untrusted), else the first one. */
+export function courseSettingsTab(value: unknown): CourseSettingsTab {
+  return (COURSE_SETTINGS_TABS as readonly unknown[]).includes(value)
+    ? (value as CourseSettingsTab)
+    : 'about';
+}
+
+/** The locale-less path of a course's settings page, on one of its sections (each its own address). */
+export function courseSettingsPath(courseId: string, tab?: CourseSettingsTab): string {
+  return `/suite/courses/${courseId}/settings${tab && tab !== 'about' ? `?tab=${tab}` : ''}`;
+}
+
+export function courseSettingsHref(
+  locale: string,
+  courseId: string,
+  tab?: CourseSettingsTab,
+): string {
+  return `/${locale}${courseSettingsPath(courseId, tab)}`;
 }
 
 export function isFiltered(params: CoursesParams): boolean {
@@ -209,8 +235,8 @@ const text = (value: number | null) => (value === null ? '' : String(value));
 export function courseFormFrom(course: CourseRow): CourseFormState {
   return {
     code: course.code,
-    titleEn: course.titleEn,
-    titleAr: course.titleAr,
+    titleEn: course.titleEn ?? '',
+    titleAr: course.titleAr ?? '',
     descriptionEn: course.descriptionEn ?? '',
     descriptionAr: course.descriptionAr ?? '',
     category: course.categoryId ?? '',
@@ -241,7 +267,10 @@ export function parseNumber(value: string): number | null {
 const decimalsOk = (value: number, places: number) =>
   Math.abs(Math.round(value * 10 ** places) - value * 10 ** places) < 1e-6;
 
-/** The values the create / update actions take (validated again on the server). */
+/**
+ * The values the create / update actions take (validated again on the server). The title in the
+ * organization's default language is there; the other one may be '' (stored as none).
+ */
 export interface CourseActionValues {
   readonly code: string;
   readonly titleEn: string;
@@ -265,35 +294,50 @@ export type CourseFormErrors = Partial<Record<CourseFormField, string>>;
 
 /**
  * Checks the form like the server (same limits and rules) so mistakes show before sending: field → error
- * code (message key `courses.fieldErrors.<code>`), or the values for the action when there are none.
+ * code (message key `courses.fieldErrors.<code>`), or the values for the action when there are none. The
+ * title — and a new category's name — is required in `nameLanguage` (the organization's default language)
+ * and optional in the other one (PO, 12 Nov 2026). `stored`: the course being changed — titles left as
+ * they are stored pass whatever they are (the server's rule: a course titled before the organization
+ * changed its default language can still be changed otherwise).
  */
 export function parseCourseForm(
   state: CourseFormState,
+  nameLanguage: 'ar' | 'en',
+  stored: Pick<CourseRow, 'titleEn' | 'titleAr'> | null = null,
 ):
   | { readonly values: CourseActionValues; readonly errors: null }
   | { readonly values: null; readonly errors: CourseFormErrors } {
   const errors: CourseFormErrors = {};
-  const required = (field: CourseFormField, max: number) => {
-    const value = state[field].trim();
-    if (value === '') errors[field] = 'REQUIRED';
-    else if (value.length > max) errors[field] = 'TOO_LONG';
+  /** A bilingual text: required in the default language, optional in the other; both within `max`. */
+  const named = (fields: { en: CourseFormField; ar: CourseFormField }, max: number) => {
+    const value = { en: state[fields.en].trim(), ar: state[fields.ar].trim() };
+    for (const language of ['en', 'ar'] as const) {
+      if (value[language] === '' && language === nameLanguage)
+        errors[fields[language]] = 'REQUIRED';
+      else if (value[language].length > max) errors[fields[language]] = 'TOO_LONG';
+    }
     return value;
   };
   const code = normalizeDigits(state.code).trim();
   if (code === '') errors.code = 'REQUIRED';
   else if (!COURSE_CODE_RE.test(code)) errors.code = 'CODE_FORMAT';
-  const titleEn = required('titleEn', COURSE_LIMITS.titleLength);
-  const titleAr = required('titleAr', COURSE_LIMITS.titleLength);
+  const title = named({ en: 'titleEn', ar: 'titleAr' }, COURSE_LIMITS.titleLength);
+  const titleEn = title.en;
+  const titleAr = title.ar;
+  if (stored && (stored.titleEn ?? '') === titleEn && (stored.titleAr ?? '') === titleAr) {
+    if (errors.titleEn === 'REQUIRED') delete errors.titleEn;
+    if (errors.titleAr === 'REQUIRED') delete errors.titleAr;
+  }
   for (const field of ['descriptionEn', 'descriptionAr'] as const) {
     if (state[field].trim().length > COURSE_LIMITS.descriptionLength) errors[field] = 'TOO_LONG';
   }
   let category: CourseActionValues['category'] = { kind: 'none' };
   if (state.category === 'new') {
-    category = {
-      kind: 'new',
-      nameEn: required('newCategoryEn', COURSE_LIMITS.categoryNameLength),
-      nameAr: required('newCategoryAr', COURSE_LIMITS.categoryNameLength),
-    };
+    const name = named(
+      { en: 'newCategoryEn', ar: 'newCategoryAr' },
+      COURSE_LIMITS.categoryNameLength,
+    );
+    category = { kind: 'new', nameEn: name.en, nameAr: name.ar };
   } else if (state.category !== '') {
     category = { kind: 'existing', id: state.category };
   }
@@ -382,6 +426,77 @@ export function parseCourseForm(
     },
     errors: null,
   };
+}
+
+// ---------------------------------------------------------------------------------------------------
+// «Add course»: the popup (WP-UX-01 c; forms standard rule 9)
+// ---------------------------------------------------------------------------------------------------
+
+/** What the popup asks: the titles, the delivery type and the hours. */
+export type CourseQuickField = 'titleEn' | 'titleAr' | 'deliveryType' | 'durationHours';
+export type CourseQuickState = Pick<CourseFormState, CourseQuickField>;
+
+export const EMPTY_COURSE_QUICK: CourseQuickState = {
+  titleEn: '',
+  titleAr: '',
+  deliveryType: 'classroom',
+  durationHours: '',
+};
+
+/** A new course's values: no code (the library gives the next free one). */
+export type CourseCreateValues = Omit<CourseActionValues, 'code'>;
+
+/**
+ * Checks the popup like the settings form and fills in the rest (COURSE_DEFAULTS): no description, no
+ * category, one to twenty participants, no costs — all changed later on the course's settings.
+ */
+export function parseCourseQuickForm(
+  state: CourseQuickState,
+  nameLanguage: 'ar' | 'en',
+):
+  | { readonly values: CourseCreateValues; readonly errors: null }
+  | { readonly values: null; readonly errors: Partial<Record<CourseQuickField, string>> } {
+  const parsed = parseCourseForm(
+    {
+      ...EMPTY_COURSE_FORM,
+      ...state,
+      // Not asked in the popup: a placeholder that passes the check and is never sent.
+      code: 'NEW',
+      minParticipants: String(COURSE_DEFAULTS.minParticipants),
+      maxParticipants: String(COURSE_DEFAULTS.maxParticipants),
+    },
+    nameLanguage,
+  );
+  if (parsed.errors) {
+    const { titleEn, titleAr, deliveryType, durationHours } = parsed.errors;
+    return {
+      values: null,
+      errors: {
+        ...(titleEn ? { titleEn } : {}),
+        ...(titleAr ? { titleAr } : {}),
+        ...(deliveryType ? { deliveryType } : {}),
+        ...(durationHours ? { durationHours } : {}),
+      },
+    };
+  }
+  const { code: _code, ...values } = parsed.values;
+  return { values, errors: null };
+}
+
+/** The tab of the settings page a field sits on (a refused save opens the first one with a mistake). */
+export function courseFieldTab(field: CourseFormField): CourseSettingsTab {
+  if (field === 'deliveryType' || field === 'durationHours' || field === 'durationDays') {
+    return 'delivery';
+  }
+  if (
+    field === 'minParticipants' ||
+    field === 'maxParticipants' ||
+    field === 'estCostPerSession' ||
+    field === 'estCostPerParticipant'
+  ) {
+    return 'capacity';
+  }
+  return 'about';
 }
 
 /** The form field a server field error belongs to (paths of CourseValuesInput). */

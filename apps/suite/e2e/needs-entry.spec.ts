@@ -115,6 +115,15 @@ test.describe('a Department Head enters, submits and recalls (data journey)', ()
       page.getByTestId('need-row').filter({ hasText: 'E2E — customer service by phone' }),
     ).toHaveCount(1);
 
+    // Closing the popup with typed entries asks first — the shared confirmation, not the browser's.
+    await page.getByTestId('need-add').click();
+    await panel.getByTestId('need-topic').fill('E2E — not kept');
+    await panel.getByTestId('need-cancel').click();
+    await expect(page.getByTestId('discard-dialog')).toBeVisible();
+    await page.getByTestId('discard-confirm').click();
+    await expect(panel).toBeHidden();
+    await expect(page.getByTestId('need-row').filter({ hasText: 'E2E — not kept' })).toHaveCount(0);
+
     // Submit with the summary, then recall.
     await page.getByTestId('needs-submit').click();
     await expect(page.getByTestId('needs-summary')).toBeVisible();

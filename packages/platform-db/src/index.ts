@@ -349,7 +349,9 @@ export { NAME_PART_MAX, keepsUnsplitDisplayName } from './names';
 export {
   englishOnlyNamesExist,
   forgetSchemaPresenceForTests,
+  oneNameColumnExists,
   setStructureCompletionForTests,
+  storableNamePair,
   structureCompletionExists,
 } from './custom-roles-present';
 export {

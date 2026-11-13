@@ -1,7 +1,11 @@
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { ClaimsTx } from '../claims-tx';
-import { customRolesExist } from '../custom-roles-present';
+import {
+  CUSTOM_ROLE_NAME_AR,
+  CUSTOM_ROLE_NAME_EN,
+  customRolesExist,
+} from '../custom-roles-present';
 
 /**
  * Invitation e-mails (FR-IAM-03, T-M2-07; migrations 20261009090000 and 20261018090000): the mailer job
@@ -74,8 +78,8 @@ export async function loadInvitationForMail(
            coalesce(p.display_name_ar, p.display_name_en) as recipient_ar, p.display_name_en as recipient_en,
            coalesce(ip.display_name_ar, ip.display_name_en) as inviter_ar, ip.display_name_en as inviter_en,
            t.name_ar as organization_ar, t.name_en as organization_en, i.primary_role,
-           ${customNames ? sql`cr.name_ar` : sql`null::text`} as role_name_ar,
-           ${customNames ? sql`cr.name_en` : sql`null::text`} as role_name_en
+           ${customNames ? CUSTOM_ROLE_NAME_AR : sql`null::text`} as role_name_ar,
+           ${customNames ? CUSTOM_ROLE_NAME_EN : sql`null::text`} as role_name_en
     from platform.invitations i
     join platform.persons p on p.tenant_id = i.tenant_id and p.id = i.person_id
     join platform.tenants t on t.id = i.tenant_id

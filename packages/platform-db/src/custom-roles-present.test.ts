@@ -4,8 +4,10 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   englishOnlyNamesExist,
   forgetSchemaPresenceForTests,
+  oneNameColumnExists,
   oneNameStructureExists,
   storableArabicDisplayName,
+  storableNamePair,
   storableStructureNames,
   structureLevelsExistCached,
 } from './custom-roles-present';
@@ -115,6 +117,48 @@ describe('oneNameStructureExists / storableStructureNames (deploy window of 2026
     await expect(storableStructureNames(db.tx, english)).resolves.toEqual(english);
     await expect(storableStructureNames(db.tx, english, true)).resolves.toEqual(english);
     expect(db.asked).toHaveLength(1);
+  });
+});
+
+describe('oneNameColumnExists / storableNamePair (deploy window of 20261113110000…110400)', () => {
+  const slot = { table: 'platform.custom_roles', column: 'name_ar' } as const;
+
+  it('reads whether the slot still refuses NULL, per table and column; once true, never again', async () => {
+    const db = catalog(false, true, false);
+    await expect(oneNameColumnExists(db.tx, 'tms.courses', 'title_ar')).resolves.toBe(false);
+    await expect(oneNameColumnExists(db.tx, 'tms.courses', 'title_ar')).resolves.toBe(true);
+    await expect(oneNameColumnExists(db.tx, 'tms.courses', 'title_ar')).resolves.toBe(true);
+    // Another table is another question.
+    await expect(oneNameColumnExists(db.tx, 'tms.needs_forms', 'name_ar')).resolves.toBe(false);
+    expect(db.asked).toHaveLength(3);
+    expect(db.asked[0]).toContain('not a.attnotnull');
+    expect(db.asked[0]).toContain('to_regclass($1)');
+    forgetSchemaPresenceForTests();
+    // No answer: the old schema.
+    await expect(oneNameColumnExists(catalog().tx, 'tms.courses', 'title_ar')).resolves.toBe(false);
+  });
+
+  it('two given names — or none — are stored as given, without asking', async () => {
+    const db = catalog();
+    const both = { nameAr: 'مراجع', nameEn: 'Reviewer' };
+    const none = { nameAr: null, nameEn: null };
+    await expect(storableNamePair(db.tx, slot, both)).resolves.toEqual(both);
+    await expect(storableNamePair(db.tx, slot, none)).resolves.toEqual(none);
+    expect(db.asked).toHaveLength(0);
+  });
+
+  it('before the migration: the given name fills the empty slot, in either direction', async () => {
+    await expect(
+      storableNamePair(catalog(false).tx, slot, { nameAr: null, nameEn: 'Reviewer' }),
+    ).resolves.toEqual({ nameAr: 'Reviewer', nameEn: 'Reviewer' });
+    await expect(
+      storableNamePair(catalog(false).tx, slot, { nameAr: 'مراجع', nameEn: null }),
+    ).resolves.toEqual({ nameAr: 'مراجع', nameEn: 'مراجع' });
+  });
+
+  it('after it: one name is stored as one name', async () => {
+    const english = { nameAr: null, nameEn: 'Reviewer' };
+    await expect(storableNamePair(catalog(true).tx, slot, english)).resolves.toEqual(english);
   });
 });
 

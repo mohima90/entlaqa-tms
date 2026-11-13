@@ -141,7 +141,10 @@ for (const locale of ['en', 'ar'] as const) {
     // optional (WP-UX-01 c).
     const [asked, optional] = locale === 'ar' ? ['ar', 'en'] : ['en', 'ar'];
     await expect(dialog.locator(`#needs-form-name-${asked}`)).toHaveAttribute('required', '');
-    await expect(dialog.locator(`#needs-form-name-${optional}`)).not.toHaveAttribute('required', '');
+    await expect(dialog.locator(`#needs-form-name-${optional}`)).not.toHaveAttribute(
+      'required',
+      '',
+    );
     await dialog.locator('#needs-form-name-en').fill('Engineering needs');
     await dialog.locator('#needs-form-name-ar').fill('احتياجات الهندسة');
     await expectNoSeriousA11yViolations(page);

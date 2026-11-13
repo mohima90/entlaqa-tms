@@ -106,6 +106,10 @@ async function rowAction(
   action: 'edit' | 'settings' | 'launch' | 'delete',
 ) {
   await page.getByRole('button', { name: TEXTS[locale].menu(name), exact: true }).click();
+  // The menu carries the same name as the button that opens it.
+  await expect(
+    page.getByRole('menu', { name: TEXTS[locale].menu(name), exact: true }),
+  ).toBeVisible();
   await page.getByTestId(`cycle-menu-${action}`).click();
 }
 
@@ -151,6 +155,16 @@ async function journeyToLaunch(
   const edit = page.getByRole('dialog', { name: t.editTitle(names.first) });
   await expect(edit).toBeVisible();
   await expect(page.locator(own)).toHaveValue(names.first);
+  // A refused save says so where the person is: the focus moves to the field with the message (the
+  // English name is the required one in the test organization).
+  const requiredName = page.locator('#cycle-name-en');
+  const requiredValue = await requiredName.inputValue();
+  await requiredName.fill('');
+  await page.getByTestId('cycle-form-save').click();
+  await expect(requiredName).toBeFocused();
+  await expect(requiredName).toHaveAttribute('aria-invalid', 'true');
+  await requiredName.fill(requiredValue);
+  // «Edit» is one save: the names, the dates, the form and the departments together.
   await page.locator(own).fill(names.renamed);
   if (locale === 'en') await page.locator(otherName).fill(names.other);
   await page.getByTestId('cycle-form-save').click();

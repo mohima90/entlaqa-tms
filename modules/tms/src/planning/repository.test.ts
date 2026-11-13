@@ -7,7 +7,6 @@ import type { UserTx } from '@jadarat/platform-db';
 import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CHAIN } from './rules';
 import * as repo from './repository';
 
 const dialect = new PgDialect();
@@ -65,7 +64,7 @@ describe('reads', () => {
     expect(row?.launchedAt).toBeInstanceOf(Date);
   });
 
-  it('reads a cycle with its scope, departments and steps; null when invisible', async () => {
+  it('reads a cycle with its scope and departments — not a stored approval chain; null when invisible', async () => {
     expect(await repo.getCycle(fakeTx([]).tx, ID)).toBeNull();
     const { tx, executed } = fakeTx(
       [
@@ -93,10 +92,6 @@ describe('reads', () => {
         { department_id: null, branch_id: 'b1' },
       ],
       [{ department_id: 'd1', budget_amount: '50000.0000', status: 'not_started' }],
-      [
-        { kind: 'department_heads', name_ar: 'ر', name_en: 'H', approver_person_id: null },
-        { kind: 'person', name_ar: 'م', name_en: 'F', approver_person_id: 'p1' },
-      ],
     );
     const cycle = await repo.getCycle(tx, ID);
     expect(cycle).toMatchObject({
@@ -106,39 +101,64 @@ describe('reads', () => {
       instructionsEn: 'Hi',
       scope: { departmentIds: ['d1'], branchIds: ['b1'] },
       departments: [{ departmentId: 'd1', budgetAmount: '50000', status: 'not_started' }],
-      steps: [
-        { kind: 'department_heads', approverPersonId: null },
-        { kind: 'person', approverPersonId: 'p1' },
-      ],
     });
     expect(executed[0]?.params).toEqual([ID]);
+    // A chain stored by an earlier cycle is not read: nothing shows or records it (EP-PLN §13 e).
+    expect(cycle).not.toHaveProperty('steps');
+    expect(executed).toHaveLength(3);
+    expect(executed.some((q) => q.sql.includes('plan_cycle_steps'))).toBe(false);
   });
 
-  it('finds another open cycle and the organization’s today', async () => {
+  it('finds another open cycle with its latest deadline (a department’s extension counts)', async () => {
     expect(await repo.openCycle(fakeTx([]).tx, ID)).toBeNull();
-    expect(await repo.openCycle(fakeTx([{ id: 'o', deadline_on: '2026-12-01' }]).tx, null)).toEqual(
-      { id: 'o', deadline: '2026-12-01' },
-    );
+    const open = fakeTx([{ id: 'o', latest_deadline: '2026-12-09' }]);
+    expect(await repo.openCycle(open.tx, null)).toEqual({ id: 'o', latestDeadline: '2026-12-09' });
+    // The cycle's own deadline or the latest extension of one of its departments, whichever is later.
+    expect(open.executed[0]?.sql).toContain('greatest(c.deadline_on');
+    expect(open.executed[0]?.sql).toContain('plan_cycle_departments');
     expect(await repo.organizationToday(fakeTx([{ today: '2026-10-17' }]).tx)).toBe('2026-10-17');
   });
 
-  it('falls back to the built-in settings until the organization saves its own', async () => {
-    expect(await repo.getSettings(fakeTx([], []).tx)).toEqual({
-      version: null,
-      reminderDays: [7, 2],
-      steps: DEFAULT_CHAIN,
-    });
-    const saved = await repo.getSettings(
-      fakeTx(
-        [{ reminder_days: [10], version: 2 }],
-        [{ kind: 'person', name_ar: 'م', name_en: 'F', approver_person_id: 'p1' }],
-      ).tx,
+  it('lists every draft with its scope in two statements, however many drafts there are', async () => {
+    const none = fakeTx([]);
+    expect(await repo.listDraftDetails(none.tx)).toEqual([]);
+    expect(none.executed).toHaveLength(1);
+    const { tx, executed } = fakeTx(
+      [
+        { id: 'c1', version: '3', needs_form_id: 'f1' },
+        { id: 'c2', version: 1, needs_form_id: null },
+        { id: 'c3', version: 2, needs_form_id: 'f1' },
+      ],
+      [
+        { cycle_id: 'c1', department_id: 'd1', branch_id: null },
+        { cycle_id: 'c3', department_id: null, branch_id: 'b1' },
+        { cycle_id: 'c1', department_id: 'd2', branch_id: null },
+      ],
     );
-    expect(saved).toEqual({
-      version: 2,
-      reminderDays: [10],
-      steps: [{ kind: 'person', nameAr: 'م', nameEn: 'F', approverPersonId: 'p1' }],
-    });
+    expect(await repo.listDraftDetails(tx)).toEqual([
+      {
+        id: 'c1',
+        version: 3,
+        needsFormId: 'f1',
+        scope: { departmentIds: ['d1', 'd2'], branchIds: [] },
+      },
+      { id: 'c2', version: 1, needsFormId: null, scope: { departmentIds: [], branchIds: [] } },
+      { id: 'c3', version: 2, needsFormId: 'f1', scope: { departmentIds: [], branchIds: ['b1'] } },
+    ]);
+    expect(executed).toHaveLength(2);
+    expect(executed[0]?.sql).toContain("status = 'draft'");
+  });
+
+  it('falls back to the built-in reminders until the organization saves its own', async () => {
+    const fresh = fakeTx([]);
+    expect(await repo.getSettings(fresh.tx)).toEqual({ version: null, reminderDays: [7, 2] });
+    const saved = fakeTx([{ reminder_days: [10], version: 2 }]);
+    expect(await repo.getSettings(saved.tx)).toEqual({ version: 2, reminderDays: [10] });
+    // A default approval chain stored before 12 Nov 2026 is not read (EP-PLN §13).
+    for (const { executed } of [fresh, saved]) {
+      expect(executed).toHaveLength(1);
+      expect(executed[0]?.sql).not.toContain('planning_default_steps');
+    }
   });
 });
 
@@ -154,21 +174,15 @@ describe('writes', () => {
     needsFormId: null,
   };
 
-  it('creates a draft with the default reminders; the default chain is still stored (not shown)', async () => {
+  it('creates a draft with the default reminders and no approval chain', async () => {
     const FORM = '99999999-9999-4999-8999-999999999991';
-    const { tx, executed } = fakeTx(
-      [],
-      [],
-      [{ id: ID }],
-      [],
-      [],
-      [],
-      [{ version: 1, needs_form_id: FORM }],
-    );
+    const { tx, executed } = fakeTx([], [{ id: ID }], [{ version: 1, needs_form_id: FORM }]);
     // C-10: the stored needs form is read back (the database set the default one).
     expect(await repo.insertCycle(tx, basics)).toEqual({ id: ID, version: 1, needsFormId: FORM });
-    expect(executed[2]?.params).toContain('{7,2}');
-    expect(executed.filter((q) => q.sql.includes('plan_cycle_steps'))).toHaveLength(3);
+    expect(executed[1]?.params).toContain('{7,2}');
+    // Nothing is copied into a new cycle's chain — no approver person ids either (EP-PLN §13 e).
+    expect(executed).toHaveLength(3);
+    expect(executed.some((q) => /plan_cycle_steps|planning_default_steps/.test(q.sql))).toBe(false);
   });
 
   it('checks the cycle before a change: missing, stale, launched, or locked and bumped', async () => {

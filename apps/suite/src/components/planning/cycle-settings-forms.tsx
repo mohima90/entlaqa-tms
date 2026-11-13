@@ -22,7 +22,14 @@ import {
   toast,
 } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
-import { type ReactNode, type SyntheticEvent, useEffect, useState, useTransition } from 'react';
+import {
+  type ReactNode,
+  type RefObject,
+  type SyntheticEvent,
+  useEffect,
+  useState,
+  useTransition,
+} from 'react';
 import {
   PLANNING_PATHS,
   type PickerUnit,
@@ -37,6 +44,7 @@ import { SelectField } from '../select-field';
 import { LeaveGuard } from '../settings/leave-guard';
 import { ReminderDaysEditor } from './reminder-days-editor';
 import { ScopePicker } from './scope-picker';
+import { useFocusInvalid } from './use-focus-invalid';
 import { usePlanningTexts } from './use-planning-texts';
 
 /*
@@ -44,7 +52,8 @@ import { usePlanningTexts } from './use-planning-texts';
  * T-M3-20): «Departments & budgets», «Instructions to heads», «Reminders» and «Needs form». Each section
  * is its own address; the one save bar saves the section that is open, with the cycle's version (ADR 0011):
  * an older copy is refused and «Load the latest version» is offered (`useFormBase`). The forms are the
- * set-up's forms, moved: what they save and how they are checked has not changed.
+ * set-up's forms, moved: what they save and how they are checked has not changed. A refused save moves the
+ * focus to the first field with a message (`useFocusInvalid`).
  */
 
 interface Common {
@@ -91,6 +100,7 @@ function useSectionBase<T>(
 /** The form of a section: its message, its fields, the save bar once something changed, the leave question. */
 function SectionForm({
   t,
+  formRef,
   dirty,
   pending,
   notice,
@@ -100,6 +110,7 @@ function SectionForm({
   children,
 }: {
   readonly t: (key: string) => string;
+  readonly formRef: RefObject<HTMLFormElement | null>;
   readonly dirty: boolean;
   readonly pending: boolean;
   readonly notice: string | null;
@@ -118,6 +129,7 @@ function SectionForm({
   }, [dirty]);
   return (
     <form
+      ref={formRef}
       id={FORM_ID}
       onSubmit={(event: SyntheticEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -172,11 +184,15 @@ function useSectionSave(props: Common) {
   const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
   const [notice, setNotice] = useState<string | null>(null);
+  const { form, focusInvalid } = useFocusInvalid(pending);
   return {
     t,
     fieldErrors,
     pending,
     notice,
+    /** The section's form, and the move to its first field with a message after a refusal. */
+    form,
+    focusInvalid,
     clearNotice: () => {
       setNotice(null);
     },
@@ -200,6 +216,7 @@ function useSectionSave(props: Common) {
         if (sessionRefused(result.error)) return;
         onRefused?.(result.error);
         setNotice(formMessage(result.error));
+        focusInvalid();
       });
     },
   };
@@ -279,6 +296,7 @@ export function CycleDepartmentsForm(props: CycleDepartmentsFormProps) {
     }
     if (Object.keys(found).length > 0) {
       setErrors(found);
+      section.focusInvalid();
       return;
     }
     section.run(
@@ -333,6 +351,7 @@ export function CycleDepartmentsForm(props: CycleDepartmentsFormProps) {
     <>
       <SectionForm
         t={t}
+        formRef={section.form}
         dirty={base.dirty}
         pending={section.pending}
         notice={section.notice}
@@ -530,6 +549,7 @@ function ScopeForm(
   const [scope, setScope] = useState<ScopeSelection>(props.scope);
   const [error, setError] = useState<string | undefined>(undefined);
   const [notice, setNotice] = useState<string | null>(null);
+  const { form, focusInvalid } = useFocusInvalid(pending);
   // The ticks and the version they were read at stay together (review H1).
   const base = useFormBase(
     { version: props.cycle.version, initial: props.scope },
@@ -564,6 +584,7 @@ function ScopeForm(
         if (sessionRefused(result.error)) return;
         setError(Object.values(fieldErrors(result.error))[0]);
         setNotice(formMessage(result.error));
+        focusInvalid();
       } finally {
         props.onBusy(false);
       }
@@ -571,7 +592,13 @@ function ScopeForm(
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4" data-testid="cycle-scope">
+    <form
+      ref={form}
+      onSubmit={onSubmit}
+      noValidate
+      className="flex flex-col gap-4"
+      data-testid="cycle-scope"
+    >
       {notice ? (
         <Alert tone="danger">
           {notice}
@@ -586,6 +613,7 @@ function ScopeForm(
         <ScopePicker
           units={props.units}
           branches={props.branches}
+          details
           value={scope}
           onChange={(next) => {
             setScope(next);
@@ -683,6 +711,7 @@ export function CycleInstructionsForm(props: CycleInstructionsFormProps) {
   return (
     <SectionForm
       t={t}
+      formRef={section.form}
       dirty={base.dirty}
       pending={section.pending}
       notice={section.notice}
@@ -754,6 +783,7 @@ export function CycleNeedsFormForm(props: CycleNeedsFormFormProps) {
   return (
     <SectionForm
       t={t}
+      formRef={section.form}
       dirty={base.dirty}
       pending={section.pending}
       notice={section.notice}
@@ -873,6 +903,7 @@ export function CycleRemindersForm(props: CycleRemindersFormProps) {
   return (
     <SectionForm
       t={t}
+      formRef={section.form}
       dirty={base.dirty}
       pending={section.pending}
       notice={section.notice}
@@ -880,6 +911,7 @@ export function CycleRemindersForm(props: CycleRemindersFormProps) {
         const parsed = parseReminderDays(days);
         if (!parsed.ok) {
           setError(t(parsed.key));
+          section.focusInvalid();
           return;
         }
         section.run(

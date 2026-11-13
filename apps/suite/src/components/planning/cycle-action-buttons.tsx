@@ -275,14 +275,9 @@ export function LaunchCycleDialog(props: LaunchCycleDialogProps) {
 }
 
 /** «Launch cycle» on the cycle's Settings page: the same question as the row menu's. */
-export function LaunchCycleButton(
-  props: Omit<LaunchCycleDialogProps, 'open' | 'onClose'> & {
-    /** Open the question as the page loads (an address of the old set-up's last step). */
-    readonly startOpen?: boolean;
-  },
-) {
+export function LaunchCycleButton(props: Omit<LaunchCycleDialogProps, 'open' | 'onClose'>) {
   const { t } = usePlanningTexts(props.texts, props.errors, props.locale);
-  const [open, setOpen] = useState(props.startOpen ?? false);
+  const [open, setOpen] = useState(false);
   return (
     <>
       <Button

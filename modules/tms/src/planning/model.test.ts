@@ -3,12 +3,12 @@ import {
   AddNeedInput,
   BudgetAmount,
   CreateCycleInput,
-  DEFAULT_CHAIN,
   LAUNCH_PROBLEMS,
   ReminderDays,
   ReturnNeedsInput,
   SaveScopeInput,
   SaveSettingsInput,
+  UpdateCycleInput,
   type StructureUnit,
   addDays,
   basicsIssues,
@@ -95,12 +95,6 @@ describe('defaults (business flow B4)', () => {
   it('proposes a deadline 30 days ahead, within the period', () => {
     expect(defaultDeadline('2026-10-17', '2027-12-31')).toBe('2026-11-16');
     expect(defaultDeadline('2026-10-17', '2026-11-01')).toBe('2026-11-01');
-  });
-
-  it('keeps the built-in chain Department Heads → Finance → Management as stored data only', () => {
-    // No screen shows or edits a chain any more (EP-PLN §13): a new cycle still stores this copy.
-    expect(DEFAULT_CHAIN.map((s) => s.kind)).toEqual(['department_heads', 'person', 'person']);
-    expect(DEFAULT_CHAIN.every((s) => s.approverPersonId === null)).toBe(true);
   });
 });
 
@@ -294,6 +288,28 @@ describe('input rules', () => {
     expect(CreateCycleInput.safeParse({ ...input, departmentIds: ['x'] }).success).toBe(false);
     // Unknown keys are refused: the chain is not part of a cycle any more.
     expect(CreateCycleInput.safeParse({ ...input, steps: [] }).success).toBe(false);
+  });
+
+  it('«Edit» carries the names, dates, form and departments together — never the instructions', () => {
+    const A = '11111111-1111-4111-8111-111111111111';
+    const input = {
+      id: A,
+      version: 3,
+      nameAr: null,
+      nameEn: 'Plan 2027',
+      periodStart: '2027-01-01',
+      periodEnd: '2027-12-31',
+      deadline: '2026-12-15',
+      departmentIds: [A, A],
+      branchIds: [],
+    };
+    expect(UpdateCycleInput.parse(input)).toMatchObject({ departmentIds: [A], needsFormId: null });
+    // The scope is part of the edit: leaving it out is refused (it would otherwise clear it silently).
+    const { departmentIds: _d, ...withoutScope } = input;
+    expect(UpdateCycleInput.safeParse(withoutScope).success).toBe(false);
+    // The instructions belong to the Settings page.
+    expect(UpdateCycleInput.safeParse({ ...input, instructionsEn: 'x' }).success).toBe(false);
+    expect(UpdateCycleInput.safeParse({ ...input, version: 0 }).success).toBe(false);
   });
 
   it('planning settings carry the default reminders only (the chain left the screens)', () => {

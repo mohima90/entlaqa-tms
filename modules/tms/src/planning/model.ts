@@ -90,6 +90,17 @@ export type CreateCycleInput = z.output<typeof CreateCycleInput>;
 export const UpdateCycleBasicsInput = CycleBasicsFields.extend({ id: Id, version: Version });
 export type UpdateCycleBasicsInput = z.output<typeof UpdateCycleBasicsInput>;
 
+/**
+ * «Edit» of a draft (the popup, pre-filled): the names, the period, the deadline, the needs form and the
+ * departments — saved together, in one transaction and one version of the cycle. The instructions are not
+ * part of it (they are edited on the cycle's Settings page and stay as stored).
+ */
+export const UpdateCycleInput = CycleBasicsFields.omit({
+  instructionsAr: true,
+  instructionsEn: true,
+}).extend({ id: Id, version: Version, departmentIds: scopeIds, branchIds: scopeIds });
+export type UpdateCycleInput = z.output<typeof UpdateCycleInput>;
+
 export const CycleRef = z.strictObject({ id: Id });
 export const CycleVersionRef = z.strictObject({ id: Id, version: Version });
 

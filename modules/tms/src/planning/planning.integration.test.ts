@@ -188,6 +188,62 @@ describe.skipIf(!configured)('planning cycles against PostgreSQL', () => {
       problems: [],
     });
 
+    // Row menu → «Edit»: the names, the dates and the departments are one save. A refused part saves
+    // nothing — here the new name comes with another organization's department.
+    const basics = {
+      periodStart: fresh.value.defaults.periodStart,
+      periodEnd: fresh.value.defaults.periodEnd,
+      deadline: fresh.value.defaults.deadline,
+      // The popup sends the form it shows (the organization's default one, set when the cycle was made).
+      needsFormId: listed.value.cycles[0]?.draft?.needsFormId ?? null,
+    };
+    expect(basics.needsFormId).not.toBeNull();
+    const halfEdit = await lnd.action(defs.updatePlanCycleActionDefinition())({
+      id: cycleId,
+      version,
+      nameAr: 'اسم لا يُحفظ',
+      nameEn: 'A name that is not saved',
+      ...basics,
+      departmentIds: [dept.foreign],
+      branchIds: [],
+    });
+    expect(!halfEdit.ok && halfEdit.error.fieldErrors).toEqual([
+      { path: 'departmentIds.0', code: 'UNKNOWN' },
+    ]);
+    const untouched = await lnd.query(defs.planCycleQueryDefinition())({ id: cycleId });
+    if (!untouched.ok) throw new Error(untouched.error.code);
+    expect(untouched.value.cycle.nameEn).toBe('Next year plan');
+    expect(untouched.value.cycle.version).toBe(version);
+    const edited = await lnd.action(defs.updatePlanCycleActionDefinition())({
+      id: cycleId,
+      version,
+      nameAr: 'خطة التدريب للسنة القادمة',
+      nameEn: 'Next year training plan',
+      ...basics,
+      departmentIds: [dept.ops],
+      branchIds: [],
+    });
+    if (!edited.ok) throw new Error(edited.error.code);
+    expect(edited.value.departmentCount).toBe(1);
+    expect(edited.value.changed).toEqual(['nameAr', 'nameEn', 'scope']);
+    version = edited.value.version;
+    const afterEdit = await lnd.query(defs.planCycleQueryDefinition())({ id: cycleId });
+    if (!afterEdit.ok) throw new Error(afterEdit.error.code);
+    // The instructions are not in the popup: «Edit» leaves them as they were.
+    expect([afterEdit.value.cycle.nameEn, afterEdit.value.cycle.instructionsEn]).toEqual([
+      'Next year training plan',
+      'Tell us what your team needs.',
+    ]);
+    // One save, one audit record with both parts.
+    const editAudit = await ownerDb.execute<{ data: unknown }>(sql`
+      select data from platform.audit_events
+      where tenant_id = ${tenant} and entity_id = ${cycleId} and action = 'tms.plan_cycle.changed'`);
+    expect(editAudit).toHaveLength(1);
+    expect(editAudit[0]?.data).toMatchObject({
+      changed: ['nameAr', 'nameEn', 'scope'],
+      departments: 1,
+    });
+
     // Settings → «Add or remove departments».
     const scope = await lnd.action(defs.savePlanCycleScopeActionDefinition())({
       id: cycleId,
@@ -217,17 +273,18 @@ describe.skipIf(!configured)('planning cycles against PostgreSQL', () => {
     if (!budgets.ok) throw new Error(budgets.error.code);
     version = budgets.value.version;
 
-    // The cycle stores a copy of the default chain, whose person steps name nobody. Nothing asks for it
-    // any more (EP-PLN §13 e): the launch below goes through with it as it is.
+    // A new cycle stores no approval chain (EP-PLN §13 e). A cycle created before the change has one,
+    // whose person steps may name nobody: nothing asks for it — the launch below goes through with it
+    // as it is, and it stays where it was.
     const storedChain = () =>
       ownerDb.execute<{ kind: string; approver_person_id: string | null }>(sql`
         select kind, approver_person_id from tms.plan_cycle_steps
         where tenant_id = ${tenant} and cycle_id = ${cycleId} order by position`);
-    expect((await storedChain()).map((row) => [row.kind, row.approver_person_id])).toEqual([
-      ['department_heads', null],
-      ['person', null],
-      ['person', null],
-    ]);
+    expect(await storedChain()).toEqual([]);
+    await ownerDb.execute(sql`
+      insert into tms.plan_cycle_steps (tenant_id, cycle_id, position, kind, name_ar, name_en)
+      values (${tenant}, ${cycleId}, 1, 'department_heads', 'مديرو الإدارات', 'Department heads'),
+             (${tenant}, ${cycleId}, 2, 'person', 'اعتماد المالية', 'Finance approval')`);
 
     const reminders = await lnd.action(defs.savePlanCycleRemindersActionDefinition())({
       id: cycleId,
@@ -268,8 +325,16 @@ describe.skipIf(!configured)('planning cycles against PostgreSQL', () => {
     });
     if (!launched.ok) throw new Error(launched.error.code);
     version = launched.value.version;
-    // The stored chain is kept as it was (ignored, not deleted).
-    expect(await storedChain()).toHaveLength(3);
+    // The stored chain is kept as it was (ignored, not deleted), and the audit record no longer names it.
+    expect((await storedChain()).map((row) => [row.kind, row.approver_person_id])).toEqual([
+      ['department_heads', null],
+      ['person', null],
+    ]);
+    const launchAudit = await ownerDb.execute<{ data: unknown }>(sql`
+      select data from platform.audit_events
+      where tenant_id = ${tenant} and entity_id = ${cycleId} and action = 'tms.plan_cycle.launched'`);
+    expect(launchAudit).toHaveLength(1);
+    expect(launchAudit[0]?.data).not.toHaveProperty('approvalChain');
 
     const progress = await coordinator.query(defs.planCycleQueryDefinition())({ id: cycleId });
     if (!progress.ok) throw new Error(progress.error.code);
@@ -356,6 +421,7 @@ describe.skipIf(!configured)('planning cycles against PostgreSQL', () => {
     expect(new Set(audited.map((a) => a.action))).toEqual(
       new Set([
         'tms.plan_cycle.created',
+        'tms.plan_cycle.changed',
         'tms.plan_cycle.scope_changed',
         'tms.plan_cycle.budgets_changed',
         'tms.plan_cycle.reminders_changed',
@@ -409,11 +475,10 @@ describe.skipIf(!configured)('planning cycles against PostgreSQL', () => {
     if (!created.ok) throw new Error(created.error.code);
     const cycle = await lnd.query(defs.planCycleQueryDefinition())({ id: created.value.id });
     expect(cycle.ok && cycle.value.cycle.reminderDays).toEqual([14, 3]);
-    // Data as before: the new cycle still stores a copy of the default chain (nobody reads it).
-    const copied = await ownerDb.execute<{ approver_person_id: string | null }>(sql`
-      select approver_person_id from tms.plan_cycle_steps
-      where tenant_id = ${tenant} and cycle_id = ${created.value.id}`);
-    expect(copied.map((row) => row.approver_person_id)).toEqual([people.cfo.person]);
+    // The stored default chain is no longer copied into a new cycle (nobody reads it).
+    const copied = await ownerDb.execute(sql`
+      select 1 from tms.plan_cycle_steps where tenant_id = ${tenant} and cycle_id = ${created.value.id}`);
+    expect(copied).toEqual([]);
     const coordinator = await as(people.coordinator).action(
       defs.savePlanningSettingsActionDefinition(),
     )({

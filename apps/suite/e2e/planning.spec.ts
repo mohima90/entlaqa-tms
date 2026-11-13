@@ -176,12 +176,16 @@ for (const locale of ['en', 'ar'] as const) {
     // optional and stays empty here (WP-FIX-03; PO, 12 Nov 2026).
     await expect(form.locator('#cycle-name-en-error')).toHaveText(t.required);
     await expect(form.locator('#cycle-name-ar-error')).toHaveCount(0);
+    // The refusal is not silent: the focus is on the first field with a message (review of T-M3-20).
+    await expect(form.locator('#cycle-name-en')).toBeFocused();
+    await expect(form.locator('#cycle-name-en')).toHaveAttribute('aria-invalid', 'true');
     await form.locator('#cycle-name-en').fill('Plan 2027');
     const start = await form.locator('#cycle-period-start').inputValue();
     await form.locator('#cycle-period-end').fill(start);
     await page.getByTestId('cycle-form-save').click();
     await expect(form.locator('#cycle-period-end-error')).toHaveText(t.beforeStart);
     await expect(form.locator('#cycle-name-en-error')).toHaveCount(0);
+    await expect(form.locator('#cycle-period-end')).toBeFocused();
     await expectNoSeriousA11yViolations(page);
 
     // Escape closes the popup and focus returns to the button that opened it.

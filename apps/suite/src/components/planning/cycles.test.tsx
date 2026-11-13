@@ -24,6 +24,7 @@ import { type CycleRow, CyclesScreen, type CyclesScreenProps } from './cycles-sc
  */
 const actions = vi.hoisted(() => ({
   createPlanCycleAction: vi.fn(),
+  updatePlanCycleAction: vi.fn(),
   updatePlanCycleBasicsAction: vi.fn(),
   savePlanCycleScopeAction: vi.fn(),
   savePlanCycleBudgetsAction: vi.fn(),
@@ -83,6 +84,7 @@ const UNITS: readonly PickerUnit[] = [
   unit(EAST, 'East', null, { parentId: SALES, depth: 1 }),
 ];
 const FORMS = [{ id: FORM, name: 'Default needs form', active: true, isDefault: true }];
+const CAIRO = { id: 'cairo', name: 'Cairo branch', active: true };
 
 let root: Root | undefined;
 let host: HTMLDivElement;
@@ -183,6 +185,7 @@ function dialogProps(over: Partial<CycleDialogProps> = {}): CycleDialogProps {
       scope: { departmentIds: [HR, SALES], branchIds: [] },
     },
     units: UNITS,
+    branches: [],
     needsForms: FORMS,
     nameLanguage: 'en',
     display: 'gregorian',
@@ -249,11 +252,22 @@ describe('«New cycle»: one centred popup (forms standard rule 9)', () => {
     await submit(el(tid('cycle-form')));
     expect(el('#cycle-name-en-error')?.textContent).toBe('Fill in this field.');
     expect(el('#cycle-name-ar-error')).toBeNull();
-    type(input('#cycle-name-en')!, 'Training plan 2027');
+    // The refusal is not silent: the focus is on the first field with a message, which is tied to it.
+    const name = input('#cycle-name-en')!;
+    expect(document.activeElement).toBe(name);
+    expect([name.getAttribute('aria-invalid'), name.getAttribute('aria-describedby')]).toEqual([
+      'true',
+      'cycle-name-en-error',
+    ]);
+    type(name, 'Training plan 2027');
     type(input('#cycle-period-end')!, '2027-01-01');
     await submit(el(tid('cycle-form')));
     expect(el('#cycle-period-end-error')?.textContent).toBe('The period must end after it starts.');
     expect(el('#cycle-name-en-error')).toBeNull();
+    expect(document.activeElement).toBe(input('#cycle-period-end'));
+    expect(input('#cycle-period-end')?.getAttribute('aria-describedby')).toContain(
+      'cycle-period-end-error',
+    );
     expect(actions.createPlanCycleAction).not.toHaveBeenCalled();
   });
 
@@ -328,6 +342,100 @@ describe('«New cycle»: one centred popup (forms standard rule 9)', () => {
     );
     expect(input('#cycle-name-en')?.value).toBe('Plan');
     expect(props.onSaved).not.toHaveBeenCalled();
+    // The focus goes to the first refused field of the page (the deadline is above the departments).
+    expect(document.activeElement).toBe(input('#cycle-deadline'));
+    // The departments' message is tied to the first control of their list.
+    const all = input(tid('scope-all'))!;
+    expect(all.getAttribute('aria-invalid')).toBe('true');
+    expect(el(`#${CSS.escape(all.getAttribute('aria-describedby') ?? '?')}`)?.textContent).toBe(
+      'This item no longer exists. Reload the page.',
+    );
+  });
+
+  it('a refusal about the departments alone puts the focus on their list', async () => {
+    actions.createPlanCycleAction.mockResolvedValue(
+      refused('VALIDATION_FAILED', {
+        fieldErrors: [{ path: 'departmentIds.0', code: 'UNKNOWN' }],
+      }),
+    );
+    mount(<CycleDialog {...dialogProps()} />);
+    type(input('#cycle-name-en')!, 'Plan');
+    await submit(el(tid('cycle-form')));
+    expect(document.activeElement).toBe(input(tid('scope-all')));
+  });
+
+  it('shows the branches: a branch brings its departments, and nothing picked is dropped unseen', async () => {
+    actions.createPlanCycleAction.mockResolvedValue(ok({ id: CYCLE, version: 1 }));
+    const units = [
+      unit(HR, 'Human Resources', 'Sara Ali'),
+      unit(SALES, 'Sales', null, { branchId: CAIRO.id }),
+    ];
+    mount(
+      <CycleDialog
+        {...dialogProps({
+          units,
+          branches: [CAIRO],
+          initial: {
+            ...dialogProps().initial,
+            scope: { departmentIds: [HR], branchIds: [CAIRO.id] },
+          },
+        })}
+      />,
+    );
+    // Sales comes with the Cairo branch: ticked, and taken out by unticking the branch — which is here.
+    const branch = input(tid('scope-branch'))!;
+    expect([branch.closest('label')?.textContent, branch.checked]).toEqual(['Cairo branch', true]);
+    expect([...inputs(tid('scope-unit'))].map((box) => [box.checked, box.disabled])).toEqual([
+      [true, false],
+      [true, true],
+    ]);
+    // The short summary of the popup (the longer one is the Settings page's).
+    expect(el(tid('scope-no-head'))).toBeNull();
+    click(branch);
+    expect([...inputs(tid('scope-unit'))].map((box) => [box.checked, box.disabled])).toEqual([
+      [true, false],
+      [false, false],
+    ]);
+    click(branch);
+    // «All departments» off: the departments and the branch shown here, both visibly unticked.
+    click(el(tid('scope-all')));
+    expect(input(tid('scope-branch'))?.checked).toBe(false);
+    expect(el(tid('scope-forms-count'))?.textContent).toBe('Needs forms to send: 0');
+    click(input(tid('scope-branch')));
+    type(input('#cycle-name-en')!, 'Plan');
+    await submit(el(tid('cycle-form')));
+    expect(actions.createPlanCycleAction.mock.calls[0]?.[0]).toMatchObject({
+      departmentIds: [],
+      branchIds: [CAIRO.id],
+    });
+  });
+
+  it('never clears a branch the picker does not show', () => {
+    // A branch saved with the cycle that the list of branches no longer carries stays in the scope.
+    const onSaved = vi.fn();
+    mount(
+      <CycleDialog
+        {...dialogProps({
+          onSaved,
+          units: [unit(HR, 'Human Resources', 'Sara Ali')],
+          branches: [],
+          editing: { id: CYCLE, version: 3, name: 'Training plan 2027' },
+          initial: {
+            ...dialogProps().initial,
+            nameEn: 'Training plan 2027',
+            scope: { departmentIds: [HR], branchIds: ['gone'] },
+          },
+        })}
+      />,
+    );
+    actions.updatePlanCycleAction.mockResolvedValue(ok({ id: CYCLE, version: 4 }));
+    click(el(tid('scope-all')));
+    return submit(el(tid('cycle-form'))).then(() => {
+      expect(actions.updatePlanCycleAction.mock.calls[0]?.[0]).toMatchObject({
+        departmentIds: [],
+        branchIds: ['gone'],
+      });
+    });
   });
 
   it('Arabic as the default language: the Arabic name first and required, in Arabic', () => {
@@ -360,14 +468,8 @@ describe('«New cycle»: one centred popup (forms standard rule 9)', () => {
   });
 });
 
-describe('«Edit»: the same popup, pre-filled', () => {
-  const editing = {
-    id: CYCLE,
-    version: 3,
-    name: 'Training plan 2027',
-    instructionsAr: '',
-    instructionsEn: 'Tell us what your team needs.',
-  };
+describe('«Edit»: the same popup, pre-filled — one save', () => {
+  const editing = { id: CYCLE, version: 3, name: 'Training plan 2027' };
   const initial = {
     nameAr: '',
     nameEn: 'Training plan 2027',
@@ -378,9 +480,8 @@ describe('«Edit»: the same popup, pre-filled', () => {
     scope: { departmentIds: [HR], branchIds: [] },
   };
 
-  it('saves the names and dates, then the departments with the version the first save returned', async () => {
-    actions.updatePlanCycleBasicsAction.mockResolvedValue(ok({ id: CYCLE, version: 4 }));
-    actions.savePlanCycleScopeAction.mockResolvedValue(ok({ id: CYCLE, version: 5 }));
+  it('saves the names, the dates, the form and the departments in one call', async () => {
+    actions.updatePlanCycleAction.mockResolvedValue(ok({ id: CYCLE, version: 4 }));
     const props = dialogProps({ editing, initial });
     mount(<CycleDialog {...props} />);
     expect(el(tid('cycle-dialog'))?.querySelector('h2')?.textContent).toBe(
@@ -390,73 +491,74 @@ describe('«Edit»: the same popup, pre-filled', () => {
     type(input('#cycle-name-ar')!, 'خطة التدريب 2027');
     click([...els(tid('scope-unit'))][1]);
     await submit(el(tid('cycle-form')));
-    // The instructions are edited on the Settings page: they go back as they are.
-    expect(actions.updatePlanCycleBasicsAction).toHaveBeenCalledExactlyOnceWith({
+    // The instructions are not in the popup and are not sent: the server keeps them as they are.
+    expect(actions.updatePlanCycleAction).toHaveBeenCalledExactlyOnceWith({
       nameAr: 'خطة التدريب 2027',
       nameEn: 'Training plan 2027',
       periodStart: '2027-01-01',
       periodEnd: '2027-12-31',
       deadline: '2026-12-15',
       needsFormId: FORM,
-      instructionsAr: '',
-      instructionsEn: 'Tell us what your team needs.',
-      id: CYCLE,
-      version: 3,
-    });
-    expect(actions.savePlanCycleScopeAction).toHaveBeenCalledExactlyOnceWith({
-      id: CYCLE,
-      version: 4,
       departmentIds: [HR, SALES],
       branchIds: [],
+      id: CYCLE,
+      version: 3,
     });
     expect(props.onSaved).toHaveBeenCalledExactlyOnceWith({
       created: false,
       name: 'Training plan 2027',
     });
-    expect(actions.createPlanCycleAction).not.toHaveBeenCalled();
+    for (const other of [
+      actions.createPlanCycleAction,
+      actions.updatePlanCycleBasicsAction,
+      actions.savePlanCycleScopeAction,
+    ]) {
+      expect(other).not.toHaveBeenCalled();
+    }
   });
 
-  it('sends only what changed', async () => {
-    actions.savePlanCycleScopeAction.mockResolvedValue(ok({ id: CYCLE, version: 4 }));
-    mount(<CycleDialog {...dialogProps({ editing, initial })} />);
-    click([...els(tid('scope-unit'))][1]);
+  it('nothing changed: nothing is sent', async () => {
+    const props = dialogProps({ editing, initial });
+    mount(<CycleDialog {...props} />);
     await submit(el(tid('cycle-form')));
-    expect(actions.updatePlanCycleBasicsAction).not.toHaveBeenCalled();
-    expect(actions.savePlanCycleScopeAction).toHaveBeenCalledExactlyOnceWith({
-      id: CYCLE,
-      version: 3,
-      departmentIds: [HR, SALES],
-      branchIds: [],
+    expect(actions.updatePlanCycleAction).not.toHaveBeenCalled();
+    expect(props.onSaved).toHaveBeenCalledExactlyOnceWith({
+      created: false,
+      name: 'Training plan 2027',
     });
   });
 
-  it('a refused second part: the first is in, and the next try continues from it', async () => {
-    actions.updatePlanCycleBasicsAction.mockResolvedValue(ok({ id: CYCLE, version: 4 }));
-    actions.savePlanCycleScopeAction
+  it('a refused part: nothing was saved, and the next try sends everything again with the same version', async () => {
+    actions.updatePlanCycleAction
       .mockResolvedValueOnce(
         refused('VALIDATION_FAILED', {
           fieldErrors: [{ path: 'departmentIds.1', code: 'UNKNOWN' }],
         }),
       )
-      .mockResolvedValueOnce(ok({ id: CYCLE, version: 5 }));
+      .mockResolvedValueOnce(ok({ id: CYCLE, version: 4 }));
     const props = dialogProps({ editing, initial });
     mount(<CycleDialog {...props} />);
     type(input('#cycle-name-en')!, 'Plan 2027');
     click([...els(tid('scope-unit'))][1]);
     await submit(el(tid('cycle-form')));
     expect(el(tid('cycle-form-error'))).not.toBeNull();
+    expect(document.activeElement).toBe(input(tid('scope-all')));
     expect(props.onSaved).not.toHaveBeenCalled();
     await submit(el(tid('cycle-form')));
-    // The names are not sent again; the departments go with the version the names' save returned.
-    expect(actions.updatePlanCycleBasicsAction).toHaveBeenCalledTimes(1);
-    expect(actions.savePlanCycleScopeAction).toHaveBeenLastCalledWith(
-      expect.objectContaining({ id: CYCLE, version: 4 }),
-    );
+    expect(actions.updatePlanCycleAction).toHaveBeenCalledTimes(2);
+    for (const call of actions.updatePlanCycleAction.mock.calls) {
+      expect(call[0]).toMatchObject({
+        nameEn: 'Plan 2027',
+        departmentIds: [HR, SALES],
+        id: CYCLE,
+        version: 3,
+      });
+    }
     expect(props.onSaved).toHaveBeenCalledTimes(1);
   });
 
   it('an older copy is refused: what was typed stays and the latest version is offered', async () => {
-    actions.updatePlanCycleBasicsAction.mockResolvedValue(refused('CONFLICT_VERSION'));
+    actions.updatePlanCycleAction.mockResolvedValue(refused('CONFLICT_VERSION'));
     mount(<CycleDialog {...dialogProps({ editing, initial })} />);
     type(input('#cycle-name-en')!, 'Mine');
     await submit(el(tid('cycle-form')));
@@ -672,8 +774,6 @@ const row = (over: Partial<CycleRow> = {}): CycleRow => ({
     version: 3,
     needsFormId: FORM,
     needsFormOff: null,
-    instructionsAr: null,
-    instructionsEn: null,
     scope: { departmentIds: [HR, SALES], branchIds: [] },
     problems: [],
   },
@@ -706,6 +806,7 @@ function screenProps(over: Partial<CyclesScreenProps> = {}): CyclesScreenProps {
       defaults: { periodStart: '2027-01-01', periodEnd: '2027-12-31', deadline: '2026-12-12' },
       nameLanguage: 'en',
       units: UNITS,
+      branches: [],
       needsForms: FORMS,
     },
     open: null,
@@ -779,6 +880,21 @@ describe('the cycles list', () => {
     // The visible words are part of the link's accessible name (WCAG 2.5.3).
     expect(progress?.getAttribute('aria-label')).toContain(progress?.textContent ?? '?');
     expect(open?.querySelector('[data-testid="cycle-menu"]')).toBeNull();
+  });
+
+  it('the row menu is named after its cycle, like the button that opens it', () => {
+    mount(<CyclesScreen {...screenProps()} />);
+    const trigger = el(tid('cycle-menu'))!;
+    act(() => {
+      trigger.focus();
+      trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    const menu = el('[role="menu"]')!;
+    expect(menu.getAttribute('aria-label')).toBe('Actions for Training plan 2027');
+    expect(menu.getAttribute('aria-label')).toBe(trigger.getAttribute('aria-label'));
+    expect([...menu.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)).toEqual(
+      ['Edit', 'Settings', 'Launch cycle', 'Delete draft'],
+    );
   });
 
   it('filters by the card of the address; an empty filter offers all cycles', () => {
@@ -1021,6 +1137,13 @@ describe('cycle Settings: one save bar for the open section', () => {
     expect(el(`#budget-${SALES}-error`)?.textContent).toBe(
       'Enter an amount in numbers, with up to 3 decimals.',
     );
+    // Not a silent refusal: the focus is on the amount, which carries its message.
+    const amount = [...inputs(tid('budget-amount'))][1]!;
+    expect(document.activeElement).toBe(amount);
+    expect([amount.getAttribute('aria-invalid'), amount.getAttribute('aria-describedby')]).toEqual([
+      'true',
+      `budget-${SALES}-error`,
+    ]);
     expect(actions.savePlanCycleBudgetsAction).not.toHaveBeenCalled();
     act(() => {
       el(tid('cycle-budgets'))?.dispatchEvent(
@@ -1029,6 +1152,33 @@ describe('cycle Settings: one save bar for the open section', () => {
     });
     expect([...inputs(tid('budget-amount'))][1]?.value).toBe('');
     expect(el(tid('save-bar'))).toBeNull();
+  });
+
+  it('what the server refuses takes the focus too: an amount, the departments of the popup', async () => {
+    actions.savePlanCycleBudgetsAction.mockResolvedValue(
+      refused('VALIDATION_FAILED', {
+        fieldErrors: [{ path: 'budgets.1.amount', code: 'INVALID_AMOUNT' }],
+      }),
+    );
+    mount(departments());
+    type([...inputs(tid('budget-amount'))][1]!, '12');
+    await submit(el(tid('cycle-budgets')));
+    expect(el(tid('cycle-settings-error'))).not.toBeNull();
+    expect(document.activeElement).toBe([...inputs(tid('budget-amount'))][1]);
+    // Saved after a correction, the departments' popup opens; its refusal goes to the list.
+    actions.savePlanCycleBudgetsAction.mockResolvedValue(ok({ id: CYCLE, version: 4 }));
+    await submit(el(tid('cycle-budgets')));
+    actions.savePlanCycleScopeAction.mockResolvedValue(
+      refused('VALIDATION_FAILED', {
+        fieldErrors: [{ path: 'departmentIds.0', code: 'UNKNOWN' }],
+      }),
+    );
+    click(el(tid('cycle-departments-edit')));
+    click([...els(tid('scope-unit'))][0]);
+    await submit(el(tid('cycle-scope')));
+    const all = input(tid('scope-all'))!;
+    expect(document.activeElement).toBe(all);
+    expect(all.getAttribute('aria-invalid')).toBe('true');
   });
 
   it('«Add or remove departments» is a popup that saves the departments on its own', async () => {

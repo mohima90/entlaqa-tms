@@ -14,8 +14,6 @@
 export const PLAN_LIMITS = {
   nameMax: 120,
   instructionsMax: 4000,
-  stepNameMax: 80,
-  maxSteps: 10,
   maxReminders: 5,
   reminderMinDays: 1,
   reminderMaxDays: 90,
@@ -35,41 +33,7 @@ export const FORM_STATUSES = ['not_started', 'draft', 'submitted', 'returned', '
 export type FormStatus = (typeof FORM_STATUSES)[number];
 export type StoredFormStatus = Exclude<FormStatus, 'late'>;
 
-export const STEP_KINDS = ['department_heads', 'person'] as const;
-export type StepKind = (typeof STEP_KINDS)[number];
-
 export const DEFAULT_REMINDER_DAYS: readonly number[] = [7, 2];
-
-export interface ApprovalStep {
-  readonly kind: StepKind;
-  /** One of the two may be missing: the organization's default language's name is required (nameIssues). */
-  readonly nameAr: string | null;
-  readonly nameEn: string | null;
-  /** Named person steps only (null: not named yet). */
-  readonly approverPersonId: string | null;
-}
-
-/**
- * The built-in default chain (business flow A3): Unit heads → Finance → Management. The heads step is named
- * after no fixed level (guided-test feedback #3, PO 17 Oct 2026: organizations name their own levels).
- * Since EP-PLN §13 (PO, 12 Nov 2026) no screen shows or edits a chain and the launch does not ask for one:
- * a new cycle still stores a copy of the organization's default chain (data as before), which is ignored.
- */
-export const DEFAULT_CHAIN: readonly ApprovalStep[] = [
-  {
-    kind: 'department_heads',
-    nameAr: 'رؤساء الوحدات',
-    nameEn: 'Unit heads',
-    approverPersonId: null,
-  },
-  { kind: 'person', nameAr: 'اعتماد المالية', nameEn: 'Finance approval', approverPersonId: null },
-  {
-    kind: 'person',
-    nameAr: 'اعتماد الإدارة',
-    nameEn: 'Management approval',
-    approverPersonId: null,
-  },
-];
 
 // ---------------------------------------------------------------------------------------------------
 // Calendar days ('YYYY-MM-DD', no time zone)

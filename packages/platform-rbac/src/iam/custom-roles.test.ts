@@ -17,6 +17,7 @@ const db = vi.hoisted(() => ({
   updateCustomRole: vi.fn(),
   deleteCustomRole: vi.fn(),
   getCustomRole: vi.fn(),
+  listCustomRoles: vi.fn(),
   getTenantDefaultLocale: vi.fn(),
   // iam/default-language-name.ts (the structure's rule) reads the stored names of units and branches.
   getStoredNames: vi.fn(),
@@ -82,6 +83,7 @@ beforeEach(() => {
   });
   db.deleteCustomRole.mockResolvedValue({ ok: true, before: row(), after: null });
   db.getCustomRole.mockResolvedValue(row());
+  db.listCustomRoles.mockResolvedValue([]);
   db.getTenantDefaultLocale.mockResolvedValue('en');
 });
 
@@ -264,6 +266,49 @@ describe('the name in the organization’s default language (PO, 12 Nov 2026)', 
     db.updateCustomRole.mockResolvedValue({ ok: false, refusal: 'not_found' });
     const unknown = await update(change);
     expect(!unknown.ok && unknown.error.code).toBe('NOT_FOUND');
+  });
+});
+
+describe('a name another role already shows (review finding 3)', () => {
+  it('refuses a new name another role shows in the same language — its own or the one standing in', async () => {
+    const create = createDefineAction(runtime(['tenant_admin']).rt)(
+      createCustomRoleActionDefinition(),
+    );
+    // Role A is named in English only: it shows «Auditor» in Arabic too.
+    db.listCustomRoles.mockResolvedValue([row({ id: 'a', nameEn: 'Auditor', nameAr: null })]);
+    const arabic = await create({ ...input, nameEn: 'Reviewer', nameAr: 'auditor' });
+    expect(!arabic.ok && arabic.error.fieldErrors).toEqual([
+      { path: 'nameAr', code: 'NAME_TAKEN' },
+    ]);
+    // Named in English only, «Auditor» would show in Arabic as role A does.
+    const english = await create({ ...input, nameEn: ' AUDITOR ', nameAr: '' });
+    expect(!english.ok && english.error.fieldErrors).toEqual([
+      { path: 'nameEn', code: 'NAME_TAKEN' },
+    ]);
+    expect(db.createCustomRole).not.toHaveBeenCalled();
+    expect((await create({ ...input, nameEn: 'Reviewer', nameAr: 'مراجع' })).ok).toBe(true);
+  });
+
+  it('update: names left as stored are not asked; the role itself never clashes', async () => {
+    const update = createDefineAction(runtime(['tenant_admin']).rt)(
+      updateCustomRoleActionDefinition(),
+    );
+    const change = { ...input, id: ROLE_ID, version: 1 };
+    db.listCustomRoles.mockResolvedValue([
+      row(),
+      row({ id: 'b', nameEn: 'Approver', nameAr: null }),
+    ]);
+    // A changed Arabic name, the English one kept: never a clash with the role itself.
+    expect((await update({ ...change, nameAr: 'مالي' })).ok).toBe(true);
+    // An older look-alike never blocks other edits (names unchanged).
+    db.getCustomRole.mockResolvedValue(row({ nameEn: 'Approver', nameAr: 'معتمد' }));
+    db.listCustomRoles.mockResolvedValue([row({ id: 'b', nameEn: 'Approver', nameAr: null })]);
+    const untouched = await update({ ...change, nameEn: 'Approver', nameAr: 'معتمد' });
+    expect(untouched.ok).toBe(true);
+    const renamed = await update({ ...change, nameEn: 'Finance approver', nameAr: 'approver' });
+    expect(!renamed.ok && renamed.error.fieldErrors).toEqual([
+      { path: 'nameAr', code: 'NAME_TAKEN' },
+    ]);
   });
 });
 

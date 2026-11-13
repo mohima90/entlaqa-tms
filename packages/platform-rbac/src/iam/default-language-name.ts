@@ -92,3 +92,40 @@ export async function defaultNameError(
   }
   return appError('VALIDATION_FAILED', { fieldErrors: [{ path: field, code: 'REQUIRED' }] });
 }
+
+/** A name as compared: trimmed, case-insensitive (as the unique indexes: lower(name)); empty → null. */
+const comparable = (name: string | null | undefined): string | null => {
+  const value = name?.trim().toLowerCase() ?? '';
+  return value === '' ? null : value;
+};
+
+/** The name a thing shows in `language`: its own, else the other language's (`personDisplayName`). */
+function shownName(names: NamePair, language: 'ar' | 'en'): string | null {
+  const own = comparable(language === 'ar' ? names.nameAr : names.nameEn);
+  return own ?? comparable(language === 'ar' ? names.nameEn : names.nameAr);
+}
+
+/**
+ * Two things that would SHOW the same name (WP-UX-01 c review, finding 3): a thing named in one language
+ * shows that name in the other language too, so «Auditor» (English only) and «Reviewer» / Arabic «Auditor»
+ * would both read «Auditor» in Arabic. The unique indexes compare each language's stored name only; this
+ * compares the shown names — the candidate's, in each language, against every other thing's in the same
+ * language. Returns the field to mark NAME_TAKEN — the candidate's name in that language, or the name that
+ * stands in for it — or null. The caller passes the other things (without the one being changed) and asks
+ * only when the names are new or changed, so older look-alikes never block other edits.
+ */
+export function shownNameClash(
+  candidate: NamePair,
+  others: readonly NamePair[],
+): 'nameAr' | 'nameEn' | null {
+  for (const language of ['en', 'ar'] as const) {
+    const shown = shownName(candidate, language);
+    if (shown === null) continue;
+    if (others.some((other) => shownName(other, language) === shown)) {
+      const own = language === 'ar' ? 'nameAr' : 'nameEn';
+      if (comparable(candidate[own]) !== null) return own;
+      return own === 'nameAr' ? 'nameEn' : 'nameAr';
+    }
+  }
+  return null;
+}

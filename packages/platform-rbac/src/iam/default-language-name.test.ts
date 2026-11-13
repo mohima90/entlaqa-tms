@@ -44,8 +44,8 @@ describe('the name in the organization’s default language (WP-UX-01 b; PO, 12 
   });
 
   it('lets a save keep the names as they are stored, and applies the rule once they change', async () => {
-    const stored = { thing: 'cost_centre', id: ID } as const;
-    db.getStoredNames.mockResolvedValue({ nameEn: null, nameAr: 'المبيعات' });
+    const stored = { thing: 'cost_centre', id: ID, version: 3 } as const;
+    db.getStoredNames.mockResolvedValue({ nameEn: null, nameAr: 'المبيعات', version: 3 });
     // E.g. «Deactivate» on a cost centre named in Arabic only, in an English-default organization.
     expect(await defaultNameError(TX, { nameEn: null, nameAr: 'المبيعات' }, stored)).toBeNull();
     expect(db.getStoredNames).toHaveBeenCalledWith(TX, 'cost_centre', ID);
@@ -56,8 +56,31 @@ describe('the name in the organization’s default language (WP-UX-01 b; PO, 12 
     db.getStoredNames.mockClear();
     expect(await defaultNameError(TX, { nameEn: 'Sales', nameAr: null }, stored)).toBeNull();
     expect(db.getStoredNames).not.toHaveBeenCalled();
-    // The thing is gone: the rule answers.
+  });
+
+  it('compares the stored names trimmed, as the typed ones arrive', async () => {
+    const stored = { thing: 'unit', id: ID, version: 1 } as const;
+    // A name stored with spaces around it (an import, an older row); a blank one counts as none.
+    db.getStoredNames.mockResolvedValue({ nameEn: '   ', nameAr: '  المبيعات ', version: 1 });
+    expect(await defaultNameError(TX, { nameEn: null, nameAr: 'المبيعات' }, stored)).toBeNull();
+    expect(
+      await defaultNameError(TX, { nameEn: null, nameAr: 'المبيعات 2' }, stored),
+    ).toMatchObject({ fieldErrors: [{ path: 'nameEn', code: 'REQUIRED' }] });
+  });
+
+  it('leaves a thing that is gone or was changed meanwhile to the write (not found, conflict)', async () => {
+    const stored = { thing: 'branch', id: ID, version: 3 } as const;
+    const typed = { nameEn: null, nameAr: 'الرياض' };
+    // Deleted meanwhile: the write answers NOT_FOUND.
     db.getStoredNames.mockResolvedValue(null);
-    expect(await defaultNameError(TX, { nameEn: null, nameAr: 'المبيعات' }, stored)).not.toBeNull();
+    expect(await defaultNameError(TX, typed, stored)).toBeNull();
+    // Renamed by someone else meanwhile: the write answers CONFLICT_VERSION, not «required».
+    db.getStoredNames.mockResolvedValue({ nameEn: 'Riyadh', nameAr: 'الرياض', version: 4 });
+    expect(await defaultNameError(TX, typed, stored)).toBeNull();
+    // A version from the future is nobody's form: the rule answers, even with the names as stored.
+    db.getStoredNames.mockResolvedValue({ nameEn: null, nameAr: 'الرياض', version: 2 });
+    expect(await defaultNameError(TX, typed, stored)).toMatchObject({
+      fieldErrors: [{ path: 'nameEn', code: 'REQUIRED' }],
+    });
   });
 });

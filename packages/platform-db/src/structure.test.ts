@@ -106,8 +106,13 @@ describe('reads', () => {
   });
 
   it('reads the stored names of a unit, branch, level or cost centre (one may be missing)', async () => {
-    const unit = fakeTx([[{ name_ar: null, name_en: 'Sales' }]]);
-    expect(await getStoredNames(unit.tx, 'unit', 'u1')).toEqual({ nameAr: null, nameEn: 'Sales' });
+    const unit = fakeTx([[{ name_ar: null, name_en: 'Sales', version: 4 }]]);
+    expect(await getStoredNames(unit.tx, 'unit', 'u1')).toEqual({
+      nameAr: null,
+      nameEn: 'Sales',
+      version: 4,
+    });
+    expect(unit.executed[0]?.sql).toContain('select t.name_ar, t.name_en, t.version from');
     expect(unit.executed[0]?.sql).toContain('platform.departments t where t.deleted_at is null');
     expect(unit.executed[0]?.params).toEqual(['u1']);
     for (const [thing, table] of [

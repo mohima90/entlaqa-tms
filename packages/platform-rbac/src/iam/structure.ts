@@ -290,7 +290,11 @@ export function renameStructureLevelActionDefinition(): ActionDefinition<
     input: RenameLevelInput,
     handler: async ({ ctx, input }) => {
       const names = { nameEn: input.nameEn, nameAr: input.nameAr };
-      const nameError = await defaultNameError(ctx.tx, names, { thing: 'level', id: input.id });
+      const nameError = await defaultNameError(ctx.tx, names, {
+        thing: 'level',
+        id: input.id,
+        version: input.version,
+      });
       if (nameError) return err(nameError);
       return result(await renameStructureLevel(ctx.tx, input.id, input.version, names));
     },
@@ -380,7 +384,7 @@ export function updateStructureUnitActionDefinition(): ActionDefinition<
     input: UpdateUnitInput,
     handler: async ({ ctx, input }) => {
       const { id, version, ...fields } = input;
-      const nameError = await defaultNameError(ctx.tx, fields, { thing: 'unit', id });
+      const nameError = await defaultNameError(ctx.tx, fields, { thing: 'unit', id, version });
       if (nameError) return err(nameError);
       return withHeadRole(ctx, await updateStructureUnit(ctx.tx, id, version, fields));
     },

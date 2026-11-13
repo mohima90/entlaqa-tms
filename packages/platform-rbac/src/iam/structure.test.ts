@@ -334,7 +334,7 @@ describe('structure changes (platform.org.manage)', () => {
     db.renameStructureLevel.mockResolvedValue({ ok: true, before: level(), after: level() });
     db.updateStructureUnit.mockResolvedValue({ ok: true, before: unit(), after: unit() });
     db.updateBranch.mockResolvedValue({ ok: true, before: branch(), after: branch() });
-    db.getStoredNames.mockResolvedValue({ nameAr: null, nameEn: 'Sales' });
+    db.getStoredNames.mockResolvedValue({ nameAr: null, nameEn: 'Sales', version: 1 });
     const { parentId: _parent, ...unitFields } = unitForm;
     const kept = await updateUnit({ ...unitFields, id: UNIT, version: 1, nameAr: '' });
     expect(kept.ok).toBe(true);
@@ -347,18 +347,27 @@ describe('structure changes (platform.org.manage)', () => {
       nameAr: '',
     });
     expect(!changed.ok && changed.error).toMatchObject(required('nameAr'));
-    db.getStoredNames.mockResolvedValue({ nameAr: null, nameEn: 'T' });
+    db.getStoredNames.mockResolvedValue({ nameAr: null, nameEn: 'T', version: 1 });
     expect((await renameLevel({ id: LEVEL, version: 1, nameEn: 'T', nameAr: '' })).ok).toBe(true);
     expect(db.getStoredNames).toHaveBeenLastCalledWith(TX, 'level', LEVEL);
-    db.getStoredNames.mockResolvedValue({ nameAr: null, nameEn: 'Riyadh' });
+    db.getStoredNames.mockResolvedValue({ nameAr: null, nameEn: 'Riyadh', version: 1 });
     expect((await updateBranch({ ...branchForm, id: BRANCH, version: 1, nameAr: '' })).ok).toBe(
       true,
     );
     expect(db.getStoredNames).toHaveBeenLastCalledWith(TX, 'branch', BRANCH);
-    // A thing that no longer exists: the rule answers (the write would answer NOT_FOUND after it).
+    expect(writeAudit).toHaveBeenCalledTimes(7);
+
+    // Existence and version come before the rule (review of WP-UX-01 b): a thing deleted meanwhile answers
+    // NOT_FOUND, one changed by someone else CONFLICT_VERSION — never «required» on an untouched name.
     db.getStoredNames.mockResolvedValue(null);
+    db.updateBranch.mockResolvedValue({ ok: false, refusal: 'not_found' });
     const gone = await updateBranch({ ...branchForm, id: BRANCH, version: 1, nameAr: '' });
-    expect(!gone.ok && gone.error).toMatchObject(required('nameAr'));
+    expect(!gone.ok && gone.error).toMatchObject({ code: 'NOT_FOUND' });
+    db.getStoredNames.mockResolvedValue({ nameAr: 'المبيعات', nameEn: 'Retail', version: 2 });
+    db.updateStructureUnit.mockResolvedValue({ ok: false, refusal: 'version_conflict' });
+    const stale = await updateUnit({ ...unitFields, id: UNIT, version: 1, nameAr: '' });
+    expect(!stale.ok && stale.error).toMatchObject({ code: 'CONFLICT_VERSION' });
+    expect(db.updateStructureUnit).toHaveBeenLastCalledWith(TX, UNIT, 1, expect.anything());
     expect(writeAudit).toHaveBeenCalledTimes(7);
   });
 

@@ -142,7 +142,11 @@ export function updateCostCentreActionDefinition(): ActionDefinition<
     input: UpdateCostCentreInput,
     handler: async ({ ctx, input }) => {
       const { id, version, ...fields } = input;
-      const nameError = await defaultNameError(ctx.tx, fields, { thing: 'cost_centre', id });
+      const nameError = await defaultNameError(ctx.tx, fields, {
+        thing: 'cost_centre',
+        id,
+        version,
+      });
       if (nameError) return err(nameError);
       return result(await updateCostCentre(ctx.tx, id, version, fields));
     },

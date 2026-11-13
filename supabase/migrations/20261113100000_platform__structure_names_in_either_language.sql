@@ -20,6 +20,17 @@
 -- language when one is missing (apps/suite lib/users-view localizedName; private.user_import_changes since
 -- 20261113100200). The bulk user import matches a unit or a branch by code, else by either name
 -- (private.search_key is STRICT: a missing name matches nothing). PII: none.
+--
+-- The deploy window (the app and the database deploy in parallel). New code that runs before this migration
+-- finds name_ar still NOT NULL (a catalog lookup, packages/platform-db custom-roles-present.ts
+-- oneNameStructureExists) and stores the one name that was given in the empty slot too. Such a row keeps that
+-- copy afterwards: nothing tells it apart from a name typed twice, so no migration clears it — the person
+-- sees the same name in both languages and can change either one. Known and accepted (minutes, once).
+--
+-- Rolling back. The lookup's answer «one name is allowed» is cached for the life of each app process (it only
+-- ever goes from false to true). After the rollback of this migration a running process would still try to
+-- save one name and the database would refuse it (NOT NULL): roll the application back FIRST (or restart it
+-- right after the database rollback), then run supabase/rollbacks/20261113100000_….sql.
 set local lock_timeout = '5s';
 
 alter table platform.departments alter column name_ar drop not null;

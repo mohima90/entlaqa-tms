@@ -250,6 +250,37 @@ describe('a form’s name in the organization’s default language (PO, 12 Nov 2
   });
 });
 
+describe('a name another form already shows (review finding 3)', () => {
+  it('refuses on create, duplicate and a changed name; never against the form itself', async () => {
+    const run = createDefineAction(runtime('training_manager').rt);
+    // The form is named in English only: it shows «Form» in Arabic too.
+    db.listNeedsForms.mockResolvedValue([{ ...summaries[0], name: { en: 'Form', ar: '' } }]);
+    const created = await run(actions.createNeedsFormActionDefinition())({
+      nameEn: 'Other form',
+      nameAr: 'FORM',
+    });
+    expect(!created.ok && created.error.fieldErrors).toEqual([
+      { path: 'nameAr', code: 'NAME_TAKEN' },
+    ]);
+    const copy = await run(actions.duplicateNeedsFormActionDefinition())({
+      formId: FORM,
+      nameEn: 'form',
+      nameAr: '',
+    });
+    expect(!copy.ok && copy.error.fieldErrors).toEqual([{ path: 'nameEn', code: 'NAME_TAKEN' }]);
+    expect(db.createNeedsForm).not.toHaveBeenCalled();
+    expect(db.duplicateNeedsForm).not.toHaveBeenCalled();
+    // Renaming the form itself (its English name kept, an Arabic one added): no clash with itself.
+    const renamed = await run(actions.renameNeedsFormActionDefinition())({
+      formId: FORM,
+      version: 1,
+      nameEn: 'Form',
+      nameAr: 'نموذج',
+    });
+    expect(renamed.ok).toBe(true);
+  });
+});
+
 describe('the library', () => {
   it('creates, duplicates, renames, sets the default and switches forms off — audited', async () => {
     const { rt, writeAudit } = runtime('training_manager');

@@ -6,10 +6,12 @@ import {
   pgError,
   storableNamePair,
 } from '@jadarat/platform-db';
+import { shownNameClash } from '@jadarat/platform-rbac';
 import {
   getCourse,
   insertCourse,
   insertCourseCategory,
+  listCourseCategories,
   insertCourseWithGeneratedCode,
   updateCourseRow,
   updateCourseStatus,
@@ -98,6 +100,16 @@ async function valuesError(
   return problems.length > 0 ? appError('VALIDATION_FAILED', { fieldErrors: problems }) : null;
 }
 
+/**
+ * A new category's name that another category already SHOWS in the same language (its own, or its other
+ * language's standing in for a missing one — review finding 3): NAME_TAKEN on the field, or null.
+ */
+async function categoryNameTaken(tx: UserTx, values: AnyCourseValues): Promise<AppError | null> {
+  if (values.category.kind !== 'new') return null;
+  const field = shownNameClash(values.category, await listCourseCategories(tx));
+  return field === null ? null : validation(`category.${field}`, 'NAME_TAKEN');
+}
+
 async function resolveCategory(
   tx: UserTx,
   values: AnyCourseValues,
@@ -139,7 +151,7 @@ export async function createCourse(
   const values: AnyCourseValues = options.withoutCosts
     ? { ...input, estCostPerSession: null, estCostPerParticipant: null }
     : input;
-  const problem = await valuesError(tx, values);
+  const problem = (await valuesError(tx, values)) ?? (await categoryNameTaken(tx, values));
   if (problem) return err(problem);
   let id: string;
   let created: CourseCategoryRow | null;
@@ -175,7 +187,7 @@ export async function updateCourse(
   options: { readonly keepCosts?: boolean } = {},
 ): Promise<Result<CourseSaved, AppError>> {
   const before = await getCourse(tx, id);
-  const problem = await valuesError(tx, input, before);
+  const problem = (await valuesError(tx, input, before)) ?? (await categoryNameTaken(tx, input));
   if (problem) return err(problem);
   if (!before) return err(appError('NOT_FOUND'));
   if (before.version !== expectedVersion) return err(appError('CONFLICT_VERSION'));

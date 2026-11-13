@@ -6,7 +6,7 @@ import type { MemberOption } from '@jadarat/platform-db';
 import { personDisplayName } from '@jadarat/platform-i18n/names';
 import { Alert, Button, Dialog, Icon, TextField, cn, toast } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
-import { useId, useMemo, useState, useTransition } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, useTransition } from 'react';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { LoadLatestVersion, useLatestVersion } from '../latest-version';
@@ -91,6 +91,13 @@ export function NeedDialog(props: NeedDialogProps) {
   const [dirty, setDirty] = useState(false);
   /** «Discard this need?» is open (the popup was closed with typed entries). */
   const [asking, setAsking] = useState(false);
+  /** «Save and add another» saved: the topic takes focus once the fields are enabled again. */
+  const focusTopic = useRef(false);
+  useEffect(() => {
+    if (!focusTopic.current || pending) return;
+    focusTopic.current = false;
+    document.getElementById(`${base}-topic`)?.focus();
+  }, [pending, base]);
 
   // A fresh draft each time the popup opens (adding) or opens another need (editing).
   if (props.open && opened !== props.need) {
@@ -209,7 +216,7 @@ export function NeedDialog(props: NeedDialogProps) {
           setMoreOpen(false);
           setSearch('');
           setDirty(false);
-          document.getElementById(`${base}-topic`)?.focus();
+          focusTopic.current = true;
         } else {
           setDirty(false);
           props.onClose();
@@ -257,6 +264,41 @@ export function NeedDialog(props: NeedDialogProps) {
         description={t('panel.intro')}
         closeLabel={t('panel.close')}
         data-testid="need-panel"
+        // «Cancel», then the primary buttons at the end — the dialog keeps them in view while it scrolls.
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={close}
+              disabled={pending}
+              data-testid="need-cancel"
+            >
+              {t('panel.cancel')}
+            </Button>
+            {props.need ? null : (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  save(true);
+                }}
+                disabled={pending}
+                data-testid="need-save-another"
+              >
+                {t('panel.saveAndAddAnother')}
+              </Button>
+            )}
+            <Button
+              onClick={() => {
+                save(false);
+              }}
+              busy={pending}
+              disabled={pending}
+              data-testid="need-save"
+            >
+              {pending ? t('panel.working') : t('panel.save')}
+            </Button>
+          </>
+        }
       >
         <div className="flex flex-col gap-5">
           {notice ? (
@@ -496,41 +538,6 @@ export function NeedDialog(props: NeedDialogProps) {
             }}
             data-testid="need-cost"
           />
-
-          {/* «Cancel», then the primary button at the end; the footer stays in view while the popup
-            scrolls (a long team list, the organization's extra fields). */}
-          <div className="sticky bottom-0 -mx-6 -mb-6 flex flex-col-reverse gap-2.5 border-t border-border bg-surface-raised px-6 py-4 sm:-mx-6.5 sm:-mb-6.5 sm:flex-row sm:flex-wrap sm:justify-end sm:px-6.5">
-            <Button
-              variant="secondary"
-              onClick={close}
-              disabled={pending}
-              data-testid="need-cancel"
-            >
-              {t('panel.cancel')}
-            </Button>
-            {props.need ? null : (
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  save(true);
-                }}
-                disabled={pending}
-                data-testid="need-save-another"
-              >
-                {t('panel.saveAndAddAnother')}
-              </Button>
-            )}
-            <Button
-              onClick={() => {
-                save(false);
-              }}
-              busy={pending}
-              disabled={pending}
-              data-testid="need-save"
-            >
-              {pending ? t('panel.working') : t('panel.save')}
-            </Button>
-          </div>
         </div>
       </Dialog>
       <DiscardDialog

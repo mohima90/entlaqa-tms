@@ -259,20 +259,26 @@ export function CourseSettingsForm(props: CourseSettingsFormProps) {
     );
   };
 
-  /** The two fields of a bilingual text: the default language first (required), the other optional. */
+  /**
+   * The two fields of a bilingual text: the default language first (required), the other optional — side by
+   * side from 600 px, as in the popups (the two language names are a short natural pair).
+   */
   const pair = (
     fields: { readonly en: CourseFormField; readonly ar: CourseFormField },
     labels: { readonly en: string; readonly ar: string },
     requiredNow: boolean,
-  ) =>
-    nameOrder(props.nameLanguage).map((language) =>
-      field(fields[language], {
-        label: labels[language],
-        required: requiredNow && language === props.nameLanguage,
-        lang: language,
-        ltr: language === 'en',
-      }),
-    );
+  ) => (
+    <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2">
+      {nameOrder(props.nameLanguage).map((language) =>
+        field(fields[language], {
+          label: labels[language],
+          required: requiredNow && language === props.nameLanguage,
+          lang: language,
+          ltr: language === 'en',
+        }),
+      )}
+    </div>
+  );
 
   // A course titled before the rule — or before the organization changed its default language — may have
   // no title in today's default language: the asterisk shows only where a title is asked now.

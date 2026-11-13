@@ -1,7 +1,12 @@
 import 'server-only';
 import { type AppError, type Result, appError, err, ok } from '@jadarat/platform-core';
 import { type UserTx, getTenantDefaultLocale } from '@jadarat/platform-db';
-import type { ActionDefinition, AuditRecord, QueryDefinition } from '@jadarat/platform-rbac';
+import {
+  type ActionDefinition,
+  type AuditRecord,
+  type QueryDefinition,
+  shownNameClash,
+} from '@jadarat/platform-rbac';
 import { z } from 'zod';
 import * as db from '../db/needs-forms';
 import { tmsPermissions } from '../permissions';
@@ -162,12 +167,20 @@ async function formNameProblem(
   tx: UserTx,
   names: db.FormNames,
   before?: { readonly en: string; readonly ar: string },
+  except?: string,
 ): Promise<AppError | null> {
   if (before && (before.en || null) === names.nameEn && (before.ar || null) === names.nameAr) {
     return null;
   }
   const fieldErrors = toFieldErrors(nameIssues(await getTenantDefaultLocale(tx), names));
-  return fieldErrors.length > 0 ? appError('VALIDATION_FAILED', { fieldErrors }) : null;
+  if (fieldErrors.length > 0) return appError('VALIDATION_FAILED', { fieldErrors });
+  // A name another form already SHOWS in the same language (its own, or its other language's standing in
+  // for a missing one — review finding 3) is taken too.
+  const others = (await db.listNeedsForms(tx))
+    .filter((form) => form.id !== except)
+    .map((form) => ({ nameEn: form.name.en || null, nameAr: form.name.ar || null }));
+  const taken = shownNameClash(names, others);
+  return taken === null ? null : validation(taken, 'NAME_TAKEN');
 }
 
 export function createNeedsFormActionDefinition(): ActionDefinition<
@@ -220,7 +233,7 @@ export function renameNeedsFormActionDefinition(): ActionDefinition<
     input: RenameNeedsFormInput,
     handler: async ({ ctx, input }) => {
       const stored = (await db.listNeedsForms(ctx.tx)).find((f) => f.id === input.formId);
-      const problem = await formNameProblem(ctx.tx, input, stored?.name);
+      const problem = await formNameProblem(ctx.tx, input, stored?.name, input.formId);
       if (problem) return err(problem);
       const renamed = await attempt(() =>
         db.renameNeedsForm(ctx.tx, input.formId, input.version, input),

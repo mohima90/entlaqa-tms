@@ -1,6 +1,11 @@
 import type { UserTx } from '@jadarat/platform-db';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { defaultNameError, defaultNameField, nameInOneLanguage } from './default-language-name';
+import {
+  defaultNameError,
+  defaultNameField,
+  nameInOneLanguage,
+  shownNameClash,
+} from './default-language-name';
 
 const db = vi.hoisted(() => ({
   getTenantDefaultLocale: vi.fn((): Promise<'ar' | 'en'> => Promise.resolve('en')),
@@ -82,5 +87,32 @@ describe('the name in the organization’s default language (WP-UX-01 b; PO, 12 
     expect(await defaultNameError(TX, typed, stored)).toMatchObject({
       fieldErrors: [{ path: 'nameEn', code: 'REQUIRED' }],
     });
+  });
+});
+
+describe('shownNameClash (WP-UX-01 c review, finding 3)', () => {
+  const others = [
+    { nameEn: 'Auditor', nameAr: null },
+    { nameEn: null, nameAr: 'المالية' },
+    { nameEn: 'Sales', nameAr: 'المبيعات' },
+  ];
+
+  it('compares what each thing shows in each language, case-insensitively and trimmed', () => {
+    // Shown in Arabic as the first one shows «Auditor».
+    expect(shownNameClash({ nameEn: 'Reviewer', nameAr: ' auditor ' }, others)).toBe('nameAr');
+    // English only: shows «Auditor» in English and Arabic — taken in English already.
+    expect(shownNameClash({ nameEn: 'AUDITOR', nameAr: null }, others)).toBe('nameEn');
+    // English only, «المالية» shown in English by the second: the English name stands in.
+    expect(shownNameClash({ nameEn: 'المالية', nameAr: null }, others)).toBe('nameEn');
+    // Arabic only: the third shows «المبيعات» in Arabic.
+    expect(shownNameClash({ nameEn: null, nameAr: 'المبيعات' }, others)).toBe('nameAr');
+  });
+
+  it('lets different shown names and the same name in another language through', () => {
+    expect(shownNameClash({ nameEn: 'Finance', nameAr: 'مالية' }, others)).toBeNull();
+    // «Sales» in Arabic slot while the third shows «المبيعات» in Arabic: different shown names.
+    expect(shownNameClash({ nameEn: 'Marketing', nameAr: 'Sales' }, others)).toBeNull();
+    expect(shownNameClash({ nameEn: null, nameAr: null }, others)).toBeNull();
+    expect(shownNameClash({ nameEn: 'Auditor', nameAr: null }, [])).toBeNull();
   });
 });

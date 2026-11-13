@@ -408,6 +408,19 @@ describe('createCourseActionDefinition (audited; a reusable service underneath)'
     );
   });
 
+  it('refuses a new category whose name another category already shows (review finding 3)', async () => {
+    // «Safety» is named in English only: it shows «Safety» in Arabic too.
+    db.listCourseCategories.mockResolvedValue([{ id: CATEGORY, nameEn: 'Safety', nameAr: null }]);
+    const result = await createDefineAction(runtime('training_manager').rt)(
+      createCourseActionDefinition(),
+    )({ ...values, category: { kind: 'new', nameEn: 'Fire', nameAr: 'safety' } });
+    expect(!result.ok && result.error.fieldErrors).toEqual([
+      { path: 'category.nameAr', code: 'NAME_TAKEN' },
+    ]);
+    expect(db.insertCourseCategory).not.toHaveBeenCalled();
+    expect(db.insertCourse).not.toHaveBeenCalled();
+  });
+
   it('checks the rules across fields before writing', async () => {
     const result = await createDefineAction(runtime('training_manager').rt)(
       createCourseActionDefinition(),

@@ -50,6 +50,28 @@ export function CourseAddDialog(props: CourseAddDialogProps) {
       description={text('form.intro')}
       closeLabel={text('form.close')}
       data-testid="course-dialog"
+      // «Cancel», then the primary button at the end — the dialog keeps them in view while it scrolls.
+      footer={
+        <>
+          <Button
+            variant="secondary"
+            onClick={props.onClose}
+            disabled={busy}
+            data-testid="course-cancel"
+          >
+            {text('form.cancel')}
+          </Button>
+          <Button
+            type="submit"
+            form={ADD_FORM_ID}
+            disabled={busy}
+            busy={busy}
+            data-testid="course-save"
+          >
+            {busy ? text('form.saving') : text('addCourse')}
+          </Button>
+        </>
+      }
     >
       {props.open ? <AddForm {...props} onBusy={setBusy} /> : null}
     </Dialog>
@@ -57,6 +79,9 @@ export function CourseAddDialog(props: CourseAddDialogProps) {
 }
 
 type Errors = Partial<Record<CourseQuickField, string>>;
+
+/** The popup's form: the dialog's footer submits it. */
+const ADD_FORM_ID = 'course-add-form';
 
 function AddForm(props: CourseAddDialogProps & { readonly onBusy: (busy: boolean) => void }) {
   const { texts } = props;
@@ -102,6 +127,11 @@ function AddForm(props: CourseAddDialogProps & { readonly onBusy: (busy: boolean
           return;
         }
         if (sessionRefused(result.error)) return;
+        // No free code could be given (the popup asks none): said in words, not as a field to correct.
+        if (result.error.fieldErrors?.some((e) => e.path === 'code' && e.code === 'CODE_TAKEN')) {
+          setMessage({ tone: 'danger', text: text('form.codeUnavailable') });
+          return;
+        }
         if (result.error.code === 'VALIDATION_FAILED') {
           const next: Errors = {};
           for (const fieldError of result.error.fieldErrors ?? []) {
@@ -120,7 +150,13 @@ function AddForm(props: CourseAddDialogProps & { readonly onBusy: (busy: boolean
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4" data-testid="course-form">
+    <form
+      id={ADD_FORM_ID}
+      onSubmit={onSubmit}
+      noValidate
+      className="flex flex-col gap-4"
+      data-testid="course-form"
+    >
       {message ? (
         <Alert tone={message.tone} data-testid="course-form-message">
           {message.text}
@@ -196,20 +232,6 @@ function AddForm(props: CourseAddDialogProps & { readonly onBusy: (busy: boolean
       >
         {text('form.note')}
       </p>
-      {/* «Cancel», then the primary button at the end; the footer stays in view on a short screen. */}
-      <div className="sticky bottom-0 -mx-6 -mb-6 mt-1.5 flex flex-col-reverse gap-2.5 border-t border-border bg-surface-raised px-6 py-4 sm:-mx-6.5 sm:-mb-6.5 sm:flex-row sm:flex-wrap sm:justify-end sm:px-6.5">
-        <Button
-          variant="secondary"
-          onClick={props.onClose}
-          disabled={pending}
-          data-testid="course-cancel"
-        >
-          {text('form.cancel')}
-        </Button>
-        <Button type="submit" disabled={pending} busy={pending} data-testid="course-save">
-          {pending ? text('form.saving') : text('addCourse')}
-        </Button>
-      </div>
     </form>
   );
 }

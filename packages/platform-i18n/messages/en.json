@@ -2938,7 +2938,8 @@
       "sectionAbout": "About the course",
       "sectionDelivery": "Delivery and duration",
       "sectionCapacity": "Participants and cost",
-      "note": "The course gets the next free code and room for 1 to 20 participants. Its category, description and estimated costs are optional. Change any of it later from the course's Settings."
+      "note": "The course gets the next free code and room for 1 to 20 participants. Its category, description and estimated costs are optional. Change any of it later from the course's Settings.",
+      "codeUnavailable": "The course couldn't get a code: the next CRS- codes are already used by other courses. Try again in a moment. If it happens again, change the code of a course that uses a CRS- code."
     },
     "fieldErrors": {
       "REQUIRED": "Enter a value.",

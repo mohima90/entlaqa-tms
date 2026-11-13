@@ -1,16 +1,23 @@
 import { courseMatches } from '@jadarat/tms/courses';
 import { describe, expect, it } from 'vitest';
 import {
+  COURSE_SETTINGS_TABS,
   EMPTY_COURSE_FORM,
+  EMPTY_COURSE_QUICK,
   PREVIEW_COURSES,
   courseFieldErrorKey,
+  courseFieldTab,
   courseFormFieldOf,
   courseFormFrom,
+  courseSettingsHref,
+  courseSettingsPath,
+  courseSettingsTab,
   coursesHref,
   coursesParams,
   coursesPath,
   isFiltered,
   parseCourseForm,
+  parseCourseQuickForm,
   parseNumber,
   previewFilter,
 } from './courses-view';
@@ -79,7 +86,7 @@ describe('parseNumber', () => {
 
 describe('parseCourseForm (the same rules as the server)', () => {
   it('turns a filled form into the action values', () => {
-    const parsed = parseCourseForm(filled);
+    const parsed = parseCourseForm(filled, 'en');
     expect(parsed.errors).toBeNull();
     expect(parsed.values).toMatchObject({
       code: 'LEAD-101',
@@ -95,23 +102,28 @@ describe('parseCourseForm (the same rules as the server)', () => {
   });
 
   it('marks required fields, formats and ranges', () => {
-    expect(parseCourseForm(EMPTY_COURSE_FORM).errors).toEqual({
+    // The title in the organization's default language is required; the other one is optional.
+    expect(parseCourseForm(EMPTY_COURSE_FORM, 'en').errors).toEqual({
       code: 'REQUIRED',
       titleEn: 'REQUIRED',
-      titleAr: 'REQUIRED',
       durationHours: 'REQUIRED',
       maxParticipants: 'REQUIRED',
     });
+    expect(parseCourseForm(EMPTY_COURSE_FORM, 'ar').errors).toMatchObject({ titleAr: 'REQUIRED' });
+    expect(parseCourseForm(EMPTY_COURSE_FORM, 'ar').errors).not.toHaveProperty('titleEn');
     expect(
-      parseCourseForm({
-        ...filled,
-        code: 'LEAD 101',
-        durationHours: 'abc',
-        durationDays: '400',
-        minParticipants: '1.5',
-        estCostPerSession: '1.234',
-        deliveryType: 'webinar',
-      }).errors,
+      parseCourseForm(
+        {
+          ...filled,
+          code: 'LEAD 101',
+          durationHours: 'abc',
+          durationDays: '400',
+          minParticipants: '1.5',
+          estCostPerSession: '1.234',
+          deliveryType: 'webinar',
+        },
+        'en',
+      ).errors,
     ).toEqual({
       code: 'CODE_FORMAT',
       deliveryType: 'REQUIRED',
@@ -123,28 +135,55 @@ describe('parseCourseForm (the same rules as the server)', () => {
   });
 
   it('checks the rules across fields and a new category’s names', () => {
-    expect(parseCourseForm({ ...filled, minParticipants: '30' }).errors).toEqual({
+    expect(parseCourseForm({ ...filled, minParticipants: '30' }, 'en').errors).toEqual({
       minParticipants: 'MIN_ABOVE_MAX',
     });
-    expect(parseCourseForm({ ...filled, durationHours: '50' }).errors).toEqual({
+    expect(parseCourseForm({ ...filled, durationHours: '50' }, 'en').errors).toEqual({
       durationDays: 'HOURS_ABOVE_DAYS',
     });
-    expect(parseCourseForm({ ...filled, category: 'new', newCategoryEn: 'Safety' }).errors).toEqual(
-      {
-        newCategoryAr: 'REQUIRED',
-      },
-    );
-    const existing = parseCourseForm({
-      ...filled,
-      category: '00000000-0000-4000-8000-00000000ca01',
+    // A new category is named in the default language; the other language is optional.
+    const newCategory = { ...filled, category: 'new', newCategoryEn: 'Safety' };
+    expect(parseCourseForm(newCategory, 'ar').errors).toEqual({ newCategoryAr: 'REQUIRED' });
+    expect(parseCourseForm(newCategory, 'en').values?.category).toEqual({
+      kind: 'new',
+      nameEn: 'Safety',
+      nameAr: '',
     });
+    const existing = parseCourseForm(
+      { ...filled, category: '00000000-0000-4000-8000-00000000ca01' },
+      'en',
+    );
     expect(existing.values?.category).toEqual({
       kind: 'existing',
       id: '00000000-0000-4000-8000-00000000ca01',
     });
-    expect(parseCourseForm({ ...filled, titleEn: 'x'.repeat(201) }).errors).toEqual({
+    expect(parseCourseForm({ ...filled, titleEn: 'x'.repeat(201) }, 'en').errors).toEqual({
       titleEn: 'TOO_LONG',
     });
+    // The optional title keeps its length limit.
+    expect(parseCourseForm({ ...filled, titleAr: 'x'.repeat(201) }, 'en').errors).toEqual({
+      titleAr: 'TOO_LONG',
+    });
+  });
+
+  it('a title in one language: sent as it is; titles left as stored pass the default-language rule', () => {
+    const englishOnly = { ...filled, titleAr: '  ' };
+    expect(parseCourseForm(englishOnly, 'en').values).toMatchObject({
+      titleEn: 'Strategic management',
+      titleAr: '',
+    });
+    expect(parseCourseForm(englishOnly, 'ar').errors).toEqual({ titleAr: 'REQUIRED' });
+    // The course was titled in English only before Arabic became the default language: its other
+    // settings can still change…
+    const stored = { titleEn: 'Strategic management', titleAr: null };
+    expect(parseCourseForm({ ...englishOnly, durationHours: '6' }, 'ar', stored).errors).toBeNull();
+    // …and a changed title asks for the Arabic one.
+    expect(parseCourseForm({ ...englishOnly, titleEn: 'Strategy' }, 'ar', stored).errors).toEqual({
+      titleAr: 'REQUIRED',
+    });
+    const [first] = PREVIEW_COURSES;
+    if (!first) throw new Error('fixture');
+    expect(courseFormFrom({ ...first, titleAr: null }).titleAr).toBe('');
   });
 
   it('fills the edit form from a course and maps server field errors back', () => {
@@ -156,12 +195,72 @@ describe('parseCourseForm (the same rules as the server)', () => {
       durationDays: '2',
       estCostPerParticipant: '250',
     });
-    expect(parseCourseForm(form).errors).toBeNull();
+    expect(parseCourseForm(form, 'ar').errors).toBeNull();
     expect(courseFormFieldOf('category.nameAr')).toBe('newCategoryAr');
     expect(courseFormFieldOf('category.id')).toBe('category');
     expect(courseFormFieldOf('code')).toBe('code');
     expect(courseFormFieldOf('id')).toBeNull();
     expect(courseFieldErrorKey('CODE_TAKEN')).toBe('CODE_TAKEN');
     expect(courseFieldErrorKey('TOO_BIG')).toBe('INVALID');
+  });
+});
+
+describe('«Add course»: the popup (WP-UX-01 c)', () => {
+  const quick = { ...EMPTY_COURSE_QUICK, titleEn: ' Negotiation skills ', durationHours: '٦' };
+
+  it('asks the titles, the delivery type and the hours, and fills in the rest', () => {
+    const parsed = parseCourseQuickForm(quick, 'en');
+    expect(parsed.errors).toBeNull();
+    expect(parsed.values).toEqual({
+      titleEn: 'Negotiation skills',
+      titleAr: '',
+      descriptionEn: '',
+      descriptionAr: '',
+      category: { kind: 'none' },
+      deliveryType: 'classroom',
+      durationHours: 6,
+      durationDays: null,
+      minParticipants: 1,
+      maxParticipants: 20,
+      estCostPerSession: null,
+      estCostPerParticipant: null,
+    });
+    // No code is sent: the library gives the next free one.
+    expect(parsed.values).not.toHaveProperty('code');
+  });
+
+  it('marks only its own fields: the default language’s title and the hours', () => {
+    expect(parseCourseQuickForm(EMPTY_COURSE_QUICK, 'en').errors).toEqual({
+      titleEn: 'REQUIRED',
+      durationHours: 'REQUIRED',
+    });
+    expect(parseCourseQuickForm(quick, 'ar').errors).toEqual({ titleAr: 'REQUIRED' });
+    expect(
+      parseCourseQuickForm({ ...quick, durationHours: '0', deliveryType: 'webinar' }, 'en').errors,
+    ).toEqual({ durationHours: 'OUT_OF_RANGE', deliveryType: 'REQUIRED' });
+  });
+});
+
+describe('a course’s settings page (WP-UX-01 c)', () => {
+  it('has three sections, each its own address', () => {
+    expect(COURSE_SETTINGS_TABS).toEqual(['about', 'delivery', 'capacity']);
+    expect(courseSettingsTab('capacity')).toBe('capacity');
+    expect(courseSettingsTab(undefined)).toBe('about');
+    expect(courseSettingsTab(['delivery'])).toBe('about');
+    expect(courseSettingsTab("x' or 1=1")).toBe('about');
+    expect(courseSettingsPath('c1')).toBe('/suite/courses/c1/settings');
+    expect(courseSettingsPath('c1', 'about')).toBe('/suite/courses/c1/settings');
+    expect(courseSettingsHref('ar', 'c1', 'delivery')).toBe(
+      '/ar/suite/courses/c1/settings?tab=delivery',
+    );
+  });
+
+  it('knows the section of every field (a refused field elsewhere is said in words)', () => {
+    expect(courseFieldTab('code')).toBe('about');
+    expect(courseFieldTab('newCategoryAr')).toBe('about');
+    expect(courseFieldTab('durationDays')).toBe('delivery');
+    expect(courseFieldTab('deliveryType')).toBe('delivery');
+    expect(courseFieldTab('maxParticipants')).toBe('capacity');
+    expect(courseFieldTab('estCostPerSession')).toBe('capacity');
   });
 });

@@ -2543,8 +2543,7 @@
     "intro": "Name the role, tick its permissions and choose the data it sees. Everyone who holds it gets a change at their next page.",
     "details": "Role details",
     "startFrom": "Start from",
-    "startHint": "Fills in the permissions (and, for a template, the name and description); you can change everything before saving.",
-    "startPlaceholder": "Choose a starting point",
+    "startHint": "Fills in the permissions (and, for a template, the name and description). You can change them on the role's page.",
     "startBlank": "A blank role",
     "startStandard": "Copy a standard role",
     "startTemplate": "Templates",
@@ -2607,7 +2606,11 @@
     "notFound": "This role doesn't exist (any more).",
     "conflict": "Someone changed this role meanwhile. Reload the page to see the latest version.",
     "summarySees": "Sees",
-    "summaryHighRisk": "{count, plural, =0 {No high-risk permission} one {# high-risk permission} other {# high-risk permissions}}"
+    "summaryHighRisk": "{count, plural, =0 {No high-risk permission} one {# high-risk permission} other {# high-risk permissions}}",
+    "newIntro": "Name the role and choose what it starts from. Its permissions and the data it sees open next.",
+    "newNote": "Creating the role opens its page: tick its permissions, choose the data it sees and add a description. Nobody holds the role until you give it.",
+    "creating": "Creating…",
+    "created": "Role created. Check its permissions and the data it sees."
   },
   "needsForms": {
     "title": "Needs forms",
@@ -2887,7 +2890,6 @@
     "emptyFilteredBody": "Try another search or clear the filters.",
     "truncated": "Only the first 500 courses are shown. Search or filter to find the others.",
     "invalidFilters": "Some filters weren't valid, so all courses are shown.",
-    "editCourse": "Edit {code}",
     "archiveCourse": "Archive {code}",
     "restoreCourse": "Restore {code}",
     "archiveTitle": "Archive this course?",
@@ -2902,13 +2904,12 @@
     "saved": "Changes saved.",
     "archived": "Course archived.",
     "restored": "Course restored.",
-    "conflict": "Someone else changed this course after you opened it. Close this window, refresh the page and try again.",
+    "conflict": "Someone else changed this course after you opened it. Load the latest version, then make your change again.",
     "notFound": "This course no longer exists, or you can no longer see it.",
     "previewNotSaved": "This is a preview: nothing is saved in this environment.",
     "form": {
       "addTitle": "Add a course",
-      "editTitle": "Edit course",
-      "intro": "Fields marked (required) must be filled in. Titles are needed in both languages.",
+      "intro": "The title, how the course is delivered and how long it takes. The rest waits on the course's settings.",
       "close": "Close",
       "code": "Course code",
       "codeHint": "Letters, digits, dots, dashes or underscores, up to 32 characters. For example LEAD-101.",
@@ -2936,7 +2937,8 @@
       "saving": "Saving…",
       "sectionAbout": "About the course",
       "sectionDelivery": "Delivery and duration",
-      "sectionCapacity": "Participants and cost"
+      "sectionCapacity": "Participants and cost",
+      "note": "The course gets the next free code and room for 1 to 20 participants. Its category, description and estimated costs are optional. Change any of it later from the course's Settings."
     },
     "fieldErrors": {
       "REQUIRED": "Enter a value.",
@@ -2953,7 +2955,14 @@
       "NOT_FOUND": "This category no longer exists. Choose another one.",
       "INVALID": "Check this value."
     },
-    "edit": "Edit"
+    "settings": {
+      "open": "Settings",
+      "title": "Course settings",
+      "aboutIntro": "The course's code, its title and description, and where it is filed.",
+      "deliveryIntro": "How the course is delivered and how long it takes.",
+      "capacityIntro": "How many people a session takes, and what it is estimated to cost for planning.",
+      "archived": "This course is archived. Restore it from the course library to change it."
+    }
   },
   "structure": {
     "title": "Organization structure",
@@ -3942,7 +3951,7 @@
       "saved": "The need was saved.",
       "added": "The need was added.",
       "discardTitle": "Discard this need?",
-      "discardBody": "What you typed in this panel is not saved."
+      "discardBody": "What you typed here is not saved."
     },
     "submitDialog": {
       "title": "Submit the needs of {department}?",

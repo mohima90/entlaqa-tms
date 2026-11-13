@@ -269,13 +269,15 @@ export function fallbackUnitCode(existingCodes: readonly string[]): string {
   return freeUnitCode('UNIT', existingCodes);
 }
 
-/** `base`, or «base-2», «base-3»… while another unit has it; empty when none is free. */
+/**
+ * `base`, or «base-2», «base-3»… — the first number no other unit has, however many units there are (an
+ * organization with a hundred units named in Arabic only still gets a code; review of WP-UX-01 b).
+ */
 function freeUnitCode(base: string, existingCodes: readonly string[]): string {
   const taken = new Set(existingCodes.map((code) => code.toUpperCase()));
   if (!taken.has(base)) return base;
-  for (let n = 2; n < 100; n += 1) {
-    const candidate = `${base}-${String(n)}`;
-    if (!taken.has(candidate)) return candidate;
-  }
-  return '';
+  // At most `taken.size` candidates can be taken, so the loop ends within `taken.size + 1` steps.
+  let n = 2;
+  while (taken.has(`${base}-${String(n)}`)) n += 1;
+  return `${base}-${String(n)}`;
 }

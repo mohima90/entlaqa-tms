@@ -3,7 +3,12 @@ import { createHash } from 'node:crypto';
 import { type SQL, sql } from 'drizzle-orm';
 import { type ClaimsTx, runWithClaims } from './claims-tx';
 import { type AppDatabase, getDatabase } from './client';
-import { customRolesExist, storableArabicDisplayName } from './custom-roles-present';
+import {
+  CUSTOM_ROLE_NAME_AR,
+  CUSTOM_ROLE_NAME_EN,
+  customRolesExist,
+  storableArabicDisplayName,
+} from './custom-roles-present';
 import { DomainError } from './domain-error';
 import { emitEvent } from './events';
 import { pgError } from './user-admin';
@@ -322,8 +327,8 @@ export async function listInvitations(
     select i.id, i.person_id, i.email, p.display_name_ar, p.display_name_en, i.primary_role,
            ${STATE} as state, i.send_count, i.expires_at, i.created_at, i.import_id,
            c.invitation_id is not null as has_code, i.locale, i.additional_roles,
-           ${customNames ? sql`cr.name_ar` : sql`null::text`} as role_name_ar,
-           ${customNames ? sql`cr.name_en` : sql`null::text`} as role_name_en,
+           ${customNames ? CUSTOM_ROLE_NAME_AR : sql`null::text`} as role_name_ar,
+           ${customNames ? CUSTOM_ROLE_NAME_EN : sql`null::text`} as role_name_en,
            private.roles_include_privileged(i.tenant_id, array[i.primary_role] || i.additional_roles) as privileged,
            ${skips ? sql`k.id is not null` : sql`false`} as mail_not_sent
     from platform.invitations i

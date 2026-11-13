@@ -16,6 +16,10 @@ const db = vi.hoisted(() => ({
   createCustomRole: vi.fn(),
   updateCustomRole: vi.fn(),
   deleteCustomRole: vi.fn(),
+  getCustomRole: vi.fn(),
+  getTenantDefaultLocale: vi.fn(),
+  // iam/default-language-name.ts (the structure's rule) reads the stored names of units and branches.
+  getStoredNames: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -77,6 +81,8 @@ beforeEach(() => {
     after: row({ version: 2, nameEn: 'Approver' }),
   });
   db.deleteCustomRole.mockResolvedValue({ ok: true, before: row(), after: null });
+  db.getCustomRole.mockResolvedValue(row());
+  db.getTenantDefaultLocale.mockResolvedValue('en');
 });
 
 describe('custom role input', () => {
@@ -86,8 +92,14 @@ describe('custom role input', () => {
       nameEn: 'Finance approver',
       description: null,
     });
+    // One name may be empty: which one is required is the handler's rule (the default language).
+    expect(CustomRoleInput.parse({ ...input, nameAr: ' ' })).toMatchObject({
+      nameEn: 'Finance approver',
+      nameAr: null,
+    });
+    expect(CustomRoleInput.parse({ ...input, nameEn: '' })).toMatchObject({ nameEn: null });
     for (const bad of [
-      { ...input, nameEn: ' ' },
+      { ...input, nameEn: '\u200B' },
       { ...input, nameAr: 'x'.repeat(81) },
       { ...input, description: 'x'.repeat(501) },
       { ...input, dataScope: 'branch' },
@@ -196,6 +208,62 @@ describe('create custom role (FR-IAM-07)', () => {
       const result = await create(input);
       expect(!result.ok && result.error, refusal).toMatchObject(error);
     }
+  });
+});
+
+describe('the name in the organization’s default language (PO, 12 Nov 2026)', () => {
+  it('create: the default language’s name is required, the other one optional', async () => {
+    const create = createDefineAction(runtime(['tenant_admin']).rt)(
+      createCustomRoleActionDefinition(),
+    );
+    // English is the default language: an English name alone is enough…
+    const englishOnly = await create({ ...input, nameAr: '' });
+    expect(englishOnly.ok).toBe(true);
+    expect(db.createCustomRole).toHaveBeenLastCalledWith(
+      TX,
+      expect.objectContaining({ nameEn: 'Finance approver', nameAr: null }),
+    );
+    db.createCustomRole.mockClear();
+    // …and an Arabic name alone is refused on the English field.
+    const arabicOnly = await create({ ...input, nameEn: '' });
+    expect(!arabicOnly.ok && arabicOnly.error).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      fieldErrors: [{ path: 'nameEn', code: 'REQUIRED' }],
+    });
+    expect(db.createCustomRole).not.toHaveBeenCalled();
+    // Arabic as the default language: the other way round.
+    db.getTenantDefaultLocale.mockResolvedValue('ar');
+    expect((await create({ ...input, nameEn: '' })).ok).toBe(true);
+    const missingArabic = await create({ ...input, nameAr: '' });
+    expect(!missingArabic.ok && missingArabic.error.fieldErrors).toEqual([
+      { path: 'nameAr', code: 'REQUIRED' },
+    ]);
+  });
+
+  it('update: the rule applies to changed names; names left as stored pass', async () => {
+    const update = createDefineAction(runtime(['tenant_admin']).rt)(
+      updateCustomRoleActionDefinition(),
+    );
+    const change = { ...input, id: ROLE_ID, version: 1 };
+    db.getTenantDefaultLocale.mockResolvedValue('ar');
+    // The role was named in English only, before Arabic became the default language: its permissions
+    // can still change while the names stay as they are.
+    db.getCustomRole.mockResolvedValue(row({ nameAr: null }));
+    const untouched = await update({ ...change, nameEn: 'Finance approver', nameAr: '' });
+    expect(untouched.ok).toBe(true);
+    expect(db.getCustomRole).toHaveBeenCalledWith(TX, { id: ROLE_ID });
+    db.updateCustomRole.mockClear();
+    // A changed name without the Arabic one is refused.
+    const renamed = await update({ ...change, nameEn: 'Approver', nameAr: '' });
+    expect(!renamed.ok && renamed.error.fieldErrors).toEqual([
+      { path: 'nameAr', code: 'REQUIRED' },
+    ]);
+    expect(db.updateCustomRole).not.toHaveBeenCalled();
+    // An unknown role: the rule applies, then the update answers «not found».
+    db.getCustomRole.mockResolvedValue(null);
+    db.updateCustomRole.mockResolvedValue({ ok: false, refusal: 'not_found' });
+    const unknown = await update(change);
+    expect(!unknown.ok && unknown.error.code).toBe('NOT_FOUND');
   });
 });
 

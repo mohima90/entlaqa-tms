@@ -1,7 +1,12 @@
 import 'server-only';
 import { EMPTY_PERSON_SCOPE, type PersonScope, isEmptyPersonScope } from '@jadarat/platform-core';
 import { type SQL, sql } from 'drizzle-orm';
-import { customRolesExist, roleScopeUnitsExist } from './custom-roles-present';
+import {
+  CUSTOM_ROLE_NAME_AR,
+  CUSTOM_ROLE_NAME_EN,
+  customRolesExist,
+  roleScopeUnitsExist,
+} from './custom-roles-present';
 import { ORG_TIME_ZONE } from './org-time-zone';
 import type { UserTx } from './with-user-tx';
 import { levelOrdinalOf } from './level-ordinal';
@@ -284,7 +289,7 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
   const customNames = await customRolesExist(tx);
   const roleName = (column: 'name_ar' | 'name_en') =>
     customNames
-      ? sql`(select cr.${sql.raw(column)} from platform.role_assignments ra
+      ? sql`(select ${column === 'name_ar' ? CUSTOM_ROLE_NAME_AR : CUSTOM_ROLE_NAME_EN} from platform.role_assignments ra
              join platform.custom_roles cr on cr.tenant_id = ra.tenant_id and cr.code = ra.role_code
              where ra.membership_id = m.id and ${ROLE_IN_FORCE} limit 1)`
       : sql`null::text`;
@@ -515,7 +520,7 @@ export async function getUserProfile(
         }>(sql`
         select ra.role_code, ${
           (await customRolesExist(tx))
-            ? sql`cr.name_ar, cr.name_en, ra.is_primary, ra.valid_from, ra.valid_until
+            ? sql`${CUSTOM_ROLE_NAME_AR} as name_ar, ${CUSTOM_ROLE_NAME_EN} as name_en, ra.is_primary, ra.valid_from, ra.valid_until
         from platform.role_assignments ra
         left join platform.custom_roles cr on cr.tenant_id = ra.tenant_id and cr.code = ra.role_code`
             : sql`null::text as name_ar, null::text as name_en, ra.is_primary, ra.valid_from, ra.valid_until

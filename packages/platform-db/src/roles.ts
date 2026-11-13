@@ -1,6 +1,11 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
-import { customRolesExist, roleScopeUnitsExist } from './custom-roles-present';
+import {
+  CUSTOM_ROLE_NAME_AR,
+  CUSTOM_ROLE_NAME_EN,
+  customRolesExist,
+  roleScopeUnitsExist,
+} from './custom-roles-present';
 import { getOrganizationFeatures } from './plans';
 import type { UserTx } from './with-user-tx';
 
@@ -129,7 +134,7 @@ export interface MyRole {
 export async function getMyPrimaryRole(tx: UserTx): Promise<MyRole | null> {
   // The account menu on every page: no custom-role names before that migration (review M3).
   const names = (await customRolesExist(tx))
-    ? sql`cr.name_ar, cr.name_en
+    ? sql`${CUSTOM_ROLE_NAME_AR} as name_ar, ${CUSTOM_ROLE_NAME_EN} as name_en
     from platform.role_assignments ra
     join platform.tenant_memberships m on m.tenant_id = ra.tenant_id and m.id = ra.membership_id
     left join platform.custom_roles cr on cr.tenant_id = ra.tenant_id and cr.code = ra.role_code`

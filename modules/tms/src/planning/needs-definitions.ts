@@ -122,7 +122,8 @@ export interface NeedView {
 
 export interface CourseOption {
   readonly id: string;
-  readonly title: { readonly ar: string; readonly en: string };
+  /** One of the two may be missing (a course is titled in the organization's default language). */
+  readonly title: { readonly ar: string | null; readonly en: string | null };
 }
 
 export interface DepartmentNeedsView {

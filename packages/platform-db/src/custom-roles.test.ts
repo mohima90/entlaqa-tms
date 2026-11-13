@@ -9,6 +9,7 @@ import {
   listCustomRoles,
   updateCustomRole,
 } from './custom-roles';
+import { forgetSchemaPresenceForTests } from './custom-roles-present';
 
 const dialect = new PgDialect();
 
@@ -94,6 +95,43 @@ describe('custom roles (FR-IAM-07, EP-ROLES)', () => {
       ok: false,
       refusal: 'name_ar_taken',
     });
+  });
+
+  it('a role named in one language: stored so once the database takes it, in both slots before', async () => {
+    forgetSchemaPresenceForTests();
+    const english = { ...input, nameAr: null, permissions: [] };
+    // After migration 20261113110400: the lock, the catalog answer, the insert, the read back.
+    const after = fakeTx([], [{ present: true }], [{ id: 'r1' }], [{ ...raw, name_ar: null }]);
+    expect(await createCustomRole(after.tx, english)).toMatchObject({
+      ok: true,
+      after: { nameEn: 'Course reviewer', nameAr: null },
+    });
+    expect(after.executed[1]?.sql).toContain('not a.attnotnull');
+    expect(after.executed[1]?.params).toEqual(['platform.custom_roles', 'name_ar']);
+    expect(after.executed[2]?.params).toEqual(['Course reviewer', null, null, 'organization']);
+    // Before it (the app deploys in parallel with the database): the given name fills the empty slot.
+    forgetSchemaPresenceForTests();
+    const before = fakeTx([], [{ present: false }], [{ id: 'r1' }], [raw]);
+    await createCustomRole(before.tx, english);
+    expect(before.executed[2]?.params).toEqual([
+      'Course reviewer',
+      'Course reviewer',
+      null,
+      'organization',
+    ]);
+    // An update writes its names the same way (lock, read, catalog, update, read back).
+    forgetSchemaPresenceForTests();
+    const update = fakeTx([], [raw], [{ present: true }], [], [], [], [raw]);
+    await updateCustomRole(update.tx, 'r1', 3, { ...input, nameEn: null });
+    const written = update.executed.find((q) => /^\s*update platform\.custom_roles/.test(q.sql));
+    expect(written?.params.slice(0, 2)).toEqual([null, 'مراجع الدورات']);
+    forgetSchemaPresenceForTests();
+  });
+
+  it('lists roles by the name that exists', async () => {
+    const fake = fakeTx([{ ...raw, name_en: null }]);
+    expect(await listCustomRoles(fake.tx)).toEqual([{ ...row, nameEn: null }]);
+    expect(fake.executed[0]?.sql).toContain('order by lower(coalesce(cr.name_en, cr.name_ar))');
   });
 
   it('updates: removed permissions first, then the role, then added permissions', async () => {

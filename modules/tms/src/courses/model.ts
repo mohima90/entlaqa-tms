@@ -13,13 +13,20 @@ export * from './shared';
 const decimals = (places: number) => (value: number) =>
   Math.abs(Math.round(value * 10 ** places) - value * 10 ** places) < 1e-6;
 
-const requiredText = (max: number) =>
+/**
+ * A title or a name in ONE language: may be empty (WP-UX-01 c; PO, 12 Nov 2026 — the one in the
+ * organization's default language is required, the other optional; which one is the service's rule,
+ * `requiredNameProblems`). A given text is checked as before.
+ */
+const textInOneLanguage = (max: number) =>
   z
     .string()
     .trim()
-    .min(1)
     .max(max)
-    .refine((value) => hasVisibleText(value), { message: 'invisible' });
+    .refine((value) => value === '' || hasVisibleText(value), { message: 'invisible' })
+    .nullable()
+    .optional()
+    .transform((value) => (value === undefined || value === null || value === '' ? null : value));
 
 const optionalText = (max: number) =>
   z
@@ -41,8 +48,8 @@ export const CourseCategoryChoice = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('existing'), id: z.uuid() }),
   z.strictObject({
     kind: z.literal('new'),
-    nameEn: requiredText(COURSE_LIMITS.categoryNameLength),
-    nameAr: requiredText(COURSE_LIMITS.categoryNameLength),
+    nameEn: textInOneLanguage(COURSE_LIMITS.categoryNameLength),
+    nameAr: textInOneLanguage(COURSE_LIMITS.categoryNameLength),
   }),
 ]);
 export type CourseCategoryChoice = z.output<typeof CourseCategoryChoice>;
@@ -57,8 +64,8 @@ export const CourseValuesInput = z.strictObject({
     .string()
     .transform((value) => normalizeDigits(value).trim())
     .pipe(z.string().min(1).max(COURSE_LIMITS.codeLength).regex(COURSE_CODE_RE)),
-  titleEn: requiredText(COURSE_LIMITS.titleLength),
-  titleAr: requiredText(COURSE_LIMITS.titleLength),
+  titleEn: textInOneLanguage(COURSE_LIMITS.titleLength),
+  titleAr: textInOneLanguage(COURSE_LIMITS.titleLength),
   descriptionEn: optionalText(COURSE_LIMITS.descriptionLength),
   descriptionAr: optionalText(COURSE_LIMITS.descriptionLength),
   category: CourseCategoryChoice,
@@ -78,3 +85,19 @@ export const CourseValuesInput = z.strictObject({
   estCostPerParticipant: money,
 });
 export type CourseValues = z.output<typeof CourseValuesInput>;
+
+/**
+ * A new course (WP-UX-01 c): the same values, and the code may be left out — «Add course» asks for the
+ * titles, the delivery type and the hours only, and the library gives the course its next free code
+ * (`generatedCourseCode`). A code that is sent is checked as before.
+ */
+export const CreateCourseInput = CourseValuesInput.extend({
+  code: z
+    .string()
+    .transform((value) => normalizeDigits(value).trim())
+    .pipe(z.union([z.literal(''), z.string().max(COURSE_LIMITS.codeLength).regex(COURSE_CODE_RE)]))
+    .nullable()
+    .optional()
+    .transform((value) => (value === undefined || value === null || value === '' ? null : value)),
+});
+export type CreateCourseValues = z.output<typeof CreateCourseInput>;

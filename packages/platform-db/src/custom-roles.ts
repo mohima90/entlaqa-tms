@@ -1,5 +1,6 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
+import { storableNamePair } from './custom-roles-present';
 import { pgError } from './user-admin';
 import type { UserTx } from './with-user-tx';
 
@@ -17,8 +18,13 @@ export type CustomRoleScopeValue = 'own' | 'team' | 'departments' | 'organizatio
 export interface CustomRoleRow {
   readonly id: string;
   readonly code: string;
-  readonly nameAr: string;
-  readonly nameEn: string;
+  /**
+   * One of the two may be missing: a role is named in the organization's default language, the other
+   * language is optional (migration 20261113110400; PO, 12 Nov 2026). Shown with platform-rbac's
+   * `customRoleName` (the name that exists stands in for a missing one).
+   */
+  readonly nameAr: string | null;
+  readonly nameEn: string | null;
   readonly description: string | null;
   readonly dataScope: CustomRoleScopeValue;
   readonly permissions: readonly string[];
@@ -31,8 +37,8 @@ export interface CustomRoleRow {
 interface RawCustomRole extends Record<string, unknown> {
   id: string;
   code: string;
-  name_ar: string;
-  name_en: string;
+  name_ar: string | null;
+  name_en: string | null;
   description: string | null;
   data_scope: CustomRoleScopeValue;
   permissions: string[] | null;
@@ -68,9 +74,11 @@ const SELECT = sql`
           where i.tenant_id = cr.tenant_id and i.status = 'pending' and i.primary_role = cr.code) as invitation_count
   from platform.custom_roles cr`;
 
-/** The organization's custom roles, by English name. */
+/** The organization's custom roles, by name (the English one, or the Arabic one of a role without it). */
 export async function listCustomRoles(tx: UserTx): Promise<readonly CustomRoleRow[]> {
-  const rows = await tx.execute<RawCustomRole>(sql`${SELECT} order by lower(cr.name_en), cr.id`);
+  const rows = await tx.execute<RawCustomRole>(
+    sql`${SELECT} order by lower(coalesce(cr.name_en, cr.name_ar)), cr.id`,
+  );
   return rows.map(toRow);
 }
 
@@ -85,8 +93,9 @@ export async function getCustomRole(
 }
 
 export interface CustomRoleInput {
-  readonly nameEn: string;
-  readonly nameAr: string;
+  /** The name in the organization's default language is there; the other may be null. */
+  readonly nameEn: string | null;
+  readonly nameAr: string | null;
   readonly description: string | null;
   readonly dataScope: CustomRoleScopeValue;
   readonly permissions: readonly string[];
@@ -130,6 +139,9 @@ export function customRoleRefusalOf(error: unknown): CustomRoleRefusal {
   throw error;
 }
 
+/** One name only once the database takes it (deploy window of 20261113110400: storableNamePair). */
+const NAME_SLOT = { table: 'platform.custom_roles', column: 'name_ar' } as const;
+
 async function lockRoles(tx: UserTx): Promise<void> {
   // Serialised with every other role change of the organization (READ COMMITTED), before reading.
   await tx.execute(sql`select private.lock_tenant_roles(private.current_tenant_id())`);
@@ -142,10 +154,11 @@ export async function createCustomRole(
 ): Promise<CustomRoleOutcome> {
   await lockRoles(tx);
   let id: string;
+  const names = await storableNamePair(tx, NAME_SLOT, input);
   try {
     const [row] = await tx.execute<{ id: string }>(sql`
       insert into platform.custom_roles (name_en, name_ar, description, data_scope)
-      values (${input.nameEn}, ${input.nameAr}, ${input.description}, ${input.dataScope})
+      values (${names.nameEn}, ${names.nameAr}, ${input.description}, ${input.dataScope})
       returning id`);
     if (!row) throw new Error('createCustomRole: no row returned');
     id = row.id;
@@ -193,6 +206,7 @@ export async function updateCustomRole(
   }
   const removed = before.permissions.filter((p) => !input.permissions.includes(p));
   const added = input.permissions.filter((p) => !before.permissions.includes(p));
+  const names = await storableNamePair(tx, NAME_SLOT, input);
   try {
     for (const permission of removed) {
       await tx.execute(sql`delete from platform.custom_role_permissions
@@ -200,7 +214,7 @@ export async function updateCustomRole(
     }
     // Always written: the row's version marks every change of the role, permissions included.
     await tx.execute(sql`update platform.custom_roles
-      set name_en = ${input.nameEn}, name_ar = ${input.nameAr}, description = ${input.description},
+      set name_en = ${names.nameEn}, name_ar = ${names.nameAr}, description = ${input.description},
           data_scope = ${input.dataScope}
       where id = ${id}::uuid`);
     for (const permission of added) {

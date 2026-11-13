@@ -4,10 +4,11 @@ import {
   type UserTx,
   countMembersByRole,
   getCustomRole,
+  getTenantDefaultLocale,
   listCustomRoles,
 } from '@jadarat/platform-db';
 import { z } from 'zod';
-import { customRoleIsPrivileged, isCustomRoleCode } from '../custom-roles';
+import { customRoleIsPrivileged, customRoleName, isCustomRoleCode } from '../custom-roles';
 import type { QueryDefinition } from '../define-query';
 import type { LocalizedText } from '../permissions';
 import { platformPermissions } from '../platform-permissions';
@@ -41,6 +42,8 @@ export interface RolesPageView {
   readonly memberCounts: Readonly<Record<string, number>> | null;
   /** «إنشاء دور», edit and delete: `platform.role.manage` (the Organization Admin). */
   readonly canManage: boolean;
+  /** The language whose role name is required: the organization's default language (PO, 12 Nov 2026). */
+  readonly nameLanguage: 'ar' | 'en';
 }
 
 export const RolesPageInput = z.strictObject({});
@@ -49,7 +52,8 @@ function customRole(row: CustomRoleRow): RolesPageRole {
   return {
     code: row.code,
     kind: 'custom',
-    name: { ar: row.nameAr, en: row.nameEn },
+    // A role named in one language shows that name in both (the stored names stay in `custom`).
+    name: customRoleName(row),
     description: row.description === null ? null : { ar: row.description, en: row.description },
     privileged: customRoleIsPrivileged(row.permissions),
     permissions: row.permissions,
@@ -84,6 +88,7 @@ export function rolesPageQueryDefinition(): QueryDefinition<
           ? await countMembersByRole(ctx.tx)
           : null,
         canManage: ctx.can(p['platform.role.manage'], 'tenant'),
+        nameLanguage: await getTenantDefaultLocale(ctx.tx),
       }),
   };
 }
@@ -94,6 +99,8 @@ export interface RoleDetailView {
   readonly custom: CustomRoleRow | null;
   readonly memberCount: number | null;
   readonly canManage: boolean;
+  /** The language whose role name is required: the organization's default language. */
+  readonly nameLanguage: 'ar' | 'en';
 }
 
 export const RoleDetailInput = z.strictObject({
@@ -129,6 +136,7 @@ export function roleDetailQueryDefinition(): QueryDefinition<
         custom,
         memberCount: counts ? (counts[role.code] ?? 0) : null,
         canManage,
+        nameLanguage: await getTenantDefaultLocale(ctx.tx),
       });
     },
   };

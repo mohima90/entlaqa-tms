@@ -1,4 +1,5 @@
 import type { FieldError } from '@jadarat/platform-core';
+import { personDisplayName } from '@jadarat/platform-i18n/names';
 import { searchKey } from '@jadarat/platform-i18n/text';
 
 /**
@@ -47,6 +48,41 @@ export const COURSE_LIMITS = {
 export const COURSE_CODE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/;
 
 /**
+ * What «Add course» fills in by itself (WP-UX-01 c; forms standard rules 1 and 9: the popup asks for the
+ * titles, the delivery type and the hours — the rest is worked out and changed on the course's settings):
+ * one to twenty participants, and the next free code `CRS-0001`, `CRS-0002`… when none is sent.
+ */
+export const COURSE_DEFAULTS = {
+  minParticipants: 1,
+  maxParticipants: 20,
+  codePrefix: 'CRS-',
+} as const;
+
+/** The code a course added without one gets: `CRS-` and a number of at least four digits. */
+export function generatedCourseCode(n: number): string {
+  return `${COURSE_DEFAULTS.codePrefix}${String(n).padStart(4, '0')}`;
+}
+
+/**
+ * The title (or category name) the organization's default language requires (PO, 12 Nov 2026 — the rule of
+ * people, planning cycles and the organization's structure): with English as the default language the
+ * English one is required and the Arabic one optional, and the other way round. Field errors (code
+ * REQUIRED), none when it is there. With `before` (the stored texts): a save that leaves both as they are
+ * passes whatever they are — a course titled before the rule, or before the organization changed its default
+ * language, can still be changed otherwise (as units and branches: platform-rbac default-language-name).
+ */
+export function requiredNameProblems(
+  defaultLocale: 'ar' | 'en',
+  value: { readonly ar: string | null; readonly en: string | null },
+  paths: { readonly ar: string; readonly en: string },
+  before?: { readonly ar: string | null; readonly en: string | null } | null,
+): FieldError[] {
+  if (value[defaultLocale] !== null) return [];
+  if (before?.ar === value.ar && before.en === value.en) return [];
+  return [{ path: paths[defaultLocale], code: 'REQUIRED' }];
+}
+
+/**
  * Rules across fields (the database repeats them): the minimum is not above the maximum, and the days can
  * hold the hours (a day has at most 24).
  */
@@ -70,8 +106,9 @@ export function courseFieldProblems(values: {
 export interface CourseRow {
   readonly id: string;
   readonly code: string;
-  readonly titleEn: string;
-  readonly titleAr: string;
+  /** One of the two may be missing: the organization's default language's title is required. */
+  readonly titleEn: string | null;
+  readonly titleAr: string | null;
   readonly descriptionEn: string | null;
   readonly descriptionAr: string | null;
   readonly categoryId: string | null;
@@ -91,8 +128,25 @@ export interface CourseRow {
 
 export interface CourseCategoryRow {
   readonly id: string;
-  readonly nameEn: string;
-  readonly nameAr: string;
+  /** One of the two may be missing (the organization's default language's name is required). */
+  readonly nameEn: string | null;
+  readonly nameAr: string | null;
+}
+
+/** A course's title in the page's language — the other language's when that one is missing. */
+export function courseTitle(
+  course: Pick<CourseRow, 'titleEn' | 'titleAr'>,
+  locale: 'ar' | 'en',
+): string {
+  return personDisplayName(locale, course.titleAr, course.titleEn);
+}
+
+/** A category's name in the page's language — the other language's when that one is missing. */
+export function courseCategoryName(
+  category: Pick<CourseCategoryRow, 'nameEn' | 'nameAr'>,
+  locale: 'ar' | 'en',
+): string {
+  return personDisplayName(locale, category.nameAr, category.nameEn);
 }
 
 /** The list's filters (all optional). `category: 'none'` = courses without a category. */
@@ -122,7 +176,9 @@ export function courseMatches(course: CourseRow, filter: CourseFilter): boolean 
   const q = filter.q ? courseSearchKey(filter.q) : '';
   if (
     q !== '' &&
-    ![course.code, course.titleEn, course.titleAr].some((text) => searchKey(text).includes(q))
+    ![course.code, course.titleEn ?? '', course.titleAr ?? ''].some((text) =>
+      searchKey(text).includes(q),
+    )
   ) {
     return false;
   }

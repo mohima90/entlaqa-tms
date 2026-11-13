@@ -39,17 +39,18 @@ export function summaryOf(form: NeedsFormDefinition): NeedsFormSummary {
   };
 }
 
-/** Default first, then by English name (as the server lists them). */
+/** Default first, then by name — the English one, or the Arabic one of a form without it (as the server). */
 function sorted(forms: readonly NeedsFormDefinition[]): NeedsFormSummary[] {
+  const key = (form: NeedsFormDefinition) => (form.name.en || form.name.ar).toLowerCase();
   return [...forms]
-    .sort(
-      (a, b) =>
-        Number(b.isDefault) - Number(a.isDefault) ||
-        a.name.en.toLowerCase().localeCompare(b.name.en.toLowerCase()),
-    )
+    .sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || key(a).localeCompare(key(b)))
     .map(summaryOf);
 }
 
+/**
+ * A form's names as typed: the one in the organization's default language is there, the other may be ''
+ * (a form named in one language — PO, 12 Nov 2026).
+ */
 export interface Names {
   readonly nameEn: string;
   readonly nameAr: string;
@@ -91,7 +92,8 @@ export class NeedsFormsPreview {
     names: Names,
     except?: string,
   ): AppError | null {
-    const clash = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+    // A missing name ('') clashes with nothing: only a given name is unique in its language.
+    const clash = (a: string, b: string) => a !== '' && a.toLowerCase() === b.toLowerCase();
     const others = forms.filter((f) => f.id !== except);
     if (others.some((f) => clash(f.name.en, names.nameEn)))
       return validation('nameEn', 'NAME_TAKEN');

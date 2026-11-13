@@ -90,10 +90,18 @@ describe('the needs forms API (T-M3-10)', () => {
 
   it('preview: the same calls on the tab’s copy, with the inputs checked', async () => {
     const api = previewApi();
+    // A form has a name in at least one language (which one is required is asked by the dialog).
     const empty = await api.create({ nameEn: ' ', nameAr: '' });
-    expect(!empty.ok && empty.error.fieldErrors).toEqual([
-      { path: 'nameEn', code: 'REQUIRED' },
-      { path: 'nameAr', code: 'REQUIRED' },
+    expect(!empty.ok && empty.error.fieldErrors).toEqual([{ path: 'nameEn', code: 'REQUIRED' }]);
+    const arabicOnly = await api.create({ nameEn: '', nameAr: ' المبيعات ' });
+    if (!arabicOnly.ok) throw new Error('create with one name');
+    expect(arabicOnly.value.forms.map((f) => f.name)).toContainEqual({ en: '', ar: 'المبيعات' });
+    // A second form without an English name does not clash with the first.
+    const another = await api.create({ nameEn: '', nameAr: 'التسويق' });
+    expect(another.ok).toBe(true);
+    const sameArabic = await api.create({ nameEn: '', nameAr: 'المبيعات' });
+    expect(!sameArabic.ok && sameArabic.error.fieldErrors).toEqual([
+      { path: 'nameAr', code: 'NAME_TAKEN' },
     ]);
     const created = await api.create({ nameEn: ' Engineering ', nameAr: 'الهندسة' });
     if (!created.ok) throw new Error('create');

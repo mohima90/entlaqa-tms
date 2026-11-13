@@ -8,9 +8,14 @@ type T = (key: string, values?: Readonly<Record<string, string | number>>) => st
 
 export interface ScopePickerProps {
   readonly units: readonly PickerUnit[];
-  /** Branches to pick as well (the cycle's Settings); left out in the «New cycle» popup. */
+  /**
+   * The organization's branches, picked as well: a branch brings every department in it. They are always
+   * shown where a scope is edited, so that a branch saved with the cycle is never dropped unseen.
+   */
   readonly branches?:
     readonly { readonly id: string; readonly name: string; readonly active: boolean }[] | undefined;
+  /** The longer summary of the cycle's Settings (what a form is; how many departments have no head). */
+  readonly details?: boolean | undefined;
   readonly value: ScopeSelection;
   readonly onChange: (next: ScopeSelection) => void;
   readonly disabled: boolean;
@@ -26,10 +31,11 @@ const toggled = (list: readonly string[], id: string) =>
 
 /**
  * «Departments in this cycle» (EP-PLN B4; forms standard rule 9): every department of the structure with
- * its head — or «No head yet» —, «All departments» on top and, on the cycle's Settings, the branches. A
- * department includes everything under it (PO, 17 Oct 2026): what comes with a ticked department above, or
- * with a ticked branch, shows ticked and cannot be taken out on its own. One needs form per department in
- * the cycle; the count is said as it changes.
+ * its head — or «No head yet» —, «All departments» on top and the branches under them. A department
+ * includes everything under it (PO, 17 Oct 2026): what comes with a ticked department above, or with a
+ * ticked branch, shows ticked and is taken out by unticking that department or branch. «All departments»
+ * unticked clears the departments and the branches shown here — never a branch the picker does not show.
+ * One needs form per department in the cycle; the count is said as it changes.
  */
 export function ScopePicker(props: ScopePickerProps) {
   const { t, units, value } = props;
@@ -45,6 +51,7 @@ export function ScopePicker(props: ScopePickerProps) {
   const explains = units.some((unit) => unit.depth > 0) || [...picks.values()].includes('covered');
   const includedId = `${id}-included`;
   const errorId = `${id}-error`;
+  const shownBranches = new Set((props.branches ?? []).map((branch) => branch.id));
 
   // «Some, not all» is a property of the checkbox, not an attribute.
   useEffect(() => {
@@ -53,10 +60,7 @@ export function ScopePicker(props: ScopePickerProps) {
 
   return (
     <div className="flex flex-col gap-4" data-testid="scope-picker">
-      <fieldset
-        className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0"
-        aria-describedby={props.error ? errorId : undefined}
-      >
+      <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
         <legend className="mb-2 p-0 text-sm font-semibold">{t('dialog.departments')}</legend>
         <label className="flex min-h-10 items-center gap-3 rounded-xl px-2.5 text-sm font-semibold hover:bg-surface-hover pointer-coarse:min-h-11">
           <input
@@ -66,11 +70,17 @@ export function ScopePicker(props: ScopePickerProps) {
             onChange={() => {
               props.onChange(
                 all
-                  ? { departmentIds: [], branchIds: [] }
+                  ? {
+                      departmentIds: [],
+                      branchIds: value.branchIds.filter((branch) => !shownBranches.has(branch)),
+                    }
                   : { departmentIds: allUnitsScope(units), branchIds: value.branchIds },
               );
             }}
             disabled={props.disabled}
+            // A refusal about the departments sits on the first control of the list (it takes the focus).
+            aria-invalid={props.error ? true : undefined}
+            aria-describedby={props.error ? errorId : undefined}
             className="size-5 shrink-0 accent-primary"
             data-testid="scope-all"
           />
@@ -166,10 +176,10 @@ export function ScopePicker(props: ScopePickerProps) {
         <p className="m-0 text-sm font-semibold" data-testid="scope-forms-count">
           {t('setup.scope.formsTitle', { count: inScope.length })}
         </p>
-        {props.branches ? (
+        {props.details ? (
           <p className="m-0 text-[13px] text-text-muted">{t('setup.scope.formsHint')}</p>
         ) : null}
-        {props.branches && withoutHead > 0 ? (
+        {props.details && withoutHead > 0 ? (
           <Alert tone="warning" data-testid="scope-no-head">
             {t('setup.scope.noHeadWarning', { count: withoutHead })}
           </Alert>

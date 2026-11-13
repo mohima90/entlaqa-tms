@@ -10,6 +10,7 @@ import {
   savePlanCycleRemindersActionDefinition,
   savePlanCycleScopeActionDefinition,
   savePlanningSettingsActionDefinition,
+  updatePlanCycleActionDefinition,
   updatePlanCycleBasicsActionDefinition,
 } from '../planning/definitions';
 
@@ -18,6 +19,7 @@ import {
  * in ../planning/definitions.ts; the database enforces who may write and the state model.
  */
 export const createPlanCycleAction = defineAction(createPlanCycleActionDefinition());
+export const updatePlanCycleAction = defineAction(updatePlanCycleActionDefinition());
 export const updatePlanCycleBasicsAction = defineAction(updatePlanCycleBasicsActionDefinition());
 export const savePlanCycleScopeAction = defineAction(savePlanCycleScopeActionDefinition());
 export const savePlanCycleBudgetsAction = defineAction(savePlanCycleBudgetsActionDefinition());

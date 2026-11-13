@@ -31,8 +31,6 @@ const db = vi.hoisted(() => ({
   ),
   listOrgStructure: vi.fn(),
   getMemberOptionsByIds: vi.fn(),
-  searchMemberOptions: vi.fn(),
-  MEMBER_SEARCH: { minLength: 2, maxLength: 100, limit: 50 },
   getOrganizationProfile: vi.fn(),
   schema: {},
   MFA_MODES: ['off', 'optional', 'required_all', 'required_roles'],
@@ -83,6 +81,18 @@ describe('planning server actions (deny by default)', () => {
           periodStart: '2027-01-01',
           periodEnd: '2027-12-31',
           deadline: '2026-11-30',
+        }),
+      () =>
+        actions.updatePlanCycleAction({
+          id: CYCLE,
+          version: 1,
+          nameAr: 'خطة',
+          nameEn: 'Plan',
+          periodStart: '2027-01-01',
+          periodEnd: '2027-12-31',
+          deadline: '2026-11-30',
+          departmentIds: [],
+          branchIds: [],
         }),
       () =>
         actions.savePlanCycleScopeAction({

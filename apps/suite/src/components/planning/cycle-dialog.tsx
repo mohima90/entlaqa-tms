@@ -1,9 +1,5 @@
 'use client';
-import {
-  createPlanCycleAction,
-  savePlanCycleScopeAction,
-  updatePlanCycleBasicsAction,
-} from '@jadarat/tms/actions/planning';
+import { createPlanCycleAction, updatePlanCycleAction } from '@jadarat/tms/actions/planning';
 import type { DateDisplay } from '@jadarat/platform-i18n';
 import { type ScopeSelection, basicsIssues, toFieldErrors } from '@jadarat/tms/planning-rules';
 import { Alert, Button, Dialog, Icon, TextField } from '@jadarat/ui';
@@ -15,6 +11,7 @@ import { useSessionRefusal } from '../auth/session-refusal';
 import { LoadLatestVersion, useFormBase } from '../latest-version';
 import { SelectField } from '../select-field';
 import { ScopePicker } from './scope-picker';
+import { useFocusInvalid } from './use-focus-invalid';
 import { usePlanningTexts } from './use-planning-texts';
 
 /** What the popup edits. */
@@ -37,12 +34,15 @@ export interface CycleDialogProps {
     readonly id: string;
     readonly version: number;
     readonly name: string;
-    /** Kept as they are: the instructions are edited on the cycle's Settings page. */
-    readonly instructionsAr: string;
-    readonly instructionsEn: string;
   } | null;
   readonly initial: CycleDialogValues;
   readonly units: readonly PickerUnit[];
+  /** The organization's branches: a branch brings every department in it. */
+  readonly branches: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly active: boolean;
+  }[];
   /** Active forms, plus the cycle's own form if it was switched off since (`active: false`, C-6). */
   readonly needsForms: readonly {
     readonly id: string;
@@ -66,8 +66,10 @@ export interface CycleDialogProps {
  * T-M3-20; FR-PLN-02): the cycle's name in the organization's default language (the other language
  * optional), the plan period, the needs deadline, the departments (all of them by default) and the needs
  * form (the default one). Budgets, instructions and reminders wait on the cycle's Settings page. «Cancel»,
- * then «Create cycle» at the end. The fields are mounted when the popup opens, so every opening starts
- * from the values given.
+ * then «Create cycle» at the end. Creating and editing are each ONE save: the names, the dates, the form
+ * and the departments are written together or not at all. A refused save moves the focus to the first
+ * field with a message. The fields are mounted when the popup opens, so every opening starts from the
+ * values given.
  */
 export function CycleDialog(props: CycleDialogProps) {
   const { t } = usePlanningTexts(props.texts, props.errors, props.locale);
@@ -111,12 +113,7 @@ function CycleForm(props: CycleDialogProps & { readonly onBusy: (busy: boolean) 
   const [values, setValues] = useState<CycleDialogValues>(props.initial);
   const [errors, setErrors] = useState<Errors>({});
   const [notice, setNotice] = useState<string | null>(null);
-  // Editing saves the names, dates and form first, then the departments. If the second part is refused,
-  // the first is in already: the next try starts from what was saved and the version it returned.
-  const [saved, setSaved] = useState<{
-    readonly version: number;
-    readonly values: CycleDialogValues;
-  } | null>(null);
+  const { form, focusInvalid } = useFocusInvalid(pending);
   const day = dayFormatter(props.locale, props.display);
   const isDay = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
   const basicsChanged = (from: CycleDialogValues) =>
@@ -129,7 +126,6 @@ function CycleForm(props: CycleDialogProps & { readonly onBusy: (busy: boolean) 
     (initial) => {
       setValues(initial);
       setErrors({});
-      setSaved(null);
     },
   );
   const working = pending;
@@ -147,6 +143,7 @@ function CycleForm(props: CycleDialogProps & { readonly onBusy: (busy: boolean) 
     )?.[1];
     setErrors({ ...(byPath as Errors), ...(departments ? { departments } : {}) });
     setNotice(formMessage(error));
+    focusInvalid();
   }
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement>) {
@@ -162,6 +159,7 @@ function CycleForm(props: CycleDialogProps & { readonly onBusy: (busy: boolean) 
     }
     if (Object.keys(found).length > 0) {
       setErrors(found);
+      focusInvalid();
       return;
     }
     const basics = {
@@ -171,6 +169,8 @@ function CycleForm(props: CycleDialogProps & { readonly onBusy: (busy: boolean) 
       periodEnd: values.periodEnd,
       deadline: values.deadline,
       needsFormId: values.needsFormId === '' ? null : values.needsFormId,
+      departmentIds: [...values.scope.departmentIds],
+      branchIds: [...values.scope.branchIds],
     };
     const name = (props.locale === 'ar' ? values.nameAr : values.nameEn).trim();
     const shownName = name || (values.nameAr.trim() ? values.nameAr.trim() : values.nameEn.trim());
@@ -178,48 +178,17 @@ function CycleForm(props: CycleDialogProps & { readonly onBusy: (busy: boolean) 
     props.onBusy(true);
     startTransition(async () => {
       try {
-        if (!editing) {
-          const result = await createPlanCycleAction({
-            ...basics,
-            departmentIds: [...values.scope.departmentIds],
-            branchIds: [...values.scope.branchIds],
-          });
-          if (!result.ok) {
-            refuse(result.error);
-            return;
-          }
-          props.onSaved({ created: true, name: shownName });
+        // One save either way (review of T-M3-20): nothing is written when a part of it is refused.
+        const result = editing
+          ? base.dirty
+            ? await updatePlanCycleAction({ ...basics, id: editing.id, version: base.version })
+            : null
+          : await createPlanCycleAction(basics);
+        if (result && !result.ok) {
+          refuse(result.error);
           return;
         }
-        let version = saved?.version ?? base.version;
-        if (basicsChanged(saved?.values ?? base.initial)) {
-          const result = await updatePlanCycleBasicsAction({
-            ...basics,
-            instructionsAr: editing.instructionsAr,
-            instructionsEn: editing.instructionsEn,
-            id: editing.id,
-            version,
-          });
-          if (!result.ok) {
-            refuse(result.error);
-            return;
-          }
-          version = result.value.version;
-          setSaved({ version, values });
-        }
-        if (!sameScope(values.scope, base.initial.scope)) {
-          const result = await savePlanCycleScopeAction({
-            id: editing.id,
-            version,
-            departmentIds: [...values.scope.departmentIds],
-            branchIds: [...values.scope.branchIds],
-          });
-          if (!result.ok) {
-            refuse(result.error);
-            return;
-          }
-        }
-        props.onSaved({ created: false, name: shownName });
+        props.onSaved({ created: !editing, name: shownName });
       } finally {
         props.onBusy(false);
       }
@@ -240,7 +209,13 @@ function CycleForm(props: CycleDialogProps & { readonly onBusy: (busy: boolean) 
   const otherCalendar = props.display !== 'gregorian';
 
   return (
-    <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4" data-testid="cycle-form">
+    <form
+      ref={form}
+      onSubmit={onSubmit}
+      noValidate
+      className="flex flex-col gap-4"
+      data-testid="cycle-form"
+    >
       {notice ? (
         <Alert tone="danger" data-testid="cycle-form-error">
           {notice}
@@ -338,6 +313,7 @@ function CycleForm(props: CycleDialogProps & { readonly onBusy: (busy: boolean) 
       ) : (
         <ScopePicker
           units={props.units}
+          branches={props.branches}
           value={values.scope}
           onChange={(scope) => {
             setValues((current) => ({ ...current, scope }));

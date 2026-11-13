@@ -70,8 +70,6 @@ export interface CycleRow {
     readonly needsFormId: string | null;
     /** The cycle's own form when it was switched off since (C-6). */
     readonly needsFormOff: NeedsFormChoice | null;
-    readonly instructionsAr: string | null;
-    readonly instructionsEn: string | null;
     readonly scope: ScopeSelection;
     readonly problems: readonly LaunchProblem[];
   } | null;
@@ -105,6 +103,12 @@ export interface CyclesScreenProps {
     };
     readonly nameLanguage: 'ar' | 'en';
     readonly units: readonly PickerUnit[];
+    /** The organization's branches (a branch brings every department in it). */
+    readonly branches: readonly {
+      readonly id: string;
+      readonly name: string;
+      readonly active: boolean;
+    }[];
     readonly needsForms: readonly NeedsFormChoice[];
   } | null;
   readonly open: CyclesOpen;
@@ -216,7 +220,8 @@ export function CyclesScreen(props: CyclesScreenProps) {
           >
             <Icon name="more" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent>
+          {/* The trigger has its own id (the focus returns to it), so the menu is named here. */}
+          <DropdownMenuContent aria-label={t('list.rowMenu', { name: cycle.name })}>
             <DropdownMenuItem
               onSelect={() => {
                 open({ kind: 'edit', id: cycle.id }, from);
@@ -459,8 +464,6 @@ export function CyclesScreen(props: CyclesScreenProps) {
                     id: selected.id,
                     version: draft.version,
                     name: selected.name,
-                    instructionsAr: draft.instructionsAr ?? '',
-                    instructionsEn: draft.instructionsEn ?? '',
                   }
                 : null
             }
@@ -470,6 +473,7 @@ export function CyclesScreen(props: CyclesScreenProps) {
                 : newValues(setup)
             }
             units={setup.units}
+            branches={setup.branches}
             needsForms={
               dialog?.kind === 'edit' && draft?.needsFormOff
                 ? [...setup.needsForms, draft.needsFormOff]

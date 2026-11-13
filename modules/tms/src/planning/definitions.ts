@@ -22,7 +22,6 @@ import {
   tmsPlanningPermissions,
 } from '@jadarat/platform-rbac';
 import {
-  type ApprovalStep,
   CreateCycleInput,
   CycleRef,
   CycleVersionRef,
@@ -38,6 +37,7 @@ import {
   type ScopeSelection,
   type StructureUnit,
   UpdateCycleBasicsInput,
+  UpdateCycleInput,
   basicsIssues,
   nameIssues,
   canExtendDeadline,
@@ -127,9 +127,6 @@ export interface CycleDraft {
   readonly needsFormId: string | null;
   /** The cycle's own form when it was switched off since (it is not among `setup.needsForms`; C-6). */
   readonly needsFormOff: NeedsFormOption | null;
-  /** Kept as they are when the popup saves (they are edited on the cycle's Settings page). */
-  readonly instructionsAr: string | null;
-  readonly instructionsEn: string | null;
   readonly scope: ScopeSelection;
   /** What stops the launch today, with the departments the scope covers NOW (as the launch counts them). */
   readonly problems: readonly LaunchProblem[];
@@ -224,7 +221,7 @@ export interface ScopeUnitOption {
 
 export interface CycleView {
   readonly today: string;
-  readonly cycle: Omit<repo.CycleRecord, 'departments' | 'steps' | 'launchedBy'>;
+  readonly cycle: Omit<repo.CycleRecord, 'departments' | 'launchedBy'>;
   readonly status: CycleStatus;
   readonly canManage: boolean;
   /** A draft and the member manages cycles: its settings are editable. */
@@ -374,8 +371,13 @@ async function needsFormProblems(
 const validation = (fieldErrors: readonly { path: string; code: string }[]) =>
   err(appError('VALIDATION_FAILED', { fieldErrors }));
 
-const stepsForAudit = (steps: readonly ApprovalStep[]) =>
-  steps.map((s) => ({ kind: s.kind, approverPersonId: s.approverPersonId }));
+/**
+ * Does another open cycle stand in the way of a launch today? Until its latest deadline — its own or any
+ * department's extension — has passed; after that the launch closes it first (`repo.closeDueCycles`). The
+ * pages ask the same question as the launch, so they never offer a launch the server then refuses.
+ */
+const blocksLaunch = (open: { readonly latestDeadline: string } | null, today: string) =>
+  open !== null && open.latestDeadline >= today;
 
 // ---------------------------------------------------------------------------------------------------
 // Queries
@@ -399,31 +401,37 @@ export function planCyclesListQueryDefinition(): QueryDefinition<
       const activeForms = canManage ? await listNeedsFormOptions(ctx.tx) : [];
       const drafts = new Map<string, CycleDraft>();
       if (canManage) {
-        for (const row of rows.filter((r) => r.status === 'draft')) {
-          const record = await repo.getCycle(ctx.tx, row.id);
-          if (!record) continue;
-          const open = await repo.openCycle(ctx.tx, record.id);
-          const ownForm =
-            record.needsFormId !== null && !activeForms.some((f) => f.id === record.needsFormId)
-              ? (await listNeedsFormOptions(ctx.tx, record.needsFormId)).find(
-                  (f) => f.id === record.needsFormId,
-                )
-              : undefined;
-          drafts.set(row.id, {
-            version: record.version,
-            needsFormId: record.needsFormId,
-            needsFormOff: ownForm ?? null,
-            instructionsAr: record.instructionsAr,
-            instructionsEn: record.instructionsEn,
-            scope: record.scope,
+        // Asked once for the list, with the rule the launch applies: an open cycle blocks until its
+        // latest deadline (a department's extension included) has passed. A draft is never the open one.
+        const anotherOpen = rows.some(
+          (r) => r.status === 'open' && blocksLaunch({ latestDeadline: r.latestDeadline }, today),
+        );
+        const details = await repo.listDraftDetails(ctx.tx);
+        // A draft's own form that was switched off since: looked up once per form, not per draft.
+        const offForms = new Map<string, NeedsFormOption | null>();
+        for (const draft of details) {
+          const formId = draft.needsFormId;
+          if (formId === null || offForms.has(formId)) continue;
+          if (activeForms.some((f) => f.id === formId)) continue;
+          const found = (await listNeedsFormOptions(ctx.tx, formId)).find((f) => f.id === formId);
+          offForms.set(formId, found ?? null);
+        }
+        const deadlines = new Map(rows.map((r) => [r.id, r.deadline]));
+        for (const draft of details) {
+          drafts.set(draft.id, {
+            version: draft.version,
+            needsFormId: draft.needsFormId,
+            needsFormOff:
+              draft.needsFormId === null ? null : (offForms.get(draft.needsFormId) ?? null),
+            scope: draft.scope,
             problems: launchProblems({
-              status: record.status,
-              deadline: record.deadline,
+              status: 'draft',
+              deadline: deadlines.get(draft.id) ?? today,
               today,
-              needsFormId: record.needsFormId,
+              needsFormId: draft.needsFormId,
               // One form per department in scope NOW, as the launch counts them.
-              departmentCount: departmentsInScope(tree, record.scope).length,
-              anotherOpen: open !== null && open.deadline >= today,
+              departmentCount: departmentsInScope(tree, draft.scope).length,
+              anotherOpen,
             }),
           });
         }
@@ -534,10 +542,10 @@ export function planCycleQueryDefinition(): QueryDefinition<typeof CycleRef, Cyc
               today,
               needsFormId: record.needsFormId,
               departmentCount: record.departments.length,
-              anotherOpen: open !== null && open.deadline >= today,
+              anotherOpen: blocksLaunch(open, today),
             })
           : [];
-      const { departments: _d, steps: _s, launchedBy: _l, ...cycle } = record;
+      const { departments: _d, launchedBy: _l, ...cycle } = record;
       return ok({
         today,
         cycle,
@@ -707,6 +715,96 @@ export function updatePlanCycleBasicsActionDefinition(): ActionDefinition<
   };
 }
 
+export interface CycleSaved extends Saved {
+  /** What changed: basics keys, and `scope` when the departments or branches did. Empty: nothing. */
+  readonly changed: readonly string[];
+  readonly before: Record<string, unknown>;
+  readonly after: Record<string, unknown>;
+  readonly departmentCount: number;
+}
+
+const EDIT_KEYS = [
+  'needsFormId',
+  'nameAr',
+  'nameEn',
+  'periodStart',
+  'periodEnd',
+  'deadline',
+] as const;
+
+const sameIds = (a: readonly string[], b: readonly string[]) =>
+  a.length === b.length && a.every((id) => b.includes(id));
+
+/**
+ * «Edit» of a draft in the popup (WP-UX-01 a, T-M3-20): the names, period, deadline, needs form AND the
+ * departments in ONE transaction — one version of the cycle, one audit record. Either everything is saved
+ * or nothing is: a refused part never leaves the other part saved behind a popup that is then cancelled.
+ * Same permission and the same checks as the basics and the scope actions; the instructions stay as stored.
+ */
+export function updatePlanCycleActionDefinition(): ActionDefinition<
+  typeof UpdateCycleInput,
+  CycleSaved,
+  UserTx
+> {
+  return {
+    permission: MANAGE,
+    input: UpdateCycleInput,
+    handler: async ({ ctx, input }) => {
+      const before = await repo.getCycle(ctx.tx, input.id);
+      if (!before) return err(appError('NOT_FOUND'));
+      const structure = await listOrgStructure(ctx.tx);
+      const scope = { departmentIds: input.departmentIds, branchIds: input.branchIds };
+      const issues = [
+        ...toFieldErrors(nameIssues(await getTenantDefaultLocale(ctx.tx), input)),
+        ...toFieldErrors(basicsIssues(input)),
+        ...(await needsFormProblems(ctx.tx, input.needsFormId, before.needsFormId)),
+        ...unknownScopeIds(structure, scope),
+      ];
+      if (issues.length > 0) return validation(issues);
+      const touched = await touch(ctx.tx, input.id, input.version);
+      if (!touched.ok) return touched;
+      const basics = {
+        nameAr: input.nameAr,
+        nameEn: input.nameEn,
+        periodStart: input.periodStart,
+        periodEnd: input.periodEnd,
+        deadline: input.deadline,
+        needsFormId: input.needsFormId,
+        // Edited on the Settings page: they go back as they are stored.
+        instructionsAr: before.instructionsAr,
+        instructionsEn: before.instructionsEn,
+      };
+      const version = await repo.updateBasics(ctx.tx, input.id, basics);
+      const departmentIds = departmentsInScope(units(structure), scope);
+      const scopeChanged =
+        !sameIds(before.scope.departmentIds, scope.departmentIds) ||
+        !sameIds(before.scope.branchIds, scope.branchIds);
+      // Also when only the structure changed underneath: one form per department in scope NOW.
+      await repo.replaceScope(ctx.tx, input.id, scope, departmentIds);
+      const changedKeys = EDIT_KEYS.filter((key) => before[key] !== basics[key]);
+      const shown = (source: Pick<repo.CycleRecord, (typeof EDIT_KEYS)[number]>) =>
+        Object.fromEntries(changedKeys.map((key) => [key, source[key]]));
+      return ok({
+        id: input.id,
+        version,
+        changed: [...changedKeys, ...(scopeChanged ? ['scope'] : [])],
+        before: { ...shown(before), ...(scopeChanged ? { scope: before.scope } : {}) },
+        after: { ...shown(basics), ...(scopeChanged ? { scope } : {}) },
+        departmentCount: departmentIds.length,
+      });
+    },
+    audit: (_input, output) =>
+      output.changed.length === 0
+        ? null
+        : audit('changed', output.id, {
+            changed: output.changed,
+            before: output.before,
+            after: output.after,
+            departments: output.departmentCount,
+          }),
+  };
+}
+
 export interface ScopeSaved extends Saved {
   readonly departmentCount: number;
   readonly before: {
@@ -820,7 +918,6 @@ export function savePlanCycleRemindersActionDefinition(): ActionDefinition<
 export interface Launched extends Saved {
   readonly deadline: string;
   readonly departmentCount: number;
-  readonly steps: readonly ApprovalStep[];
   readonly closedCycleIds: readonly string[];
 }
 
@@ -844,7 +941,7 @@ export function launchPlanCycleActionDefinition(): ActionDefinition<
       // An open cycle past its deadline is closed first (Q1: one open cycle at a time).
       const closedCycleIds = await repo.closeDueCycles(ctx.tx);
       const today = await repo.organizationToday(ctx.tx);
-      // No approval chain is asked for (EP-PLN §13 e): a stored one is ignored — and still audited below.
+      // No approval chain is asked for (EP-PLN §13 e): one stored by an earlier cycle is ignored.
       const problems = launchProblems({
         status: record.status,
         deadline: record.deadline,
@@ -875,7 +972,6 @@ export function launchPlanCycleActionDefinition(): ActionDefinition<
         version: launched.version,
         deadline: record.deadline,
         departmentCount: departmentIds.length,
-        steps: record.steps,
         closedCycleIds,
       });
     },
@@ -883,7 +979,6 @@ export function launchPlanCycleActionDefinition(): ActionDefinition<
       audit('launched', output.id, {
         deadline: output.deadline,
         departments: output.departmentCount,
-        approvalChain: stepsForAudit(output.steps),
         ...(output.closedCycleIds.length > 0 ? { closedCycleIds: output.closedCycleIds } : {}),
       }),
   };

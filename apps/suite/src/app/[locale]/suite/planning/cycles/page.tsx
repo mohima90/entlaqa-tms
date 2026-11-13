@@ -190,6 +190,11 @@ async function screen(
               units: pickerUnits(locale, view.setup.units, view.setup.levels, (name, unit) =>
                 t('cycle.headVia', { name, unit }),
               ),
+              branches: view.setup.branches.map((branch) => ({
+                id: branch.id,
+                name: localName(locale, branch.name),
+                active: branch.active,
+              })),
               needsForms: view.setup.needsForms.map(form),
             }
           : null

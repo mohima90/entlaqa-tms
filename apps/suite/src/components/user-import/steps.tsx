@@ -902,7 +902,11 @@ export async function confirmStep(
         options={options}
         backHref="?step=review"
         cancelledHref={`/${locale}/suite/admin/users`}
-        labels={flatten(t.raw('confirm'))}
+        labels={{
+          ...flatten(t.raw('confirm')),
+          // The ✕ of the «cancel the import?» question: «Close», its own name next to «Back».
+          close: (await getTranslations({ locale, namespace: 'common' }))('close'),
+        }}
         codes={await refusalCodes(locale)}
         errors={await profileErrorTexts(locale)}
       />

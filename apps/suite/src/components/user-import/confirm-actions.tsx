@@ -113,7 +113,7 @@ export function ConfirmActions(props: ConfirmActionsProps) {
         tone="danger"
         title={text('cancel')}
         description={text('cancelConfirm')}
-        closeLabel={text('keep')}
+        closeLabel={text('close')}
         size="sm"
         data-testid="cancel-import-dialog"
         footer={

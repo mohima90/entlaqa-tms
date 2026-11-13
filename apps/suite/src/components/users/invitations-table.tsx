@@ -398,7 +398,7 @@ export function InvitationsTable({
         tone="danger"
         title={text('revoke')}
         description={revoking ? text('revokeConfirm', revoking.name) : undefined}
-        closeLabel={text('keep')}
+        closeLabel={text('close')}
         size="sm"
         data-testid="revoke-dialog"
         footer={

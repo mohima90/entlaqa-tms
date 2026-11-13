@@ -241,8 +241,8 @@ test.describe('deactivate and reactivate members', () => {
     await page.getByTestId('reactivate-button').click();
     const dialog = page.getByTestId('reactivate-dialog');
     await expect(dialog).toContainText("Reactivate Huda Ali Alqarni's account?");
-    // The dialog's close button carries the same name (closing cancels): the footer button is last.
-    await dialog.getByRole('button', { name: 'Cancel' }).last().click();
+    // The ✕ is «Close»; «Cancel» is the footer's button only.
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(page.getByTestId('reactivate-button')).toBeFocused();
     await page.getByTestId('reactivate-button').click();
     await dialog.getByTestId('reactivate-confirm').click();

@@ -602,6 +602,7 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
           body: text('discardBody'),
           keepEditing: text('keepEditing'),
           discard: text('discard'),
+          close: text('close'),
         }}
         onKeep={() => {
           setLeaving(null);

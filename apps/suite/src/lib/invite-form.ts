@@ -90,3 +90,17 @@ export function createdName(
   const ar = join(names.ar);
   return uiLocale === 'en' ? en || ar : ar || en;
 }
+
+/**
+ * «Invite another»: does «More options» open again? The department, the branch and the direct manager of
+ * the last invitation are kept for the next one, and they sit behind «More options»: while one of them is
+ * kept it stays open, so a kept choice is never sent out of sight (review of WP-UX-01 b). With nothing kept
+ * there, it closes again — the short form.
+ */
+export function keptBehindMore(kept: {
+  readonly departmentId: string;
+  readonly branchId: string;
+  readonly managerId: string;
+}): boolean {
+  return kept.departmentId !== '' || kept.branchId !== '' || kept.managerId !== '';
+}

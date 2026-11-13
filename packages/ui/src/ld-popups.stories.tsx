@@ -10,8 +10,8 @@ import { TextField } from './text-field';
  * The learning & development popups (WP-UX-01 c; forms standard rules 8–9, PO 12 Nov 2026): adding a need
  * on «My team's needs» and creating a role are one centred popup of 672 px with the few fields needed now,
  * a red asterisk on the required ones, the name in the organization's default language required and the
- * other language optional (side by side from 600 px), and «Cancel» then the primary button at the end, in a
- * footer that stays in view. The markup follows apps/suite (components/needs/need-dialog.tsx,
+ * other language optional (side by side from 600 px), and «Cancel» then the primary button at the end, in the
+ * dialog's footer, which stays in view. The markup follows apps/suite (components/needs/need-dialog.tsx,
  * components/roles/create-role.tsx); sample names only. «Add course» and «New needs form» are seen on their
  * pages without a database (the e2e journeys). Every story runs in Arabic/English × light/dark under axe.
  */
@@ -67,15 +67,6 @@ function Select({
   );
 }
 
-/** «Cancel», then the primary buttons at the end, in a footer that stays in view while the popup scrolls. */
-function Footer({ children }: { children: ReactNode }) {
-  return (
-    <div className="sticky bottom-0 -mx-6 -mb-6 mt-1.5 flex flex-col-reverse gap-2.5 border-t border-border bg-surface-raised px-6 py-4 sm:-mx-6.5 sm:-mb-6.5 sm:flex-row sm:flex-wrap sm:justify-end sm:px-6.5">
-      {children}
-    </div>
-  );
-}
-
 /** The two names: the page's language stands in for the organization's default language here. */
 function Names({
   globals,
@@ -126,6 +117,15 @@ export const AddNeed: Story = {
         onClose={() => undefined}
         size="rich"
         title={pick(globals, { ar: 'إضافة احتياج', en: 'Add a need' })}
+        footer={
+          <>
+            <Button variant="secondary">{pick(globals, T.cancel)}</Button>
+            <Button variant="secondary">
+              {pick(globals, { ar: 'حفظ وإضافة آخر', en: 'Save and add another' })}
+            </Button>
+            <Button>{pick(globals, { ar: 'حفظ', en: 'Save' })}</Button>
+          </>
+        }
         description={pick(globals, {
           ar: 'الموضوع وعدد الأشخاص. الأسماء اختيارية: تُسمّى المقاعد غير المسماة عند جدولة التدريب.',
           en: 'A topic and how many people. Names are optional: unnamed seats are named when the training is scheduled.',
@@ -216,13 +216,6 @@ export const AddNeed: Story = {
             label={pick(globals, { ar: 'التكلفة التقديرية (SAR)', en: 'Estimated cost (SAR)' })}
             marker={pick(globals, T.optional)}
           />
-          <Footer>
-            <Button variant="secondary">{pick(globals, T.cancel)}</Button>
-            <Button variant="secondary">
-              {pick(globals, { ar: 'حفظ وإضافة آخر', en: 'Save and add another' })}
-            </Button>
-            <Button>{pick(globals, { ar: 'حفظ', en: 'Save' })}</Button>
-          </Footer>
         </div>
       </Dialog>
     </div>
@@ -241,6 +234,12 @@ export const CreateRole: Story = {
         onClose={() => undefined}
         size="rich"
         title={pick(globals, { ar: 'إنشاء دور', en: 'Create role' })}
+        footer={
+          <>
+            <Button variant="secondary">{pick(globals, T.cancel)}</Button>
+            <Button>{pick(globals, { ar: 'إنشاء دور', en: 'Create role' })}</Button>
+          </>
+        }
         description={pick(globals, {
           ar: 'سمِّ الدور واختر ما يبدأ منه. تُفتح بعد ذلك صلاحياته والبيانات التي يراها.',
           en: 'Name the role and choose what it starts from. Its permissions and the data it sees open next.',
@@ -278,10 +277,6 @@ export const CreateRole: Story = {
               en: 'Creating the role opens its page: tick its permissions, choose the data it sees and add a description. Nobody holds the role until you give it.',
             })}
           </p>
-          <Footer>
-            <Button variant="secondary">{pick(globals, T.cancel)}</Button>
-            <Button>{pick(globals, { ar: 'إنشاء دور', en: 'Create role' })}</Button>
-          </Footer>
         </div>
       </Dialog>
     </div>

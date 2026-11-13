@@ -56,6 +56,8 @@ type DialogState =
   | { readonly kind: 'rename'; readonly form: NeedsFormSummary }
   | null;
 
+/** The create / duplicate / rename form: the dialog's footer submits it. */
+const DIALOG_FORM_ID = 'needs-form-dialog-form';
 const MENU_TRIGGER =
   'grid size-10 shrink-0 place-items-center rounded-full border border-border-strong text-text-muted hover:bg-surface-hover hover:text-text disabled:opacity-60 pointer-coarse:size-11';
 
@@ -471,8 +473,33 @@ export function NeedsFormsLibrary(props: NeedsFormsLibraryProps) {
         canClose={() => !pending}
         size="rich"
         data-testid="needs-form-dialog"
+        // «Cancel», then the primary button at the end — the dialog keeps them in view while it scrolls.
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              type="button"
+              disabled={pending}
+              onClick={() => {
+                setDialog(null);
+              }}
+              data-testid="needs-form-dialog-cancel"
+            >
+              {text('cancel')}
+            </Button>
+            <Button
+              type="submit"
+              form={DIALOG_FORM_ID}
+              disabled={pending}
+              busy={pending}
+              data-testid="needs-form-dialog-submit"
+            >
+              {pending ? text('saving') : submitLabel}
+            </Button>
+          </>
+        }
       >
-        <form className="flex flex-col gap-4" onSubmit={submit} noValidate>
+        <form id={DIALOG_FORM_ID} className="flex flex-col gap-4" onSubmit={submit} noValidate>
           {message ? (
             <Alert tone="danger" data-testid="needs-form-dialog-error">
               {message}
@@ -548,28 +575,6 @@ export function NeedsFormsLibrary(props: NeedsFormsLibraryProps) {
               </ChoiceCard>
             </fieldset>
           ) : null}
-          {/* «Cancel», then the primary button at the end; the footer stays in view on a short screen. */}
-          <div className="sticky bottom-0 -mx-6 -mb-6 mt-1.5 flex flex-col-reverse gap-2.5 border-t border-border bg-surface-raised px-6 py-4 sm:-mx-6.5 sm:-mb-6.5 sm:flex-row sm:flex-wrap sm:justify-end sm:px-6.5">
-            <Button
-              variant="secondary"
-              type="button"
-              disabled={pending}
-              onClick={() => {
-                setDialog(null);
-              }}
-              data-testid="needs-form-dialog-cancel"
-            >
-              {text('cancel')}
-            </Button>
-            <Button
-              type="submit"
-              disabled={pending}
-              busy={pending}
-              data-testid="needs-form-dialog-submit"
-            >
-              {pending ? text('saving') : submitLabel}
-            </Button>
-          </div>
         </form>
       </Dialog>
 

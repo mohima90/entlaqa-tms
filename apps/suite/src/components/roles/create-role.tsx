@@ -41,6 +41,8 @@ interface CreateRoleContextValue {
 
 const CreateRoleContext = createContext<CreateRoleContextValue | null>(null);
 const CREATE_ROLE_ID = 'create-role';
+/** The popup's form: the dialog's footer submits it. */
+const CREATE_FORM_ID = 'role-create-form';
 
 /**
  * «Create role» on Roles & permissions (the Kawadir pattern — forms standard rule 9; WP-UX-01 c, T-M3-21;
@@ -104,16 +106,33 @@ export function CreateRoleProvider({
         description={setup.texts.newIntro}
         closeLabel={setup.texts.close ?? ''}
         data-testid="role-create-dialog"
+        // «Cancel», then the primary button at the end — the dialog keeps them in view while it scrolls.
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setState(null);
+              }}
+              disabled={busy}
+              data-testid="role-create-cancel"
+            >
+              {setup.texts.cancel ?? 'cancel'}
+            </Button>
+            <Button
+              type="submit"
+              form={CREATE_FORM_ID}
+              disabled={busy}
+              busy={busy}
+              data-testid="role-create-submit"
+            >
+              {busy ? setup.texts.creating : setup.texts.titleNew}
+            </Button>
+          </>
+        }
       >
         {state ? (
-          <CreateRoleForm
-            setup={setup}
-            initialStart={state.start}
-            onBusy={setBusy}
-            onCancel={() => {
-              setState(null);
-            }}
-          />
+          <CreateRoleForm setup={setup} initialStart={state.start} onBusy={setBusy} />
         ) : null}
       </Dialog>
     </CreateRoleContext.Provider>
@@ -157,12 +176,10 @@ function CreateRoleForm({
   setup,
   initialStart,
   onBusy,
-  onCancel,
 }: {
   readonly setup: CreateRoleSetup;
   readonly initialStart: string | null;
   readonly onBusy: (busy: boolean) => void;
-  readonly onCancel: () => void;
 }) {
   const { texts, starts } = setup;
   const text = (key: string) => texts[key] ?? key;
@@ -242,7 +259,13 @@ function CreateRoleForm({
   }));
 
   return (
-    <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4" data-testid="role-create">
+    <form
+      id={CREATE_FORM_ID}
+      onSubmit={onSubmit}
+      noValidate
+      className="flex flex-col gap-4"
+      data-testid="role-create"
+    >
       {message ? (
         <Alert tone="danger" data-testid="role-create-message">
           {message}
@@ -315,20 +338,6 @@ function CreateRoleForm({
       >
         {text('newNote')}
       </p>
-      {/* «Cancel», then the primary button at the end; the footer stays in view on a short screen. */}
-      <div className="sticky bottom-0 -mx-6 -mb-6 mt-1.5 flex flex-col-reverse gap-2.5 border-t border-border bg-surface-raised px-6 py-4 sm:-mx-6.5 sm:-mb-6.5 sm:flex-row sm:flex-wrap sm:justify-end sm:px-6.5">
-        <Button
-          variant="secondary"
-          onClick={onCancel}
-          disabled={pending}
-          data-testid="role-create-cancel"
-        >
-          {text('cancel')}
-        </Button>
-        <Button type="submit" disabled={pending} busy={pending} data-testid="role-create-submit">
-          {pending ? text('creating') : text('titleNew')}
-        </Button>
-      </div>
     </form>
   );
 }

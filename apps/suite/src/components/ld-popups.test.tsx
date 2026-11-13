@@ -107,7 +107,9 @@ describe('«Add course»', () => {
     // A red asterisk on the required title, the delivery type and the hours; no code in the popup.
     expect(popup.querySelectorAll('[data-required-mark]')).toHaveLength(3);
     expect(popup.querySelector('[data-testid="course-field-code"]')).toBeNull();
-    const buttons = [...popup.querySelectorAll('form button')].map((b) => b.textContent);
+    const buttons = [...popup.querySelectorAll('[data-dialog-footer] button')].map(
+      (b) => b.textContent,
+    );
     expect(buttons.slice(-2)).toEqual(['form.cancel', 'addCourse']);
   });
 
@@ -140,6 +142,41 @@ describe('«Add course»', () => {
     expect(actions.createCourseAction.mock.calls[0]?.[0]).not.toHaveProperty('code');
     expect(onClose).toHaveBeenCalled();
     expect(router.refresh).toHaveBeenCalled();
+  });
+});
+
+describe('«Add course» when no code can be given', () => {
+  it('says so in the popup, in words, instead of a field to correct', async () => {
+    actions.createCourseAction.mockResolvedValue({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        status: 422,
+        messageKey: 'errors.validationFailed',
+        fieldErrors: [{ path: 'code', code: 'CODE_TAKEN' }],
+      },
+    });
+    const onClose = vi.fn();
+    mount(
+      <CourseAddDialog
+        open
+        onClose={onClose}
+        nameLanguage="en"
+        deliveryTypes={[{ value: 'classroom', label: 'Classroom' }]}
+        preview={false}
+        texts={{ ...texts, 'form.codeUnavailable': 'No free code.' }}
+        errors={{ 'errors.validationFailed': 'Some fields need correcting.' }}
+      />,
+    );
+    const popup = document.querySelector('dialog[data-testid="course-dialog"]')!;
+    type(popup.querySelector<HTMLInputElement>('#course-new-titleEn')!, 'Negotiation');
+    type(popup.querySelector<HTMLInputElement>('#course-new-durationHours')!, '6');
+    await submit(popup.querySelector('form'));
+    await flush();
+    expect(popup.querySelector('[data-testid="course-form-message"]')?.textContent).toBe(
+      'No free code.',
+    );
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
 
@@ -232,7 +269,9 @@ describe('«Create role»', () => {
       ['role-name-ar', true, 'ar'],
       ['role-name-en', false, 'en'],
     ]);
-    const buttons = [...popup.querySelectorAll('form button')].map((b) => b.textContent);
+    const buttons = [...popup.querySelectorAll('[data-dialog-footer] button')].map(
+      (b) => b.textContent,
+    );
     expect(buttons.slice(-2)).toEqual(['cancel', 'Create role']);
   });
 

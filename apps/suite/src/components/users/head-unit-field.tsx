@@ -112,6 +112,7 @@ export function HeadConfirmDialog({
   body,
   confirm,
   cancel,
+  close,
   busy,
   onConfirm,
   onCancel,
@@ -122,6 +123,8 @@ export function HeadConfirmDialog({
   readonly body: string;
   readonly confirm: string;
   readonly cancel: string;
+  /** «Close»: the ✕ in the corner — its own name, not «Cancel» again. */
+  readonly close: string;
   readonly busy?: boolean | undefined;
   readonly onConfirm: () => void;
   readonly onCancel: () => void;
@@ -134,7 +137,7 @@ export function HeadConfirmDialog({
       tone="warning"
       title={title}
       description={body}
-      closeLabel={cancel}
+      closeLabel={close}
       size="sm"
       data-testid={testId}
       footer={

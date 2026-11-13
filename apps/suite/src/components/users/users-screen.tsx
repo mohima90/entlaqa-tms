@@ -911,6 +911,7 @@ async function invitePanel(
     body: users('discardBody'),
     keepEditing: users('keepEditing'),
     discard: users('discard'),
+    close: editRoles('close'),
   };
   const fieldTexts: Record<string, string> = Object.fromEntries(
     INVITE_FIELD_ERROR_KEYS.map((k) => [k, t(`form.fieldErrors.${k}`)]),

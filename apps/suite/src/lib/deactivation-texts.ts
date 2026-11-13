@@ -19,5 +19,7 @@ export async function reactivateLabels(locale: AppLocale): Promise<Record<string
   const t = await getTranslations({ locale, namespace: 'deactivation.reactivate' });
   const labels: Record<string, string> = Object.fromEntries(REACTIVATE_KEYS.map((k) => [k, t(k)]));
   labels.confirm = String(t.raw('confirm'));
+  // The ✕ of the confirmation: «Close», its own name next to the footer's «Cancel».
+  labels.close = (await getTranslations({ locale, namespace: 'common' }))('close');
   return labels;
 }

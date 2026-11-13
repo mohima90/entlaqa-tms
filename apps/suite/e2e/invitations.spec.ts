@@ -172,7 +172,7 @@ test.describe('invitations (admin side)', () => {
     await expectNoSeriousA11yViolations(page);
 
     // «Invite another user» keeps the role and the language from the last invitation; «More options» is
-    // closed again.
+    // closed again, as no department, branch or manager behind it was kept (it stays open when one is).
     await page.getByTestId('invite-another').click();
     await expect(page.getByTestId('invite-kept')).toBeVisible();
     await expect(form.getByTestId('invite-more')).toHaveAttribute('aria-expanded', 'false');
@@ -184,7 +184,7 @@ test.describe('invitations (admin side)', () => {
     await page.keyboard.press('Escape');
     const discard = page.getByTestId('discard-dialog');
     await expect(discard).toBeVisible();
-    await discard.getByRole('button', { name: 'Keep editing' }).last().click();
+    await discard.getByRole('button', { name: 'Keep editing' }).click();
     await expect(discard).toBeHidden();
     await expect(form.locator('#invite-email')).toHaveValue('draft@sovereign.example');
     await page.keyboard.press('Escape');

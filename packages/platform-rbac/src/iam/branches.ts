@@ -293,7 +293,7 @@ export function updateBranchActionDefinition(): ActionDefinition<
     handler: async ({ ctx, input }) => {
       const { id, version, ...fields } = input;
       if (fields.parentBranchId === id) return err(validation('parentBranchId', 'BRANCH_TREE'));
-      const nameError = await defaultNameError(ctx.tx, fields, { thing: 'branch', id });
+      const nameError = await defaultNameError(ctx.tx, fields, { thing: 'branch', id, version });
       if (nameError) return err(nameError);
       return result(await updateBranch(ctx.tx, id, version, fields));
     },

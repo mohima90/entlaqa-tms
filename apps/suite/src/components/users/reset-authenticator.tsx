@@ -24,6 +24,8 @@ export interface ResetAuthenticatorLabels {
   readonly confirm: string;
   readonly resetting: string;
   readonly cancel: string;
+  /** «Close»: the ✕ in the corner — its own name, not «Cancel» again (two buttons, two names). */
+  readonly close: string;
   /** `{name}`: the member. */
   readonly done: string;
 }
@@ -123,7 +125,7 @@ export function ResetAuthenticator({
         tone="danger"
         title={labels.confirmTitle}
         description={named(labels.confirmText)}
-        closeLabel={labels.cancel}
+        closeLabel={labels.close}
         data-testid="user-mfa-reset-dialog"
         footer={
           <>

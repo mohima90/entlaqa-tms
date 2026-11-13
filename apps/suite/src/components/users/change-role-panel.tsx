@@ -493,6 +493,7 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
         }
         confirm={headText('replaceConfirm')}
         cancel={headText('cancel')}
+        close={text('close')}
         busy={pending}
         onConfirm={() => {
           send({ replaceHead: true, clearHeads: false });
@@ -508,6 +509,7 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
         body={headText('clearBody', { name: target.name, units: headedNames })}
         confirm={headText('clearConfirm')}
         cancel={headText('cancel')}
+        close={text('close')}
         busy={pending}
         onConfirm={() => {
           send({ replaceHead: false, clearHeads: true });

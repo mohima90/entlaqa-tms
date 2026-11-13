@@ -290,25 +290,33 @@ export async function listActivePersonOptions(tx: UserTx): Promise<readonly Pers
 export type NamedOrgThing = 'unit' | 'branch' | 'level' | 'cost_centre';
 
 /**
- * The two names of a unit, branch, level or cost centre as stored (null: not found, or deleted) — what the
- * default-language name rule compares a save with (packages/platform-rbac iam/default-language-name.ts: a
- * save that leaves the names as they are is not refused). Row-level security keeps it in the organization.
+ * The two names of a unit, branch, level or cost centre as stored, with the row's version (null: not found,
+ * or deleted) — what the default-language name rule compares a save with (packages/platform-rbac
+ * iam/default-language-name.ts: a save that leaves the names as they are is not refused; one made from an
+ * older version is left to the write, which answers the conflict). Row-level security keeps it in the
+ * organization.
  */
 export async function getStoredNames(
   tx: UserTx,
   thing: NamedOrgThing,
   id: string,
-): Promise<{ readonly nameAr: string | null; readonly nameEn: string | null } | null> {
+): Promise<{
+  readonly nameAr: string | null;
+  readonly nameEn: string | null;
+  readonly version: number;
+} | null> {
   const from = {
     unit: sql`platform.departments t where t.deleted_at is null and`,
     branch: sql`platform.branches t where t.deleted_at is null and`,
     level: sql`platform.structure_levels t where`,
     cost_centre: sql`platform.cost_centres t where`,
   }[thing];
-  const [row] = await tx.execute<{ name_ar: string | null; name_en: string | null }>(
-    sql`select t.name_ar, t.name_en from ${from} t.id = ${id}::uuid`,
-  );
-  return row ? { nameAr: row.name_ar, nameEn: row.name_en } : null;
+  const [row] = await tx.execute<{
+    name_ar: string | null;
+    name_en: string | null;
+    version: number;
+  }>(sql`select t.name_ar, t.name_en, t.version from ${from} t.id = ${id}::uuid`);
+  return row ? { nameAr: row.name_ar, nameEn: row.name_en, version: row.version } : null;
 }
 
 // ---------------------------------------------------------------------------------------------------

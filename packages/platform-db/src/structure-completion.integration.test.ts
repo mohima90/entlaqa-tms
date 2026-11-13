@@ -399,17 +399,20 @@ describe.skipIf(!configured)('structure completion against PostgreSQL', () => {
     const unitId = unitOutcome.ok ? (unitOutcome.after?.id ?? '') : '';
     const branchId = branchOutcome.ok ? (branchOutcome.after?.id ?? '') : '';
     const costId = cost.ok ? (cost.after?.id ?? '') : '';
-    expect(await asHr((tx) => getStoredNames(tx, 'unit', unitId))).toEqual({
+    expect(await asHr((tx) => getStoredNames(tx, 'unit', unitId))).toMatchObject({
       nameAr: null,
       nameEn: 'English only',
+      version: unitOutcome.ok ? unitOutcome.after?.version : -1,
     });
-    expect(await asHr((tx) => getStoredNames(tx, 'branch', branchId))).toEqual({
+    expect(await asHr((tx) => getStoredNames(tx, 'branch', branchId))).toMatchObject({
       nameAr: null,
       nameEn: 'English branch',
+      version: branchOutcome.ok ? branchOutcome.after?.version : -1,
     });
-    expect(await asHr((tx) => getStoredNames(tx, 'cost_centre', costId))).toEqual({
+    expect(await asHr((tx) => getStoredNames(tx, 'cost_centre', costId))).toMatchObject({
       nameAr: 'عربي',
       nameEn: null,
+      version: cost.ok ? cost.after?.version : -1,
     });
     expect(await asHr((tx) => getStoredNames(tx, 'unit', randomUUID()))).toBeNull();
 
@@ -422,9 +425,10 @@ describe.skipIf(!configured)('structure completion against PostgreSQL', () => {
       }),
     );
     expect(renamed.ok && renamed.after).toMatchObject({ nameEn: 'Section', nameAr: null });
-    expect(await asHr((tx) => getStoredNames(tx, 'level', level?.id ?? ''))).toEqual({
+    expect(await asHr((tx) => getStoredNames(tx, 'level', level?.id ?? ''))).toMatchObject({
       nameAr: null,
       nameEn: 'Section',
+      version: renamed.ok ? renamed.after?.version : -1,
     });
 
     // The import never clears a name: a name left undefined keeps the unit's name in that language.

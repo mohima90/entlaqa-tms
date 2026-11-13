@@ -162,6 +162,23 @@ describe('suggestUnitCode (the code the person need not think about, WP-FIX-02 #
     expect(fallbackUnitCode([])).toBe('UNIT');
     expect(fallbackUnitCode(['unit', 'UNIT-2', 'HR'])).toBe('UNIT-3');
   });
+
+  it('never runs out: the first free number, however many units have the code', () => {
+    const hundred = [
+      'UNIT',
+      ...Array.from({ length: 98 }, (_, index) => `UNIT-${String(index + 2)}`),
+    ];
+    expect(fallbackUnitCode(hundred)).toBe('UNIT-100');
+    expect(fallbackUnitCode([...hundred, 'unit-100', 'UNIT-101'])).toBe('UNIT-102');
+    // A gap is reused before a higher number.
+    expect(fallbackUnitCode(hundred.filter((code) => code !== 'UNIT-57'))).toBe('UNIT-57');
+    expect(
+      suggestUnitCode('Human Resources', [
+        'HR',
+        ...Array.from({ length: 150 }, (_, index) => `HR-${String(index + 2)}`),
+      ]),
+    ).toBe('HR-152');
+  });
 });
 
 describe('names in the organization’s default language only (PO, 12 Nov 2026)', () => {

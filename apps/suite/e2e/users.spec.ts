@@ -321,8 +321,9 @@ test.describe('users pages', () => {
     await page.keyboard.press('Escape');
     const discard = page.getByTestId('discard-dialog');
     await expect(discard).toContainText('Discard your changes?');
-    // The dialog's close button carries the same name (closing keeps editing): the footer button is last.
-    await discard.getByRole('button', { name: 'Keep editing' }).last().click();
+    // The ✕ is «Close» (it keeps editing too); «Keep editing» is the footer's button only.
+    await expect(discard.getByRole('button', { name: 'Close' })).toHaveCount(1);
+    await discard.getByRole('button', { name: 'Keep editing' }).click();
     await expect(panel).toBeVisible();
 
     // Sarah's employee number is taken: the field says so and nothing is saved
@@ -609,11 +610,7 @@ test.describe('users pages', () => {
     // Leaving with unsaved changes asks first.
     await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link').first().click();
     await expect(page.getByTestId('discard-dialog')).toBeVisible();
-    await page
-      .getByTestId('discard-dialog')
-      .getByRole('button', { name: 'Keep editing' })
-      .last()
-      .click();
+    await page.getByTestId('discard-dialog').getByRole('button', { name: 'Keep editing' }).click();
     await page.getByTestId('save-bar').getByRole('button', { name: 'Save role' }).click();
     await expect(page).toHaveURL(/\/en\/suite\/admin\/roles$/);
     await expect(toasts(page)).toContainText('Role saved.');

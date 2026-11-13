@@ -598,6 +598,7 @@ async function profilePage(
                 confirm: t('mfaResetConfirm'),
                 resetting: t('mfaResetting'),
                 cancel: t('mfaResetCancel'),
+                close: (await getTranslations({ locale, namespace: 'common' }))('close'),
                 done: t('mfaResetDone', { name: '{name}' }),
               }}
               errors={securityErrors}
@@ -970,6 +971,7 @@ async function editPanel(
     body: users('discardBody'),
     keepEditing: users('keepEditing'),
     discard: users('discard'),
+    close: editRoles('close'),
   };
   const result = await editUserQuery({ personId });
   if (!result.ok) {

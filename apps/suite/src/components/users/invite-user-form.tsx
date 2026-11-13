@@ -7,7 +7,7 @@ import { invitePrivilegedUserAction, inviteUserAction } from '../../actions/invi
 import { type ManagerChoice, managersFor } from '../../lib/edit-user-form';
 import { returnFocusTo } from '../../lib/focus-return';
 import { displayInviteCode } from '../../lib/invite-code';
-import { createdName, inviteFieldError } from '../../lib/invite-form';
+import { createdName, inviteFieldError, keptBehindMore } from '../../lib/invite-form';
 import { inviteLink } from '../../lib/invite-link';
 import {
   type RoleOption,
@@ -415,7 +415,9 @@ export function InviteUserPanel(props: InviteUserFormProps) {
                 onClick={() => {
                   setCreated(null);
                   setDirty(false);
-                  setMore(false);
+                  // «More» stays open while something behind it is kept (a department, a branch or a
+                  // manager): a kept choice is never out of sight in the next invitation.
+                  setMore(keptBehindMore({ departmentId, branchId, managerId }));
                   setFieldErrors({});
                   setMessage(null);
                   // Kept from the last invitation: placement, role and language (redesign package 3).
@@ -761,6 +763,7 @@ export function InviteUserPanel(props: InviteUserFormProps) {
         })()}
         confirm={headText('replaceConfirm')}
         cancel={headText('cancel')}
+        close={text('close')}
         busy={pending}
         onConfirm={() => {
           if (askReplace) send({ ...askReplace, replaceHead: true });

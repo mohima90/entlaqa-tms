@@ -12,6 +12,8 @@ export interface DiscardTexts {
   readonly body: string;
   readonly keepEditing: string;
   readonly discard: string;
+  /** «Close»: the ✕ in the corner (it keeps editing too) — its own name, not «Keep editing» again. */
+  readonly close: string;
 }
 
 /** «Discard your changes?» before a panel with unsaved changes closes (Clerk's unsaved bar). */
@@ -33,7 +35,7 @@ export function DiscardDialog({
       tone="warning"
       title={texts.title}
       description={texts.body}
-      closeLabel={texts.keepEditing}
+      closeLabel={texts.close}
       size="sm"
       data-testid="discard-dialog"
       footer={

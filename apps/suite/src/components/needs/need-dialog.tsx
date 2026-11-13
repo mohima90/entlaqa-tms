@@ -540,6 +540,7 @@ export function NeedDialog(props: NeedDialogProps) {
           body: t('panel.discardBody'),
           keepEditing: t('keepEditing'),
           discard: t('discardChanges'),
+          close: t('panel.close'),
         }}
         onKeep={() => {
           setAsking(false);

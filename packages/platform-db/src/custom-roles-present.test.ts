@@ -4,7 +4,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   englishOnlyNamesExist,
   forgetSchemaPresenceForTests,
+  oneNameStructureExists,
   storableArabicDisplayName,
+  storableStructureNames,
   structureLevelsExistCached,
 } from './custom-roles-present';
 
@@ -74,6 +76,45 @@ describe('storableArabicDisplayName', () => {
 
   it('after it: no Arabic display name', async () => {
     await expect(storableArabicDisplayName(catalog(true).tx, null, 'Sara Ali')).resolves.toBeNull();
+  });
+});
+
+describe('oneNameStructureExists / storableStructureNames (deploy window of 20261113100000)', () => {
+  it('reads whether departments.name_ar still refuses NULL; asked once per process once it does not', async () => {
+    const db = catalog(false, true);
+    await expect(oneNameStructureExists(db.tx)).resolves.toBe(false);
+    await expect(oneNameStructureExists(db.tx)).resolves.toBe(true);
+    await expect(oneNameStructureExists(db.tx)).resolves.toBe(true);
+    expect(db.asked).toHaveLength(2);
+    expect(db.asked[0]).toContain('not a.attnotnull');
+    expect(db.asked[0]).toContain("a.attname = 'name_ar'");
+    expect(db.asked[0]).toContain("to_regclass('platform.departments')");
+    forgetSchemaPresenceForTests();
+    // No answer: the old schema.
+    await expect(oneNameStructureExists(catalog().tx)).resolves.toBe(false);
+  });
+
+  it('before the migration: the given name fills the Arabic slot (levels: the English slot too)', async () => {
+    const english = { nameAr: null, nameEn: 'Sales' };
+    const arabic = { nameAr: 'المبيعات', nameEn: null };
+    await expect(storableStructureNames(catalog(false).tx, english)).resolves.toEqual({
+      nameAr: 'Sales',
+      nameEn: 'Sales',
+    });
+    // A unit's and a branch's English name was optional already.
+    await expect(storableStructureNames(catalog(false).tx, arabic)).resolves.toEqual(arabic);
+    await expect(storableStructureNames(catalog(false).tx, arabic, true)).resolves.toEqual({
+      nameAr: 'المبيعات',
+      nameEn: 'المبيعات',
+    });
+  });
+
+  it('after it: the names as given', async () => {
+    const db = catalog(true);
+    const english = { nameAr: null, nameEn: 'Sales' };
+    await expect(storableStructureNames(db.tx, english)).resolves.toEqual(english);
+    await expect(storableStructureNames(db.tx, english, true)).resolves.toEqual(english);
+    expect(db.asked).toHaveLength(1);
   });
 });
 

@@ -16,6 +16,7 @@ import {
 const encode = (text: string) => new TextEncoder().encode(text);
 
 const CONTEXT: UnitImportContext = {
+  nameLanguage: 'en',
   levels: [
     { ordinal: 1, nameEn: 'Sector', nameAr: 'قطاع' },
     { ordinal: 2, nameEn: 'Department', nameAr: 'إدارة' },
@@ -100,6 +101,19 @@ describe('readUnitFile', () => {
       problem: 'FILE_UNREADABLE',
     });
   });
+
+  it('reads a file with one name column only (the other language is optional)', async () => {
+    const english = await readUnitFile(encode('Level,Code,Name (English)\nSector,HR,People\n'));
+    expect(english.ok && english.columns).toEqual(['level', 'code', 'nameEn']);
+    expect(english.ok && english.rows[0]?.cells).toMatchObject({ nameEn: 'People', nameAr: '' });
+    const arabic = await readUnitFile(encode('المستوى,الرمز,الاسم (عربي)\nقطاع,HR,الموارد\n'));
+    expect(arabic.ok && arabic.columns).toEqual(['level', 'code', 'nameAr']);
+    // Neither name column: refused.
+    expect(await readUnitFile(encode('Level,Code,Parent code\nSector,HR,\n'))).toEqual({
+      ok: false,
+      problem: 'FILE_COLUMNS',
+    });
+  });
 });
 
 describe('checkUnitRows (EP-ORG-structure-completion §3 D)', () => {
@@ -149,7 +163,8 @@ describe('checkUnitRows (EP-ORG-structure-completion §3 D)', () => {
         unit('bad code', 'Sector'),
         unit('S1', 'Sector'),
         unit('S1', 'Sector'),
-        row({ code: 'S2', level: 'Sector', nameEn: 'Only English' }),
+        // English is the organization's default language: a row with an Arabic name only is refused.
+        row({ code: 'S2', level: 'Sector', nameAr: 'بالعربية فقط' }),
         unit('S3', 'Sector', 'OPS'),
         unit('D1', 'Department'),
         unit('D2', 'Department', 'NOPE'),
@@ -240,6 +255,66 @@ describe('checkUnitRows (EP-ORG-structure-completion §3 D)', () => {
   it('counts a name of invisible characters as missing', () => {
     const check = checkUnitRows([unit('S7', 'Sector', '', { nameEn: '\u200b ' })], CONTEXT);
     expect(check.rows[0]?.issue).toBe('NAME_REQUIRED');
+  });
+
+  it("requires the name in the organization's default language only (PO, 12 Nov 2026)", () => {
+    // English default: the Arabic name is optional — a new unit is created without it.
+    const english = checkUnitRows(
+      [
+        row({ code: 'S2', level: 'Sector', nameEn: 'Only English' }),
+        row({ code: 'S3', level: 'Sector', nameEn: 'Both', nameAr: '\u200b' }),
+      ],
+      CONTEXT,
+    );
+    expect(english.rows.map((r) => [r.result, r.issue, r.name])).toEqual([
+      ['new', null, 'Only English'],
+      ['new', null, 'Both'],
+    ]);
+    expect(english.operations).toMatchObject([
+      { kind: 'create', code: 'S2', nameEn: 'Only English', nameAr: null },
+      // An optional name of invisible characters only counts as not given.
+      { kind: 'create', code: 'S3', nameEn: 'Both', nameAr: null },
+    ]);
+
+    // Arabic default: the other way round; the result names the row by its Arabic name.
+    const arabicContext: UnitImportContext = { ...CONTEXT, nameLanguage: 'ar' };
+    const arabic = checkUnitRows(
+      [
+        row({ code: 'S4', level: 'قطاع', nameAr: 'بالعربية فقط' }),
+        row({ code: 'S5', level: 'Sector', nameEn: 'Only English' }),
+      ],
+      arabicContext,
+    );
+    expect(arabic.rows.map((r) => [r.result, r.issue, r.name])).toEqual([
+      ['new', null, 'بالعربية فقط'],
+      ['problem', 'NAME_REQUIRED', 'Only English'],
+    ]);
+    expect(arabic.operations).toMatchObject([
+      { kind: 'create', code: 'S4', nameEn: null, nameAr: 'بالعربية فقط' },
+    ]);
+
+    // An existing unit: an empty name cell (or no such column) keeps the unit's name — never cleared.
+    const update = checkUnitRows(
+      [row({ code: 'FIN', level: 'Department', nameEn: 'Finance' })],
+      CONTEXT,
+      ['level', 'code', 'nameEn'],
+    );
+    expect(update.operations[0]).toMatchObject({ kind: 'update', nameEn: 'Finance' });
+    expect(update.operations[0]).toHaveProperty('nameAr', undefined);
+  });
+
+  it('finds a level that is named in one language only', () => {
+    const context: UnitImportContext = {
+      ...CONTEXT,
+      levels: [
+        { ordinal: 1, nameEn: 'Sector', nameAr: null },
+        { ordinal: 2, nameEn: null, nameAr: 'إدارة' },
+      ],
+    };
+    const check = checkUnitRows([unit('N1', 'sector'), unit('N2', 'إدارة', 'N1')], context);
+    expect(check.rows.map((r) => r.result)).toEqual(['new', 'new']);
+    // «null» is never a level's name.
+    expect(checkUnitRows([unit('N3', 'null')], context).rows[0]?.issue).toBe('LEVEL_UNKNOWN');
   });
 
   it('reports the columns the file has', async () => {

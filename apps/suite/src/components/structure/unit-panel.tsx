@@ -1,11 +1,11 @@
 'use client';
-import { Alert, Button, Icon, SidePanel, TextField, toast } from '@jadarat/ui';
+import { Alert, Button, Dialog, Icon, TextField, toast } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
-import { type SyntheticEvent, useState, useTransition } from 'react';
+import { type SyntheticEvent, useCallback, useState, useTransition } from 'react';
 import { createStructureUnitAction, updateStructureUnitAction } from '../../actions/structure';
 import { fillText } from '../../lib/fill-text';
-import { unitFieldText } from '../../lib/structure-form';
-import { suggestUnitCode, unitDeleteBlockers } from '../../lib/structure-view';
+import { nameOrder, unitFieldText } from '../../lib/structure-form';
+import { fallbackUnitCode, suggestUnitCode, unitDeleteBlockers } from '../../lib/structure-view';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { SelectField } from '../select-field';
@@ -18,9 +18,10 @@ export interface UnitView {
   readonly id: string;
   readonly parentId: string | null;
   readonly code: string;
-  readonly nameAr: string;
+  /** One of the two names may be missing, never both (the default language's name is required). */
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
-  /** In the page's language (Arabic when no English name was given). */
+  /** In the page's language, else the name that exists. */
   readonly name: string;
   readonly levelName: string;
   /** The level below (what «Add <next level>» adds), or null at the last level. */
@@ -70,8 +71,13 @@ export interface UnitPanelProps {
   readonly texts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
   readonly locale: 'ar' | 'en';
+  /**
+   * The organization's default language: its name is required and asked first; the other language's name
+   * is optional (PO, 12 Nov 2026).
+   */
+  readonly nameLanguage: 'ar' | 'en';
   readonly onClose: () => void;
-  /** After adding: the next step the person chose (the tree opens the next panel). */
+  /** After adding: the next step the person chose (the tree opens the next popup). */
   readonly onFollowUp?: ((next: UnitFollowUp) => void) | undefined;
   /** Edit: deactivate or activate the unit (the tree runs it, with Undo or its confirmation). */
   readonly onStatus?: ((unit: UnitView) => void) | undefined;
@@ -82,14 +88,15 @@ export interface UnitPanelProps {
 const FORM_ID = 'unit-form';
 
 /**
- * Add or edit a unit (FR-ADM-05, EP-ORG) in a side panel with the tree still in view. The form follows the
- * Kawadir pattern the PO asked for (role-play feedback #12, 27 Oct 2026): adding asks for the names only,
- * one field per row; the code is suggested from the English name and the branch is the parent's; code,
- * branch, head and default cost centre wait under «More options». Once added, the panel offers the next
- * step — a unit of the level below, another of the same level — or closes. Its level follows from where it
- * sits: at the top, or one level below its parent (the database decides and refuses a unit below the last
- * level). Editing shows every field, plus Deactivate and Delete with their consequences — Delete with what
- * still depends on the unit, and only offered when nothing does.
+ * Add or edit a unit (FR-ADM-05, EP-ORG) in one centred popup (448 px; forms standard rule 9 — the Kawadir
+ * pattern, PO 12 Nov 2026; before: a side panel). Adding asks for the names only, one field per row: the
+ * name in the organization's default language first and required, the other language optional; the code is
+ * suggested from the English name (a neutral one for a unit named in Arabic only) and the branch is the
+ * parent's; code, branch, head and default cost centre wait under «More options». Once added, the popup
+ * offers the next step — a unit of the level below, another of the same level — or closes. Its level
+ * follows from where it sits: at the top, or one level below its parent (the database decides and refuses
+ * a unit below the last level). Editing shows every field, plus Deactivate and Delete with their
+ * consequences — Delete with what still depends on the unit, and only offered when nothing does.
  */
 export function UnitPanel({
   mode,
@@ -101,6 +108,7 @@ export function UnitPanel({
   texts,
   errors,
   locale,
+  nameLanguage,
   onClose,
   onFollowUp,
   onStatus,
@@ -116,6 +124,8 @@ export function UnitPanel({
   const [failure, setFailure] = useState<Failure>({ fields: {}, message: null });
   // Closing goes through the native dialog (focus returns to the button that opened it).
   const [open, setOpen] = useState(true);
+  // Escape, ✕ and the backdrop wait while the unit is being saved.
+  const canClose = useCallback(() => !pending, [pending]);
   const [after, setAfter] = useState<(() => void) | null>(null);
   const unit = mode.kind === 'edit' ? mode.unit : null;
   const parent = mode.kind === 'create' ? mode.parent : null;
@@ -123,9 +133,13 @@ export function UnitPanel({
   const [branchId, setBranchId] = useState(unit?.branchId ?? parent?.branchId ?? '');
   const [headPersonId, setHeadPersonId] = useState(unit?.headPersonId ?? '');
   const [defaultCostCentreId, setDefaultCostCentreId] = useState(unit?.defaultCostCentreId ?? '');
-  // The code follows the English name until the person types one themselves (then it is theirs).
+  // The code follows the English name until the person types one themselves (then it is theirs); a unit
+  // named in Arabic only gets a neutral code («UNIT», «UNIT-2»…).
   const [code, setCode] = useState(unit?.code ?? '');
   const [codeTouched, setCodeTouched] = useState(mode.kind === 'edit');
+  const suggestedCode = (nameEn: string, nameAr: string) =>
+    suggestUnitCode(nameEn, existingCodes) ||
+    (nameAr.trim() === '' ? '' : fallbackUnitCode(existingCodes));
   // «More options» starts closed when adding; a refused field inside opens it.
   const [more, setMore] = useState(mode.kind === 'edit');
   // Added: the name and id of the new unit; the panel then offers the next step.
@@ -179,10 +193,11 @@ export function UnitPanel({
       return typeof value === 'string' ? value : '';
     };
     const nameEn = field('nameEn');
+    const nameAr = field('nameAr');
     const fields = {
-      code: codeTouched ? code : suggestUnitCode(nameEn, existingCodes),
+      code: codeTouched ? code : suggestedCode(nameEn, nameAr),
       nameEn,
-      nameAr: field('nameAr'),
+      nameAr,
       branchId,
       headPersonId,
       defaultCostCentreId,
@@ -198,7 +213,12 @@ export function UnitPanel({
               version: mode.unit.version,
             });
       if (result.ok) {
-        const name = locale === 'en' ? fields.nameEn.trim() : fields.nameAr.trim();
+        // In the page's language, else the name that was given.
+        const name = (
+          locale === 'en'
+            ? fields.nameEn.trim() || fields.nameAr
+            : fields.nameAr.trim() || fields.nameEn
+        ).trim();
         router.refresh();
         // The new head and the Department Head role (WP-FIX-03, «either door does both»): said at once.
         const headRole = result.value.headRole ?? null;
@@ -248,20 +268,56 @@ export function UnitPanel({
   const blockers = unit ? unitDeleteBlockers(unit) : [];
   const showAll = mode.kind === 'edit' || more;
 
+  const nameField = (language: 'ar' | 'en') => {
+    const key = language === 'ar' ? 'nameAr' : 'nameEn';
+    const required = language === nameLanguage;
+    return (
+      <TextField
+        key={key}
+        id={`unit-${key}`}
+        name={key}
+        label={text(`form.${key}`)}
+        marker={text(required ? 'required' : 'optional')}
+        required={required}
+        dir={language === 'ar' ? 'rtl' : 'ltr'}
+        lang={language}
+        maxLength={200}
+        autoComplete="off"
+        defaultValue={(language === 'ar' ? unit?.nameAr : unit?.nameEn) ?? ''}
+        onChange={(event) => {
+          if (codeTouched) return;
+          const other = event.currentTarget.form?.elements.namedItem(
+            language === 'ar' ? 'nameEn' : 'nameAr',
+          );
+          const otherValue = other instanceof HTMLInputElement ? other.value : '';
+          setCode(
+            language === 'en'
+              ? suggestedCode(event.target.value, otherValue)
+              : suggestedCode(otherValue, event.target.value),
+          );
+        }}
+        error={failure.fields[key]}
+        disabled={pending}
+      />
+    );
+  };
+
   return (
-    <SidePanel
+    <Dialog
       open={open}
       onClose={() => {
         onClose();
         after?.();
       }}
+      canClose={canClose}
+      size="sm"
       title={added ? fill('form.addedTitle', { name: added.name }) : title}
       description={added ? text('form.addedDescription') : description}
       closeLabel={text('form.close')}
       data-testid="unit-dialog"
       footer={
         added ? (
-          <div className="ms-auto flex flex-wrap gap-2.5">
+          <>
             <Button
               variant="secondary"
               onClick={() => {
@@ -298,53 +354,44 @@ export function UnitPanel({
                 {fill('form.addUnder', { level: nextLevelName })}
               </Button>
             ) : null}
-          </div>
+          </>
         ) : (
           <>
-            <p className="m-0 flex w-full items-center gap-2 text-[13px] text-text-muted">
-              <Icon name="shield-outline" />
-              {text('form.audited')}
-            </p>
-            <div className="ms-auto flex gap-2.5">
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setOpen(false);
-                }}
-                disabled={pending}
-              >
-                {text('form.cancel')}
-              </Button>
-              <Button
-                type="submit"
-                form={FORM_ID}
-                disabled={pending}
-                aria-busy={pending || undefined}
-                data-testid="unit-dialog-submit"
-              >
-                {pending
-                  ? text('form.saving')
-                  : mode.kind === 'create'
-                    ? text('form.create')
-                    : text('form.save')}
-              </Button>
-            </div>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setOpen(false);
+              }}
+              disabled={pending}
+            >
+              {text('form.cancel')}
+            </Button>
+            <Button
+              type="submit"
+              form={FORM_ID}
+              disabled={pending}
+              aria-busy={pending || undefined}
+              data-testid="unit-dialog-submit"
+            >
+              {pending
+                ? text('form.saving')
+                : mode.kind === 'create'
+                  ? text('form.create')
+                  : text('form.save')}
+            </Button>
           </>
         )
       }
     >
       {added ? (
         <div
-          className="flex flex-col items-center gap-3 py-8 text-center"
+          className="flex flex-col items-center gap-3 py-4 text-center"
           role="status"
           data-testid="unit-dialog-added"
         >
           <span className="grid size-14 place-items-center rounded-full bg-success-subtle text-success">
             <Icon name="check" className="size-7" />
           </span>
-          <p className="m-0 text-lg font-semibold">
-            {fill('form.addedTitle', { name: added.name })}
-          </p>
           <p className="m-0 max-w-[36ch] text-sm text-text-muted">
             {nextLevelName
               ? fill('form.addedNext', { level: nextLevelName, name: added.name })
@@ -353,41 +400,12 @@ export function UnitPanel({
         </div>
       ) : (
         <form id={FORM_ID} className="flex flex-col gap-4" onSubmit={onSubmit} noValidate>
-          <TextField
-            id="unit-nameEn"
-            name="nameEn"
-            label={text('form.nameEn')}
-            marker={text('required')}
-            required
-            dir="ltr"
-            lang="en"
-            maxLength={200}
-            autoComplete="off"
-            defaultValue={unit?.nameEn ?? ''}
-            onChange={(event) => {
-              if (!codeTouched) setCode(suggestUnitCode(event.target.value, existingCodes));
-            }}
-            error={failure.fields.nameEn}
-            disabled={pending}
-          />
-          <TextField
-            id="unit-nameAr"
-            name="nameAr"
-            label={text('form.nameAr')}
-            marker={text('required')}
-            required
-            dir="rtl"
-            lang="ar"
-            maxLength={200}
-            autoComplete="off"
-            defaultValue={unit?.nameAr ?? ''}
-            error={failure.fields.nameAr}
-            disabled={pending}
-          />
+          {/* The organization's default language first (required), then the other one (optional). */}
+          {nameOrder(nameLanguage).map(nameField)}
           {mode.kind === 'create' ? (
             <button
               type="button"
-              className="flex min-h-10 items-center gap-1.5 self-start rounded-full px-2 text-sm font-semibold text-primary-text hover:bg-primary-subtle"
+              className="flex min-h-10 flex-wrap items-center gap-1.5 self-start rounded-full px-2 text-start text-sm font-semibold text-primary-text hover:bg-primary-subtle pointer-coarse:min-h-11"
               aria-expanded={more}
               aria-controls="unit-more"
               onClick={() => {
@@ -397,12 +415,14 @@ export function UnitPanel({
             >
               <Icon name={more ? 'chevron-down' : 'chevron-end'} />
               {text('form.more')}
-              <span className="font-normal text-text-muted">
-                {' · '}
-                {parentBranch
-                  ? fill('form.moreSummaryBranch', { code, branch: parentBranch })
-                  : fill('form.moreSummary', { code })}
-              </span>
+              {code !== '' || parentBranch ? (
+                <span className="font-normal text-text-muted">
+                  {' · '}
+                  {parentBranch
+                    ? fill('form.moreSummaryBranch', { code, branch: parentBranch })
+                    : fill('form.moreSummary', { code })}
+                </span>
+              ) : null}
             </button>
           ) : null}
           <div id="unit-more" className={showAll ? 'flex flex-col gap-4' : 'hidden'}>
@@ -555,8 +575,12 @@ export function UnitPanel({
               ) : null}
             </div>
           ) : null}
+          <p className="m-0 flex items-start gap-2 text-[13px] text-text-muted">
+            <Icon name="shield-outline" className="mt-0.5 shrink-0" />
+            {text('form.audited')}
+          </p>
         </form>
       )}
-    </SidePanel>
+    </Dialog>
   );
 }

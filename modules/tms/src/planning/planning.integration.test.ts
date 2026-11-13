@@ -2,7 +2,8 @@
  * Planning cycles end to end against PostgreSQL (EP-PLN, T-M3-04): the real definitions, the production
  * runtime (grants from role assignments, audit events) and withUserTx as app_server — so the repository's
  * SQL, row-level security, the manage-permission policies and the state guard all run. Two organizations;
- * the L&D Manager sets up and launches a cycle, the Training Coordinator reads, nobody crosses tenants.
+ * the L&D Manager creates a cycle with its departments, launches it — without an approval chain (EP-PLN
+ * §13 e; migration 20261112110000) — and extends it; the Training Coordinator reads, nobody crosses tenants.
  */
 import { randomUUID } from 'node:crypto';
 import { ok } from '@jadarat/platform-core';
@@ -134,11 +135,22 @@ describe.skipIf(!configured)('planning cycles against PostgreSQL', () => {
     await serverDb.$client.end();
   });
 
-  it('the L&D Manager sets up, launches and extends a cycle; the coordinator follows its progress', async () => {
+  it('the L&D Manager creates, launches and extends a cycle; the coordinator follows its progress', async () => {
     const lnd = as(people.lnd);
-    const fresh = await lnd.query(defs.newPlanCycleQueryDefinition())({});
-    if (!fresh.ok) throw new Error(fresh.error.code);
-    const { today } = fresh.value;
+    // The list gives the popup its choices: the suggested period and deadline, the structure with heads.
+    const empty = await lnd.query(defs.planCyclesListQueryDefinition())({});
+    if (!empty.ok) throw new Error(empty.error.code);
+    const { today } = empty.value;
+    const setup = empty.value.setup;
+    if (!setup) throw new Error('the L&D Manager gets the set-up choices');
+    const fresh = { value: { defaults: setup.defaults } };
+    expect(setup.units.map((u) => [u.name.en, u.depth, u.head?.name.en ?? null])).toEqual([
+      // Tree order: siblings by Arabic name (العمليات before المبيعات), sub-units under their parent.
+      ['Operations', 0, null],
+      ['Sales', 0, `Person ${String(Object.keys(people).indexOf('head'))}`],
+      [null, 1, `Person ${String(Object.keys(people).indexOf('head'))}`],
+    ]);
+    // One popup: the cycle and its departments in the same transaction.
     const created = await lnd.action(defs.createPlanCycleActionDefinition())({
       nameAr: 'خطة السنة القادمة',
       nameEn: 'Next year plan',
@@ -146,11 +158,37 @@ describe.skipIf(!configured)('planning cycles against PostgreSQL', () => {
       periodEnd: fresh.value.defaults.periodEnd,
       deadline: fresh.value.defaults.deadline,
       instructionsEn: 'Tell us what your team needs.',
+      departmentIds: [dept.sales],
     });
     if (!created.ok) throw new Error(created.error.code);
+    expect(created.value.departmentCount).toBe(2);
     const cycleId = created.value.id;
     let version = created.value.version;
 
+    // Another organization's department is unknown here: nothing is created.
+    const foreignScope = await lnd.action(defs.createPlanCycleActionDefinition())({
+      nameAr: null,
+      nameEn: 'With a foreign department',
+      ...fresh.value.defaults,
+      departmentIds: [dept.foreign],
+    });
+    expect(!foreignScope.ok && foreignScope.error.fieldErrors).toEqual([
+      { path: 'departmentIds.0', code: 'UNKNOWN' },
+    ]);
+
+    // The row menu of the draft: its version, scope and readiness come with the list.
+    const listed = await lnd.query(defs.planCyclesListQueryDefinition())({});
+    if (!listed.ok) throw new Error(listed.error.code);
+    expect(listed.value.cycles.map((c) => [c.id, c.status, c.departmentCount])).toEqual([
+      [cycleId, 'draft', 2],
+    ]);
+    expect(listed.value.cycles[0]?.draft).toMatchObject({
+      version,
+      scope: { departmentIds: [dept.sales], branchIds: [] },
+      problems: [],
+    });
+
+    // Settings → «Add or remove departments».
     const scope = await lnd.action(defs.savePlanCycleScopeActionDefinition())({
       id: cycleId,
       version,
@@ -179,49 +217,16 @@ describe.skipIf(!configured)('planning cycles against PostgreSQL', () => {
     if (!budgets.ok) throw new Error(budgets.error.code);
     version = budgets.value.version;
 
-    // The default chain has no named people yet: not ready.
-    const early = await lnd.action(defs.launchPlanCycleActionDefinition())({
-      id: cycleId,
-      version,
-    });
-    expect(!early.ok && early.error.code).toBe('PLAN_CYCLE_NOT_READY');
-
-    const steps = await lnd.action(defs.savePlanCycleStepsActionDefinition())({
-      id: cycleId,
-      version,
-      steps: [
-        {
-          kind: 'department_heads',
-          nameAr: 'رؤساء الأقسام',
-          nameEn: 'Department Heads',
-          approverPersonId: null,
-        },
-        {
-          kind: 'person',
-          nameAr: 'اعتماد المالية',
-          nameEn: 'Finance approval',
-          approverPersonId: people.cfo.person,
-        },
-        {
-          kind: 'person',
-          nameAr: 'اعتماد الإدارة',
-          nameEn: 'Management approval',
-          approverPersonId: people.gm.person,
-        },
-      ],
-    });
-    if (!steps.ok) throw new Error(steps.error.code);
-    version = steps.value.version;
-
-    const foreignApprover = await lnd.action(defs.savePlanCycleStepsActionDefinition())({
-      id: cycleId,
-      version,
-      steps: [
-        { kind: 'person', nameAr: 'م', nameEn: 'F', approverPersonId: people.otherLnd.person },
-      ],
-    });
-    expect(!foreignApprover.ok && foreignApprover.error.fieldErrors).toEqual([
-      { path: 'steps.0.approverPersonId', code: 'NOT_A_MEMBER' },
+    // The cycle stores a copy of the default chain, whose person steps name nobody. Nothing asks for it
+    // any more (EP-PLN §13 e): the launch below goes through with it as it is.
+    const storedChain = () =>
+      ownerDb.execute<{ kind: string; approver_person_id: string | null }>(sql`
+        select kind, approver_person_id from tms.plan_cycle_steps
+        where tenant_id = ${tenant} and cycle_id = ${cycleId} order by position`);
+    expect((await storedChain()).map((row) => [row.kind, row.approver_person_id])).toEqual([
+      ['department_heads', null],
+      ['person', null],
+      ['person', null],
     ]);
 
     const reminders = await lnd.action(defs.savePlanCycleRemindersActionDefinition())({
@@ -234,7 +239,9 @@ describe.skipIf(!configured)('planning cycles against PostgreSQL', () => {
 
     const draft = await lnd.query(defs.planCycleQueryDefinition())({ id: cycleId });
     if (!draft.ok) throw new Error(draft.error.code);
+    // Ready with a deadline, a needs form and departments — the unnamed chain stops nothing.
     expect(draft.value.problems).toEqual([]);
+    expect(draft.value).not.toHaveProperty('steps');
     expect(draft.value.cycle.reminderDays).toEqual([10, 2]);
     expect(draft.value.cycle.currency).toBe('SAR');
     expect(
@@ -261,6 +268,8 @@ describe.skipIf(!configured)('planning cycles against PostgreSQL', () => {
     });
     if (!launched.ok) throw new Error(launched.error.code);
     version = launched.value.version;
+    // The stored chain is kept as it was (ignored, not deleted).
+    expect(await storedChain()).toHaveLength(3);
 
     const progress = await coordinator.query(defs.planCycleQueryDefinition())({ id: cycleId });
     if (!progress.ok) throw new Error(progress.error.code);
@@ -300,6 +309,16 @@ describe.skipIf(!configured)('planning cycles against PostgreSQL', () => {
       deadline: today,
     });
     if (!second.ok) throw new Error(second.error.code);
+    // Nothing picked in the popup and another cycle open: the launch is refused, and the list says both.
+    const noScope = await lnd.action(defs.launchPlanCycleActionDefinition())({
+      id: second.value.id,
+      version: second.value.version,
+    });
+    expect(!noScope.ok && noScope.error).toMatchObject({ code: 'PLAN_CYCLE_OPEN_EXISTS' });
+    const secondList = await lnd.query(defs.planCyclesListQueryDefinition())({});
+    expect(
+      secondList.ok && secondList.value.cycles.find((c) => c.id === second.value.id)?.draft,
+    ).toMatchObject({ problems: ['no_departments', 'another_open'] });
     const secondScope = await lnd.action(defs.savePlanCycleScopeActionDefinition())({
       id: second.value.id,
       version: second.value.version,
@@ -339,7 +358,6 @@ describe.skipIf(!configured)('planning cycles against PostgreSQL', () => {
         'tms.plan_cycle.created',
         'tms.plan_cycle.scope_changed',
         'tms.plan_cycle.budgets_changed',
-        'tms.plan_cycle.approval_chain_changed',
         'tms.plan_cycle.reminders_changed',
         'tms.plan_cycle.launched',
         'tms.plan_cycle.deadline_extended',
@@ -366,40 +384,40 @@ describe.skipIf(!configured)('planning cycles against PostgreSQL', () => {
     }
   });
 
-  it('saves the planning settings; a new cycle copies them', async () => {
+  it('saves the planning settings (default reminders); a stored default chain is left alone', async () => {
     const lnd = as(people.lnd);
+    // A default chain saved before the change (the screens no longer edit it — EP-PLN §13).
+    await ownerDb.execute(sql`
+      insert into tms.planning_default_steps (tenant_id, position, kind, name_ar, name_en, approver_person_id)
+      values (${tenant}, 1, 'person', 'اعتماد المالية', 'Finance approval', ${people.cfo.person})`);
     const saved = await lnd.action(defs.savePlanningSettingsActionDefinition())({
       reminderDays: [14, 3],
-      steps: [
-        {
-          kind: 'person',
-          nameAr: 'اعتماد المالية',
-          nameEn: 'Finance approval',
-          approverPersonId: people.cfo.person,
-        },
-      ],
     });
     if (!saved.ok) throw new Error(saved.error.code);
     const view = await lnd.query(defs.planningSettingsQueryDefinition())({});
-    expect(view.ok && view.value.steps.map((s) => s.approverName?.en)).toEqual(['Person 3']);
-    const fresh = await lnd.query(defs.newPlanCycleQueryDefinition())({});
-    if (!fresh.ok) throw new Error(fresh.error.code);
+    expect(view.ok && view.value).toEqual({ reminderDays: [14, 3], canManage: true });
+    const defaults = await ownerDb.execute<{ approver_person_id: string | null }>(sql`
+      select approver_person_id from tms.planning_default_steps where tenant_id = ${tenant}`);
+    expect(defaults.map((row) => row.approver_person_id)).toEqual([people.cfo.person]);
+    const list = await lnd.query(defs.planCyclesListQueryDefinition())({});
+    if (!list.ok || !list.value.setup) throw new Error('the L&D Manager gets the set-up choices');
     const created = await lnd.action(defs.createPlanCycleActionDefinition())({
       nameAr: 'خطة',
       nameEn: 'Plan',
-      ...fresh.value.defaults,
+      ...list.value.setup.defaults,
     });
     if (!created.ok) throw new Error(created.error.code);
     const cycle = await lnd.query(defs.planCycleQueryDefinition())({ id: created.value.id });
     expect(cycle.ok && cycle.value.cycle.reminderDays).toEqual([14, 3]);
-    expect(cycle.ok && cycle.value.steps.map((s) => s.approverPersonId)).toEqual([
-      people.cfo.person,
-    ]);
+    // Data as before: the new cycle still stores a copy of the default chain (nobody reads it).
+    const copied = await ownerDb.execute<{ approver_person_id: string | null }>(sql`
+      select approver_person_id from tms.plan_cycle_steps
+      where tenant_id = ${tenant} and cycle_id = ${created.value.id}`);
+    expect(copied.map((row) => row.approver_person_id)).toEqual([people.cfo.person]);
     const coordinator = await as(people.coordinator).action(
       defs.savePlanningSettingsActionDefinition(),
     )({
       reminderDays: [1],
-      steps: [{ kind: 'department_heads', nameAr: 'ر', nameEn: 'H', approverPersonId: null }],
     });
     expect(!coordinator.ok && coordinator.error.code).toBe('FORBIDDEN');
   });

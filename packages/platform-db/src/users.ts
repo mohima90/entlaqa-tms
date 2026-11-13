@@ -57,7 +57,8 @@ export type MembershipStatus = 'active' | 'invited' | 'suspended';
 /** The unit a department-limited custom role was given for (EP-ORG, T-M3-09). */
 export interface RoleScopeUnit {
   readonly id: string;
-  readonly nameAr: string;
+  /** One of the two names may be missing, never both (migration 20261113100000). */
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
   /** Its level (ordinal; the list names it when levels mix, guided-test feedback #3). */
   readonly levelOrdinal?: number | null;

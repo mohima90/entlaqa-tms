@@ -19,7 +19,7 @@ import { SuiteShell } from '../../../../../components/suite-shell';
 import { flattenTexts } from '../../../../../lib/flatten-texts';
 import { profileErrorTexts } from '../../../../../lib/profile-texts';
 import { costCentresPageQuery, structurePageQuery } from '../../../../../lib/structure-queries';
-import { levelName, nextLevel } from '../../../../../lib/structure-view';
+import { levelLabel, levelName, nextLevel } from '../../../../../lib/structure-view';
 import { getSuiteContext } from '../../../../../lib/suite-context';
 import { localizedName } from '../../../../../lib/users-view';
 
@@ -139,6 +139,7 @@ export default async function StructurePage({
           header={header}
           notice={content}
           live={context.live}
+          nameLanguage={context.regional.defaultLocale}
         />
       ) : (
         <>
@@ -157,12 +158,18 @@ async function Structure({
   header,
   notice,
   live,
+  nameLanguage,
 }: {
   locale: AppLocale;
   view: View;
   data: StructurePageView;
   /** Connected to the database (else the cost centres view shows its empty state, read-only). */
   live: boolean;
+  /**
+   * The organization's default language: the language whose name the forms require and ask first (the
+   * other language is optional — PO, 12 Nov 2026).
+   */
+  nameLanguage: 'ar' | 'en';
   header: Parameters<typeof StructureTree>[0]['header'];
   notice: ReactNode;
 }) {
@@ -187,7 +194,7 @@ async function Structure({
     ordinal: level.ordinal,
     nameEn: level.nameEn,
     nameAr: level.nameAr,
-    name: locale === 'ar' ? level.nameAr : level.nameEn,
+    name: levelLabel(level, locale),
     version: level.version,
     unitCount: level.unitCount,
     unitCountLabel: t('levels.unitCount', { count: level.unitCount }),
@@ -203,7 +210,7 @@ async function Structure({
     levelName: levelName(labels, unit.levelOrdinal, locale),
     nextLevelName: (() => {
       const next = nextLevel(labels, unit.levelOrdinal);
-      return next ? (locale === 'ar' ? next.nameAr : next.nameEn) : null;
+      return next ? levelLabel(next, locale) : null;
     })(),
     branchId: unit.branchId,
     headPersonId: unit.headPersonId,
@@ -232,7 +239,7 @@ async function Structure({
     },
     { key: 'inactive', value: inactive, warn: inactive > 0 },
   ] as const;
-  const levelNames = data.levels.map((level) => (locale === 'ar' ? level.nameAr : level.nameEn));
+  const levelNames = data.levels.map((level) => levelLabel(level, locale));
 
   const top = (
     <>
@@ -306,7 +313,8 @@ async function Structure({
         <StructureTree
           units={units}
           canManage={data.canManage}
-          firstLevelName={first ? (locale === 'ar' ? first.nameAr : first.nameEn) : null}
+          firstLevelName={first ? levelLabel(first, locale) : null}
+          nameLanguage={nameLanguage}
           levelNames={levelNames}
           branches={data.branches.map((b) => ({
             value: b.id,
@@ -339,6 +347,7 @@ async function Structure({
                   texts={texts}
                   errors={errors}
                   locale={locale}
+                  nameLanguage={nameLanguage}
                 />
               ) : null}
             </>
@@ -358,13 +367,14 @@ async function Structure({
             texts={texts}
             errors={errors}
             locale={locale}
+            nameLanguage={nameLanguage}
           />
         </>
       ) : (
         <>
           <PageHeader {...header} />
           <div className="mb-5 flex flex-col gap-5">{top}</div>
-          <CostCentresSection locale={locale} live={live} />
+          <CostCentresSection locale={locale} live={live} nameLanguage={nameLanguage} />
         </>
       )}
     </>
@@ -372,7 +382,15 @@ async function Structure({
 }
 
 /** Structure → Cost centres (WP-HR-01, design screen 2): its own query (the list with what uses each one). */
-async function CostCentresSection({ locale, live }: { locale: AppLocale; live: boolean }) {
+async function CostCentresSection({
+  locale,
+  live,
+  nameLanguage,
+}: {
+  locale: AppLocale;
+  live: boolean;
+  nameLanguage: 'ar' | 'en';
+}) {
   const t = await getTranslations({ locale, namespace: 'structure' });
   const common = await getTranslations({ locale, namespace: 'common' });
   const result = live
@@ -412,6 +430,7 @@ async function CostCentresSection({ locale, live }: { locale: AppLocale; live: b
       texts={texts}
       errors={await profileErrorTexts(locale)}
       locale={locale}
+      nameLanguage={nameLanguage}
     />
   );
 }

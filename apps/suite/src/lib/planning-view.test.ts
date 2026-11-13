@@ -1,43 +1,70 @@
 import type { CycleListItem } from '@jadarat/tms';
-import { DEFAULT_CHAIN } from '@jadarat/tms/planning-model';
 import { describe, expect, it } from 'vitest';
-import { fromDrafts, parseReminderDays, stepKey, stepNameErrors, toDrafts } from './planning-chain';
 import { dayFormatter, formatAmount } from './planning-format';
 import {
   CYCLE_TONE,
   FORM_TONE,
-  PROBLEM_STEP,
+  type PickerUnit,
+  allUnitsScope,
   cycleHref,
+  cycleSettingsHref,
+  cyclesHref,
   daysLeft,
   fieldErrorKey,
-  groupCycles,
+  filterCycles,
+  legacyStepHref,
+  listFilter,
   localName,
-  nextStep,
-  previousStep,
+  parseReminderDays,
+  pickerUnits,
   progressCounts,
-  setupStep,
+  sameScope,
+  settingsTab,
   statusCounts,
-  stepMarks,
   sumAmounts,
+  unitPicks,
+  unitsInScope,
 } from './planning-view';
 
-describe('set-up steps (EP-PLN B4)', () => {
-  it('reads the step from the query string, Basics by default', () => {
-    expect(setupStep('budget')).toBe('budget');
-    expect(setupStep('nope')).toBe('basics');
-    expect(setupStep(['scope'])).toBe('basics');
-    expect(nextStep('basics')).toBe('scope');
-    // Reminders now continues to «Review & launch» (redesign package 4), the last step.
-    expect(nextStep('reminders')).toBe('review');
-    expect(nextStep('review')).toBeNull();
-    expect(setupStep('review')).toBe('review');
-    expect(previousStep('scope')).toBe('basics');
-    expect(previousStep('basics')).toBeNull();
+describe('addresses of the cycle pages (the Kawadir pattern, T-M3-20)', () => {
+  it('links a cycle, its Settings sections and the list with a popup open', () => {
+    expect(cycleHref('ar', 'c1')).toBe('/ar/suite/planning/cycles/c1');
+    expect(cycleSettingsHref('en', 'c1')).toBe('/en/suite/planning/cycles/c1/settings');
+    // The first section needs no parameter.
+    expect(cycleSettingsHref('en', 'c1', 'departments')).toBe(
+      '/en/suite/planning/cycles/c1/settings',
+    );
+    expect(cycleSettingsHref('ar', 'c1', 'reminders')).toBe(
+      '/ar/suite/planning/cycles/c1/settings?tab=reminders',
+    );
+    expect(cyclesHref('en')).toBe('/en/suite/planning/cycles');
+    expect(cyclesHref('en', { filter: 'all' })).toBe('/en/suite/planning/cycles');
+    expect(cyclesHref('ar', { filter: 'draft' })).toBe('/ar/suite/planning/cycles?status=draft');
+    expect(cyclesHref('en', { open: { kind: 'new' } })).toBe('/en/suite/planning/cycles?new=1');
+    expect(cyclesHref('en', { open: { kind: 'launch', id: 'c1' } })).toBe(
+      '/en/suite/planning/cycles?launch=c1',
+    );
   });
 
-  it('links a cycle and one of its steps', () => {
-    expect(cycleHref('ar', 'c1')).toBe('/ar/suite/planning/cycles/c1');
-    expect(cycleHref('en', 'c1', 'approvals')).toBe('/en/suite/planning/cycles/c1?step=approvals');
+  it('reads the list filter and the settings section from the address, the first by default', () => {
+    expect(listFilter('open')).toBe('open');
+    expect(listFilter('nope')).toBe('all');
+    expect(listFilter(['draft'])).toBe('all');
+    expect(listFilter(undefined)).toBe('all');
+    expect(settingsTab('form')).toBe('form');
+    expect(settingsTab('approvals')).toBe('departments');
+    expect(settingsTab(undefined)).toBe('departments');
+  });
+
+  it('sends the addresses of the old six-step set-up to their new place', () => {
+    expect(legacyStepHref('en', 'c1', 'basics')).toBe('/en/suite/planning/cycles?edit=c1');
+    expect(legacyStepHref('en', 'c1', 'review')).toBe('/en/suite/planning/cycles?launch=c1');
+    expect(legacyStepHref('en', 'c1', 'reminders')).toBe(
+      '/en/suite/planning/cycles/c1/settings?tab=reminders',
+    );
+    for (const step of ['scope', 'budget', 'approvals', undefined, 'nope']) {
+      expect(legacyStepHref('ar', 'c1', step)).toBe('/ar/suite/planning/cycles/c1/settings');
+    }
   });
 });
 
@@ -51,15 +78,16 @@ describe('list helpers', () => {
     status,
     departmentCount: 1,
     submittedCount: 0,
+    draft: null,
   });
 
-  it('groups the cycles by status: open, drafts, then everything closed', () => {
+  it('filters the cycles by the summary cards: all, drafts, open, everything closed', () => {
     const cycles = [item('draft'), item('open'), item('closed'), item('consolidated')];
-    const groups = groupCycles(cycles);
-    expect(groups.open.map((c) => c.id)).toEqual(['open']);
-    expect(groups.drafts.map((c) => c.id)).toEqual(['draft']);
-    expect(groups.closed.map((c) => c.id)).toEqual(['closed', 'consolidated']);
-    expect(groupCycles([])).toEqual({ open: [], drafts: [], closed: [] });
+    expect(filterCycles(cycles, 'all')).toBe(cycles);
+    expect(filterCycles(cycles, 'draft').map((c) => c.id)).toEqual(['draft']);
+    expect(filterCycles(cycles, 'open').map((c) => c.id)).toEqual(['open']);
+    expect(filterCycles(cycles, 'closed').map((c) => c.id)).toEqual(['closed', 'consolidated']);
+    expect(filterCycles([], 'closed')).toEqual([]);
   });
 
   it('counts the days left to a deadline from the organization’s today', () => {
@@ -77,24 +105,6 @@ describe('list helpers', () => {
       returned: 1,
       late: 2,
     });
-  });
-
-  it('marks the set-up steps from the launch problems (Review & launch)', () => {
-    expect(stepMarks([])).toEqual({
-      basics: 'done',
-      scope: 'done',
-      budget: 'todo',
-      approvals: 'done',
-      reminders: 'todo',
-      review: 'todo',
-    });
-    const marks = stepMarks(['deadline_past', 'approver_missing', 'another_open']);
-    expect(marks.basics).toBe('problem');
-    expect(marks.approvals).toBe('problem');
-    expect(marks.scope).toBe('done');
-    expect(stepMarks(['no_departments']).scope).toBe('problem');
-    expect(PROBLEM_STEP.another_open).toBeNull();
-    expect(PROBLEM_STEP.no_needs_form).toBe('basics');
   });
 
   it('names in the page language, else the other one', () => {
@@ -140,42 +150,137 @@ describe('formatting', () => {
   });
 
   it('maps field error codes to texts', () => {
-    expect(fieldErrorKey('DUPLICATE_APPROVER')).toBe('setup.fieldErrors.duplicateApprover');
+    expect(fieldErrorKey('BEFORE_START')).toBe('setup.fieldErrors.beforeStart');
+    // The approval chain's codes are gone with its screens (EP-PLN §13 e).
+    expect(fieldErrorKey('DUPLICATE_APPROVER')).toBe('setup.fieldErrors.invalid');
     expect(fieldErrorKey('TOO_SMALL')).toBe('setup.fieldErrors.required');
     expect(fieldErrorKey('SOMETHING')).toBe('setup.fieldErrors.invalid');
   });
 });
 
-describe('approval chain drafts (A3/B4)', () => {
-  it('round-trips the chain; the heads step never names a person', () => {
-    const drafts = toDrafts(DEFAULT_CHAIN);
-    expect(drafts.map((d) => d.approverPersonId)).toEqual(['', '', '']);
-    expect(fromDrafts(drafts)).toEqual(DEFAULT_CHAIN);
+describe('departments of a cycle (the popup, Settings, the launch question)', () => {
+  const unit = (
+    id: string,
+    parentId: string | null,
+    over: Partial<PickerUnit> = {},
+  ): PickerUnit => ({
+    id,
+    parentId,
+    branchId: null,
+    name: id,
+    depth: parentId === null ? 0 : 1,
+    active: true,
+    head: 'Head',
+    ...over,
+  });
+  // Tree order: Sales (East, West under it), Operations (no head), an inactive Legacy with a live unit.
+  const units = [
+    unit('sales', null),
+    unit('east', 'sales', { branchId: 'jeddah', head: 'Head (from sales)' }),
+    unit('west', 'sales', { head: null }),
+    unit('ops', null, { head: null }),
+    unit('legacy', null, { active: false }),
+    unit('archive', 'legacy'),
+  ];
+
+  it('«All departments» picks the top-level units: everything under them is included', () => {
+    expect(allUnitsScope(units)).toEqual(['sales', 'ops', 'legacy']);
+    // A unit whose parent is not in the list (it cannot be seen) counts as top level.
+    expect(allUnitsScope([unit('orphan', 'gone')])).toEqual(['orphan']);
     expect(
-      fromDrafts([
-        { key: 'k', kind: 'department_heads', nameAr: 'ر', nameEn: 'H', approverPersonId: 'p1' },
-      ]),
-    ).toEqual([{ kind: 'department_heads', nameAr: 'ر', nameEn: 'H', approverPersonId: null }]);
-    expect(stepKey()).not.toBe(stepKey());
+      unitsInScope(units, { departmentIds: allUnitsScope(units), branchIds: [] }).map((u) => u.id),
+    ).toEqual(['sales', 'east', 'west', 'ops', 'archive']);
   });
 
-  it('requires the step name of the default language only (PO, 12 Nov 2026)', () => {
-    const steps = [
-      { key: 'k', kind: 'person' as const, nameAr: ' ', nameEn: 'F', approverPersonId: '' },
-      { key: 'l', kind: 'person' as const, nameAr: 'م', nameEn: '', approverPersonId: '' },
+  it('lists the units a scope covers, in tree order — one form each; inactive units get none', () => {
+    expect(
+      unitsInScope(units, { departmentIds: ['sales'], branchIds: [] }).map((u) => u.id),
+    ).toEqual(['sales', 'east', 'west']);
+    expect(
+      unitsInScope(units, { departmentIds: [], branchIds: ['jeddah'] }).map((u) => u.id),
+    ).toEqual(['east']);
+    expect(
+      unitsInScope(units, { departmentIds: ['legacy'], branchIds: [] }).map((u) => u.id),
+    ).toEqual(['archive']);
+    expect(unitsInScope(units, { departmentIds: [], branchIds: [] })).toEqual([]);
+    // The heads the launch question shows, and who is missing one.
+    expect(
+      unitsInScope(units, { departmentIds: ['sales', 'ops'], branchIds: [] }).map((u) => u.head),
+    ).toEqual(['Head', 'Head (from sales)', null, null]);
+  });
+
+  it('tells a picked unit from one that comes with a unit above or with its branch', () => {
+    const picks = unitPicks(units, { departmentIds: ['sales', 'west', 'ops'], branchIds: [] });
+    expect(Object.fromEntries(picks)).toEqual({
+      sales: 'picked',
+      east: 'covered',
+      // Picked itself too, but it comes with Sales anyway: it cannot be taken out on its own.
+      west: 'covered',
+      ops: 'picked',
+      legacy: 'out',
+      archive: 'out',
+    });
+    const byBranch = unitPicks(units, { departmentIds: [], branchIds: ['jeddah'] });
+    expect(byBranch.get('east')).toBe('covered');
+    expect(byBranch.get('sales')).toBe('out');
+  });
+
+  it('names the units for the pickers: the level when levels mix, the head and where it comes from', () => {
+    const option = (
+      id: string,
+      levelOrdinal: number,
+      head: { ar: string | null; en: string | null } | null,
+      via: { ar: string; en: string | null } | null = null,
+    ) => ({
+      id,
+      parentId: levelOrdinal === 1 ? null : 'sales',
+      branchId: null,
+      name: { ar: `ع-${id}`, en: id },
+      levelOrdinal,
+      depth: levelOrdinal - 1,
+      active: true,
+      hasHead: head !== null,
+      head: head ? { name: head, via } : null,
+    });
+    const levels = [
+      { ordinal: 1, nameEn: 'Sector', nameAr: 'قطاع' },
+      { ordinal: 2, nameEn: 'Section', nameAr: 'شعبة' },
     ];
-    expect(stepNameErrors(steps, 'required', 'ar')).toEqual({ 'steps.0.nameAr': 'required' });
-    expect(stepNameErrors(steps, 'required', 'en')).toEqual({ 'steps.1.nameEn': 'required' });
-  });
-
-  it('shows a step saved with one name only with the other name empty', () => {
-    expect(
-      toDrafts([{ kind: 'person', nameAr: null, nameEn: 'Finance', approverPersonId: null }]),
-    ).toEqual([
-      { key: 'saved-0', kind: 'person', nameAr: '', nameEn: 'Finance', approverPersonId: '' },
+    const via = (name: string, unit: string) => `${name} (from ${unit})`;
+    const mixed = pickerUnits(
+      'en',
+      [
+        option('sales', 1, { ar: 'سارة', en: 'Sara' }),
+        option('east', 2, { ar: 'سارة', en: 'Sara' }, { ar: 'المبيعات', en: 'Sales' }),
+        option('west', 2, null),
+      ],
+      levels,
+      via,
+    );
+    expect(mixed.map((u) => [u.name, u.depth, u.head])).toEqual([
+      ['sales · Sector', 0, 'Sara'],
+      ['east · Section', 1, 'Sara (from Sales)'],
+      ['west · Section', 1, null],
     ]);
+    // One level only: the plain names; Arabic names in Arabic.
+    expect(
+      pickerUnits('ar', [option('sales', 1, { ar: 'سارة', en: null })], levels, via).map((u) => [
+        u.name,
+        u.head,
+      ]),
+    ).toEqual([['ع-sales', 'سارة']]);
   });
 
+  it('compares two scopes whatever their order', () => {
+    const scope = { departmentIds: ['a', 'b'], branchIds: ['x'] };
+    expect(sameScope(scope, { departmentIds: ['b', 'a'], branchIds: ['x'] })).toBe(true);
+    expect(sameScope(scope, { departmentIds: ['a'], branchIds: ['x'] })).toBe(false);
+    expect(sameScope(scope, { departmentIds: ['a', 'c'], branchIds: ['x'] })).toBe(false);
+    expect(sameScope(scope, { departmentIds: ['a', 'b'], branchIds: [] })).toBe(false);
+  });
+});
+
+describe('reminders', () => {
   it('reads reminder days: whole days 1–90, each once', () => {
     expect(parseReminderDays(['7', ' 2 '])).toEqual({ ok: true, days: [7, 2] });
     expect(parseReminderDays([])).toEqual({ ok: true, days: [] });

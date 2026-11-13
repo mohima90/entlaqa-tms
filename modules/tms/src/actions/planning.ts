@@ -9,9 +9,7 @@ import {
   savePlanCycleBudgetsActionDefinition,
   savePlanCycleRemindersActionDefinition,
   savePlanCycleScopeActionDefinition,
-  savePlanCycleStepsActionDefinition,
   savePlanningSettingsActionDefinition,
-  searchPlanApproversActionDefinition,
   updatePlanCycleBasicsActionDefinition,
 } from '../planning/definitions';
 
@@ -23,7 +21,6 @@ export const createPlanCycleAction = defineAction(createPlanCycleActionDefinitio
 export const updatePlanCycleBasicsAction = defineAction(updatePlanCycleBasicsActionDefinition());
 export const savePlanCycleScopeAction = defineAction(savePlanCycleScopeActionDefinition());
 export const savePlanCycleBudgetsAction = defineAction(savePlanCycleBudgetsActionDefinition());
-export const savePlanCycleStepsAction = defineAction(savePlanCycleStepsActionDefinition());
 export const savePlanCycleRemindersAction = defineAction(savePlanCycleRemindersActionDefinition());
 export const launchPlanCycleAction = defineAction(launchPlanCycleActionDefinition());
 export const extendPlanCycleDeadlineAction = defineAction(
@@ -31,4 +28,3 @@ export const extendPlanCycleDeadlineAction = defineAction(
 );
 export const deletePlanCycleAction = defineAction(deletePlanCycleActionDefinition());
 export const savePlanningSettingsAction = defineAction(savePlanningSettingsActionDefinition());
-export const searchPlanApproversAction = defineAction(searchPlanApproversActionDefinition());

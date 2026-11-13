@@ -32,6 +32,10 @@ const db = vi.hoisted(() => ({
   lockTenantRoles: vi.fn(() => Promise.resolve()),
   replaceMemberRole: vi.fn(),
   insertAuditEvent: vi.fn(() => Promise.resolve()),
+  // The names rule (default-language-name.ts): English is the organization's default language unless a
+  // test says otherwise; the stored names of an existing thing are read only when the rule would refuse.
+  getTenantDefaultLocale: vi.fn((): Promise<'ar' | 'en'> => Promise.resolve('en')),
+  getStoredNames: vi.fn((): Promise<unknown> => Promise.resolve(null)),
   listStructureLevels: vi.fn(),
   listStructureUnits: vi.fn(),
   listOrgUnitOptions: vi.fn(),
@@ -131,6 +135,8 @@ const unitForm = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  db.getTenantDefaultLocale.mockResolvedValue('en');
+  db.getStoredNames.mockResolvedValue(null);
   db.listStructureLevels.mockResolvedValue([level({ ordinal: 1, nameEn: 'Department' })]);
   db.listStructureUnits.mockResolvedValue([unit()]);
   db.listOrgUnitOptions.mockResolvedValue({ departments: [], branches: [{ id: BRANCH }] });
@@ -156,6 +162,15 @@ describe('inputs', () => {
     expect(CreateUnitInput.safeParse({ ...unitForm, levelOrdinal: 3 }).success).toBe(false);
     expect(LevelInput.safeParse({ nameEn: 'Team', nameAr: chr(8203) }).success).toBe(false);
     expect(LevelInput.safeParse({ nameEn: 'T'.repeat(61), nameAr: 'فريق' }).success).toBe(false);
+    // One of the two names may be empty (which one is required is the handlers' rule): it becomes null.
+    expect(LevelInput.parse({ nameEn: ' Team ', nameAr: '  ' })).toEqual({
+      nameEn: 'Team',
+      nameAr: null,
+    });
+    expect(CreateUnitInput.parse({ ...unitForm, nameEn: '' }).nameEn).toBeNull();
+    expect(BranchInput.parse({ ...branchForm, nameAr: '' }).nameAr).toBeNull();
+    expect(CreateUnitInput.safeParse({ ...unitForm, nameAr: chr(8203) }).success).toBe(false);
+    expect(BranchInput.safeParse({ ...branchForm, nameEn: 'B'.repeat(201) }).success).toBe(false);
     expect(BranchInput.safeParse({ ...branchForm, countryCode: 'sa' }).success).toBe(false);
     expect(BranchInput.safeParse({ ...branchForm, timezone: '../etc' }).success).toBe(false);
   });
@@ -260,6 +275,91 @@ describe('structure changes (platform.org.manage)', () => {
       data: { before: null, after: { ordinal: 2, nameEn: 'Section', nameAr: 'قسم' } },
     });
     expect(getClaims).toHaveBeenCalledWith({ strict: false });
+  });
+
+  it("the name in the organization's default language is required; the other language is optional (PO, 12 Nov 2026)", async () => {
+    const { rt, writeAudit } = runtime(['hr_manager']);
+    const addLevel = createDefineAction(rt)(addStructureLevelActionDefinition());
+    const renameLevel = createDefineAction(rt)(renameStructureLevelActionDefinition());
+    const createUnit = createDefineAction(rt)(createStructureUnitActionDefinition());
+    const updateUnit = createDefineAction(rt)(updateStructureUnitActionDefinition());
+    const createBranch = createDefineAction(rt)(createBranchActionDefinition());
+    const updateBranch = createDefineAction(rt)(updateBranchActionDefinition());
+    const required = (path: string) => ({
+      code: 'VALIDATION_FAILED',
+      fieldErrors: [{ path, code: 'REQUIRED' }],
+    });
+
+    // English is the default language: the English name is required, the Arabic one optional.
+    for (const refused of [
+      await addLevel({ nameEn: '', nameAr: 'فريق' }),
+      await createUnit({ ...unitForm, nameEn: ' ' }),
+      await createBranch({ ...branchForm, nameEn: '' }),
+    ]) {
+      expect(!refused.ok && refused.error).toMatchObject(required('nameEn'));
+    }
+    expect(db.addStructureLevel).not.toHaveBeenCalled();
+    expect(db.createStructureUnit).not.toHaveBeenCalled();
+    expect(db.createBranch).not.toHaveBeenCalled();
+    db.addStructureLevel.mockResolvedValue({ ok: true, before: null, after: level() });
+    db.createStructureUnit.mockResolvedValue({ ok: true, before: null, after: unit() });
+    db.createBranch.mockResolvedValue({ ok: true, before: null, after: branch() });
+    expect((await addLevel({ nameEn: 'Team', nameAr: '' })).ok).toBe(true);
+    expect(db.addStructureLevel).toHaveBeenCalledWith(TX, { nameEn: 'Team', nameAr: null });
+    expect((await createUnit({ ...unitForm, nameAr: '' })).ok).toBe(true);
+    expect(db.createStructureUnit).toHaveBeenCalledWith(
+      TX,
+      null,
+      expect.objectContaining({ nameEn: 'Sales', nameAr: null }),
+    );
+    expect((await createBranch({ ...branchForm, nameAr: '' })).ok).toBe(true);
+    expect(db.createBranch).toHaveBeenCalledWith(
+      TX,
+      expect.objectContaining({ nameEn: 'Riyadh', nameAr: null }),
+    );
+
+    // Arabic is the default language: the other way round.
+    db.getTenantDefaultLocale.mockResolvedValue('ar');
+    const refused = await createUnit({ ...unitForm, nameAr: '' });
+    expect(!refused.ok && refused.error).toMatchObject(required('nameAr'));
+    expect((await createUnit({ ...unitForm, nameEn: '' })).ok).toBe(true);
+    expect(db.createStructureUnit).toHaveBeenLastCalledWith(
+      TX,
+      null,
+      expect.objectContaining({ nameEn: null, nameAr: 'المبيعات' }),
+    );
+
+    // A save that leaves the names as they are stored passes whatever they are (things named before the
+    // rule, or before the default language changed); a change of the names applies the rule.
+    db.renameStructureLevel.mockResolvedValue({ ok: true, before: level(), after: level() });
+    db.updateStructureUnit.mockResolvedValue({ ok: true, before: unit(), after: unit() });
+    db.updateBranch.mockResolvedValue({ ok: true, before: branch(), after: branch() });
+    db.getStoredNames.mockResolvedValue({ nameAr: null, nameEn: 'Sales' });
+    const { parentId: _parent, ...unitFields } = unitForm;
+    const kept = await updateUnit({ ...unitFields, id: UNIT, version: 1, nameAr: '' });
+    expect(kept.ok).toBe(true);
+    expect(db.getStoredNames).toHaveBeenLastCalledWith(TX, 'unit', UNIT);
+    const changed = await updateUnit({
+      ...unitFields,
+      id: UNIT,
+      version: 1,
+      nameEn: 'Retail',
+      nameAr: '',
+    });
+    expect(!changed.ok && changed.error).toMatchObject(required('nameAr'));
+    db.getStoredNames.mockResolvedValue({ nameAr: null, nameEn: 'T' });
+    expect((await renameLevel({ id: LEVEL, version: 1, nameEn: 'T', nameAr: '' })).ok).toBe(true);
+    expect(db.getStoredNames).toHaveBeenLastCalledWith(TX, 'level', LEVEL);
+    db.getStoredNames.mockResolvedValue({ nameAr: null, nameEn: 'Riyadh' });
+    expect((await updateBranch({ ...branchForm, id: BRANCH, version: 1, nameAr: '' })).ok).toBe(
+      true,
+    );
+    expect(db.getStoredNames).toHaveBeenLastCalledWith(TX, 'branch', BRANCH);
+    // A thing that no longer exists: the rule answers (the write would answer NOT_FOUND after it).
+    db.getStoredNames.mockResolvedValue(null);
+    const gone = await updateBranch({ ...branchForm, id: BRANCH, version: 1, nameAr: '' });
+    expect(!gone.ok && gone.error).toMatchObject(required('nameAr'));
+    expect(writeAudit).toHaveBeenCalledTimes(7);
   });
 
   it('maps level refusals to field errors with counts', async () => {

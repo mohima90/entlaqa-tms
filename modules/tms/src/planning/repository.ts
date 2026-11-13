@@ -257,24 +257,19 @@ export interface CycleBasics {
   readonly needsFormId: string | null;
 }
 
-async function insertSteps(
-  tx: UserTx,
-  table: 'cycle' | 'defaults',
-  cycleId: string | null,
-  steps: readonly ApprovalStep[],
-) {
+async function insertSteps(tx: UserTx, cycleId: string, steps: readonly ApprovalStep[]) {
   for (const [index, step] of steps.entries()) {
-    const values: SQL =
-      table === 'cycle'
-        ? sql`insert into tms.plan_cycle_steps (cycle_id, position, kind, name_ar, name_en, approver_person_id)
-              values (${cycleId}, ${index + 1}, ${step.kind}, ${step.nameAr}, ${step.nameEn}, ${step.approverPersonId})`
-        : sql`insert into tms.planning_default_steps (position, kind, name_ar, name_en, approver_person_id)
-              values (${index + 1}, ${step.kind}, ${step.nameAr}, ${step.nameEn}, ${step.approverPersonId})`;
-    await tx.execute(values);
+    await tx.execute(
+      sql`insert into tms.plan_cycle_steps (cycle_id, position, kind, name_ar, name_en, approver_person_id)
+          values (${cycleId}, ${index + 1}, ${step.kind}, ${step.nameAr}, ${step.nameEn}, ${step.approverPersonId})`,
+    );
   }
 }
 
-/** A new draft with the organization's default reminders and approval chain (business flow B4). */
+/**
+ * A new draft with the organization's default reminders (business flow B4). It still stores a copy of the
+ * default approval chain, as before — data nobody reads since EP-PLN §13 (the launch does not ask for it).
+ */
 export async function insertCycle(
   tx: UserTx,
   basics: CycleBasics,
@@ -288,8 +283,7 @@ export async function insertCycle(
             ${pgArray(settings.reminderDays)}::smallint[])
     returning id`);
   const id = String(row?.id);
-  // A default approver who is no longer an active member is left for the L&D Manager to name again.
-  await insertSteps(tx, 'cycle', id, settings.steps);
+  await insertSteps(tx, id, settings.steps);
   // Read back: the database sets the default needs form when none was chosen (C-10: the audit says which).
   const [touched] = await tx.execute(
     sql`select version, needs_form_id from tms.plan_cycles where id = ${id}`,
@@ -397,15 +391,6 @@ export async function updateBudgets(
   return changed;
 }
 
-export async function replaceSteps(
-  tx: UserTx,
-  id: string,
-  steps: readonly ApprovalStep[],
-): Promise<void> {
-  await tx.execute(sql`delete from tms.plan_cycle_steps where cycle_id = ${id}`);
-  await insertSteps(tx, 'cycle', id, steps);
-}
-
 export async function updateReminders(
   tx: UserTx,
   id: string,
@@ -484,17 +469,15 @@ export async function deleteDraft(tx: UserTx, id: string): Promise<boolean> {
   return rows.length === 1;
 }
 
-export async function saveSettings(
-  tx: UserTx,
-  reminderDays: readonly number[],
-  steps: readonly ApprovalStep[],
-): Promise<number> {
+/**
+ * Saves the default reminders. The stored default approval chain (tms.planning_default_steps) is left as it
+ * is: no screen edits it any more (EP-PLN §13; PO, 12 Nov 2026) and nothing is deleted.
+ */
+export async function saveSettings(tx: UserTx, reminderDays: readonly number[]): Promise<number> {
   const [row] = await tx.execute(sql`
     insert into tms.planning_settings (reminder_days) values (${pgArray(reminderDays)}::smallint[])
     on conflict (tenant_id) do update set reminder_days = excluded.reminder_days
     returning version`);
-  await tx.execute(sql`delete from tms.planning_default_steps`);
-  await insertSteps(tx, 'defaults', null, steps);
   return Number(row?.version);
 }
 

@@ -154,7 +154,7 @@ describe('writes', () => {
     needsFormId: null,
   };
 
-  it('creates a draft with the default reminders and chain', async () => {
+  it('creates a draft with the default reminders; the default chain is still stored (not shown)', async () => {
     const FORM = '99999999-9999-4999-8999-999999999991';
     const { tx, executed } = fakeTx(
       [],
@@ -189,7 +189,7 @@ describe('writes', () => {
     });
   });
 
-  it('saves basics, scope, departments, envelopes, steps and reminders', async () => {
+  it('saves basics, scope, departments, envelopes and reminders', async () => {
     expect(await repo.updateBasics(fakeTx([{ version: 5 }]).tx, ID, basics)).toBe(5);
     const scope = fakeTx();
     await repo.replaceScope(scope.tx, ID, { departmentIds: ['d1'], branchIds: ['b1'] }, [
@@ -205,18 +205,19 @@ describe('writes', () => {
         { departmentId: 'd2', amount: null },
       ]),
     ).toBe(1);
-    const steps = fakeTx();
-    await repo.replaceSteps(steps.tx, ID, DEFAULT_CHAIN);
-    expect(steps.executed).toHaveLength(4);
     const reminders = fakeTx([{ version: 6 }]);
     expect(await repo.updateReminders(reminders.tx, ID, [14, 2])).toBe(6);
     expect(reminders.executed[0]?.params).toContain('{14,2}');
     expect(await repo.closeDueCycles(fakeTx([{ id: 'old' }]).tx)).toEqual(['old']);
     expect(await repo.deleteDraft(fakeTx([{ id: ID }]).tx, ID)).toBe(true);
     expect(await repo.deleteDraft(fakeTx([]).tx, ID)).toBe(false);
+    // Planning settings: the default reminders only — one statement; the stored default chain is not
+    // deleted or rewritten (EP-PLN §13: no screen edits it any more, nothing is dropped).
     const settings = fakeTx([{ version: 3 }]);
-    expect(await repo.saveSettings(settings.tx, [7], DEFAULT_CHAIN)).toBe(3);
-    expect(settings.executed).toHaveLength(5);
+    expect(await repo.saveSettings(settings.tx, [7])).toBe(3);
+    expect(settings.executed).toHaveLength(1);
+    expect(settings.executed[0]?.sql).toContain('planning_settings');
+    expect(settings.executed[0]?.sql).not.toContain('planning_default_steps');
   });
 
   it('turns the guard’s launch refusals into outcomes; anything else is thrown', async () => {
@@ -230,10 +231,10 @@ describe('writes', () => {
     ).toEqual({ outcome: 'another_open' });
     expect(
       await repo.launch(
-        fakeTx(pgError('JK003', 'planning cycle not ready to launch: approver_missing')).tx,
+        fakeTx(pgError('JK003', 'planning cycle not ready to launch: no_departments')).tx,
         ID,
       ),
-    ).toEqual({ outcome: 'not_ready', reason: 'approver_missing' });
+    ).toEqual({ outcome: 'not_ready', reason: 'no_departments' });
     expect(await repo.launch(fakeTx(pgError('JK003', 'odd')).tx, ID)).toEqual({
       outcome: 'not_ready',
       reason: 'unknown',

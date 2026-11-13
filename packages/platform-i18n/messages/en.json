@@ -145,9 +145,9 @@
     "rateLimited": "Too many requests in a short time. Wait a moment, then try again.",
     "internalError": "We couldn't complete this because of a problem on our side. Try again. Reference: {correlationId}",
     "notConfigured": "This service isn't set up in this environment yet.",
-    "planCycleNotDraft": "This planning cycle has been launched; its set-up can no longer change.",
+    "planCycleNotDraft": "This planning cycle has been launched; its settings can no longer change.",
     "planCycleOpenExists": "Another planning cycle is open. Only one cycle can be open at a time.",
-    "planCycleNotReady": "This planning cycle isn't ready to launch yet. Check the list under Review & launch.",
+    "planCycleNotReady": "This planning cycle isn't ready to launch yet. The launch question lists what is missing.",
     "planCycleDeadlineRefused": "The deadline can only move later while the cycle is open and before the current deadline passes.",
     "planPeopleLimit": "Your organization's plan has reached its limit of people. Nobody new can be added until someone is deactivated or ENTLAQA raises the limit. Nothing else changes.",
     "planStorageLimit": "Your organization's plan has reached its storage limit. No new file can be added until files are removed or ENTLAQA raises the limit.",
@@ -925,30 +925,22 @@
   "planning": {
     "list": {
       "title": "Planning cycles",
-      "intro": "Each year ask every department head what training their team needs, then turn the answers into one training plan.",
+      "intro": "Ask every department what training its team needs, then build one plan.",
       "newCycle": "New cycle",
       "notConfigured": "Planning cycles appear here once this environment is connected to its database.",
-      "statsLabel": "Planning cycles in numbers",
       "stats": {
         "total": "All cycles",
-        "draft": "Drafts",
+        "draft": "Draft",
         "open": "Open",
         "closed": "Closed"
       },
-      "tabsLabel": "Cycles by status",
-      "tabs": {
-        "all": "All",
-        "draft": "Drafts",
-        "open": "Open",
-        "closed": "Closed"
-      },
+      "tabsLabel": "Show cycles by status",
       "tableCaption": "Planning cycles",
-      "cardTitle": "Cycles",
-      "cardDescription": "One cycle can be open at a time. Drafts can be changed or deleted until they are launched.",
+      "cardDescription": "One cycle can be open at a time. A draft can be changed or deleted until you launch it.",
       "columns": {
         "name": "Cycle",
-        "period": "Planning period",
-        "deadline": "Deadline",
+        "period": "Plan period",
+        "deadline": "Needs deadline",
         "status": "Status",
         "departments": "Departments",
         "actions": "Actions"
@@ -956,7 +948,6 @@
       "submitted": "{submitted} of {count} submitted",
       "departmentCount": "{count, plural, =0 {No departments} one {# department} other {# departments}}",
       "openCycle": "Open {name}",
-      "continueSetup": "Continue set-up of {name}",
       "emptyTitle": "No planning cycles yet",
       "emptyBody": "Start a cycle to collect the training needs of your departments.",
       "emptyReadBody": "The L&D Manager starts planning cycles. They will appear here.",
@@ -965,11 +956,22 @@
       "loadFailed": "We couldn't load the planning cycles. Try again. Reference: {correlationId}",
       "daysLeft": "{count, plural, =0 {Deadline today} one {# day left} other {# days left}}",
       "viewProgress": "View progress",
-      "continue": "Continue set-up",
       "howTitle": "How a planning cycle works",
-      "how1": "Set up the period, the departments, their budgets and the approvers.",
+      "how1": "Create the cycle: its name, the plan period, the needs deadline and the departments.",
       "how2": "Launch: every department head gets a needs form with your deadline.",
-      "how3": "Follow the answers until the deadline, then consolidate them into one plan."
+      "how3": "Follow the answers until the deadline, then consolidate them into one plan.",
+      "emptyTabBody": "Choose another status, or show all cycles.",
+      "showAll": "Show all cycles",
+      "rowMenu": "Actions for {name}",
+      "menu": {
+        "edit": "Edit",
+        "settings": "Settings",
+        "launch": "Launch cycle",
+        "delete": "Delete draft"
+      },
+      "progressOf": "View progress of {name}",
+      "created": "{name} is saved as a draft. Launch it when you are ready.",
+      "updated": "Changes saved."
     },
     "status": {
       "draft": "Draft",
@@ -983,41 +985,13 @@
       "planning": "Planning",
       "cycles": "Planning cycles"
     },
-    "new": {
-      "title": "New planning cycle",
-      "intro": "Start with the basics. You can change everything until you launch the cycle."
-    },
     "setup": {
-      "stepsLabel": "Set-up steps",
-      "stepDone": "(completed)",
-      "stepShort": "Step {current} of {total} · {name}",
-      "steps": {
-        "basics": "Basics",
-        "scope": "Scope",
-        "budget": "Budget",
-        "approvals": "Approval chain",
-        "reminders": "Reminders",
-        "review": "Review & launch"
-      },
-      "back": "Back",
-      "saveAndContinue": "Save and continue",
       "save": "Save",
-      "create": "Create draft",
-      "saved": "Saved.",
+      "saved": "Changes saved.",
       "cancel": "Cancel",
       "required": "(required)",
       "optional": "(optional)",
-      "draftNote": "This cycle is a draft: department heads see nothing until you launch it.",
       "basics": {
-        "title": "Basics",
-        "nameAr": "Name in Arabic",
-        "nameEn": "Name in English",
-        "nameHint": "Up to 120 characters, for example «Training plan 2027».",
-        "periodStart": "Planning period starts",
-        "periodEnd": "Planning period ends",
-        "periodHint": "Suggested: your next fiscal year (General settings). At most two years.",
-        "deadline": "Deadline for the needs forms",
-        "deadlineHint": "Department heads submit their needs until the end of this day.",
         "shownAs": "Shown as {date}",
         "instructionsAr": "Instructions to department heads in Arabic",
         "instructionsEn": "Instructions to department heads in English",
@@ -1029,53 +1003,30 @@
         "needsFormOff": "{name} (switched off)"
       },
       "scope": {
-        "title": "Scope",
         "intro": "Pick the departments and branches that plan their training in this cycle. A department includes everything under it.",
-        "departments": "Departments of the structure",
         "branches": "Branches",
         "branchesHint": "A branch includes all its departments.",
         "inactive": "Inactive",
-        "noHead": "No head",
         "noStructure": "Your organization's structure has no departments yet. The HR Manager adds them under Organization → Departments.",
         "formsTitle": "Needs forms to send: {count}",
         "formsHint": "One form per department in scope; it goes to the department's head, or to the nearest head above.",
-        "noHeadWarning": "Departments without a head: {count}. Ask the HR Manager to pick one, or their forms reach nobody."
+        "noHeadWarning": "{count, plural, one {# department has} other {# departments have}} no head, so nobody can fill in the form. The HR Manager picks heads under Organization → Departments."
       },
       "budget": {
-        "title": "Budget",
-        "intro": "Optionally set a budget envelope per department. Department heads see their own envelope while they plan.",
-        "noDepartments": "Choose the scope first: the departments appear here.",
+        "intro": "Give a department a budget if you want one. Its head sees it while planning. It warns, it never blocks.",
         "columns": {
           "department": "Department",
           "head": "Head",
-          "envelope": "Budget envelope ({currency})"
+          "envelope": "Budget ({currency})"
         },
-        "amountLabel": "Budget envelope for {name}",
-        "amountHint": "Leave empty for no envelope.",
-        "total": "Total of the envelopes: {amount}"
-      },
-      "approvals": {
-        "title": "Approval chain",
-        "intro": "The plan goes through these steps in order. Name the person who approves each step; one person approves only one step.",
-        "stepLabel": "Step {number}",
-        "kind": "Type of step",
-        "kinds": {
-          "department_heads": "Department heads",
-          "person": "Named person"
-        },
-        "headsHint": "Every department head confirms their own department's lines at the same time.",
-        "nameAr": "Step name in Arabic",
-        "nameEn": "Step name in English",
-        "approver": "Approver",
-        "approverPlaceholder": "Choose a person",
-        "approverInactive": "{name} is no longer an active member. Choose someone else.",
-        "addStep": "Add a step",
-        "removeStep": "Remove step {number}",
-        "moveUp": "Move step {number} up",
-        "moveDown": "Move step {number} down",
-        "search": "Find a person",
-        "searchHint": "Type at least 2 letters of their name.",
-        "noMatch": "No active member matches this name."
+        "amountLabel": "Budget for {name}",
+        "amountHint": "Leave a budget empty for none.",
+        "total": "Total of the budgets: {amount}",
+        "placeholder": "No budget",
+        "empty": "No department is in this cycle yet. Add departments to give them budgets.",
+        "editDepartments": "Add or remove departments",
+        "pickHead": "Pick a head",
+        "pickHeadFor": "Pick a head for {name}"
       },
       "reminders": {
         "title": "Reminders",
@@ -1088,28 +1039,31 @@
         "chip": "{days, plural, one {# day before} other {# days before}}"
       },
       "launch": {
-        "title": "Launch",
-        "ready": "Ready to launch.",
         "notReady": "Before you can launch:",
         "problems": {
-          "deadline_past": "The deadline has passed. Choose a later date in Basics.",
-          "no_needs_form": "Choose the needs form in Basics.",
-          "no_departments": "No department is in scope. Choose the scope.",
-          "no_approver_step": "The approval chain needs at least one named person.",
-          "approver_missing": "Name the approver of every person step.",
-          "approver_inactive": "An approver is no longer an active member. Choose someone else.",
+          "deadline_past": "The needs deadline has passed. Choose a later date.",
+          "no_needs_form": "No needs form is chosen. Choose one in the cycle’s Settings.",
+          "no_departments": "No department is in this cycle. Pick its departments.",
           "another_open": "Another cycle is open. Only one cycle can be open at a time."
         },
         "action": "Launch cycle",
         "confirmTitle": "Launch {name}?",
-        "confirmBody": "{count, plural, one {# department} other {# departments}} will get a needs form with the deadline {deadline}. After launch you can only extend the deadline.",
+        "confirmBody": "{count, plural, one {# department gets} other {# departments get}} the needs form. Their heads fill it in until {deadline}. After launch you can only extend the deadline.",
         "confirm": "Launch",
-        "launched": "The cycle is open. Department heads can now fill in their needs."
+        "launched": "The cycle is open. Department heads can now fill in their needs.",
+        "listLabel": "Departments and their heads",
+        "noHead": "{name} has no head, so nobody can fill in its form. You can launch now and pick the head later.",
+        "pickHead": "Pick a head for {name}",
+        "askHr": "The HR Manager picks heads under Organization → Departments.",
+        "fix": {
+          "edit": "Edit the cycle",
+          "settings": "Open Settings"
+        },
+        "unknownProblem": "This cycle isn’t ready to launch yet. Reload the page and try again."
       },
       "delete": {
-        "action": "Delete draft",
         "confirmTitle": "Delete {name}?",
-        "confirmBody": "The draft and its scope, envelopes and approval chain are deleted. This can't be undone.",
+        "confirmBody": "The draft is deleted with its departments and budgets. This can’t be undone.",
         "confirm": "Delete",
         "keep": "Keep"
       },
@@ -1121,10 +1075,6 @@
         "tooLong": "A planning period is at most two years.",
         "afterPeriod": "The deadline must be within the planning period.",
         "invalidAmount": "Enter an amount in numbers, with up to 3 decimals.",
-        "duplicateApprover": "This person already approves another step.",
-        "secondHeadsStep": "The chain has only one department heads step.",
-        "headsStepNamed": "The department heads step names nobody.",
-        "notAMember": "Choose an active member.",
         "notLater": "Choose a date after the current deadline.",
         "duplicateDay": "Each reminder day only once.",
         "dayRange": "Between 1 and 90 days.",
@@ -1133,25 +1083,15 @@
       },
       "conflict": "Someone else changed this cycle after you opened it. Reload the page to see the latest version.",
       "notFound": "This cycle no longer exists.",
-      "notDraft": "This cycle has been launched; its set-up can no longer change.",
+      "notDraft": "This cycle has been launched; its settings can no longer change.",
       "close": "Close",
       "working": "Saving…",
-      "stepProblem": "(needs attention)",
-      "goToStep": "Go to {step}",
-      "editStep": "Edit {step}",
-      "reviewIntro": "Check the set-up. Each problem links to the step that fixes it.",
-      "launchBlocked": "Fix the items above, then launch the cycle.",
-      "leaveTitle": "Leave {step} without saving?",
-      "leaveBody": "Your changes in this step are lost if you leave now.",
       "defaultsLink": "Defaults come from Planning settings.",
-      "launchReady": "Everything is set. Department heads get their forms when you launch."
+      "unsavedFirst": "Save or discard your changes first."
     },
     "cycle": {
       "launchedOn": "Launched on {date}",
-      "period": "Planning period",
       "deadline": "Deadline",
-      "currency": "Currency",
-      "chainTitle": "Approval chain",
       "instructions": "Instructions to department heads",
       "progressTitle": "Progress",
       "progressIntro": "One needs form per department. Department heads fill them in until the deadline.",
@@ -1191,25 +1131,53 @@
       "extendConfirm": "Extend",
       "extended": "The deadline was extended.",
       "closedNote": "The deadline has passed: department heads can no longer change their needs. Consolidation comes next.",
-      "stepPerson": "{step}: {name}",
-      "stepHeads": "{step}: every department head for their own lines",
-      "stepUnnamed": "{step}: not named yet",
       "filterLabel": "Show departments by status",
       "needsCell": "{needs, plural, =0 {—} one {# need} other {# needs}} · {seats, plural, one {# seat} other {# seats}}",
       "view": "View",
       "viewNeeds": "View the needs of {name}",
       "extendedTo": "Extended to {date}",
-      "progressIntroNeeds": "Department heads enter their training needs until the deadline. Open a row to read them, return them for changes or extend one department."
+      "progressIntroNeeds": "Department heads enter their training needs until the deadline. Open a row to read them, return them for changes or extend one department.",
+      "filterAll": "All"
     },
     "settings": {
       "title": "Planning settings",
-      "intro": "Defaults every new planning cycle starts from. A cycle can change them before it is launched.",
+      "intro": "The reminders every new planning cycle starts with. A cycle can change them before it is launched.",
       "remindersTitle": "Default reminders",
-      "chainTitle": "Default approval chain",
       "save": "Save settings",
       "saved": "Planning settings saved.",
       "readOnly": "Only the L&D Manager changes the planning settings.",
       "notConfigured": "Planning settings appear here once this environment is connected to its database."
+    },
+    "dialog": {
+      "newTitle": "New planning cycle",
+      "newIntro": "Department heads get a needs form when you launch it. You can change everything until then.",
+      "editTitle": "Edit {name}",
+      "editIntro": "This cycle is a draft: department heads see nothing until you launch it.",
+      "nameEn": "Cycle name (English)",
+      "nameAr": "Cycle name (Arabic)",
+      "periodStart": "Plan starts",
+      "periodEnd": "Plan ends",
+      "deadline": "Needs deadline",
+      "departments": "Departments in this cycle",
+      "allDepartments": "All departments ({count})",
+      "head": "Head: {name}",
+      "noHeadYet": "No head yet",
+      "included": "A department includes everything under it: what comes with a ticked department or branch can’t be unticked on its own.",
+      "create": "Create cycle",
+      "save": "Save changes",
+      "note": "Budgets, instructions and reminders are optional. Add them later from the cycle’s Settings. Approval is the same for every cycle: the HR Manager approves. Finance confirms after that, if your organization uses that step."
+    },
+    "cycleSettings": {
+      "subtitle": "Cycle settings · all of this is optional",
+      "tabsLabel": "Cycle settings",
+      "tabs": {
+        "departments": "Departments & budgets",
+        "instructions": "Instructions to heads",
+        "reminders": "Reminders",
+        "form": "Needs form"
+      },
+      "instructionsIntro": "Tell department heads what you expect from them. They read it at the top of the needs form.",
+      "formIntro": "The form department heads fill in. Launching the cycle locks it."
     }
   },
   "invitations": {
@@ -1219,12 +1187,10 @@
     "breadcrumb": "Team members",
     "breadcrumbLabel": "Breadcrumb",
     "form": {
-      "person": "Person details",
       "email": "Work email",
       "emailHint": "This email becomes the sign-in name. It must be unique within the organization.",
       "firstNameAr": "First name in Arabic",
       "familyNameAr": "Family name in Arabic",
-      "addEnglishName": "Add the name in English (optional)",
       "firstNameEn": "First name in English",
       "familyNameEn": "Family name in English",
       "department": "Department",
@@ -1246,6 +1212,9 @@
       "privileged": "Privileged role",
       "privilegedAdminOnly": "Only the Organization Admin gives privileged roles (Organization Admin, HR Manager and custom roles with a high-risk permission). You can invite with every other role.",
       "language": "Invitation email language",
+      "more": "More options",
+      "moreSummaryArabic": "Work details and the name in Arabic",
+      "moreSummaryEnglish": "Work details and the name in English",
       "languages": {
         "ar": "العربية",
         "en": "English"
@@ -1266,8 +1235,7 @@
         "unit": "Choose a department or branch from the list.",
         "manager": "Choose the direct manager from the list.",
         "roleUnknown": "This role no longer exists. Choose another role."
-      },
-      "addArabicName": "Add the name in Arabic (optional)"
+      }
     },
     "list": {
       "created": "Invitation created. Copy its code or link from the list; it stays valid for 7 days.",
@@ -3054,7 +3022,7 @@
       "more": "More options",
       "moreSummary": "Code {code}",
       "moreSummaryBranch": "Code {code} · Branch {branch}",
-      "codeSuggested": "Suggested from the English name; change it if your organization uses its own codes. Letters, digits, dots, hyphens or underscores; up to 32, unique.",
+      "codeSuggested": "Suggested for you; change it if your organization uses its own codes. Letters, digits, dots, hyphens or underscores; up to 32, unique.",
       "branchFromParent": "Same as {parent} unless you change it.",
       "addedTitle": "{name} added",
       "addedDescription": "What next?",
@@ -3204,8 +3172,7 @@
       "active": "Active",
       "activeHint": "Only active cost centres can be picked. An inactive one stays on the people who have it.",
       "codeHint": "As in your finance system: letters, digits, dots, hyphens or underscores; up to 32, unique.",
-      "nameHint": "Give the name in at least one language.",
-      "name": "Give a name in English or Arabic, with visible letters, up to 120 characters.",
+      "name": "The name needs visible letters, up to 120 characters.",
       "codeTaken": "Another cost centre has this code.",
       "inUse": "This cost centre is in use. Deactivate it instead.",
       "inUseDetail": "In use: {usage}. Deactivate it instead: it stays on the people who have it, and can't be picked any more.",
@@ -3228,7 +3195,7 @@
       "templateOther": "Template with Arabic headers",
       "rule": {
         "order": "Put a department after its parent: the parent can be an existing department or one in an earlier row.",
-        "update": "A row with an existing code updates that department's names, branch, default cost centre and head. An empty cell clears the value; a column left out of the file changes nothing.",
+        "update": "A row with an existing code updates that department's names, branch, default cost centre and head. An empty cell clears the value — except a name, which is kept; a column left out of the file changes nothing.",
         "noMove": "The import never moves, deactivates or deletes a department. Move departments on the Departments page.",
         "limits": "CSV or XLSX, up to 512 KB and 2,000 rows."
       },
@@ -3275,7 +3242,7 @@
         "LEVEL_UNKNOWN": "The level is not one of your levels.",
         "CODE_INVALID": "The code is missing or not valid.",
         "CODE_REPEATED": "This code is used in an earlier row.",
-        "NAME_REQUIRED": "Both names are required.",
+        "NAME_REQUIRED": "The name in your organization's default language is required.",
         "NAME_TOO_LONG": "A name is longer than 200 characters.",
         "PARENT_REQUIRED": "A department below the top level needs a parent code.",
         "PARENT_NOT_ALLOWED": "A top-level department has no parent.",
@@ -3323,7 +3290,7 @@
     "form": {
       "addTitle": "Add a branch",
       "editTitle": "Edit {name}",
-      "description": "Code, names, location and time zone of the branch.",
+      "description": "The names, code and time zone of the branch. Everything else is optional.",
       "nameEn": "Name in English",
       "nameAr": "Name in Arabic",
       "code": "Code",
@@ -3335,6 +3302,8 @@
       "cityEn": "City in English",
       "cityAr": "City in Arabic",
       "timezone": "Time zone",
+      "more": "More options",
+      "moreSummary": "Parent branch, location, working week and headquarters",
       "headquarters": "This is the headquarters",
       "headquartersHint": "An organization has one headquarters: choosing this branch moves it here.",
       "create": "Add branch",

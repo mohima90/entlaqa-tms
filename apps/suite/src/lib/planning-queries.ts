@@ -5,7 +5,6 @@ import type { AppLocale } from '@jadarat/platform-i18n';
 import { defineQuery } from '@jadarat/platform-rbac';
 import {
   PlanningErrors,
-  newPlanCycleQueryDefinition,
   planCycleQueryDefinition,
   planCyclesListQueryDefinition,
   planningSettingsQueryDefinition,
@@ -15,7 +14,6 @@ import { flattenTexts } from './flatten-texts';
 
 /** Authorized reads of the planning pages (EP-PLN, T-M3-04; definitions and tests in modules/tms). */
 export const planCyclesListQuery = defineQuery(planCyclesListQueryDefinition());
-export const newPlanCycleQuery = defineQuery(newPlanCycleQueryDefinition());
 export const planCycleQuery = defineQuery(planCycleQueryDefinition());
 export const planningSettingsQuery = defineQuery(planningSettingsQueryDefinition());
 
@@ -33,17 +31,18 @@ export async function planningErrorTexts(locale: AppLocale): Promise<Record<stri
 
 /**
  * Every raw text of the `planning` namespace by dotted key (client forms fill placeholders), plus the few
- * shared words the set-up uses (redesign package 4): «Edit», «Keep editing», «Discard changes».
+ * shared words the planning screens use: the save bar («You have unsaved changes.», «Discard changes») and
+ * the question before leaving a page with unsaved changes.
  */
 export function planningTexts(locale: AppLocale): Record<string, string> {
   const messages = getMessages(locale);
   return {
     ...flattenTexts(messages.planning),
-    edit: messages.needsForms.edit,
-    keepEditing: messages.common.keepEditing,
     discardChanges: messages.common.discardChanges,
     unsavedChanges: messages.common.unsavedChanges,
-    typeToSearch: messages.common.typeToSearch,
-    noMatches: messages.common.noMatches,
+    leaveTitle: messages.common.leaveTitle,
+    leaveText: messages.common.leaveText,
+    leaveStay: messages.common.leaveStay,
+    leaveGo: messages.common.leaveGo,
   };
 }

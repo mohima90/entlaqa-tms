@@ -1,5 +1,5 @@
 'use client';
-import { Alert, Avatar, Badge, Button, ChoiceCard, SidePanel, toast } from '@jadarat/ui';
+import { Alert, Avatar, Badge, Button, ChoiceCard, Dialog, toast } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { type SyntheticEvent, useCallback, useId, useState, useTransition } from 'react';
 import { updateMemberPrivilegedRolesAction, updateMemberRolesAction } from '../../actions/users';
@@ -43,7 +43,7 @@ export interface RoleTarget {
 export interface ChangeRolePanelProps {
   readonly open: boolean;
   /**
-   * Called once the panel has closed (Escape, ✕, Cancel, saved) — always through the native dialog, so its
+   * Called once the popup has closed (Escape, ✕, Cancel, saved) — always through the native dialog, so its
    * focus return runs first; the caller then removes it and may move focus to a known element.
    */
   readonly onClose: () => void;
@@ -66,8 +66,9 @@ export interface ChangeRolePanelProps {
 }
 
 /**
- * Change a member's role in a side panel (redesign package 3 — one panel from Team members' ⋯ and from the
- * profile; Gusto's permission rows): every role as a card with what it does, standard then custom, the
+ * Change a member's role in one centred popup (672 px; forms standard rule 9 — the Kawadir pattern, PO
+ * 12 Nov 2026; before: a side panel) — the same popup from Team members' ⋯ and from the profile: every role
+ * as a card with what it does, standard then custom, the
  * current one marked; roles the member may not give are greyed with the reason (privileged roles: the
  * Organization Admin). A department-limited custom role asks for its unit inside its card. Same rules,
  * actions and audit as before (T-M2-14, FR-IAM-07/08; EP-ROLES; EP-ORG). Saved → the panel closes with a
@@ -387,10 +388,11 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
   const errorId = `${formId}-role-error`;
 
   return (
-    <SidePanel
+    <Dialog
       open={props.open && shown}
       onClose={props.onClose}
       canClose={canClose}
+      size="rich"
       title={
         <span className="flex items-center gap-3">
           <Avatar name={target.name} size="md" />
@@ -402,22 +404,17 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
       data-testid="change-role-panel"
       footer={
         props.blocked ? (
-          <Button variant="secondary" className="ms-auto" onClick={close}>
+          <Button variant="secondary" onClick={close}>
             {text('close')}
           </Button>
         ) : (
           <>
-            <p className="m-0 flex basis-full items-start gap-2 text-sm text-text-muted">
-              {text('audited')}
-            </p>
-            <div className="ms-auto flex flex-wrap gap-2.5">
-              <Button variant="secondary" onClick={close} disabled={pending}>
-                {text('cancel')}
-              </Button>
-              <Button type="submit" form={formId} busy={pending} data-testid="change-role-save">
-                {pending ? text('saving') : text('save')}
-              </Button>
-            </div>
+            <Button variant="secondary" onClick={close} disabled={pending}>
+              {text('cancel')}
+            </Button>
+            <Button type="submit" form={formId} busy={pending} data-testid="change-role-save">
+              {pending ? text('saving') : text('save')}
+            </Button>
           </>
         )
       }
@@ -479,6 +476,7 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
               {message.text}
             </Alert>
           ) : null}
+          <p className="m-0 text-[13px] text-text-muted">{text('audited')}</p>
         </form>
       )}
       <HeadConfirmDialog
@@ -519,6 +517,6 @@ export function ChangeRolePanel(props: ChangeRolePanelProps) {
         }}
         testId="head-clear-dialog"
       />
-    </SidePanel>
+    </Dialog>
   );
 }

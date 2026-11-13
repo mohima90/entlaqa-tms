@@ -16,7 +16,8 @@ export interface OrgDepartment {
   readonly parentId: string | null;
   readonly branchId: string | null;
   readonly code: string;
-  readonly nameAr: string;
+  /** One of the two names may be missing, never both (migration 20261113100000). */
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
   readonly active: boolean;
   readonly sortOrder: number;
@@ -32,7 +33,7 @@ export interface OrgDepartment {
 
 export interface OrgBranch {
   readonly id: string;
-  readonly nameAr: string;
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
   readonly active: boolean;
 }
@@ -49,7 +50,7 @@ export async function listOrgStructure(tx: UserTx): Promise<OrgStructure> {
     parent_id: string | null;
     branch_id: string | null;
     code: string;
-    name_ar: string;
+    name_ar: string | null;
     name_en: string | null;
     status: string;
     sort_order: number | string;
@@ -63,15 +64,15 @@ export async function listOrgStructure(tx: UserTx): Promise<OrgStructure> {
     from platform.departments d
     left join platform.persons p on p.tenant_id = d.tenant_id and p.id = d.head_person_id
     where d.deleted_at is null
-    order by d.sort_order, d.name_ar, d.id`);
+    order by d.sort_order, coalesce(d.name_ar, d.name_en), d.id`);
   const branches = await tx.execute<{
     id: string;
-    name_ar: string;
+    name_ar: string | null;
     name_en: string | null;
     status: string;
   }>(sql`
     select id, name_ar, name_en, status from platform.branches
-    where deleted_at is null order by is_headquarters desc, name_ar, id`);
+    where deleted_at is null order by is_headquarters desc, coalesce(name_ar, name_en), id`);
   return {
     departments: departments.map((d) => ({
       id: d.id,

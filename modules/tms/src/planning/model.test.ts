@@ -4,10 +4,11 @@ import {
   BudgetAmount,
   CreateCycleInput,
   DEFAULT_CHAIN,
+  LAUNCH_PROBLEMS,
   ReminderDays,
   ReturnNeedsInput,
   SaveScopeInput,
-  SaveStepsInput,
+  SaveSettingsInput,
   type StructureUnit,
   addDays,
   basicsIssues,
@@ -16,7 +17,6 @@ import {
   canRecallNeeds,
   canSubmitNeeds,
   canonicalAmount,
-  chainIssues,
   dayInZone,
   daysBetween,
   defaultDeadline,
@@ -97,13 +97,10 @@ describe('defaults (business flow B4)', () => {
     expect(defaultDeadline('2026-10-17', '2026-11-01')).toBe('2026-11-01');
   });
 
-  it('starts from the built-in chain Department Heads → Finance → Management', () => {
+  it('keeps the built-in chain Department Heads → Finance → Management as stored data only', () => {
+    // No screen shows or edits a chain any more (EP-PLN §13): a new cycle still stores this copy.
     expect(DEFAULT_CHAIN.map((s) => s.kind)).toEqual(['department_heads', 'person', 'person']);
-    expect(chainIssues(DEFAULT_CHAIN, false)).toEqual([]);
-    expect(chainIssues(DEFAULT_CHAIN, true).map((i) => i.message)).toEqual([
-      'required',
-      'required',
-    ]);
+    expect(DEFAULT_CHAIN.every((s) => s.approverPersonId === null)).toBe(true);
   });
 });
 
@@ -184,16 +181,22 @@ describe('launch readiness (B5)', () => {
     today: '2026-10-17',
     needsFormId: 'f1' as string | null,
     departmentCount: 3,
-    steps: [
-      DEFAULT_CHAIN[0] ?? DEFAULT_CHAIN[1]!,
-      { kind: 'person' as const, nameAr: 'م', nameEn: 'F', approverPersonId: 'p1' },
-    ],
-    activeMemberIds: new Set(['p1']),
     anotherOpen: false,
   };
 
-  it('is ready with a future deadline, departments and named active approvers', () => {
+  it('is ready with a future deadline, a needs form and departments — no approval chain asked', () => {
+    // EP-PLN §13 e (PO, 12 Nov 2026): approval is the same for every cycle, so the launch asks for none.
     expect(launchProblems(ready)).toEqual([]);
+    expect(LAUNCH_PROBLEMS).toEqual([
+      'deadline_past',
+      'no_needs_form',
+      'no_departments',
+      'another_open',
+    ]);
+  });
+
+  it('launches on the deadline day itself', () => {
+    expect(launchProblems({ ...ready, deadline: ready.today })).toEqual([]);
   });
 
   it('lists every problem', () => {
@@ -203,21 +206,11 @@ describe('launch readiness (B5)', () => {
         deadline: '2026-10-16',
         needsFormId: null,
         departmentCount: 0,
-        steps: [
-          { kind: 'person', nameAr: 'م', nameEn: 'F', approverPersonId: null },
-          { kind: 'person', nameAr: 'م', nameEn: 'M', approverPersonId: 'gone' },
-        ],
         anotherOpen: true,
       }),
-    ).toEqual([
-      'deadline_past',
-      'no_needs_form',
-      'no_departments',
-      'approver_missing',
-      'approver_inactive',
-      'another_open',
-    ]);
-    expect(launchProblems({ ...ready, steps: [DEFAULT_CHAIN[0]!] })).toEqual(['no_approver_step']);
+    ).toEqual(['deadline_past', 'no_needs_form', 'no_departments', 'another_open']);
+    expect(launchProblems({ ...ready, departmentCount: 0 })).toEqual(['no_departments']);
+    expect(launchProblems({ ...ready, anotherOpen: true })).toEqual(['another_open']);
   });
 });
 
@@ -263,8 +256,8 @@ describe('input rules', () => {
     expect(toFieldErrors(nameIssues('en', { nameAr: 'خطة', nameEn: null }))).toEqual([
       { path: 'nameEn', code: 'REQUIRED' },
     ]);
-    expect(toFieldErrors(nameIssues('ar', { nameAr: null, nameEn: 'Plan' }, 'steps.2.'))).toEqual([
-      { path: 'steps.2.nameAr', code: 'REQUIRED' },
+    expect(toFieldErrors(nameIssues('ar', { nameAr: null, nameEn: 'Plan' }))).toEqual([
+      { path: 'nameAr', code: 'REQUIRED' },
     ]);
   });
 
@@ -282,33 +275,30 @@ describe('input rules', () => {
     expect(basicsIssues({ ...basics, periodStart: 'x' })).toEqual([]);
   });
 
-  it('checks the chain: one Department Heads step, named people once each (BR-PLN-g)', () => {
-    const person = (approverPersonId: string | null) => ({
-      kind: 'person' as const,
-      nameAr: 'م',
-      nameEn: 'S',
-      approverPersonId,
-    });
-    const heads = { ...DEFAULT_CHAIN[0]!, approverPersonId: null };
-    expect(
-      toFieldErrors(
-        chainIssues(
-          [heads, { ...heads, approverPersonId: 'p9' }, person('p1'), person('p1'), person(null)],
-          true,
-        ),
-      ),
-    ).toEqual([
-      { path: 'steps.1.kind', code: 'SECOND_HEADS_STEP' },
-      { path: 'steps.1.approverPersonId', code: 'HEADS_STEP_NAMED' },
-      { path: 'steps.3.approverPersonId', code: 'DUPLICATE_APPROVER' },
-      { path: 'steps.4.approverPersonId', code: 'REQUIRED' },
-    ]);
-    const ids = { id: '11111111-1111-4111-8111-111111111111', version: 1 };
-    expect(SaveStepsInput.safeParse({ ...ids, steps: [] }).success).toBe(false);
-    expect(
-      SaveStepsInput.safeParse({ ...ids, steps: Array.from({ length: 11 }, () => person(null)) })
-        .success,
-    ).toBe(false);
+  it('creates a cycle with its scope: ids once each, nothing picked when left out', () => {
+    const A = '11111111-1111-4111-8111-111111111111';
+    const B = '22222222-2222-4222-8222-222222222222';
+    const input = {
+      nameAr: null,
+      nameEn: 'Plan 2027',
+      periodStart: '2027-01-01',
+      periodEnd: '2027-12-31',
+      deadline: '2026-12-15',
+    };
+    const bare = CreateCycleInput.parse(input);
+    expect(bare.departmentIds).toEqual([]);
+    expect(bare.branchIds).toEqual([]);
+    const picked = CreateCycleInput.parse({ ...input, departmentIds: [A, B, A], branchIds: [B] });
+    expect(picked.departmentIds).toEqual([A, B]);
+    expect(picked.branchIds).toEqual([B]);
+    expect(CreateCycleInput.safeParse({ ...input, departmentIds: ['x'] }).success).toBe(false);
+    // Unknown keys are refused: the chain is not part of a cycle any more.
+    expect(CreateCycleInput.safeParse({ ...input, steps: [] }).success).toBe(false);
+  });
+
+  it('planning settings carry the default reminders only (the chain left the screens)', () => {
+    expect(SaveSettingsInput.parse({ reminderDays: [2, 7] })).toEqual({ reminderDays: [7, 2] });
+    expect(SaveSettingsInput.safeParse({ reminderDays: [7], steps: [] }).success).toBe(false);
   });
 
   it('accepts reminder days 1–90, distinct, at most five — sorted from the earliest', () => {

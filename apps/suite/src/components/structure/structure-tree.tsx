@@ -40,11 +40,11 @@ import {
 
 export interface StructureTreeProps {
   readonly units: readonly UnitView[];
-  /** `platform.org.manage`: the add buttons, the row menus, the side panel and its actions. */
+  /** `platform.org.manage`: the add buttons, the row menus, the unit popup and its actions. */
   readonly canManage: boolean;
   /** The organization's first level («Add <first level>» at the top), or null without levels. */
   readonly firstLevelName: string | null;
-  /** Every level's name from the top down (the panel offers the level under the one just added). */
+  /** Every level's name from the top down (the popup offers the level under the one just added). */
   readonly levelNames: readonly string[];
   readonly branches: readonly Choice[];
   readonly people: readonly Choice[];
@@ -55,7 +55,7 @@ export interface StructureTreeProps {
   readonly undoLabel: string;
   readonly errors: ErrorTexts;
   readonly locale: 'ar' | 'en';
-  /** The page's header (rendered here: «Add <first level>» opens this tree's side panel). */
+  /** The page's header (rendered here: «Add <first level>» opens this tree's popup). */
   readonly header: {
     readonly title: string;
     readonly description: string;
@@ -64,6 +64,8 @@ export interface StructureTreeProps {
   };
   /** Between the header and the tree: the summary strip, notices and the views (server-rendered). */
   readonly top?: ReactNode;
+  /** The organization's default language: the unit form requires its name and asks it first. */
+  readonly nameLanguage: 'ar' | 'en';
   /** The address of the levels view (the empty state's first step). */
   readonly levelsHref: string;
   /** Structure → Import units (WP-HR-01). */
@@ -80,8 +82,8 @@ type DialogState =
  * The structure tree (FR-ADM-05, EP-ORG), direction C (redesign package 2; approved direction,
  * comparison §3): units under their parent with connector lines, expanded by default, «Expand all /
  * Collapse all»; each row with its level, head and the number of units under it, and «+ Add <next level>»
- * on the row (shown on hover or focus; inside ⋯ on phones). Adding or editing opens a side panel with the
- * tree in view; while adding, the parent is highlighted and a dashed placeholder shows where the unit
+ * on the row (shown on hover or focus; inside ⋯ on phones). Adding or editing opens a centred popup (forms
+ * standard rule 9); while adding, the parent is highlighted and a dashed placeholder shows where the unit
  * goes. Deactivating a unit no role is limited to acts at once with «Undo» (Q2-9); with limited roles the
  * confirmation stays. Delete shows what still depends on the unit. The tree is a plain nested list of
  * buttons (no ARIA tree): every control is reachable with Tab. Structure completion (WP-HR-01, design screen 1):
@@ -99,11 +101,11 @@ export function StructureTree(props: StructureTreeProps) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(parentIds(units)));
   const [dialogState, setDialog] = useState<DialogState | null>(null);
   // «Add a <level> under it» right after adding: the new unit's row arrives with the refreshed tree, so the
-  // next panel is derived from the units once it is there (Kawadir: enter a department, then the next
-  // level if you wish). Cleared when that panel closes.
+  // next popup is derived from the units once it is there (Kawadir: enter a department, then the next
+  // level if you wish). Cleared when that popup closes.
   const [followUp, setFollowUp] = useState<UnitFollowUp | null>(null);
-  // A follow-up replaces one open panel by the next in the same event (close, then open): the key makes
-  // it a fresh panel, not the closed one kept with its state.
+  // A follow-up replaces one open popup by the next in the same event (close, then open): the key makes
+  // it a fresh popup, not the closed one kept with its state.
   const [panelSeq, setPanelSeq] = useState(0);
   const followUpParent =
     followUp?.kind === 'child' ? (units.find((u) => u.id === followUp.parentId) ?? null) : null;
@@ -140,7 +142,7 @@ export function StructureTree(props: StructureTreeProps) {
     dialog?.kind === 'unit' && dialog.mode.kind === 'create' ? dialog.mode.levelName : '';
   const editing = dialog?.kind === 'unit' && dialog.mode.kind === 'edit' ? dialog.mode.unit : null;
   // The unit a new one is added under stays open afterwards: what was just added must not disappear
-  // when the panel closes (a unit that had nothing under it starts closed).
+  // when the popup closes (a unit that had nothing under it starts closed).
   if (addingUnder !== null && !expanded.has(addingUnder.id)) {
     setExpanded(new Set([...expanded, addingUnder.id]));
   }
@@ -643,6 +645,7 @@ export function StructureTree(props: StructureTreeProps) {
           texts={texts}
           errors={props.errors}
           locale={locale}
+          nameLanguage={props.nameLanguage}
           onClose={() => {
             setDialog(null);
             setFollowUp(null);

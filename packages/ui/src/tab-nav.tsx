@@ -21,8 +21,9 @@ export interface TabNavProps extends HTMLAttributes<HTMLElement> {
    * `underline` (direction C): views of one object — 48 px tabs over a hairline, the current one with a
    * 3 px bar in the brand colour. `pills`: a muted track with a white current tab; `segmented`: a
    * smaller filter row. `side`: the sections of a settings page as a column at the side of the content
-   * (forms standard rule 9); on phones the tabs wrap into rows above the content. Put it in a grid next to
-   * the content, e.g. `grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)]`.
+   * (forms standard rule 9) from the `xl` width (1200 px: next to the app's own sidebar the content is
+   * wide enough from there); on phones and tablets the tabs wrap into rows above the content. Put it in a
+   * grid next to the content: `grid grid-cols-1 xl:grid-cols-[230px_minmax(0,1fr)]`.
    */
   readonly variant?: 'underline' | 'pills' | 'segmented' | 'side' | undefined;
 }
@@ -44,7 +45,7 @@ export function TabNav({
   if (variant === 'side') {
     return (
       <nav aria-label={label} className={cn('min-w-0', className)} {...props}>
-        <ul className="m-0 flex list-none flex-wrap gap-1 p-0 md:flex-col md:flex-nowrap">
+        <ul className="m-0 flex list-none flex-wrap gap-1 p-0 xl:flex-col xl:flex-nowrap">
           {items.map((item) => {
             const isCurrent = item.key === current;
             return (

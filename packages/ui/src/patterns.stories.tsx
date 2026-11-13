@@ -399,7 +399,7 @@ function RichDialogDemo({ globals }: { globals: Record<string, unknown> }) {
           </>
         }
       >
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <TextField
             id="story-cycle-name"
             label={pick(globals, { ar: 'اسم الدورة', en: 'Cycle name' })}
@@ -414,7 +414,7 @@ function RichDialogDemo({ globals }: { globals: Record<string, unknown> }) {
             })}
           />
         </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-3">
           <TextField
             id="story-cycle-start"
             type="date"
@@ -450,8 +450,8 @@ function RichDialogDemo({ globals }: { globals: Record<string, unknown> }) {
 
 /**
  * Creating a rich thing: one centred popup, 672 px (`size="rich"`; forms standard rule 9) — the few fields
- * needed now, a red asterisk on the required ones, «Cancel» then the primary button at the end. On phones
- * the fields stack one per row.
+ * needed now, a red asterisk on the required ones, «Cancel» then the primary button at the end. Fields that
+ * sit side by side from the `md` width (600 px) stack one per row on phones.
  */
 export const DialogRichCreate: Story = {
   render: (_args, { globals }) => <RichDialogDemo globals={globals} />,
@@ -459,11 +459,11 @@ export const DialogRichCreate: Story = {
 
 /**
  * A thing's own settings page: its sections as tabs at the side (`TabNav variant="side"`), the open section
- * next to them. On phones the tabs wrap into rows above the content.
+ * next to them, from the `xl` width (1200 px). On phones and tablets the tabs wrap into rows above the content.
  */
 export const SideTabs: Story = {
   render: (_args, { globals }) => (
-    <div className="grid grid-cols-1 items-start gap-4 bg-bg p-6 md:grid-cols-[220px_minmax(0,1fr)] md:gap-6">
+    <div className="grid grid-cols-1 items-start gap-4 bg-bg p-6 xl:grid-cols-[230px_minmax(0,1fr)] xl:gap-6">
       <TabNav
         variant="side"
         label={pick(globals, { ar: 'إعدادات الدورة', en: 'Cycle settings' })}

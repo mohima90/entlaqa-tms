@@ -12,8 +12,8 @@ import { DiscardDialog, type DiscardTexts } from './discard-dialog';
 import { EditUserForm, type EditUserFormProps } from './edit-user-form';
 
 /*
- * The panels of one person (redesign package 3 — «one person, one place»): Edit details and Change role are
- * side panels over the profile, Deactivate is a dialog. Each has its own address (`/users/[id]/edit`,
+ * The panels of one person (redesign package 3 — «one person, one place»): Edit details is a side panel over
+ * the profile, Change role a centred popup (forms standard rule 9, PO 12 Nov 2026), Deactivate a dialog. Each has its own address (`/users/[id]/edit`,
  * `/roles`, `/deactivate`, so bookmarks keep working); closing one returns to the profile (the same tab)
  * and focus goes back to the button that opened it.
  */
@@ -144,16 +144,18 @@ export interface RolePanelRouteProps extends Omit<
 export function RolePanelRoute(props: RolePanelRouteProps) {
   const close = useClose(props.back);
   if (!props.target) {
+    // The same container as the popup itself (forms standard rule 9): what could not be opened, and «Close».
     return (
-      <SidePanel
+      <Dialog
         open
         onClose={close}
+        size="rich"
         title={props.title}
         closeLabel={props.closeLabel}
         data-testid="change-role-panel"
       >
         {props.failure}
-      </SidePanel>
+      </Dialog>
     );
   }
   const { back: _back, failure: _failure, closeLabel: _close, title: _title, ...panel } = props;

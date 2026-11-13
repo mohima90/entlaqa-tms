@@ -4,7 +4,7 @@
 # Base: distroless Node 24 — no shell, no package manager, no npm (whose bundled packages carried the
 # known CVEs in the -slim image), runs as the unprivileged `nonroot` user. Pinned by digest; bump
 # deliberately (CI scans the built image, gate 15).
-FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:c1326ce1aad4b976dce3a3da8b7eb5c8328e635e312309a7a0e5319d1470be0d
+FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:9fc11f6ee65993285c0fe3c4c9bbc4fd275fd4470572f58834ce490df91056e3
 ENV NODE_ENV=production HOSTNAME=0.0.0.0 PORT=3000 NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
 COPY --chown=nonroot:nonroot apps/suite/.next/standalone/ ./

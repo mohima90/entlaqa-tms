@@ -46,7 +46,7 @@ async function rowAction(page: Page, name: string, testId: string) {
   await page.getByTestId(testId).click();
 }
 
-/** Team members → ⋯ → Change role → a role (and Save): the panel closes with a toast. */
+/** Team members → ⋯ → Change role → a role (and Save): the popup closes with a toast. */
 async function changeRole(page: Page, name: string, role: RegExp) {
   await page.goto('/en/suite/admin/users');
   await rowAction(page, name, 'member-menu-edit-role');
@@ -447,7 +447,7 @@ test.describe('users pages', () => {
   });
 
   // Runs after the tests that read Sarah's role.
-  test('Organization Admin changes a role from the team list in a side panel, with Undo', async ({
+  test('Organization Admin changes a role from the team list in a popup, with Undo', async ({
     page,
   }) => {
     await signIn(page);

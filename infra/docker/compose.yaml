@@ -459,7 +459,7 @@ services:
   #   NEW_USER_PASSWORD='…' docker compose --env-file .secrets/.env run --rm --user "$(id -u):$(id -g)" \
   #     -e NEW_USER_PASSWORD admin-cli admin@example.org
   admin-cli:
-    image: gcr.io/distroless/nodejs24-debian13:nonroot@sha256:c1326ce1aad4b976dce3a3da8b7eb5c8328e635e312309a7a0e5319d1470be0d
+    image: gcr.io/distroless/nodejs24-debian13:nonroot@sha256:9fc11f6ee65993285c0fe3c4c9bbc4fd275fd4470572f58834ce490df91056e3
     profiles: [tools]
     security_opt: ['no-new-privileges:true']
     read_only: true

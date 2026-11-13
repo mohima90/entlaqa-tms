@@ -193,6 +193,8 @@ describe('builderFieldError', () => {
       key: 'nameTaken',
     });
     expect(builderFieldError('nameAr', 'TOO_SMALL')).toEqual({ field: 'nameAr', key: 'required' });
+    // The name the organization's default language requires (PO, 12 Nov 2026).
+    expect(builderFieldError('nameEn', 'REQUIRED')).toEqual({ field: 'nameEn', key: 'required' });
     expect(builderFieldError('nameAr', 'CUSTOM')).toEqual({ field: 'nameAr', key: 'name' });
     expect(builderFieldError('description', 'TOO_BIG')).toEqual({
       field: 'description',

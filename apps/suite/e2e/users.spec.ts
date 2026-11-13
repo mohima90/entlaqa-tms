@@ -566,21 +566,25 @@ test.describe('users pages', () => {
     const name = `Course reviewer ${Date.now()}`;
     await signIn(page);
     await page.goto('/en/suite/admin/roles');
+    // «Create role» is one popup (WP-UX-01 c): start from and the names, then the role's own page.
     await page.getByTestId('create-role-link').click();
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Create role');
-    const builder = page.getByTestId('role-builder');
+    const create = page.getByTestId('role-create-dialog');
+    await expect(create.getByRole('heading', { name: 'Create role' })).toBeVisible();
     // Start from a template: names, scope and permissions filled in, all editable.
-    await builder.getByRole('combobox', { name: 'Start from' }).selectOption({ label: 'Auditor' });
-    await expect(builder.getByRole('textbox', { name: /Name in English/ })).toHaveValue('Auditor');
-    await expect(page.getByTestId('role-privileged-notice')).toBeVisible(); // audit log: high risk
-    // Changed: the save bar appears.
-    await expect(page.getByTestId('save-bar')).toContainText('You have unsaved changes.');
-    await builder.getByRole('textbox', { name: /Name in English/ }).fill(name);
-    await builder
+    await create.getByRole('combobox', { name: 'Start from' }).selectOption({ label: 'Auditor' });
+    await expect(create.getByRole('textbox', { name: /Name in English/ })).toHaveValue('Auditor');
+    await create.getByRole('textbox', { name: /Name in English/ }).fill(name);
+    await create
       .getByRole('textbox', { name: /Name in Arabic/ })
       .fill(`مراجع الدورات ${Date.now()}`);
+    await create.getByTestId('role-create-submit').click();
+    await page.waitForURL(/\/en\/suite\/admin\/roles\/custom_[0-9a-f]{12}$/);
+    const builder = page.getByTestId('role-builder');
+    await expect(page.getByTestId('role-privileged-notice')).toBeVisible(); // audit log: high risk
     const permissions = builder.getByTestId('role-permissions');
     await permissions.getByRole('checkbox', { name: /View the audit log/ }).uncheck();
+    // Changed: the save bar appears.
+    await expect(page.getByTestId('save-bar')).toContainText('You have unsaved changes.');
     await expect(page.getByTestId('role-privileged-notice')).toHaveCount(0);
     // Administrative permissions need the whole organization: a narrower scope clears them — Undo brings
     // the scope and the ticks back.
@@ -632,9 +636,12 @@ test.describe('users pages', () => {
     await expect(other.getByTestId('invite-user-link')).toHaveCount(0);
     await other.goto('/en/suite/admin/users/invite');
     await expect(other.getByText("You don't have permission to do this.")).toBeVisible();
+    // The former create page opens Roles & permissions: no «Create role» for her there.
     await other.goto('/ar/suite/admin/roles/new');
     await expect(other.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(other.getByText('ليست لديك صلاحية لتنفيذ هذا الإجراء.')).toBeVisible();
+    await expect(other).toHaveURL(/\/ar\/suite\/admin\/roles$/);
+    await expect(other.getByTestId('role-create-dialog')).toHaveCount(0);
+    await expect(other.getByTestId('create-role-link')).toHaveCount(0);
     await context.close();
 
     // Arabic: the role's page in Arabic; it cannot be deleted while Mona holds it (also in the ⋯ menu).
@@ -671,12 +678,16 @@ test.describe('users pages', () => {
     const name = `Academy coordinator ${Date.now()}`;
     await signIn(page);
     // A custom role limited to «A department»: the unit is picked when the role is given.
-    await page.goto('/en/suite/admin/roles/new');
-    const builder = page.getByTestId('role-builder');
-    await builder.getByRole('textbox', { name: /Name in English/ }).fill(name);
-    await builder
+    await page.goto('/en/suite/admin/roles');
+    await page.getByTestId('create-role-link').click();
+    const create = page.getByTestId('role-create-dialog');
+    await create.getByRole('textbox', { name: /Name in English/ }).fill(name);
+    await create
       .getByRole('textbox', { name: /Name in Arabic/ })
       .fill(`منسق الأكاديمية ${Date.now()}`);
+    await create.getByTestId('role-create-submit').click();
+    await page.waitForURL(/\/en\/suite\/admin\/roles\/custom_[0-9a-f]{12}$/);
+    const builder = page.getByTestId('role-builder');
     await builder
       .getByTestId('role-permissions')
       .getByRole('checkbox', { name: 'View users' })
@@ -739,23 +750,27 @@ test.describe('users pages', () => {
   }) => {
     const name = `مدقق الجودة ${Date.now()}`;
     await signIn(page);
+    // The former address opens «Create role» (the popup) on Roles & permissions.
     await page.goto('/ar/suite/admin/roles/new');
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('إنشاء دور');
-    const builder = page.getByTestId('role-builder');
-    await builder.getByRole('combobox', { name: 'البدء من' }).selectOption({ label: 'مدقق' });
-    await expect(builder.getByRole('textbox', { name: /الاسم بالعربية/ })).toHaveValue('مدقق');
-    await builder.getByRole('textbox', { name: /الاسم بالعربية/ }).fill(name);
-    await builder
+    const create = page.getByTestId('role-create-dialog');
+    await expect(create.getByRole('heading', { name: 'إنشاء دور' })).toBeVisible();
+    await create.getByRole('combobox', { name: 'البدء من' }).selectOption({ label: 'مدقق' });
+    await expect(create.getByRole('textbox', { name: /الاسم بالعربية/ })).toHaveValue('مدقق');
+    await create.getByRole('textbox', { name: /الاسم بالعربية/ }).fill(name);
+    await create
       .getByRole('textbox', { name: /الاسم بالإنجليزية/ })
       .fill(`Quality auditor ${Date.now()}`);
+    await expectNoSeriousA11yViolations(page);
+    await create.getByTestId('role-create-submit').click();
+    await page.waitForURL(/\/ar\/suite\/admin\/roles\/custom_[0-9a-f]{12}$/);
+    await expect(toasts(page)).toContainText('أُنشئ الدور.');
+    const builder = page.getByTestId('role-builder');
     await expect(page.getByTestId('role-privileged-notice')).toContainText('هذا الدور مميز');
     await expect(builder.getByTestId('role-builder-announcer')).toContainText('هذا الدور مميز');
     await expect(page.getByTestId('role-summary')).toContainText('يرى');
     await expectNoSeriousA11yViolations(page);
-    await page.getByTestId('save-bar').getByRole('button', { name: 'حفظ الدور' }).click();
-    await expect(page).toHaveURL(/\/ar\/suite\/admin\/roles$/);
-    await expect(toasts(page)).toContainText('حُفظ الدور.');
+    await page.goto('/ar/suite/admin/roles');
     const row = page.getByTestId('roles-custom').getByRole('listitem').filter({ hasText: name });
     await expect(row).toContainText('مميز');
     await row.getByRole('link', { name, exact: true }).click();
@@ -776,12 +791,16 @@ test.describe('users pages', () => {
     const name = `People desk ${Date.now()}`;
     await signIn(page);
     // A privileged custom role (it invites people: user management) …
-    await page.goto('/en/suite/admin/roles/new');
-    const builder = page.getByTestId('role-builder');
-    await builder.getByRole('textbox', { name: /Name in English/ }).fill(name);
-    await builder
+    await page.goto('/en/suite/admin/roles');
+    await page.getByTestId('create-role-link').click();
+    const create = page.getByTestId('role-create-dialog');
+    await create.getByRole('textbox', { name: /Name in English/ }).fill(name);
+    await create
       .getByRole('textbox', { name: /Name in Arabic/ })
       .fill(`مكتب الأشخاص ${Date.now()}`);
+    await create.getByTestId('role-create-submit').click();
+    await page.waitForURL(/\/en\/suite\/admin\/roles\/custom_[0-9a-f]{12}$/);
+    const builder = page.getByTestId('role-builder');
     await builder.getByRole('checkbox', { name: 'View users' }).check();
     await builder.getByRole('checkbox', { name: 'Invite users' }).check();
     await expect(page.getByTestId('role-privileged-notice')).toBeVisible();

@@ -137,6 +137,11 @@ for (const locale of ['en', 'ar'] as const) {
     await page.getByTestId('needs-form-create').click();
     const dialog = page.getByTestId('needs-form-dialog');
     await expect(dialog.getByTestId('needs-form-start-blank').getByRole('radio')).toBeChecked();
+    // The name in the page's language (no database: no organization default) is required, the other
+    // optional (WP-UX-01 c).
+    const [asked, optional] = locale === 'ar' ? ['ar', 'en'] : ['en', 'ar'];
+    await expect(dialog.locator(`#needs-form-name-${asked}`)).toHaveAttribute('required', '');
+    await expect(dialog.locator(`#needs-form-name-${optional}`)).not.toHaveAttribute('required', '');
     await dialog.locator('#needs-form-name-en').fill('Engineering needs');
     await dialog.locator('#needs-form-name-ar').fill('احتياجات الهندسة');
     await expectNoSeriousA11yViolations(page);
@@ -277,6 +282,22 @@ test('names are unique: a second form with the same name is refused', async ({ p
   await expect(page.locator('#needs-form-name-en-error')).toHaveText(
     'Another form already has this name.',
   );
+});
+
+test('a form named in the default language only; without it the popup asks for it', async ({
+  page,
+}) => {
+  await page.goto('/en/suite/planning/needs-forms');
+  await page.getByTestId('needs-form-create').click();
+  const dialog = page.getByTestId('needs-form-dialog');
+  await dialog.locator('#needs-form-name-ar').fill('احتياجات المبيعات');
+  await dialog.getByTestId('needs-form-dialog-submit').click();
+  await expect(page.locator('#needs-form-name-en-error')).toHaveText('Fill this in.');
+  await dialog.locator('#needs-form-name-ar').fill('');
+  await dialog.locator('#needs-form-name-en').fill('Sales needs');
+  await dialog.getByTestId('needs-form-dialog-submit').click();
+  await expect(page).toHaveURL(/\/en\/suite\/planning\/needs-forms\/[0-9a-f-]{36}$/);
+  await expect(page.getByTestId('needs-form-title')).toHaveText('Sales needs');
 });
 
 test('an unknown form is not found; a malformed id is a 404', async ({ page }) => {

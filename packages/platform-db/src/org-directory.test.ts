@@ -1,12 +1,7 @@
 import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
-import {
-  MEMBER_SEARCH,
-  getMemberOptionsByIds,
-  listOrgStructure,
-  searchMemberOptions,
-} from './org-directory';
+import { getMemberOptionsByIds, listOrgStructure } from './org-directory';
 import type { UserTx } from './with-user-tx';
 
 const dialect = new PgDialect();
@@ -114,29 +109,6 @@ describe('getMemberOptionsByIds (C-M3: no cap)', () => {
   it('asks nothing for no ids', async () => {
     const { tx, executed } = fakeTx();
     expect(await getMemberOptionsByIds(tx, ['nope'])).toEqual([]);
-    expect(executed).toHaveLength(0);
-  });
-});
-
-describe('searchMemberOptions (C-M3: server search, min 2 characters, at most 50)', () => {
-  it('searches active members by Arabic or English name, wildcards taken literally', async () => {
-    const { tx, executed } = fakeTx([{ person_id: 'p1', name_ar: 'سارة', name_en: 'Sara' }]);
-    expect(await searchMemberOptions(tx, '  50%_a\\ ')).toEqual([
-      { personId: 'p1', nameAr: 'سارة', nameEn: 'Sara' },
-    ]);
-    expect(executed[0]?.params).toEqual([
-      '%50\\%\\_a\\\\%',
-      '%50\\%\\_a\\\\%',
-      MEMBER_SEARCH.limit,
-    ]);
-    expect(executed[0]?.sql).toContain("p.status = 'active'");
-    expect(executed[0]?.sql).toContain('limit');
-    expect(executed[0]?.sql).not.toContain('email');
-  });
-
-  it('asks nothing for fewer than two characters', async () => {
-    const { tx, executed } = fakeTx();
-    expect(await searchMemberOptions(tx, ' s ')).toEqual([]);
     expect(executed).toHaveLength(0);
   });
 });

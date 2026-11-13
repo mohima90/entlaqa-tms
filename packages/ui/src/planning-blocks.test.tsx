@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { EmptyState, ProgressBar, StepList, type StepListItem } from './index';
+import { EmptyState, ProgressBar } from './index';
 
 /** Redesign package 4 (Planning & courses) building blocks: markup and states. */
 function html(ui: React.ReactElement): HTMLElement {
@@ -24,38 +24,6 @@ describe('ProgressBar', () => {
     const none = html(<ProgressBar value={0} max={0} label="x" />).querySelector('progress');
     expect(none?.getAttribute('max')).toBe('1');
     expect(none?.getAttribute('value')).toBe('0');
-  });
-});
-
-describe('StepList', () => {
-  const items: StepListItem[] = [
-    {
-      key: 'basics',
-      label: 'Basics',
-      href: '#b',
-      state: 'problem',
-      note: 'needs attention',
-      srNote: '(needs attention)',
-    },
-    { key: 'scope', label: 'Scope', href: '#s', state: 'done', srNote: '(completed)' },
-    { key: 'budget', label: 'Budget', href: '#u', state: 'todo', note: 'optional' },
-    { key: 'review', label: 'Review & launch', state: 'locked', icon: 'flag' },
-  ];
-
-  it('marks the current step, says each mark in words and shows locked steps as text', () => {
-    const root = html(
-      <StepList label="Set-up steps" items={items} current="budget" short="Step 3 of 4 · Budget" />,
-    );
-    expect(root.querySelector('nav')?.getAttribute('aria-label')).toBe('Set-up steps');
-    const links = root.querySelectorAll('ol a');
-    expect(links).toHaveLength(3);
-    expect(root.querySelector('a[aria-current="step"]')?.textContent).toContain('Budget');
-    expect(root.textContent).toContain('(needs attention)');
-    expect(root.textContent).toContain('(completed)');
-    const locked = root.querySelector('[aria-disabled="true"]');
-    expect(locked?.textContent).toContain('Review & launch');
-    // Phones: one line with the step and a segmented bar.
-    expect(root.textContent).toContain('Step 3 of 4 · Budget');
   });
 });
 

@@ -16,13 +16,10 @@
 -- (apps/suite courses page, the needs page's course picker). The guard of a course compares the titles with
 -- IS DISTINCT FROM (20261020210400), so NULL is compared like any value. PII: none.
 set local lock_timeout = '5s';
-
-alter table tms.courses alter column title_ar drop not null;
-alter table tms.courses alter column title_en drop not null;
-alter table tms.courses
-  add constraint courses_title_present_check check (title_ar is not null or title_en is not null) not valid;
-comment on constraint courses_title_present_check on tms.courses is
-  'A course has a title in at least one language; the required one follows the organization''s default language (application rule). FR-CAT-01; PO 12 Nov 2026.';
+-- Both tables are locked in one statement, in the order the application writes them (a new category, then
+-- the course that uses it — modules/tms courses service), so a course saved meanwhile cannot deadlock with
+-- this migration.
+lock table tms.course_categories, tms.courses in access exclusive mode;
 
 alter table tms.course_categories alter column name_ar drop not null;
 alter table tms.course_categories alter column name_en drop not null;
@@ -30,3 +27,10 @@ alter table tms.course_categories
   add constraint course_categories_name_present_check check (name_ar is not null or name_en is not null) not valid;
 comment on constraint course_categories_name_present_check on tms.course_categories is
   'A course category has a name in at least one language. FR-CAT-01; PO 12 Nov 2026.';
+
+alter table tms.courses alter column title_ar drop not null;
+alter table tms.courses alter column title_en drop not null;
+alter table tms.courses
+  add constraint courses_title_present_check check (title_ar is not null or title_en is not null) not valid;
+comment on constraint courses_title_present_check on tms.courses is
+  'A course has a title in at least one language; the required one follows the organization''s default language (application rule). FR-CAT-01; PO 12 Nov 2026.';

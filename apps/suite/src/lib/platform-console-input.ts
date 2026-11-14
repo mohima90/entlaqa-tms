@@ -1,6 +1,7 @@
 import { hasVisibleText } from '@jadarat/platform-i18n';
 import { EmailAddress, EmailProviderInput, SenderName } from '@jadarat/platform-notifications';
 import { z } from 'zod';
+import { organizationNameField } from './organization-name-field';
 import { isOrganizationSlug } from './organization-slug';
 
 /**
@@ -21,11 +22,6 @@ const organizationName = (max: number) =>
     .refine((value) => value === '' || hasVisibleText(value), { message: 'invisible' });
 
 const personName = organizationName(100).optional();
-
-/** The organization's name that «Create organization» requires: the one in the language chosen for it. */
-export function organizationNameField(locale: 'ar' | 'en'): 'nameAr' | 'nameEn' {
-  return locale === 'ar' ? 'nameAr' : 'nameEn';
-}
 
 export const CreateOrganizationInput = z
   .strictObject({

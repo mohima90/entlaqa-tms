@@ -133,7 +133,7 @@ test.describe('plans: the Super Admin (configured deployment)', () => {
     await page.getByTestId('create-organization').click();
     const create = page.getByTestId('create-organization-panel');
     await create.getByTestId('create-org-slug').fill(slug);
-    await create.getByTestId('create-org-nameAr').fill(`منظمة ${slug}`);
+    // English is the language chosen by default: its name alone is enough (WP-UX-01 d, PO 12 Nov 2026).
     await create.getByTestId('create-org-nameEn').fill(`Organization ${slug}`);
     await create.getByTestId('create-org-adminEmail').fill(`org-admin-${slug}@example.test`);
     await create.getByTestId('create-organization-submit').click();

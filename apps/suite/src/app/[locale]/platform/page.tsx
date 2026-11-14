@@ -59,7 +59,7 @@ const first = (value: string | string[] | undefined): string =>
  * The Platform Super Admin console «مشرف المنصة» — Organizations (FR-ADM-17; Kawadir ATS's
  * (admin)/organizations), redesign package 5 (direction C): the three figures are saved-view cards
  * (Organizations · Active · Organization Admin pending) that filter the list, a search by name or short
- * name, the organizations table (cards on phones), «إنشاء منظمة» / Create organization in a side panel and
+ * name, the organizations table (cards on phones), «إنشاء منظمة» / Create organization in a popup and
  * the pending Organization Admin's invitation link. Both filters work on the rows already read. Deny by
  * default, on the server, before anything renders: a verified session (getClaims) of a user the DATABASE
  * says is a Super Admin — everyone else (signed out, any organization's member, any other account) gets 404.

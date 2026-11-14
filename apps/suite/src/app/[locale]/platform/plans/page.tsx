@@ -16,7 +16,7 @@ import { PLAN_FEATURE_CODES } from '../../../../lib/platform-plans-input';
  * Platform → Plans «الخطط» (WP-ADM-06; FR-ADM-13, FR-SUB-01; design approved by the PO 24 Oct 2026): the
  * plans the Super Admin created — name and description, the people and storage limits, how many of the
  * product's features each includes and how many organizations are on it — with «خطة جديدة» / New plan and
- * «تعديل» / Edit in a side panel. A table on a desktop, cards on a phone. Deny by default, on the server,
+ * «تعديل» / Edit in a popup. A table on a desktop, cards on a phone. Deny by default, on the server,
  * before anything renders: only a Super Admin (the database decides); everyone else gets 404.
  */
 export default async function PlatformPlansPage({

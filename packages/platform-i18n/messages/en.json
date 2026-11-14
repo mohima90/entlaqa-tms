@@ -2398,7 +2398,7 @@
       "adminFirstNameEn": "First name in English",
       "adminFamilyNameEn": "Family name in English",
       "adminNamesHint": "Optional. The Organization Admin can set their name when they join.",
-      "locale": "Invitation language",
+      "locale": "Language",
       "localeEn": "English",
       "localeAr": "Arabic",
       "submit": "Create organization",
@@ -2408,18 +2408,21 @@
         "slug": "Use 3 to 40 lowercase letters, digits or hyphens, not starting or ending with a hyphen.",
         "slugTaken": "This short name is already used or reserved. Choose another.",
         "nameAr": "Enter the organization's name in Arabic (up to 200 characters).",
-        "nameEn": "Use up to 200 characters.",
+        "nameEn": "Enter the organization's name in English (up to 200 characters).",
         "adminEmail": "Enter an email address such as name@company.com.",
         "adminEmailOwn": "Use the Organization Admin's own email. You can't invite your own Super Admin account.",
         "adminName": "Use up to 100 characters.",
         "adminNamePair": "Enter the first name and the family name in this language, or leave both empty.",
         "locale": "Choose Arabic or English.",
-        "form": "Check the details and try again."
+        "form": "Check the details and try again.",
+        "nameOther": "Use up to 200 characters."
       },
-      "planSection": "Plan",
       "plan": "Plan",
       "trial": "Start with a 30-day trial",
-      "trialHint": "After 30 days the organization is suspended unless you make it active. You can change this later on its page."
+      "trialHint": "After 30 days the organization is suspended unless you make it active. You can change this later on its page.",
+      "localeHint": "The organization's name in this language is required. The Organization Admin's invitation is written in it.",
+      "more": "More options",
+      "moreSummary": "the Organization Admin's name"
     },
     "created": {
       "title": "Organization created",
@@ -2435,7 +2438,7 @@
       "newCode": "New code",
       "issuing": "Issuing…",
       "newCodeIssued": "A new code was issued. The previous code no longer works.",
-      "close": "Close",
+      "close": "Done",
       "needsNewCode": "The Super Admin who issued this invitation no longer has access, so its link no longer works. Issue a new code to send the Organization Admin a working one."
     },
     "errors": {

@@ -87,6 +87,7 @@ begin
   -- English only (the default language of a new organization).
   select * into r from private.platform_create_tenant('names-en', null, '  English Only Co  ', 'admin@names-en.test',
                                                       null, null, null, null, 'en');
+  perform set_config('tests.names_en', r.tenant_id::text, true);
   perform tests.assert_eq((select row(x.state, x.tenant_name_ar, x.tenant_name_en, x.locale)::text
                            from private.invitation_by_token(tests.token_hash(r.invite_code)) x),
     row('valid', null::text, 'English Only Co', 'en')::text,
@@ -98,6 +99,7 @@ begin
   -- Arabic only, and both.
   select * into r from private.platform_create_tenant('names-ar', 'منشأة بالعربية', '', 'admin@names-ar.test',
                                                       null, null, null, null, 'ar');
+  perform set_config('tests.names_ar', r.tenant_id::text, true);
   perform tests.assert_eq((select row(l.name_ar, l.name_en)::text
                            from private.platform_list_tenants() l where l.tenant_id = r.tenant_id),
     row('منشأة بالعربية', null::text)::text, 'Arabic only: no English name is kept');
@@ -113,6 +115,37 @@ begin
                            from private.platform_list_tenants() l where l.tenant_id = r.tenant_id),
     row('منشأة قديمة', null::text)::text, 'the Arabic name alone with English chosen is still accepted');
 end $$;
+-- The language chosen is the organization's default language (20261113120300; ruling of 14 Nov 2026), and
+-- its invitation's. Read as the owner: the settings are tenant data.
+reset role;
+reset session authorization;
+select tests.set_claims(null);
+do $$
+declare
+  v_en uuid := current_setting('tests.names_en')::uuid;
+  v_ar uuid := current_setting('tests.names_ar')::uuid;
+begin
+  perform tests.assert_eq((select default_locale from platform.tenant_settings where tenant_id = v_ar), 'ar',
+    'an organization created in Arabic has Arabic as its default language');
+  perform tests.assert_eq((select default_locale from platform.tenant_settings where tenant_id = v_en), 'en',
+    'an organization created in English has English as its default language');
+  perform tests.assert_eq((select string_agg(i.locale, ',') from platform.invitations i where i.tenant_id = v_ar), 'ar',
+    'its Organization Admin''s invitation is in the same language');
+  perform tests.assert_eq((select row(s.version, s.updated_by)::text from platform.tenant_settings s where s.tenant_id = v_ar),
+    row(2, null::uuid)::text, 'set once, as a platform operation (no person stamped)');
+  -- What the guard gained: the default language of a settings row never saved, nothing else.
+  perform tests.assert(has_column_privilege('platform_admin_guard', 'platform.tenant_settings', 'default_locale', 'update')
+                       and not has_column_privilege('platform_admin_guard', 'platform.tenant_settings', 'timezone', 'update')
+                       and not has_column_privilege('platform_admin_guard', 'platform.tenant_settings', 'industry', 'select')
+                       and not has_table_privilege('platform_admin_guard', 'platform.tenant_settings', 'delete'),
+    'platform_admin_guard changes only default_locale and reads only tenant_id and version');
+end $$;
+-- A settings row already saved (version > 1) is out of the guard's reach.
+set local role platform_admin_guard;
+select tests.assert_eq(tests.rows_affected(format(
+  $q$update platform.tenant_settings set default_locale = 'en' where tenant_id = %L$q$, current_setting('tests.names_ar'))),
+  0::bigint, 'platform_admin_guard cannot change the language of a saved organization');
+reset role;
 rollback;
 
 \echo '99_tenant_names_owner: ok'

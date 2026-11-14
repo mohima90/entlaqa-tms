@@ -2398,7 +2398,7 @@
       "adminFirstNameEn": "First name in English",
       "adminFamilyNameEn": "Family name in English",
       "adminNamesHint": "Optional. The Organization Admin can set their name when they join.",
-      "locale": "Language",
+      "locale": "Organization language",
       "localeEn": "English",
       "localeAr": "Arabic",
       "submit": "Create organization",
@@ -2420,7 +2420,7 @@
       "plan": "Plan",
       "trial": "Start with a 30-day trial",
       "trialHint": "After 30 days the organization is suspended unless you make it active. You can change this later on its page.",
-      "localeHint": "The organization's name in this language is required. The Organization Admin's invitation is written in it.",
+      "localeHint": "Decides which name is required and the language of new people. The invitation is in it too.",
       "more": "More options",
       "moreSummary": "the Organization Admin's name"
     },

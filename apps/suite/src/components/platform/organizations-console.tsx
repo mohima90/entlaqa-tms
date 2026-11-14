@@ -218,7 +218,8 @@ function CreateOrganizationForm(
   const formId = useId();
   const [errors, setErrors] = useState<Errors>({});
   const [failure, setFailure] = useState<string | null>(null);
-  // The organization's language: its name in it is required and the invitation is written in it.
+  // The organization's language — its default language (which name its forms require, the language of new
+  // people) and its invitation's; the database sets both (20261113120300).
   const [language, setLanguage] = useState<Language>('en');
   // «More» (the Organization Admin's names) starts closed; a refused field inside opens it.
   const [more, setMore] = useState(false);

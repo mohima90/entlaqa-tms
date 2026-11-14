@@ -34,8 +34,8 @@ export const CreateOrganizationInput = z
     adminFamilyNameAr: personName,
     adminFirstNameEn: personName,
     adminFamilyNameEn: personName,
-    // The organization's language as chosen in the popup: its name in this language is required and the
-    // Organization Admin's invitation is written in it. English is the default for now (PO, 14 Oct 2026).
+    // The organization's language as chosen in the popup: its default language (its name in it is required)
+    // and its Organization Admin's invitation's. English is the default for now (PO, 14 Oct 2026).
     locale: z.enum(['ar', 'en']).default('en'),
     // The plan it starts on and a 30-day trial (WP-ADM-06, business flow B1).
     planId: z.uuid().nullable().default(null),

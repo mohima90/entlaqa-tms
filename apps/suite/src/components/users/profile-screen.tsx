@@ -74,22 +74,26 @@ import { localizedName, localizedNameOrNull, roleName } from '../../lib/users-vi
 import { NotSet } from '../not-set';
 import { SessionsTable } from '../sessions/sessions-table';
 import { SuiteShell } from '../suite-shell';
-import type { EditRecordProps } from './edit-user-form';
+import { isPersonSettingsTab, type PersonSettingsTab } from '../../lib/person-settings';
+import { type EditRecordProps, EditUserForm } from './edit-user-form';
 import { HrDetailsCard } from './hr-details-card';
 import { InviteCodeCopy } from './invite-code-copy';
-import { DeactivateDialog, EditUserPanel, type PanelReturn, RolePanelRoute } from './person-panels';
+import { DeactivateDialog, type PanelReturn, RolePanelRoute } from './person-panels';
 import { ProfileActions, type ProfileActionLink } from './profile-actions';
 import { ReactivateMemberButton } from './reactivate-member-button';
 import { ResetAuthenticator } from './reset-authenticator';
 import { UnlockSignIn } from './unlock-sign-in';
 
-export type ProfileTab = 'overview' | 'security' | 'activity';
-export type ProfilePanel = 'edit' | 'roles' | 'deactivate';
+export type ProfileTab = 'overview' | PersonSettingsTab | 'security' | 'activity';
+export type ProfilePanel = 'roles' | 'deactivate';
 
 /** The tab of `?tab=` (unknown → the overview). */
 export function profileTab(raw: string | string[] | undefined): ProfileTab {
   const value = Array.isArray(raw) ? raw[0] : raw;
-  return value === 'security' || value === 'activity' ? value : 'overview';
+  if (value === undefined) return 'overview';
+  return value === 'security' || value === 'activity' || isPersonSettingsTab(value)
+    ? value
+    : 'overview';
 }
 
 type AccountStatus = NonNullable<UserProfile['membershipStatus']> | 'none';
@@ -177,7 +181,7 @@ const EDIT_LABEL_KEYS = [
   'saving',
   'saved',
   'noChanges',
-  'backToProfile',
+  'intro',
 ] as const;
 const EDIT_FIELD_ERROR_KEYS = [
   'required',
@@ -230,11 +234,13 @@ const profilePath = (personId: string) => `/suite/admin/users/${encodeURICompone
 
 /**
  * A person's profile (T-M2-04 screen 3, FR-IAM-01/07; redesign package 3 — «one person, one place»):
- * the header (large avatar, name, job · unit · branch, status, «Edit details» and «Actions ▾»), the tabs
- * Overview · Sign-in and security · Recent activity (`?tab=`, so the MFA and sessions links keep working),
- * and — on the panel routes — Edit details or Change role in a side panel, Deactivate in a dialog. Each
- * section and action shows only with the permission it needs (deny by default), as before: authorized
- * against the person (out of scope or another organization → 404, no existence leak).
+ * the header (large avatar, name, job · unit · branch, status, «Edit details» and «Actions ▾»), the tabs at
+ * the side (the Kawadir pattern, WP-UX-01 e) Overview · Personal details · Work details · Sign-in and
+ * security · Recent activity (`?tab=`, so the MFA and sessions links keep working) — «Personal details» and
+ * «Work details» are the person's settings, each with its own save bar — and, on the popup routes, Change
+ * role and Deactivate. Each section and action shows only with the permission it needs (deny by default),
+ * as before: authorized against the person (out of scope or another organization → 404, no existence
+ * leak).
  */
 export async function ProfileScreen({
   locale,
@@ -276,18 +282,23 @@ export async function ProfileScreen({
       title = localizedName(locale, profile.displayNameAr, profile.displayNameEn);
       // Sign-in and security (screen 3, T-M2-10): user managers only (else the section is left out).
       const security = await memberSecurityQuery({ personId });
+      // «Personal details» and «Work details»: the person's settings, read with their own authorization.
+      const settings = isPersonSettingsTab(tab)
+        ? await settingsSection(locale, personId, tab, context)
+        : null;
       const page = await profilePage(locale, {
         ...view,
         security: security.ok ? security.value : null,
         regional: context.regional,
         tab,
         panel,
+        settings,
       });
       header = page.header;
       content = (
         <>
           {page.body}
-          {panel ? await panelFor(locale, panel, personId, title, view, tabQuery, context) : null}
+          {panel ? await panelFor(locale, panel, personId, title, view, tabQuery) : null}
         </>
       );
     }
@@ -331,6 +342,8 @@ async function profilePage(
     readonly regional: SuiteContext['regional'];
     readonly tab: ProfileTab;
     readonly panel: ProfilePanel | null;
+    /** The open settings section (its form, or why it cannot be opened); null on the other tabs. */
+    readonly settings: ReactNode;
   },
 ): Promise<{ header: ReactNode; body: ReactNode }> {
   const { profile, levels, canOpenManager, canEdit, canEditRoles, lifecycle, signInLock } = input;
@@ -416,7 +429,12 @@ async function profilePage(
       }
       actions={
         <ProfileActions
-          edit={canEdit ? { label: t('editDetails'), href: `${base}/edit${tabQuery}` } : null}
+          // «Edit details» leads to the settings tabs; on them it would lead where the person already is.
+          edit={
+            canEdit && !isPersonSettingsTab(tab)
+              ? { label: t('editDetails'), href: `${base}?tab=personal` }
+              : null
+          }
           menuLabel={t('actionsMenu')}
           items={actions}
         />
@@ -426,6 +444,23 @@ async function profilePage(
 
   const tabs = [
     { key: 'overview', href: base, label: t('tabs.overview'), icon: 'user' as const },
+    // The person's settings (the Kawadir pattern, WP-UX-01 e): for who may edit the details.
+    ...(canEdit
+      ? [
+          {
+            key: 'personal',
+            href: `${base}?tab=personal`,
+            label: t('tabs.personal'),
+            icon: 'pencil' as const,
+          },
+          {
+            key: 'work',
+            href: `${base}?tab=work`,
+            label: t('tabs.work'),
+            icon: 'building' as const,
+          },
+        ]
+      : []),
     {
       key: 'security',
       href: `${base}?tab=security`,
@@ -564,7 +599,10 @@ async function profilePage(
 
   let main: ReactNode;
   let side: ReactNode = roleCard;
-  if (tab === 'security') {
+  if (isPersonSettingsTab(tab)) {
+    main = input.settings;
+    side = null;
+  } else if (tab === 'security') {
     const securityErrors = security ? await memberSecurityErrorTexts(locale) : {};
     const sessionsT = await getTranslations({ locale, namespace: 'sessions' });
     main = (
@@ -733,13 +771,26 @@ async function profilePage(
     );
   }
 
+  // The sections as tabs at the side (the Kawadir pattern — forms standard rule 9; WP-UX-01 e): a column
+  // from 1200 px, rows above the content below it; the summary column only on the widest screens.
   const body = (
     <div className="flex flex-col gap-5" data-testid="user-profile">
       {banners}
-      <TabNav variant="underline" label={t('tabsLabel')} items={tabs} current={tab} />
-      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="flex min-w-0 flex-col gap-5">{main}</div>
-        {side ? <div className="flex min-w-0 flex-col gap-5">{side}</div> : null}
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[230px_minmax(0,1fr)] xl:gap-6">
+        <TabNav
+          variant="side"
+          label={t('tabsLabel')}
+          items={tabs}
+          // A section the member may not open (the old edit address without edit rights) is not in the
+          // list: the overview is marked instead, while the section says why it cannot be opened.
+          current={tabs.some((item) => item.key === tab) ? tab : 'overview'}
+          className="xl:sticky xl:top-24"
+          data-testid="profile-tabs"
+        />
+        <div className="grid min-w-0 grid-cols-1 items-start gap-5 2xl:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="flex min-w-0 flex-col gap-5">{main}</div>
+          {side ? <div className="flex min-w-0 flex-col gap-5">{side}</div> : null}
+        </div>
       </div>
     </div>
   );
@@ -938,81 +989,58 @@ async function panelFor(
   name: string,
   view: ProfileView,
   tabQuery: string,
-  context: SuiteContext,
 ): Promise<ReactNode> {
   const base = `/${locale}${profilePath(personId)}`;
   const back = (focusId: string): PanelReturn => ({ href: `${base}${tabQuery}`, focusId });
-  if (panel === 'edit') return editPanel(locale, personId, name, back('profile-edit'), context);
   if (panel === 'roles') return rolePanel(locale, personId, name, back('profile-actions'));
   return deactivateDialog(locale, personId, name, view, back('profile-actions'));
 }
 
-async function editPanel(
+/**
+ * «Personal details» or «Work details» (WP-UX-01 e): the person's settings form, read with its own
+ * authorization (HR Manager or Organization Admin; a privileged member's record by the Organization Admin
+ * only — editUserQuery decides). A member who may not edit the person sees why, in place of the form.
+ */
+async function settingsSection(
   locale: AppLocale,
   personId: string,
-  name: string,
-  back: PanelReturn,
+  tab: PersonSettingsTab,
   context: SuiteContext,
 ): Promise<ReactNode> {
-  const t = await getTranslations({ locale, namespace: 'editUser' });
-  const users = await getTranslations({ locale, namespace: 'users' });
-  const editRoles = await getTranslations({ locale, namespace: 'editRoles' });
-  const texts = {
-    close: editRoles('close'),
-    cancel: editRoles('cancel'),
-    save: t('save'),
-    saving: t('saving'),
-    saved: t('saved'),
-    noChanges: t('noChanges'),
-    audited: t('intro'),
-  };
-  const discardTexts = {
-    title: users('discardTitle'),
-    body: users('discardBody'),
-    keepEditing: users('keepEditing'),
-    discard: users('discard'),
-    close: editRoles('close'),
-  };
   const result = await editUserQuery({ personId });
   if (!result.ok) {
     const error = toClientError(result.error);
     if (error.code === 'UNAUTHENTICATED') redirect(`/${locale}/sign-in`);
     if (error.code === 'NOT_FOUND' || error.code === 'VALIDATION_FAILED') notFound();
-    return (
-      <EditUserPanel
-        title={t('titleFor', { name })}
-        back={back}
-        form={null}
-        failure={await loadFailure(locale, result.error)}
-        texts={texts}
-        discardTexts={discardTexts}
-      />
-    );
+    return <div data-testid="edit-user-refused">{await loadFailure(locale, result.error)}</div>;
   }
-  return (
-    <EditUserPanel
-      title={t('titleFor', { name })}
-      back={back}
-      form={await editFormProps(locale, result.value, back.href, context.regional.defaultLocale)}
-      texts={texts}
-      discardTexts={discardTexts}
-    />
-  );
+  const form = await editFormProps(locale, result.value, context.regional.defaultLocale);
+  // Each section starts from the stored record (its own address, its own unsaved changes).
+  return <EditUserForm key={tab} section={tab} {...form} />;
 }
 
-async function editFormProps(
-  locale: AppLocale,
-  view: EditUserView,
-  profileHref: string,
-  nameLanguage: 'ar' | 'en',
-) {
+async function editFormProps(locale: AppLocale, view: EditUserView, nameLanguage: 'ar' | 'en') {
   const t = await getTranslations({ locale, namespace: 'editUser' });
   const profile = await getTranslations({ locale, namespace: 'profile' });
   const common = await getTranslations({ locale, namespace: 'common' });
+  const tabs = await getTranslations({ locale, namespace: 'userProfile.tabs' });
   const { user } = view;
   const labels: Record<string, string> = Object.fromEntries(EDIT_LABEL_KEYS.map((k) => [k, t(k)]));
   labels.required = common('required');
   labels.optional = common('optional');
+  labels['section.personal'] = tabs('personal');
+  labels['section.work'] = tabs('work');
+  for (const key of [
+    'unsavedChanges',
+    'discardChanges',
+    'leaveTitle',
+    'leaveText',
+    'leaveStay',
+    'leaveGo',
+    'close',
+  ] as const) {
+    labels[key] = common(key);
+  }
   labels['part.firstName'] = profile('fields.firstName');
   labels['part.fatherName'] = profile('fields.fatherName');
   labels['part.grandfatherName'] = profile('fields.grandfatherName');
@@ -1088,7 +1116,6 @@ async function editFormProps(
     labels,
     fieldTexts,
     errors: await profileErrorTexts(locale),
-    profileHref,
     hireOnHijri: user.hireOn
       ? t('hireDateHijri', { date: formatHijriDate(user.hireOn, locale) })
       : undefined,
@@ -1096,7 +1123,7 @@ async function editFormProps(
   };
 }
 
-/** The grade and HR-only parts of the edit panel (WP-ADM-04): texts and the values loaded for this viewer. */
+/** The grade and HR-only parts of the person's settings (WP-ADM-04): texts and the values loaded for this viewer. */
 async function editRecordProps(
   locale: AppLocale,
   view: EditUserView,

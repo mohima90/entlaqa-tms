@@ -17,6 +17,10 @@ const hrEmail = process.env.PEOPLE_E2E_HR_EMAIL;
 const hrPassword = process.env.PEOPLE_E2E_HR_PASSWORD;
 const SARA = '5eed1000-0000-4000-8000-000000000001';
 
+// The browser uploads the photo straight to Storage: on the self-hosted stack that is the gateway with its
+// self-signed certificate (as in user-import.spec.ts).
+test.use({ ignoreHTTPSErrors: true });
+
 /** A PNG of a flat colour (valid header and checksums), made here so the spec needs no fixture file. */
 function png(side: number, [red, green, blue]: readonly [number, number, number]): Buffer {
   const crcTable = Array.from({ length: 256 }, (_, n) => {
@@ -73,6 +77,12 @@ async function expectNoSeriousA11yViolations(page: Page) {
 const toasts = (page: Page) =>
   page.getByRole('region', { name: /^(Status messages|رسائل الحالة)$/ });
 
+/** A grade's row action: its «⋯» menu, then the item (the list shape of WP-UX-01 e). */
+async function gradeAction(page: Page, code: string, action: 'rename' | 'delete') {
+  await page.getByTestId(`grade-menu-${code}`).filter({ visible: true }).click();
+  await page.getByTestId(`grade-${action}-${code}`).filter({ visible: true }).click();
+}
+
 test.describe('Grades, photo and HR-only fields as the Organization Admin', () => {
   test.skip(!email || !password, 'signed-in E2E credentials not set');
   test.describe.configure({ mode: 'serial' });
@@ -93,7 +103,7 @@ test.describe('Grades, photo and HR-only fields as the Organization Admin', () =
       await dialog.getByTestId('grade-save').click();
       await expect(dialog).toBeHidden();
       await expect(toasts(page)).toContainText(`Grade ${code} added.`);
-      await expect(page.getByTestId(`grade-rename-${code}`)).toBeVisible();
+      await expect(page.getByTestId(`grade-menu-${code}`).filter({ visible: true })).toBeVisible();
     }
 
     // Pressing Add with nothing, or a code that is not valid: the message is on the field and focus goes there.
@@ -113,48 +123,52 @@ test.describe('Grades, photo and HR-only fields as the Organization Admin', () =
     await dialog.getByRole('button', { name: 'Cancel' }).click();
 
     // Rename keeps its place in the list; delete asks first.
-    await page.getByTestId('grade-rename-E2E7').click();
+    await gradeAction(page, 'E2E7', 'rename');
     await page.getByTestId('grade-dialog').getByLabel('Grade code').fill('E2E8');
     await page.getByTestId('grade-save').click();
     await expect(toasts(page)).toContainText('Grade renamed to E2E8.');
-    await page.getByTestId('grade-delete-E2E8').click();
+    await gradeAction(page, 'E2E8', 'delete');
     await page.getByTestId('grade-delete-confirm').click();
     await expect(toasts(page)).toContainText('Grade E2E8 deleted.');
-    await expect(page.getByTestId('grade-rename-E2E8')).toHaveCount(0);
+    await expect(page.getByTestId('grade-menu-E2E8')).toHaveCount(0);
   });
 
-  test('a person’s grade: set it in the edit panel, see it on the profile; no HR-only card for the Organization Admin', async ({
+  test('a person’s grade: set it in «Work details», see it on the profile; no HR-only card for the Organization Admin', async ({
     page,
   }) => {
     await signInToSuite(page, email, password);
-    await page.goto(`/en/suite/admin/users/${SARA}/edit`);
-    const panel = page.getByRole('dialog');
-    await expect(panel.getByLabel('Grade')).toBeVisible();
+    // The grade is on the person's «Work details» tab (WP-UX-01 e; the old edit address leads there).
+    await page.goto(`/en/suite/admin/users/${SARA}/edit?tab=work`);
+    const form = page.getByTestId('edit-user');
+    await expect(form.getByLabel('Grade')).toBeVisible();
     // The Organization Admin edits the grade only: the HR details never reach this page.
-    await expect(panel.getByTestId('edit-hr-details')).toHaveCount(0);
-    await expect(panel.getByText('Date of birth')).toHaveCount(0);
-    await panel.getByLabel('Grade').selectOption({ label: 'E2E-7' });
-    await panel.getByRole('button', { name: 'Save changes' }).click();
-    await expect(panel).toBeHidden();
+    await page.goto(`/en/suite/admin/users/${SARA}?tab=personal`);
+    await expect(form.getByTestId('edit-hr-details')).toHaveCount(0);
+    await expect(form.getByText('Date of birth')).toHaveCount(0);
+    await page.goto(`/en/suite/admin/users/${SARA}?tab=work`);
+    await form.getByLabel('Grade').selectOption({ label: 'E2E-7' });
+    await page.getByTestId('save-bar-save').click();
+    await expect(toasts(page)).toContainText('Changes saved.');
+    await page.goto(`/en/suite/admin/users/${SARA}`);
     await expect(page.getByTestId('profile-grade')).toHaveText('E2E-7');
     await expect(page.getByTestId('hr-details')).toHaveCount(0);
     await expect(page.getByText('Employment category')).toHaveCount(0);
     await expectNoSeriousA11yViolations(page);
     // A grade people hold cannot be deleted: the dialog says why.
     await page.goto('/en/suite/admin/grades');
-    await page.getByTestId('grade-delete-E2E-7').click();
+    await gradeAction(page, 'E2E-7', 'delete');
     await expect(page.getByTestId('grade-blocked-dialog')).toContainText(
       'Can’t delete grade E2E-7',
     );
     await page.getByRole('button', { name: 'Got it' }).click();
     // Clear it again so the list can be cleaned up.
-    await page.goto(`/en/suite/admin/users/${SARA}/edit`);
-    await page.getByRole('dialog').getByLabel('Grade').selectOption({ label: 'No grade' });
-    await page.getByRole('dialog').getByRole('button', { name: 'Save changes' }).click();
-    await expect(page.getByRole('dialog')).toBeHidden();
+    await page.goto(`/en/suite/admin/users/${SARA}?tab=work`);
+    await page.getByTestId('edit-user').getByLabel('Grade').selectOption({ label: 'No grade' });
+    await page.getByTestId('save-bar-save').click();
+    await expect(toasts(page)).toContainText('Changes saved.');
     await page.goto('/en/suite/admin/grades');
     for (const code of ['E2E-7', '#E2E']) {
-      await page.getByTestId(`grade-delete-${code}`).click();
+      await gradeAction(page, code, 'delete');
       await page.getByTestId('grade-delete-confirm').click();
       await expect(toasts(page)).toContainText(`Grade ${code} deleted.`);
     }
@@ -196,7 +210,12 @@ test.describe('Grades, photo and HR-only fields as the Organization Admin', () =
     await expect(page.getByTestId('photo-problem')).toContainText(
       'This file can’t be used. Choose a PNG, JPG or WebP picture.',
     );
-    await expect(page.getByTestId('photo-problem')).toBeFocused();
+    // Focus moves to the message: the alert itself or the focusable frame that holds it.
+    await expect(
+      page.locator(
+        '[data-testid="photo-problem"]:focus, :focus:has([data-testid="photo-problem"])',
+      ),
+    ).toHaveCount(1);
 
     // A real picture opens the framing dialog (keyboard: arrow keys move the picture), then saves.
     await input.setInputFiles({
@@ -274,30 +293,45 @@ test.describe('HR details as the HR Manager', () => {
   test.skip(!hrEmail || !hrPassword, 'HR Manager E2E credentials not set');
   test.describe.configure({ mode: 'serial' });
 
-  test('the HR details card: filled in the edit panel, shown with the Hijri date, changes audited without values', async ({
+  test('the HR details card: filled in «Personal details», shown with the Hijri date; no audit log for the HR Manager', async ({
     page,
   }) => {
     await signInToSuite(page, hrEmail, hrPassword);
+    // The HR-only fields are on the person's «Personal details» tab (WP-UX-01 e).
     await page.goto(`/en/suite/admin/users/${SARA}/edit`);
-    const panel = page.getByRole('dialog');
-    await expect(panel.getByTestId('edit-hr-details')).toContainText('Only HR');
-    await panel.getByLabel('Gender').selectOption('female');
-    await panel.getByLabel('Employment category').selectOption('technical');
-    await panel.getByLabel('Date of birth').fill('2999-01-01');
-    await panel.getByRole('button', { name: 'Save changes' }).click();
+    const form = page.getByTestId('edit-user');
+    await expect(form.getByTestId('edit-hr-details')).toContainText('Only HR');
+    await form.getByLabel('Gender').selectOption('female');
+    await form.getByLabel('Employment category').selectOption('technical');
+    await form.getByLabel('Date of birth').fill('2999-01-01');
+    await page.getByTestId('save-bar-save').click();
     // A date in the future: the message is on the field and focus goes there.
-    await expect(panel.getByText('Enter a real date in the past.')).toBeVisible();
-    await expect(panel.getByLabel('Date of birth')).toBeFocused();
-    await panel.getByLabel('Date of birth').fill('1992-05-14');
-    await expect(panel.getByText(/Hijri: /)).toBeVisible();
-    await panel.getByRole('button', { name: 'Save changes' }).click();
-    await expect(panel).toBeHidden();
+    await expect(form.getByText('Enter a real date in the past.')).toBeVisible();
+    await expect(form.getByLabel('Date of birth')).toBeFocused();
+    await form.getByLabel('Date of birth').fill('1992-05-14');
+    await expect(form.getByText(/Hijri: /)).toBeVisible();
+    await page.getByTestId('save-bar-save').click();
+    await expect(toasts(page)).toContainText('Changes saved.');
+    await page.getByTestId('profile-tabs').getByRole('link', { name: 'Overview' }).click();
     const card = page.getByTestId('hr-details');
     await expect(card).toContainText('Female');
-    await expect(card).toContainText('14 May 1992');
+    // The Gregorian date in the page's long style (as elsewhere in English: «March 3, 2024»).
+    await expect(card).toContainText('May 14, 1992');
     await expect(card).toContainText('Hijri:');
     await expect(card).toContainText('Technical');
-    // The audit trail names the change and never the values.
+    await expectNoSeriousA11yViolations(page);
+    // The audit log is the Organization Admin's to read (platform.audit.read): the HR Manager has no
+    // «Recent activity» tab.
+    await expect(
+      page.getByTestId('profile-tabs').getByRole('link', { name: 'Recent activity' }),
+    ).toHaveCount(0);
+  });
+
+  test('the audit trail names the HR details change and never the values (read by the Organization Admin)', async ({
+    page,
+  }) => {
+    test.skip(!email || !password, 'signed-in E2E credentials not set');
+    await signInToSuite(page, email, password);
     await page.goto(`/en/suite/admin/users/${SARA}?tab=activity`);
     const activity = page.getByTestId('user-activity');
     await expect(activity).toContainText('HR details changed');

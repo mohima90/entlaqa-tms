@@ -16,6 +16,7 @@ import { authErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
 import { getSessionState, redirectFor } from '../../../lib/session-state';
 import { authBrandOf } from '../../../lib/sign-in-brand';
+import { localizedName } from '../../../lib/users-view';
 
 /**
  * Organization chooser after sign-in when the account belongs to several organizations. A Platform Super
@@ -68,7 +69,8 @@ export default async function SelectOrganizationPage({
             locale={locale}
             organizations={organizations.value.map((org) => ({
               tenantId: org.tenantId,
-              name: locale === 'en' ? (org.nameEn ?? org.nameAr) : org.nameAr,
+              // The name in the page's language, else the one the organization has.
+              name: localizedName(locale, org.nameAr, org.nameEn),
             }))}
             pendingLabel={t('choosing')}
             errors={await authErrorTexts(locale)}

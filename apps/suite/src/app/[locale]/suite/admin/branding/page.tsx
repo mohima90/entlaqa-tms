@@ -171,6 +171,7 @@ async function Form({
   return (
     <BrandingForm
       locale={locale}
+      nameLanguage={context.regional.defaultLocale}
       live={live}
       editable={editAccess === 'allowed'}
       version={record?.version ?? 0}

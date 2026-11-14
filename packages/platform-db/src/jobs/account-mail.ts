@@ -8,6 +8,7 @@ import {
   securityDigestOf,
 } from '../account-mail-detail';
 import type { ClaimsTx } from '../claims-tx';
+import { organizationNames } from '../organization-names';
 
 export {
   DIGESTED_KINDS,
@@ -204,7 +205,7 @@ export async function loadAccountMailContext(
     throw new Error('loadAccountMailContext: quiet minutes must be 0–1440');
   }
   const [row] = await tx.execute<{
-    organization_ar: string;
+    organization_ar: string | null;
     organization_en: string | null;
     recipient_ar: string;
     recipient_en: string | null;
@@ -231,7 +232,8 @@ export async function loadAccountMailContext(
     where p.id = ${personId}::uuid`);
   if (!row) return null;
   return {
-    organizationName: { ar: row.organization_ar, en: row.organization_en },
+    // An organization may have an English name only (PO 12 Nov 2026): the Arabic e-mail then names it in English.
+    organizationName: organizationNames(row.organization_ar, row.organization_en),
     recipientName: { ar: row.recipient_ar, en: row.recipient_en },
     recentCount: Number(row.recent),
     quietCount: Number(row.quiet),

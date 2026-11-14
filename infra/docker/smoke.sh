@@ -12,7 +12,8 @@
 # internal port for the app only, clamd scan, EICAR quarantined, fail closed) and the bulk user import
 # (T-M2-12, smoke-import.sh: upload, review, run, error report, undo, held invitations), deactivates and
 # reactivates members (reassignment, sessions end at once, Auth issues no token to a login that belongs
-# nowhere any more — T-M2-09), checks the e-mailed sign-in code screen (WP-ADM-05, no mailbox needed), runs the
+# nowhere any more — T-M2-09), runs a person's record (grades, photo, HR-only details — WP-ADM-04) and the
+# Platform Super Admin console (organizations, plans — FR-ADM-17, WP-ADM-06), checks the e-mailed sign-in code screen (WP-ADM-05, no mailbox needed), runs the
 # sign-in protection journey (T-M2-11: lock after 5 wrong passwords, generic answers in Arabic and English,
 # the shared limiter; Auth's own per-IP limits keyed by the gateway), sends a browser and a server error to the in-country error tracker (GlitchTip) and checks they
 # arrive without personal data, then tears everything down.
@@ -143,6 +144,17 @@ q() {
   { echo "smoke: expected one signed_in and one signed_out audit event" >&2; exit 1; }
 [[ "$(q "select count(*) from auth.sessions where user_id = '$USER_ID'")" == "0" ]] ||
   { echo "smoke: sign-out must revoke the session" >&2; exit 1; }
+# plan_member <email> <user id> <name ar> <name en> <role>: a person in organization sovereign-smoke with an
+# active membership for that Auth user and one (primary) role.
+plan_member() {
+  q "with t as (select id from platform.tenants where slug = 'sovereign-smoke'),
+       p as (insert into platform.persons (tenant_id, display_name_ar, display_name_en, email)
+             select id, '$3', '$4', '$1' from t returning id, tenant_id),
+       m as (insert into platform.tenant_memberships (tenant_id, user_id, person_id, status)
+             select tenant_id, '$2', id, 'active' from p returning id, tenant_id)
+     insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
+     select tenant_id, id, '$5', true from m" >/dev/null
+}
 [[ "$(q "select count(*) from pg_stat_ssl s join pg_stat_activity a using (pid) where a.client_addr is not null and not s.ssl")" == "0" ]] ||
   { echo "smoke: a network connection to PostgreSQL is not using TLS" >&2; exit 1; }
 # Correct password, no TLS: must be refused by pg_hba.conf (not by anything else).
@@ -214,6 +226,21 @@ PGPASSWORD="$POSTGRES_PASSWORD" PGSSLMODE=verify-full PGSSLROOTCERT=.secrets/ca.
 if [[ "$(q "select count(*) from platform.audit_events where data::text like '%Alshehri%' or data::text like '%EMP-2041%' or data::text like '%محاسب%'")" != "0" ]]; then
   echo "smoke: edited personal data reached the audit log" >&2; exit 1
 fi
+
+echo "smoke: a person's record (WP-ADM-04, FR-IAM-16) — grades, a person's grade on «Work details», my photo; the HR-only details by an HR Manager on «Personal details»"
+# Sample person Sara (seed-users.sql above). The Organization Admin sets her grade and never sees the HR-only
+# card; an HR Manager of the same organization fills it in.
+PEOPLE_HR_EMAIL="people-hr-$(date +%s)@sovereign.example"
+PEOPLE_HR_PASSWORD="PeopleHr-$(openssl rand -hex 16)"
+plan_member "$PEOPLE_HR_EMAIL" "$(create_user "$PEOPLE_HR_EMAIL" "$PEOPLE_HR_PASSWORD")" 'هالة الموارد' 'Hala HR' hr_manager
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 SIGNED_IN_E2E_EMAIL="$EMAIL" \
+  SIGNED_IN_E2E_PASSWORD="$PASSWORD" PEOPLE_E2E_HR_EMAIL="$PEOPLE_HR_EMAIL" \
+  PEOPLE_E2E_HR_PASSWORD="$PEOPLE_HR_PASSWORD" \
+  pnpm exec playwright test e2e/people-record.spec.ts --project=desktop-chromium)
+# The HR details change is audited by field name only, never with the values.
+[[ "$(q "select count(*) from platform.audit_events where entity_id = '5eed1000-0000-4000-8000-000000000001' and data::text like '%1992%'")" == "0" ]] ||
+  { echo "smoke: an HR detail's value reached the audit log" >&2; exit 1; }
+unset PEOPLE_HR_PASSWORD
 
 echo "smoke: invitations, admin side (T-M2-07) — invite, invited tab, resend, revoke, e-mail; in Arabic and English"
 # Three more addresses are invited through the form and left pending for the acceptance journey below.
@@ -904,15 +931,6 @@ deactivate_e2e returns
 unset answer wrong unknown rows_before DEACT_REFRESH SECOND_REFRESH
 echo "smoke: planning cycle (EP-PLN, WP-UX-01 a) — an L&D Manager creates a cycle in the popup, edits it, sets a budget, launches it from the row menu; a Training Coordinator follows read-only; in Arabic and English"
 # Before the security journey: the organization does not require an authenticator code yet.
-plan_member() { # plan_member <email> <user id> <name ar> <name en> <role>
-  q "with t as (select id from platform.tenants where slug = 'sovereign-smoke'),
-       p as (insert into platform.persons (tenant_id, display_name_ar, display_name_en, email)
-             select id, '$3', '$4', '$1' from t returning id, tenant_id),
-       m as (insert into platform.tenant_memberships (tenant_id, user_id, person_id, status)
-             select tenant_id, '$2', id, 'active' from p returning id, tenant_id)
-     insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
-     select tenant_id, id, '$5', true from m" >/dev/null
-}
 PLAN_EMAIL="lnd-$(date +%s)@sovereign.example"
 PLAN_PASSWORD="Lnd-$(openssl rand -hex 16)"
 plan_member "$PLAN_EMAIL" "$(create_user "$PLAN_EMAIL" "$PLAN_PASSWORD")" 'ليلى التطوير' 'Layla Development' training_manager
@@ -1097,6 +1115,32 @@ unset ADMIN_KEY
   { echo "smoke: expected the two profile changes in the audit log, with the values before and after" >&2; exit 1; }
 [[ "$(q "select s.version from platform.tenant_settings s join platform.tenants t on t.id = s.tenant_id where t.slug = 'sovereign-phone'")" == "1" ]] ||
   { echo "smoke: another organization's settings changed" >&2; exit 1; }
+
+echo "smoke: Platform Super Admin console (FR-ADM-17, WP-ADM-06) — create an organization, its admin joins by the copied link; plans and an organization's trial; a member gets 404"
+# After every journey that counts this installation's organizations, members or settings: the console
+# creates organizations (with their Organization Admins) and a plan. The Super Admin belongs to no
+# organization and is granted by UID with the operators' own script (the Platform admin workflow's).
+# The member who must get 404 is the phone organization's Organization Admin (no authenticator code
+# required there; it reads its Subscription page).
+SUPER_EMAIL="super-$(date +%s)@sovereign.example"
+SUPER_PASSWORD="Super-$(openssl rand -hex 16)"
+SUPER_ID="$(create_user "$SUPER_EMAIL" "$SUPER_PASSWORD")"
+(cd "$ROOT" && DATABASE_URL="$MIGRATION_URL" DATABASE_CA_CERT="$CA_PEM" ADMIN_USER_ID="$SUPER_ID" \
+  ADMIN_ACTION=grant bash scripts/platform-admin.sh apply >/dev/null)
+[[ "$(q "select count(*) from private.platform_admins where user_id = '$SUPER_ID'")" == "1" &&
+   "$(q "select count(*) from private.platform_audit_events where action = 'platform.admin.granted' and entity_id = '$SUPER_ID'")" == "1" ]] ||
+  { echo "smoke: the Super Admin was not granted (with its audit row)" >&2; exit 1; }
+tenants_before="$(q "select count(*) from platform.tenants")"
+(cd "$ROOT/apps/suite" && E2E_SELF_HOSTED=1 E2E_BASE_URL=http://localhost:3200 \
+  PLATFORM_E2E_EMAIL="$SUPER_EMAIL" PLATFORM_E2E_PASSWORD="$SUPER_PASSWORD" \
+  SIGNED_IN_E2E_EMAIL="$PHONE_EMAIL" SIGNED_IN_E2E_PASSWORD="$PHONE_PASSWORD" \
+  pnpm exec playwright test e2e/platform-console.spec.ts e2e/plans.spec.ts --project=desktop-chromium)
+# Three organizations created (one per language, one for the plan), none for the Super Admin itself.
+[[ "$(q "select count(*) from platform.tenants")" == "$((tenants_before + 3))" ]] ||
+  { echo "smoke: expected the console journeys to create three organizations" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.tenant_memberships where user_id = '$SUPER_ID'")" == "0" ]] ||
+  { echo "smoke: the Super Admin must belong to no organization" >&2; exit 1; }
+unset SUPER_PASSWORD tenants_before
 
 echo "smoke: Auth's own per-IP limits (T-M2-11) — keyed by the gateway, never by the caller"
 # Password grants for an address without an account (Auth answers 400 at once; burst 30, then 429).

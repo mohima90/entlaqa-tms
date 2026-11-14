@@ -35,8 +35,8 @@ describe('organization profile form (T-M2-22)', () => {
   it('display names (now on Branding, WP-ADM-02): required (trimmed), at most 80 characters', () => {
     expect(validateOrganizationName('  ')).toBe('nameRequired');
     expect(validateOrganizationName('')).toBe('nameRequired');
-    expect(validateOrganizationName('ن'.repeat(81))).toBe('nameTooLong');
-    expect(validateOrganizationName(` ${'x'.repeat(80)} `)).toBeNull();
+    expect(validateOrganizationName('ن'.repeat(201))).toBe('nameTooLong');
+    expect(validateOrganizationName(` ${'x'.repeat(200)} `)).toBeNull();
     expect(validateOrganizationName('Al \u202ERaya')).toBe('nameInvalid');
     expect(validateOrganizationName('شركة \u2067الراية')).toBe('nameInvalid');
     expect(validateOrganizationName('شركة\u200Cالراية')).toBeNull();

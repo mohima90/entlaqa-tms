@@ -52,6 +52,10 @@ const KEYS = [
   'fieldErrors.description',
   'fieldErrors.permissions',
   'fieldErrors.dataScope',
+  'tabsLabel',
+  'tabs.details',
+  'tabs.permissions',
+  'tabs.holders',
 ] as const;
 const SCOPES = ['own', 'team', 'departments', 'organization'] as const;
 

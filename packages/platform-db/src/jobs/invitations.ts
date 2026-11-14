@@ -6,6 +6,7 @@ import {
   CUSTOM_ROLE_NAME_EN,
   customRolesExist,
 } from '../custom-roles-present';
+import { organizationNames } from '../organization-names';
 
 /**
  * Invitation e-mails (FR-IAM-03, T-M2-07; migrations 20261009090000 and 20261018090000): the mailer job
@@ -62,7 +63,7 @@ export async function loadInvitationForMail(
     recipient_en: string | null;
     inviter_ar: string | null;
     inviter_en: string | null;
-    organization_ar: string;
+    organization_ar: string | null;
     organization_en: string | null;
     primary_role: string;
     role_name_ar: string | null;
@@ -89,7 +90,8 @@ export async function loadInvitationForMail(
     ${customNames ? sql`left join platform.custom_roles cr on cr.tenant_id = i.tenant_id and cr.code = i.primary_role` : sql``}
     where i.id = ${id}::uuid`);
   if (!row) return null;
-  const organizationName = { ar: row.organization_ar, en: row.organization_en };
+  // An organization may have an English name only (PO 12 Nov 2026): the Arabic e-mail then names it in English.
+  const organizationName = organizationNames(row.organization_ar, row.organization_en);
   return {
     id: row.id,
     status: row.status,

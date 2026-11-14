@@ -24,7 +24,8 @@ export const DEFAULT_TENANT_REGIONAL: TenantRegional = {
 /** The organization the current claims act in (RLS returns only that tenant), or null. */
 export interface CurrentTenant {
   readonly tenantId: string;
-  readonly nameAr: string;
+  /** Named in at least one language (tenants_name_present_check, 20261113120000): either may be missing. */
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
   /** Its sign-in session inactivity limit (T-M2-10): the page warns before it ends. */
   readonly sessionIdleMinutes: number | null;
@@ -34,7 +35,7 @@ export interface CurrentTenant {
 export async function getCurrentTenant(tx: UserTx): Promise<CurrentTenant | null> {
   const rows = await tx.execute<{
     id: string;
-    name_ar: string;
+    name_ar: string | null;
     name_en: string | null;
     session_idle_minutes: number | string | null;
     date_display: string | null;

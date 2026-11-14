@@ -1,4 +1,5 @@
 import { appError, err, ok } from '@jadarat/platform-core';
+import { ORGANIZATION_NAME_MAX } from '@jadarat/platform-i18n/names';
 import {
   type OfferedProfileField,
   type OrganizationProfile,
@@ -38,8 +39,8 @@ import { platformPermissions as p } from '../platform-permissions';
  *     (platform-db), not through this page.
  */
 
-/** Display names: required, trimmed, at most 80 characters (the screen). */
-export const ORGANIZATION_NAME_MAX = 80;
+/** Display names: trimmed, at most ORGANIZATION_NAME_MAX characters (one limit, the database's). */
+export { ORGANIZATION_NAME_MAX };
 
 /**
  * Bidirectional embedding, override and isolate marks (U+202A–U+202E, U+2066–U+2069): they can reorder
@@ -58,6 +59,18 @@ export const OrganizationNameInput = z
   .max(ORGANIZATION_NAME_MAX)
   // No control characters (as provisioning) and no bidi controls.
   .refine((value) => !/\p{Cc}/u.test(value) && !BIDI_CONTROLS.test(value));
+
+/**
+ * A name in a language that may be left empty (an organization is named in at least one language,
+ * 20261113120000; the one in its default language is required — the caller checks that): empty → null.
+ */
+export const OptionalOrganizationNameInput = z
+  .string()
+  .normalize('NFC')
+  .trim()
+  .max(ORGANIZATION_NAME_MAX)
+  .refine((value) => !/\p{Cc}/u.test(value) && !BIDI_CONTROLS.test(value))
+  .transform((value) => (value === '' ? null : value));
 
 const name = OrganizationNameInput;
 
@@ -166,8 +179,9 @@ export function updateOrganizationProfileActionDefinition(): ActionDefinition<
     input: OrganizationProfileInput,
     handler: async ({ ctx, input }) => {
       const { version, nameEn, nameAr, ...profile } = input;
-      let names: { nameAr: string; nameEn: string | null } = {
-        nameAr: nameAr ?? '',
+      // An organization is named in at least one language (20261113120000): a stored name may be missing.
+      let names: { nameAr: string | null; nameEn: string | null } = {
+        nameAr: nameAr ?? null,
         nameEn: nameEn ?? null,
       };
       if (nameAr === undefined || nameEn === undefined) {

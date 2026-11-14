@@ -56,7 +56,8 @@ for (const locale of ['en', 'ar'] as const) {
     const group = page.getByTestId('roles-standard');
     await expect(group.getByRole('heading', { level: 2 })).toContainText(t.standard);
     const table = page.getByTestId('roles-table');
-    await expect(table.getByRole('listitem')).toHaveCount(6);
+    // A table in a card (WP-UX-01 e): one row per role.
+    await expect(table.locator('tbody tr')).toHaveCount(6);
     for (const code of [
       'tenant_admin',
       'hr_manager',

@@ -33,6 +33,7 @@ export async function settingsCommonTexts(locale: AppLocale): Promise<SettingsCo
     saved: common('saved'),
     close: common('close'),
     required: common('required'),
+    optional: common('optional'),
     stepUpIntro: mfa('stepUpIntro'),
     verifyFirst: profile('mfa.verifyFirst'),
   };

@@ -5,6 +5,7 @@ import {
   type TenantRegional,
 } from '@jadarat/platform-db';
 import type { AppLocale } from '@jadarat/platform-i18n';
+import { personDisplayName } from '@jadarat/platform-i18n/names';
 import {
   type Grant,
   coursePermissions,
@@ -196,12 +197,9 @@ export async function getSuiteContext(locale: AppLocale): Promise<SuiteContext> 
   if (elsewhere !== null || session.kind !== 'organization')
     redirect(elsewhere ?? `/${locale}/sign-in`);
   const { tenant } = session;
-  // The display name in the UI language, else the other one (T-M2-22: the profile page sets both).
-  const organizationName = tenant
-    ? locale === 'en'
-      ? (tenant.nameEn ?? tenant.nameAr)
-      : tenant.nameAr || (tenant.nameEn ?? '')
-    : null;
+  // The display name in the UI language, else the other one (an organization is named in at least one
+  // language — 20261113120000; the Branding page sets both).
+  const organizationName = tenant ? personDisplayName(locale, tenant.nameAr, tenant.nameEn) : null;
   const regional = tenant?.regional ?? DEFAULT_TENANT_REGIONAL;
   if (!status.database) {
     return {

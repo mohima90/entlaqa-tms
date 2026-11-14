@@ -29,7 +29,8 @@ export const orgUnitStatus = ['active', 'inactive'] as const;
 export const tenants = platform.table('tenants', {
   id: uuid('id').primaryKey().defaultRandom(),
   slug: text('slug').notNull(),
-  nameAr: text('name_ar').notNull(),
+  // Named in at least one language (tenants_name_present_check, 20261113120000).
+  nameAr: text('name_ar'),
   nameEn: text('name_en'),
   status: text('status', { enum: tenantStatus }).notNull().default('trial'),
   edition: text('edition').notNull().default('standard'),

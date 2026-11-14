@@ -11,6 +11,7 @@ import {
   type UserTx,
   changedBrandingFields,
   getBranding,
+  getTenantDefaultLocale,
   isDomainError,
   noteWorkQueued,
   publishBrandImage,
@@ -20,7 +21,7 @@ import { z } from 'zod';
 import type { ActionDefinition } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import { platformPermissions as p } from '../platform-permissions';
-import { OrganizationNameInput } from './organization-profile';
+import { OptionalOrganizationNameInput } from './organization-profile';
 
 /**
  * Branding (WP-ADM-02, FR-ADM-07, FR-ADM-02 names, FR-NTF-02 e-mail look; business flow EP-BRAND, agreed
@@ -88,8 +89,10 @@ const FileId = z.uuid().nullable();
 export const BrandingInput = z.strictObject({
   /** The branding's version as loaded (0: never saved). */
   version: z.int().min(0),
-  nameEn: OrganizationNameInput,
-  nameAr: OrganizationNameInput,
+  // The name in the organization's default language is required (the handler checks it), the other one
+  // optional: empty → null (PO 12 Nov 2026; review of WP-UX-01 d).
+  nameEn: OptionalOrganizationNameInput,
+  nameAr: OptionalOrganizationNameInput,
   primaryColor: Color.nullable(),
   secondaryColor: Color.nullable(),
   useGradient: z.boolean(),
@@ -252,6 +255,10 @@ export function saveBrandingActionDefinition(
       return ok(prepared);
     },
     handler: async ({ ctx, input, before: prepared }) => {
+      // The name in the organization's default language is required; the other language is optional.
+      const nameLanguage = await getTenantDefaultLocale(ctx.tx);
+      const requiredName = nameLanguage === 'ar' ? 'nameAr' : 'nameEn';
+      if (input[requiredName] === null) return err(invalid(requiredName, 'REQUIRED'));
       if ((input.primaryColor === null) !== (input.secondaryColor === null)) {
         return err(invalid(input.primaryColor === null ? 'primaryColor' : 'secondaryColor'));
       }

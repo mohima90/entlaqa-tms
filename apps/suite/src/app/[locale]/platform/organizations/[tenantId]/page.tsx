@@ -12,6 +12,7 @@ import { getConfigStatus } from '../../../../../lib/config-status';
 import { flattenTexts } from '../../../../../lib/flatten-texts';
 import { gigabytes } from '../../../../../lib/storage-size';
 import { trialDaysLeft } from '../../../../../lib/trial-days';
+import { localizedName } from '../../../../../lib/users-view';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -43,7 +44,8 @@ export default async function PlatformOrganizationPage({
 
   const t = await getTranslations({ locale, namespace: 'platform' });
   const all = await getTranslations({ locale });
-  const name = locale === 'en' ? (organization.nameEn ?? organization.nameAr) : organization.nameAr;
+  // The name in the page's language, else the one the organization has (one language is enough).
+  const name = localizedName(locale, organization.nameAr, organization.nameEn);
   const daysLeft = plan.status === 'trial' ? trialDaysLeft(plan.trialEndsAt) : null;
   const trialEndsOn = plan.trialEndsAt
     ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(plan.trialEndsAt)

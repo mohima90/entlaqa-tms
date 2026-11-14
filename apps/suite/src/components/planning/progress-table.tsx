@@ -2,6 +2,8 @@
 import {
   Badge,
   type BadgeTone,
+  Button,
+  EmptyState,
   ListCard,
   ListCards,
   buttonClasses,
@@ -44,6 +46,9 @@ export interface ProgressTableProps {
       Record<'department' | 'head' | 'envelope' | 'needs' | 'status' | 'actions', string>
     >;
     readonly view: string;
+    /** A status with no form: the empty state and its way back to all forms. */
+    readonly emptyFilter: string;
+    readonly showAll: string;
   };
 }
 
@@ -99,7 +104,15 @@ export function ProgressTable({ rows, counts, texts }: ProgressTableProps) {
         ))}
       </div>
       <div className="mt-4 overflow-hidden rounded-xl border border-border bg-surface shadow-2">
-        <div className={`${tableClasses.wrapper} hidden md:block`}>
+        <div
+          className={`${tableClasses.wrapper} hidden focus-visible:outline-2 focus-visible:outline-offset-2 md:block`}
+          // Scrolls sideways on a narrow screen: focusable so the keyboard can scroll it too (the list
+          // shape of WP-UX-01 e; axe scrollable-region-focusable).
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrollable region takes focus
+          tabIndex={0}
+          role="region"
+          aria-label={texts.caption}
+        >
           <table className={tableClasses.table} data-testid="progress-table">
             <caption className="sr-only">{texts.caption}</caption>
             <thead className={tableClasses.header}>
@@ -189,6 +202,24 @@ export function ProgressTable({ rows, counts, texts }: ProgressTableProps) {
             />
           ))}
         </ListCards>
+        {shown.length === 0 && rows.length > 0 ? (
+          <EmptyState
+            icon="flag"
+            headingLevel={3}
+            title={texts.emptyFilter}
+            action={
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setFilter('all');
+                }}
+              >
+                {texts.showAll}
+              </Button>
+            }
+            data-testid="progress-empty-filter"
+          />
+        ) : null}
       </div>
     </>
   );

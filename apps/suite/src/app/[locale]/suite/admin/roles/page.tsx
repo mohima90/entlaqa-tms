@@ -7,7 +7,16 @@ import {
   SYSTEM_ROLES,
   standardAssignableRole,
 } from '@jadarat/platform-rbac';
-import { Alert, Badge, EmptyState, Icon, PageHeader, buttonClasses } from '@jadarat/ui';
+import {
+  Alert,
+  Badge,
+  EmptyState,
+  Icon,
+  PageHeader,
+  buttonClasses,
+  cn,
+  tableClasses,
+} from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import Link from 'next/link';
@@ -153,43 +162,49 @@ async function RolesList({ locale, view }: { locale: AppLocale; view: RolesPageV
     const editable = view.canManage && role.kind === 'custom';
     const href = `${rolesHref}/${role.code}`;
     return (
-      <li
-        key={role.code}
-        className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-border px-5 py-4 last:border-b-0"
-        data-testid={`role-row-${role.code}`}
-      >
-        <span
-          aria-hidden="true"
-          className={
-            role.kind === 'standard'
-              ? 'grid size-11 shrink-0 place-items-center rounded-md bg-brand-gradient text-on-brand'
-              : 'grid size-11 shrink-0 place-items-center rounded-md bg-primary-subtle font-bold text-primary-text'
-          }
-        >
-          {role.kind === 'standard' ? <Icon name="lock" /> : Array.from(name)[0]}
-        </span>
-        <div className="min-w-0 flex-1 basis-72">
-          <div className="flex flex-wrap items-center gap-2">
-            <Link href={href} className="font-semibold text-text">
-              {name}
-            </Link>
-            {role.privileged ? (
-              <Badge tone="info" data-testid="role-privileged">
-                {t('privileged')}
-              </Badge>
-            ) : null}
-          </div>
-          <p className="m-0 mt-0.5 text-sm text-text-muted">
-            {role.description ? role.description[locale] : t('noDescription')}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+      <tr key={role.code} className={tableClasses.row} data-testid={`role-row-${role.code}`}>
+        <th scope="row" className={cn(tableClasses.cell, 'text-start font-normal')}>
+          <span className="flex min-w-64 items-center gap-3">
+            <span
+              aria-hidden="true"
+              className={
+                role.kind === 'standard'
+                  ? 'grid size-10 shrink-0 place-items-center rounded-md bg-brand-gradient text-on-brand'
+                  : 'grid size-10 shrink-0 place-items-center rounded-md bg-primary-subtle font-bold text-primary-text'
+              }
+            >
+              {role.kind === 'standard' ? (
+                <Icon name="lock" className="size-4" />
+              ) : (
+                Array.from(name)[0]
+              )}
+            </span>
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span className="flex flex-wrap items-center gap-2">
+                <Link href={href} className="font-semibold text-text">
+                  {name}
+                </Link>
+                {role.privileged ? (
+                  <Badge tone="info" data-testid="role-privileged">
+                    {t('privileged')}
+                  </Badge>
+                ) : null}
+              </span>
+              <span className="max-w-[46ch] text-sm text-text-muted [overflow-wrap:anywhere]">
+                {role.description ? role.description[locale] : t('noDescription')}
+              </span>
+            </span>
+          </span>
+        </th>
+        <td className={tableClasses.cell}>
           <Badge tone="neutral">{t('permissionCount', { count: role.permissions.length })}</Badge>
-          {people !== null ? (
-            people > 0 ? (
+        </td>
+        {counts ? (
+          <td className={tableClasses.cell}>
+            {people !== null && people > 0 ? (
               <Link
                 href={`/${locale}/suite/admin/users?role=${role.code}`}
-                className="inline-flex min-h-7 items-center gap-1.5 rounded-full border border-border px-2.5 text-[13px] font-medium text-text no-underline hover:bg-surface-hover"
+                className="inline-flex min-h-7 items-center gap-1.5 whitespace-nowrap rounded-full border border-border px-2.5 text-[13px] font-medium text-text no-underline hover:bg-surface-hover"
                 data-testid="role-people"
               >
                 <Icon name="people" className="size-3.5" />
@@ -197,53 +212,64 @@ async function RolesList({ locale, view }: { locale: AppLocale; view: RolesPageV
               </Link>
             ) : (
               <span
-                className="inline-flex min-h-7 items-center gap-1.5 rounded-full border border-border px-2.5 text-[13px] text-text-muted"
+                className="inline-flex min-h-7 items-center gap-1.5 whitespace-nowrap rounded-full border border-border px-2.5 text-[13px] text-text-muted"
                 data-testid="role-people"
               >
                 <Icon name="people" className="size-3.5" />
                 {t('members', { count: 0 })}
               </span>
-            )
-          ) : null}
-        </div>
-        <div className="ms-auto flex items-center gap-1.5">
-          <Link
-            href={href}
-            className={buttonClasses({ variant: 'secondary', size: 'sm' })}
-            aria-label={editable ? t('editRole', { name }) : t('viewRole', { name })}
-            data-testid={editable ? 'role-edit' : 'role-view'}
-          >
-            {editable ? <Icon name="pencil" className="size-4" /> : null}
-            {editable ? builderTexts?.titleEdit : t('view')}
-          </Link>
-          {view.canManage && builderTexts && errors ? (
-            <RoleRowMenu
-              label={t('moreFor', { name })}
-              code={role.code}
-              createFrom={
-                role.kind === 'standard' && role.code !== 'tenant_admin'
-                  ? { label: t('customFrom'), start: `standard:${role.code}` }
-                  : null
-              }
-              remove={
-                editable && role.id && role.version !== null
-                  ? {
-                      id: role.id,
-                      version: role.version,
-                      texts: { ...builderTexts, deleteTitle: t('deleteTitle', { name }) },
-                      errors,
-                      rolesHref,
-                    }
-                  : null
-              }
-              inUse={people === null || people > 0}
-            />
-          ) : null}
-        </div>
-      </li>
+            )}
+          </td>
+        ) : null}
+        <td className={cn(tableClasses.cell, 'text-end')}>
+          <span className="flex items-center justify-end gap-1.5">
+            <Link
+              href={href}
+              className={buttonClasses({
+                variant: 'secondary',
+                size: 'sm',
+                className: 'whitespace-nowrap',
+              })}
+              aria-label={editable ? t('editRole', { name }) : t('viewRole', { name })}
+              data-testid={editable ? 'role-edit' : 'role-view'}
+            >
+              {editable ? <Icon name="pencil" className="size-4" /> : null}
+              {editable ? builderTexts?.titleEdit : t('view')}
+            </Link>
+            {view.canManage && builderTexts && errors ? (
+              <RoleRowMenu
+                label={t('moreFor', { name })}
+                code={role.code}
+                createFrom={
+                  role.kind === 'standard' && role.code !== 'tenant_admin'
+                    ? { label: t('customFrom'), start: `standard:${role.code}` }
+                    : null
+                }
+                remove={
+                  editable && role.id && role.version !== null
+                    ? {
+                        id: role.id,
+                        version: role.version,
+                        texts: { ...builderTexts, deleteTitle: t('deleteTitle', { name }) },
+                        errors,
+                        rolesHref,
+                      }
+                    : null
+                }
+                inUse={people === null || people > 0}
+              />
+            ) : null}
+          </span>
+        </td>
+      </tr>
     );
   };
 
+  /**
+   * A group of roles as a table in a card (the list shape of WP-UX-01 e): the heading with its count, then
+   * one row per role — what it does, its permissions, how many people hold it, «View» / «Edit role» and the
+   * row's «⋯» menu. The table scrolls sideways on a narrow screen: the region takes the focus for that.
+   */
   const group = (
     key: 'standard' | 'custom',
     roles: readonly RolesPageRole[],
@@ -259,12 +285,43 @@ async function RolesList({ locale, view }: { locale: AppLocale; view: RolesPageV
       </h2>
       <p className="m-0 mb-3.5 mt-1 text-sm text-text-muted">{description}</p>
       {roles.length > 0 ? (
-        <ul
-          className="m-0 list-none overflow-hidden rounded-xl border border-border bg-surface p-0"
-          data-testid={key === 'standard' ? 'roles-table' : undefined}
-        >
-          {roles.map(row)}
-        </ul>
+        <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-2">
+          <div
+            className={`${tableClasses.wrapper} focus-visible:outline-2 focus-visible:outline-offset-2`}
+            // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrollable region takes focus
+            tabIndex={0}
+            role="region"
+            aria-labelledby={`roles-${key}`}
+          >
+            <table
+              className={tableClasses.table}
+              data-testid={key === 'standard' ? 'roles-table' : 'roles-custom-table'}
+            >
+              <caption className="sr-only">
+                {t('tableCaption')} · {t(`types.${key}`)}
+              </caption>
+              <thead className={tableClasses.header}>
+                <tr>
+                  <th scope="col" className={tableClasses.head}>
+                    {t('columns.role')}
+                  </th>
+                  <th scope="col" className={tableClasses.head}>
+                    {t('columns.permissions')}
+                  </th>
+                  {counts ? (
+                    <th scope="col" className={tableClasses.head}>
+                      {t('columns.people')}
+                    </th>
+                  ) : null}
+                  <th scope="col" className={cn(tableClasses.head, 'text-end')}>
+                    <span className="sr-only">{t('columns.actions')}</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>{roles.map(row)}</tbody>
+            </table>
+          </div>
+        </div>
       ) : (
         empty
       )}
@@ -280,7 +337,7 @@ async function RolesList({ locale, view }: { locale: AppLocale; view: RolesPageV
             custom,
             t('rolesCardDescription'),
             <div
-              className="rounded-xl border border-border bg-surface"
+              className="rounded-xl border border-border bg-surface shadow-2"
               data-testid="roles-no-custom"
             >
               <EmptyState

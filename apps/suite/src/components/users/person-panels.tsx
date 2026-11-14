@@ -1,5 +1,5 @@
 'use client';
-import { Alert, Avatar, Button, Dialog, Icon, SidePanel, toast } from '@jadarat/ui';
+import { Alert, Avatar, Button, Dialog, Icon, toast } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { type ReactNode, useCallback, useState } from 'react';
 import { reactivateMemberAction, reactivatePrivilegedMemberAction } from '../../actions/users';
@@ -8,14 +8,13 @@ import { returnFocusTo } from '../../lib/focus-return';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { ChangeRolePanel, type ChangeRolePanelProps } from './change-role-panel';
 import { DeactivateMemberForm, type DeactivateMemberFormProps } from './deactivate-member-form';
-import { DiscardDialog, type DiscardTexts } from './discard-dialog';
-import { EditUserForm, type EditUserFormProps } from './edit-user-form';
 
 /*
- * The panels of one person (redesign package 3 — «one person, one place»): Edit details is a side panel over
- * the profile, Change role a centred popup (forms standard rule 9, PO 12 Nov 2026), Deactivate a dialog. Each has its own address (`/users/[id]/edit`,
- * `/roles`, `/deactivate`, so bookmarks keep working); closing one returns to the profile (the same tab)
- * and focus goes back to the button that opened it.
+ * The popups of one person (redesign package 3 — «one person, one place»): Change role a centred popup
+ * (forms standard rule 9, PO 12 Nov 2026), Deactivate a dialog — the details are the «Personal details» and
+ * «Work details» tabs of the person's page since WP-UX-01 e. Each popup has its own address (`/roles`,
+ * `/deactivate`, so bookmarks keep working); closing one returns to the profile (the same tab) and focus goes
+ * back to the button that opened it.
  */
 
 /** Where a panel returns to: the profile's address and the id of the element that opened the panel. */
@@ -30,101 +29,6 @@ function useClose(back: PanelReturn) {
     returnFocusTo(back.focusId);
     router.push(back.href, { scroll: false });
   }, [router, back.href, back.focusId]);
-}
-
-export interface EditUserPanelProps {
-  readonly title: string;
-  readonly back: PanelReturn;
-  /** The form (null with `failure`: the details could not be opened here). */
-  readonly form: Omit<EditUserFormProps, 'panel'> | null;
-  readonly failure?: ReactNode;
-  /** Texts: close, cancel, save, saving, saved, noChanges, audited (namespace `editUser`). */
-  readonly texts: Readonly<Record<string, string>>;
-  readonly discardTexts: DiscardTexts;
-}
-
-/**
- * «تعديل البيانات» in a wide side panel (T-M2-13, FR-IAM-01; redesign package 3 — Melio's drawer): today's
- * form, rules and audit; saved → the panel closes, a toast says so and the profile shows the new values.
- * Closing with unsaved changes asks first.
- */
-export function EditUserPanel(props: EditUserPanelProps) {
-  const text = (key: string) => props.texts[key] ?? key;
-  const close = useClose(props.back);
-  const [open, setOpen] = useState(true);
-  const [dirty, setDirty] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [asking, setAsking] = useState(false);
-  const formId = 'edit-user-form';
-
-  const canClose = useCallback(() => {
-    if (pending) return false;
-    if (!dirty) return true;
-    setAsking(true);
-    return false;
-  }, [dirty, pending]);
-
-  const panel = {
-    formId,
-    onDirty: () => {
-      setDirty(true);
-    },
-    onPending: setPending,
-    onSaved: (changed: boolean) => {
-      toast.success(changed ? text('saved') : text('noChanges'));
-      setDirty(false);
-      setOpen(false);
-    },
-  };
-
-  return (
-    <>
-      <SidePanel
-        open={open}
-        onClose={close}
-        canClose={canClose}
-        title={props.title}
-        closeLabel={text('close')}
-        size="lg"
-        data-testid="edit-user-panel"
-        footer={
-          props.form ? (
-            <>
-              <p className="m-0 basis-full text-sm text-text-muted">{text('audited')}</p>
-              <div className="ms-auto flex flex-wrap gap-2.5">
-                <Button
-                  variant="secondary"
-                  disabled={pending}
-                  onClick={() => {
-                    if (canClose()) setOpen(false);
-                  }}
-                >
-                  {text('cancel')}
-                </Button>
-                <Button type="submit" form={formId} busy={pending} data-testid="edit-user-save">
-                  {pending ? text('saving') : text('save')}
-                </Button>
-              </div>
-            </>
-          ) : null
-        }
-      >
-        {props.form ? <EditUserForm {...props.form} panel={panel} /> : props.failure}
-      </SidePanel>
-      <DiscardDialog
-        open={asking}
-        texts={props.discardTexts}
-        onKeep={() => {
-          setAsking(false);
-        }}
-        onDiscard={() => {
-          setAsking(false);
-          setDirty(false);
-          setOpen(false);
-        }}
-      />
-    </>
-  );
 }
 
 export interface RolePanelRouteProps extends Omit<

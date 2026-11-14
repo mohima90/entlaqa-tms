@@ -317,7 +317,14 @@ export function InvitationsTable({
   return (
     <>
       <div className="hidden md:block" data-testid="invitations-list">
-        <div className={tableClasses.wrapper}>
+        <div
+          className={`${tableClasses.wrapper} focus-visible:outline-2 focus-visible:outline-offset-2`}
+          // Scrolls sideways on a narrow screen: focusable so the keyboard can scroll it too.
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrollable region takes focus
+          tabIndex={0}
+          role="region"
+          aria-label={text('tableCaption')}
+        >
           <table className={tableClasses.table} data-testid="invitations-table">
             <caption className="sr-only">{text('tableCaption')}</caption>
             <thead className={tableClasses.header}>

@@ -467,7 +467,7 @@ export interface SignInSession {
 
 export interface MySignInSession extends SignInSession {
   /** The organization it acts in (null: none chosen yet). */
-  readonly organization: { readonly nameAr: string; readonly nameEn: string | null } | null;
+  readonly organization: { readonly nameAr: string | null; readonly nameEn: string | null } | null;
 }
 
 function sessionOf(row: Row): SignInSession {
@@ -489,12 +489,14 @@ export async function listMySessions(tx: UserTx): Promise<MySignInSession[]> {
     from private.my_sessions()`);
   return rows.map((row) => ({
     ...sessionOf(row),
-    organization: row.tenant_name_ar
-      ? {
-          nameAr: row.tenant_name_ar as string,
-          nameEn: (row.tenant_name_en as string | null) ?? null,
-        }
-      : null,
+    // An organization is named in at least one language (20261113120000): either name shows it.
+    organization:
+      row.tenant_name_ar || row.tenant_name_en
+        ? {
+            nameAr: (row.tenant_name_ar as string | null) ?? null,
+            nameEn: (row.tenant_name_en as string | null) ?? null,
+          }
+        : null,
   }));
 }
 

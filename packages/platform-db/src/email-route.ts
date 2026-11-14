@@ -4,6 +4,8 @@
  * the web tier (auth-mail.ts) uses it too; the worker re-exports it from jobs/email.ts.
  */
 
+import { organizationNames } from './organization-names';
+
 /** The sender rule's inputs for the job's organization (private.email_route). */
 export interface EmailRouteRow {
   readonly tenant: {
@@ -47,12 +49,13 @@ export interface EmailRouteSqlRow {
   readonly platform_from_address: string | null;
   readonly platform_verified: boolean;
   readonly platform_version: number | null;
-  readonly brand_name_ar: string;
+  readonly brand_name_ar: string | null;
   readonly brand_name_en: string | null;
   readonly default_locale: string;
 }
 
 export function toEmailRouteRow(r: EmailRouteSqlRow): EmailRouteRow {
+  const brand = organizationNames(r.brand_name_ar, r.brand_name_en);
   return {
     tenant:
       r.tenant_provider !== null &&
@@ -84,8 +87,10 @@ export function toEmailRouteRow(r: EmailRouteSqlRow): EmailRouteRow {
             version: r.platform_version ?? 0,
           }
         : null,
-    brandNameAr: r.brand_name_ar,
-    brandNameEn: r.brand_name_en,
+    // An organization is named in at least one language (20261113120000): the Arabic slot carries the
+    // name that exists, so the sender's name is never empty.
+    brandNameAr: brand.ar,
+    brandNameEn: brand.en,
     defaultLocale: r.default_locale === 'ar' ? 'ar' : 'en',
   };
 }

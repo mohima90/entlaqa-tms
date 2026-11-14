@@ -15,7 +15,8 @@ export type TenantDateDisplay = (typeof TENANT_DATE_DISPLAYS)[number];
 
 /** What the Organization Admin edits on the profile page. Times are local wall-clock "HH:MM". */
 export interface OrganizationProfile {
-  readonly nameAr: string;
+  /** Named in at least one language (tenants_name_present_check, 20261113120000): either may be missing. */
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
   readonly industry: string | null;
   readonly countryCode: string | null;
@@ -54,7 +55,7 @@ function days(value: unknown): number[] {
 
 function profileOf(row: Row): OrganizationProfile {
   return {
-    nameAr: String(row.name_ar),
+    nameAr: (row.name_ar as string | null) ?? null,
     nameEn: (row.name_en as string | null) ?? null,
     industry: (row.industry as string | null) ?? null,
     countryCode: (row.country_code as string | null) ?? null,

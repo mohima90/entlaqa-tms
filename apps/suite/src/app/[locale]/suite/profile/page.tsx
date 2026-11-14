@@ -39,7 +39,9 @@ import { localizedName, localizedNameOrNull, roleName } from '../../../../lib/us
 
 /**
  * My profile (FR-IAM-16, T-M2-15a; PO decision 5 Oct 2026): the member changes their own personal
- * details and password; e-mail and job data are read-only (changed by HR). Opened from the header.
+ * details and password; e-mail and job data are read-only (changed by HR). Opened from the header. Its two
+ * sections — Profile · Sign-in and security — are tabs at the side (the Kawadir pattern, WP-UX-01 e), each
+ * its own address.
  */
 export default async function MyProfilePage({
   params,
@@ -283,14 +285,15 @@ async function MyProfile({
 
   const tabs = (
     <TabNav
-      variant="underline"
+      variant="side"
       label={t('tabs.label')}
       current={tab}
-      className="mb-5"
+      className="xl:sticky xl:top-24"
       items={[
         { key: 'profile', href: profileHref, label: t('tabs.profile'), icon: 'user' },
         { key: 'security', href: securityHref, label: t('tabs.security'), icon: 'shield' },
       ]}
+      data-testid="my-profile-tabs"
     />
   );
 
@@ -538,11 +541,14 @@ async function MyProfile({
     </AuthenticatorProvider>
   );
 
+  // The sections as tabs at the side: a column from 1200 px, rows above the content below it.
   return (
-    <div className="max-w-4xl" data-testid="my-profile">
+    <div data-testid="my-profile">
       {identity}
-      {tabs}
-      {tab === 'security' ? securityTab : profileTab}
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[230px_minmax(0,1fr)] xl:gap-6">
+        {tabs}
+        <div className="min-w-0 max-w-4xl">{tab === 'security' ? securityTab : profileTab}</div>
+      </div>
     </div>
   );
 }

@@ -176,3 +176,21 @@ export function builderFieldError(
         : null;
   }
 }
+
+/**
+ * The sections of a custom role's page, as tabs at the side (the Kawadir pattern; WP-UX-01 e, T-M3-21):
+ * «Name and scope», «Permissions», «Who holds it» — one form, each section its own address (`?tab=`).
+ */
+export const ROLE_EDIT_TABS = ['details', 'permissions', 'holders'] as const;
+export type RoleEditTab = (typeof ROLE_EDIT_TABS)[number];
+
+/** The section of `?tab=` (unknown or none → «Name and scope»). */
+export function roleEditTab(raw: string | string[] | null | undefined): RoleEditTab {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value === 'permissions' || value === 'holders' ? value : 'details';
+}
+
+/** The section a field is on (a refused field opens its section). */
+export function roleEditTabOf(field: keyof BuilderValues): RoleEditTab {
+  return field === 'permissions' ? 'permissions' : 'details';
+}

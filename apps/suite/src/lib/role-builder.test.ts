@@ -8,6 +8,8 @@ import {
   builderIsPrivileged,
   changeScope,
   permissionBlock,
+  roleEditTab,
+  roleEditTabOf,
   togglePermission,
 } from './role-builder';
 
@@ -214,5 +216,21 @@ describe('builderFieldError', () => {
       field: 'dataScope',
       key: 'scopeUnitsInUse',
     });
+  });
+});
+
+describe('the sections of a custom role page (WP-UX-01 e)', () => {
+  it('reads `?tab=`: unknown or none is «Name and scope»', () => {
+    expect(roleEditTab(undefined)).toBe('details');
+    expect(roleEditTab(null)).toBe('details');
+    expect(roleEditTab('permissions')).toBe('permissions');
+    expect(roleEditTab(['holders'])).toBe('holders');
+    expect(roleEditTab('across')).toBe('details');
+  });
+
+  it('a refused field opens its section', () => {
+    expect(roleEditTabOf('permissions')).toBe('permissions');
+    expect(roleEditTabOf('nameEn')).toBe('details');
+    expect(roleEditTabOf('dataScope')).toBe('details');
   });
 });

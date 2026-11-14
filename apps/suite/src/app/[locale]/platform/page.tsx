@@ -32,6 +32,7 @@ import { getConfigStatus } from '../../../lib/config-status';
 import { flattenTexts } from '../../../lib/flatten-texts';
 import { inviteCopyTexts } from '../../../lib/invite-copy-texts';
 import { platformErrorTexts } from '../../../lib/platform-texts';
+import { localizedName } from '../../../lib/users-view';
 
 const STATUS_TONE: Record<string, BadgeTone> = {
   active: 'success',
@@ -58,7 +59,7 @@ const first = (value: string | string[] | undefined): string =>
  * The Platform Super Admin console «مشرف المنصة» — Organizations (FR-ADM-17; Kawadir ATS's
  * (admin)/organizations), redesign package 5 (direction C): the three figures are saved-view cards
  * (Organizations · Active · Organization Admin pending) that filter the list, a search by name or short
- * name, the organizations table (cards on phones), «إنشاء منظمة» / Create organization in a side panel and
+ * name, the organizations table (cards on phones), «إنشاء منظمة» / Create organization in a popup and
  * the pending Organization Admin's invitation link. Both filters work on the rows already read. Deny by
  * default, on the server, before anything renders: a verified session (getClaims) of a user the DATABASE
  * says is a Super Admin — everyone else (signed out, any organization's member, any other account) gets 404.
@@ -118,8 +119,8 @@ export default async function PlatformOrganizationsPage({
     active: rows.filter((r) => r.status === 'active').length,
     pending: rows.filter(isPending).length,
   };
-  const nameOf = (org: (typeof rows)[number]) =>
-    locale === 'en' ? (org.nameEn ?? org.nameAr) : org.nameAr;
+  // The name in the page's language, else the one the organization has (one language is enough).
+  const nameOf = (org: (typeof rows)[number]) => localizedName(locale, org.nameAr, org.nameEn);
 
   const needle = q.toLowerCase();
   const shown = rows
@@ -129,7 +130,9 @@ export default async function PlatformOrganizationsPage({
     .filter(
       (r) =>
         needle === '' ||
-        [r.nameAr, r.nameEn ?? '', r.slug].some((value) => value.toLowerCase().includes(needle)),
+        [r.nameAr ?? '', r.nameEn ?? '', r.slug].some((value) =>
+          value.toLowerCase().includes(needle),
+        ),
     );
 
   const path = `/${locale}/platform`;

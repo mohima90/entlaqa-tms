@@ -193,9 +193,13 @@ describe('edit user query', () => {
 describe('update user details', () => {
   it('saves with composed display names and audits the changed field names', async () => {
     db.updateUserDetails.mockResolvedValue({ ok: true, changed: ['familyNameAr', 'departmentId'] });
+    // Read back after the save: the new version goes to the form (it stays open on its tab).
+    db.getEditableUser.mockResolvedValue({ personId: SARA, mayManage: true, version: '4:1' });
     const { rt, writeAudit } = runtime(['hr_manager']);
     const result = await createDefineAction(rt)(updateUserDetailsActionDefinition())(form);
-    expect(result).toEqual(ok({ personId: SARA, changed: ['familyNameAr', 'departmentId'] }));
+    expect(result).toEqual(
+      ok({ personId: SARA, changed: ['familyNameAr', 'departmentId'], version: '4:1' }),
+    );
     expect(db.updateUserDetails).toHaveBeenCalledWith(
       TX,
       SARA,
@@ -277,7 +281,10 @@ describe('update user details', () => {
     );
     const noEnglish = { ...form, firstNameEn: '', familyNameEn: '' };
     // HR changes the unit only: accepted.
-    expect(await save(noEnglish)).toEqual(ok({ personId: SARA, changed: ['departmentId'] }));
+    // The record read back here has no version (a mock without one): the form then keeps its own.
+    expect(await save(noEnglish)).toEqual(
+      ok({ personId: SARA, changed: ['departmentId'], version: null }),
+    );
     // HR changes the Arabic name without English names: the English ones are required.
     const renamed = await save({ ...noEnglish, familyNameAr: 'العتيبي' });
     expect(!renamed.ok && renamed.error.fieldErrors).toEqual([

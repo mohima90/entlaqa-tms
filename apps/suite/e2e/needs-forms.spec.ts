@@ -66,10 +66,11 @@ async function dismissToasts(page: Page) {
   while ((await close.count()) > 0) await close.first().click();
 }
 
+/** A form's row in the library's table (the list shape of WP-UX-01 e), found by its name's link. */
 const card = (page: Page, name: string) =>
   page
     .getByTestId('needs-form-card')
-    .filter({ has: page.getByRole('heading', { name, exact: true }) });
+    .filter({ has: page.getByRole('link', { name, exact: true }) });
 
 /** The builder's Outline / Preview tabs (below the widest screens the panes are tabs). */
 async function showPane(page: Page, pane: 'outline' | 'preview') {
@@ -259,6 +260,19 @@ for (const locale of ['en', 'ar'] as const) {
     await card(page, t.copyName).getByTestId('needs-form-menu').click();
     await page.getByTestId('needs-form-toggle-active').click();
     await expect(card(page, t.copyName)).toContainText(locale === 'en' ? 'Off' : 'متوقف');
+    // The views by state count it (the list shape of WP-UX-01 e) and filter the table in place.
+    // «Off» shows the form just switched off and none of the forms that are on.
+    await page.getByTestId('needs-forms-filter-inactive').click();
+    await expect(card(page, t.copyName)).toBeVisible();
+    await expect(card(page, t.newName)).toHaveCount(0);
+    await expect(card(page, t.defaultForm)).toHaveCount(0);
+    // The view's count is the number of rows it shows.
+    const offRows = await page.getByTestId('needs-form-card').count();
+    await expect(page.getByTestId('needs-forms-filter-inactive')).toHaveText(
+      new RegExp(`\\D${String(offRows)}$`),
+    );
+    await page.getByTestId('needs-forms-filter-all').click();
+    await expect(card(page, t.newName)).toBeVisible();
     await page.getByTestId('toast-action').click();
     await expect(
       card(page, t.copyName).getByText(locale === 'en' ? 'Off' : 'متوقف', { exact: true }),

@@ -1,6 +1,7 @@
 'use client';
 import type { AppError } from '@jadarat/platform-core';
-import { Alert, Button, Dialog, Icon, SidePanel, TextField, initialsOf } from '@jadarat/ui';
+import { personDisplayName } from '@jadarat/platform-i18n/names';
+import { Alert, Button, Dialog, Icon, TextField, initialsOf } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { type SyntheticEvent, useEffect, useId, useRef, useState, useTransition } from 'react';
 import {
@@ -8,8 +9,10 @@ import {
   reissueOrganizationAdminCodeAction,
   viewOrganizationAdminCodeAction,
 } from '../../auth/platform-console';
+import { organizationNameField } from '../../lib/organization-name-field';
 import { isOrganizationSlug } from '../../lib/organization-slug';
 import { type ErrorTexts, errorText } from '../auth/error-text';
+import { useFocusInvalid } from '../planning/use-focus-invalid';
 import { fieldErrorCodes } from '../profile/field-errors';
 import { SelectField } from '../select-field';
 import {
@@ -26,30 +29,44 @@ interface Shared {
   readonly texts: PlatformTexts;
   readonly copyTexts: InviteCopyTexts;
   readonly errors: ErrorTexts;
-  /** «إغلاق» / "Close" — the label of the close button of the panel and the dialog. */
+  /** «إغلاق» / "Close" — the label of the ✕ of the popups (never a footer button's name). */
   readonly closeLabel: string;
 }
 
-const FIELDS = [
-  'slug',
-  'nameAr',
-  'nameEn',
-  'adminEmail',
+const ADMIN_NAME_FIELDS = [
   'adminFirstNameAr',
   'adminFamilyNameAr',
   'adminFirstNameEn',
   'adminFamilyNameEn',
 ] as const;
+const FIELDS = ['slug', 'nameAr', 'nameEn', 'adminEmail', ...ADMIN_NAME_FIELDS] as const;
 type Field = (typeof FIELDS)[number];
+type Language = 'ar' | 'en';
+type Errors = Partial<Record<Field | 'locale', string>>;
+
+const isAdminName = (field: string): boolean =>
+  (ADMIN_NAME_FIELDS as readonly string[]).includes(field);
 
 /** The message of a field's error code (server or client). */
-function fieldMessage(field: Field | 'locale' | 'form', code: string, text: (k: string) => string) {
+function fieldMessage(
+  field: Field | 'locale',
+  code: string,
+  language: Language,
+  text: (k: string) => string,
+) {
   if (field === 'slug')
     return text(code === 'SLUG_TAKEN' ? 'create.errors.slugTaken' : 'create.errors.slug');
   // A Super Admin never invites their own account (review L7).
   if (field === 'adminEmail' && code === 'OWN_EMAIL') return text('create.errors.adminEmailOwn');
+  // The name in the organization's language is required; the other one only has its length to keep.
+  if (field === 'nameAr' || field === 'nameEn')
+    return text(
+      field === organizationNameField(language)
+        ? `create.errors.${field}`
+        : 'create.errors.nameOther',
+    );
   // A language's names all or nothing (the form's other name field of that language is filled).
-  if (field.startsWith('admin') && field !== 'adminEmail')
+  if (isAdminName(field))
     return text(code === 'CUSTOM' ? 'create.errors.adminNamePair' : 'create.errors.adminName');
   return text(`create.errors.${field}`);
 }
@@ -62,7 +79,7 @@ function formatExpiry(locale: 'ar' | 'en', date: Date | string): string {
   }).format(new Date(date));
 }
 
-/** What the success view of the create panel recaps. */
+/** What the success view of the create popup recaps. */
 interface CreatedOrganization {
   readonly code: InviteCodeValue;
   readonly name: string;
@@ -70,34 +87,152 @@ interface CreatedOrganization {
   readonly adminEmail: string;
 }
 
+type Plans = readonly { readonly planId: string; readonly name: string }[];
+
+/** The popup's form: the dialog's footer submits it. */
+const CREATE_FORM_ID = 'create-organization-form';
+
 /**
- * «إنشاء منظمة» / Create organization in a side panel (redesign package 5, PO 21 Oct 2026 — the list stays
- * in view; Kawadir ATS uses a dialog): short name, names, the Organization Admin's e-mail and optional
- * names, the invitation language (English by default). Created → the success view replaces the form in the
- * same panel: the organization, the code in large type, Copy code / Copy invite link, Done (no e-mail is
- * sent). Same checks, action and audit as before (FR-ADM-17).
+ * «إنشاء منظمة» / Create organization — one centred popup, 672 px (WP-UX-01 d, T-M3-21; forms standard rules
+ * 8–9; PO 12 Nov 2026 — the Kawadir pattern; a side panel before): the organization's names, its language,
+ * short name, the Organization Admin's e-mail, the plan and a 30-day trial (ticked). The name in the language
+ * chosen is required (a red asterisk), the other language optional; the Organization Admin's names wait
+ * behind «More». «Cancel», then «Create organization» at the end. Created → the same popup shows the
+ * organization, the code in large type, Copy code / Copy invite link and «Done» (no e-mail is sent). Same
+ * action, checks and audit as before (FR-ADM-17). Each opening starts with an empty form.
  */
-export function CreateOrganization(
+export function CreateOrganization(props: Shared & { readonly plans?: Plans }) {
+  const text = (key: string) => props.texts[key] ?? key;
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [opening, setOpening] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<CreatedOrganization | null>(null);
+  // Created: the recap takes the focus (the form and its button are gone), so it is read out.
+  const created = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (result) created.current?.focus();
+  }, [result]);
+  const close = () => {
+    setOpen(false);
+  };
+
+  return (
+    <>
+      <Button
+        type="button"
+        onClick={() => {
+          setResult(null);
+          setOpening((n) => n + 1);
+          setOpen(true);
+        }}
+        data-testid="create-organization"
+      >
+        <Icon name="plus" />
+        {text('create.open')}
+      </Button>
+      <Dialog
+        open={open}
+        onClose={() => {
+          setOpen(false);
+          // The new organization joins the list.
+          if (result) router.refresh();
+        }}
+        canClose={() => !busy}
+        size="rich"
+        title={result ? text('created.title') : text('create.title')}
+        description={result ? text('created.text') : text('create.intro')}
+        closeLabel={props.closeLabel}
+        data-testid="create-organization-panel"
+        // «Cancel», then the primary button at the end — the dialog keeps them in view while it scrolls.
+        footer={
+          result ? (
+            <Button onClick={close} data-testid="organization-created-done">
+              {text('created.done')}
+            </Button>
+          ) : (
+            <>
+              <Button variant="secondary" disabled={busy} onClick={close}>
+                {text('create.cancel')}
+              </Button>
+              <Button
+                type="submit"
+                form={CREATE_FORM_ID}
+                busy={busy}
+                disabled={busy}
+                data-testid="create-organization-submit"
+              >
+                {busy ? text('create.submitting') : text('create.submit')}
+              </Button>
+            </>
+          )
+        }
+      >
+        {result ? (
+          <div
+            ref={created}
+            tabIndex={-1}
+            data-testid="organization-created-dialog"
+            className="flex flex-col gap-5 outline-none"
+          >
+            <div className="flex items-start gap-3.5">
+              <span
+                aria-hidden="true"
+                className="grid size-12 shrink-0 place-items-center rounded-[16px] bg-success-subtle text-success"
+              >
+                <Icon name="success" className="size-6" />
+              </span>
+              <dl className="m-0 grid min-w-0 grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[14.5px]">
+                <dt className="text-text-muted">{text('table.name')}</dt>
+                <dd className="m-0 font-semibold [overflow-wrap:anywhere]">{result.name}</dd>
+                <dt className="text-text-muted">{text('table.shortName')}</dt>
+                <dd className="m-0 font-semibold">
+                  <code dir="ltr" className="font-mono">
+                    {result.slug}
+                  </code>
+                </dd>
+                <dt className="text-text-muted">{text('create.adminSection')}</dt>
+                <dd className="m-0 font-semibold [overflow-wrap:anywhere]">
+                  <bdi dir="ltr">{result.adminEmail}</bdi>
+                </dd>
+              </dl>
+            </div>
+            <InviteCodeCopy value={result.code} texts={props.copyTexts} layout="panel" />
+          </div>
+        ) : open ? (
+          <CreateOrganizationForm key={opening} {...props} onBusy={setBusy} onCreated={setResult} />
+        ) : null}
+      </Dialog>
+    </>
+  );
+}
+
+function CreateOrganizationForm(
   props: Shared & {
-    /** The plans to start on (WP-ADM-06); empty: none yet (every feature, no limits). */
-    readonly plans?: readonly { readonly planId: string; readonly name: string }[];
+    readonly plans?: Plans;
+    readonly onBusy: (busy: boolean) => void;
+    readonly onCreated: (created: CreatedOrganization) => void;
   },
 ) {
   const text = (key: string) => props.texts[key] ?? key;
-  const router = useRouter();
   const formId = useId();
-  const [open, setOpen] = useState(false);
-  const [errors, setErrors] = useState<Partial<Record<Field | 'locale' | 'form', string>>>({});
+  const [errors, setErrors] = useState<Errors>({});
   const [failure, setFailure] = useState<string | null>(null);
-  const [result, setResult] = useState<CreatedOrganization | null>(null);
+  // The organization's language — its default language (which name its forms require, the language of new
+  // people) and its invitation's; the database sets both (20261113120300).
+  const [language, setLanguage] = useState<Language>('en');
+  // «More» (the Organization Admin's names) starts closed; a refused field inside opens it.
+  const [more, setMore] = useState(false);
   const [pending, startTransition] = useTransition();
-  // The fields are disabled while the answer is awaited: a field the server refused takes focus after.
-  const focusAfter = useRef<Field | null>(null);
-  useEffect(() => {
-    if (pending || !focusAfter.current) return;
-    document.getElementById(`${formId}-${focusAfter.current}`)?.focus();
-    focusAfter.current = null;
-  }, [pending, errors, formId]);
+  // A refusal moves the focus to the first refused field once the fields are enabled again.
+  const { form, focusInvalid } = useFocusInvalid(pending);
+  const requiredName = organizationNameField(language);
+
+  const refuse = (next: Errors) => {
+    setErrors(next);
+    if (Object.keys(next).some(isAdminName)) setMore(true);
+    focusInvalid();
+  };
 
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -115,42 +250,45 @@ export function CreateOrganization(
       adminFamilyNameAr: value('adminFamilyNameAr'),
       adminFirstNameEn: value('adminFirstNameEn'),
       adminFamilyNameEn: value('adminFamilyNameEn'),
-      locale: value('locale') === 'ar' ? ('ar' as const) : ('en' as const),
+      locale: language,
       // The plan it starts on and a 30-day trial (WP-ADM-06).
       planId: value('planId') === '' ? null : value('planId'),
       trial: data.get('trial') === 'on',
     };
-    const local: Partial<Record<Field, string>> = {};
+    const local: Errors = {};
+    if (input[requiredName].trim() === '')
+      local[requiredName] = text(`create.errors.${requiredName}`);
     if (!isOrganizationSlug(input.slug)) local.slug = text('create.errors.slug');
-    if (input.nameAr.trim() === '') local.nameAr = text('create.errors.nameAr');
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(input.adminEmail.trim()))
       local.adminEmail = text('create.errors.adminEmail');
     setFailure(null);
-    setErrors(local);
     if (Object.keys(local).length > 0) {
-      const first = FIELDS.find((f) => local[f]);
-      if (first) document.getElementById(`${formId}-${first}`)?.focus();
+      refuse(local);
       return;
     }
+    setErrors({});
+    props.onBusy(true);
     startTransition(async () => {
-      const answer = await createOrganizationAction(input);
-      if (answer.ok) {
-        setResult({
-          code: {
-            inviteCode: answer.value.inviteCode,
-            locale: answer.value.locale,
-            inviteLink: answer.value.inviteLink,
-          },
-          name:
-            props.locale === 'en' && input.nameEn.trim() !== ''
-              ? input.nameEn.trim()
-              : input.nameAr.trim(),
-          slug: input.slug,
-          adminEmail: input.adminEmail.trim(),
-        });
-        return;
+      try {
+        const answer = await createOrganizationAction(input);
+        if (answer.ok) {
+          props.onCreated({
+            code: {
+              inviteCode: answer.value.inviteCode,
+              locale: answer.value.locale,
+              inviteLink: answer.value.inviteLink,
+            },
+            // The name in the page's language, else the one given.
+            name: personDisplayName(props.locale, input.nameAr.trim(), input.nameEn.trim()),
+            slug: input.slug,
+            adminEmail: input.adminEmail.trim(),
+          });
+          return;
+        }
+        showError(answer.error);
+      } finally {
+        props.onBusy(false);
       }
-      showError(answer.error);
     });
   };
 
@@ -158,16 +296,15 @@ export function CreateOrganization(
     const codes = fieldErrorCodes(error);
     const fields = Object.keys(codes);
     if (error.code === 'VALIDATION_FAILED' && fields.length > 0) {
-      const next: Partial<Record<Field | 'locale' | 'form', string>> = {};
+      const next: Errors = {};
+      let other = false;
       for (const field of fields) {
-        const key =
-          (FIELDS as readonly string[]).includes(field) || field === 'locale' ? field : 'form';
-        next[key as Field] = fieldMessage(key as Field, codes[field] ?? '', text);
+        if ((FIELDS as readonly string[]).includes(field) || field === 'locale') {
+          next[field as Field] = fieldMessage(field as Field, codes[field] ?? '', language, text);
+        } else other = true;
       }
-      setErrors(next);
-      if (next.form) setFailure(next.form);
-      const first = FIELDS.find((f) => next[f]);
-      if (first) focusAfter.current = first;
+      if (other) setFailure(text('create.errors.form'));
+      refuse(next);
       return;
     }
     setFailure(errorText(error, props.errors));
@@ -175,16 +312,18 @@ export function CreateOrganization(
 
   const field = (
     name: Field,
-    options: { required?: boolean; type?: string; dir?: 'ltr' | 'rtl' } = {},
+    options: { required?: boolean; type?: string; lang?: Language } = {},
   ) => (
     <TextField
+      key={name}
       id={`${formId}-${name}`}
       name={name}
       label={text(`create.${name}`)}
       marker={options.required ? text('create.required') : text('create.optional')}
       required={options.required}
       type={options.type ?? 'text'}
-      dir={options.dir}
+      dir={options.lang === 'ar' ? 'rtl' : 'ltr'}
+      lang={options.lang}
       autoComplete="off"
       disabled={pending}
       error={errors[name]}
@@ -192,169 +331,119 @@ export function CreateOrganization(
       data-testid={`create-org-${name}`}
     />
   );
-
-  const close = () => {
-    setOpen(false);
-  };
+  // A short natural pair: side by side from `md` (600 px, packages/config/tailwind/preset.css), one per row
+  // on a phone.
+  const pair = 'grid grid-cols-1 items-start gap-4 md:grid-cols-2';
+  // The organization's language first (English by default — PO 14 and 17 Oct 2026).
+  const languages: readonly Language[] = language === 'ar' ? ['ar', 'en'] : ['en', 'ar'];
+  const suffix = (l: Language) => (l === 'ar' ? 'Ar' : 'En');
 
   return (
-    <>
-      <Button
-        type="button"
-        onClick={() => {
-          setErrors({});
-          setFailure(null);
-          setResult(null);
-          setOpen(true);
-        }}
-        data-testid="create-organization"
-      >
-        <Icon name="plus" />
-        {text('create.open')}
-      </Button>
-      <SidePanel
-        open={open}
-        onClose={() => {
-          setOpen(false);
-          // The new organization joins the list.
-          if (result) router.refresh();
-        }}
-        canClose={() => !pending}
-        size="lg"
-        title={text('create.title')}
-        description={result ? undefined : text('create.intro')}
-        closeLabel={props.closeLabel}
-        data-testid="create-organization-panel"
-        footer={
-          result ? (
-            <Button className="ms-auto" onClick={close} data-testid="organization-created-done">
-              {text('created.done')}
-            </Button>
-          ) : (
-            <div className="ms-auto flex flex-wrap gap-2.5">
-              <Button variant="secondary" disabled={pending} onClick={close}>
-                {text('create.cancel')}
-              </Button>
-              <Button
-                type="submit"
-                form={`${formId}-form`}
-                busy={pending}
-                disabled={pending}
-                data-testid="create-organization-submit"
-              >
-                {pending ? text('create.submitting') : text('create.submit')}
-              </Button>
-            </div>
-          )
-        }
-      >
-        {result ? (
-          <div data-testid="organization-created-dialog" className="flex flex-col gap-5">
-            <div className="flex flex-col items-start gap-3">
-              <span
-                aria-hidden="true"
-                className="grid size-14 place-items-center rounded-[18px] bg-success-subtle text-success"
-              >
-                <Icon name="success" className="size-7" />
-              </span>
-              <h3 className="m-0 text-2xl font-bold">{text('created.title')}</h3>
-              <p className="m-0 text-text-muted">{text('created.text')}</p>
-            </div>
-            <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[14.5px]">
-              <dt className="text-text-muted">{text('table.name')}</dt>
-              <dd className="m-0 font-semibold">{result.name}</dd>
-              <dt className="text-text-muted">{text('table.shortName')}</dt>
-              <dd className="m-0 font-semibold">
-                <code dir="ltr" className="font-mono">
-                  {result.slug}
-                </code>
-              </dd>
-              <dt className="text-text-muted">{text('create.adminSection')}</dt>
-              <dd className="m-0 font-semibold [overflow-wrap:anywhere]">
-                <bdi dir="ltr">{result.adminEmail}</bdi>
-              </dd>
-            </dl>
-            <InviteCodeCopy value={result.code} texts={props.copyTexts} layout="panel" />
-          </div>
-        ) : (
-          <form id={`${formId}-form`} noValidate onSubmit={submit} className="flex flex-col gap-4">
-            {field('slug', { required: true, dir: 'ltr' })}
-            <div className="grid gap-4">
-              {field('nameAr', { required: true, dir: 'rtl' })}
-              {field('nameEn', { dir: 'ltr' })}
-            </div>
-            <fieldset className="m-0 flex flex-col gap-4 rounded-lg border border-border p-4">
-              <legend className="px-1 font-semibold">{text('create.adminSection')}</legend>
-              {field('adminEmail', { required: true, type: 'email', dir: 'ltr' })}
-              <p className="m-0 text-sm text-text-muted">{text('create.adminNamesHint')}</p>
-              <div className="grid gap-4">
-                {/* English first: a new organization's default language (PO 14 and 17 Oct 2026). */}
-                {field('adminFirstNameEn', { dir: 'ltr' })}
-                {field('adminFamilyNameEn', { dir: 'ltr' })}
-                {field('adminFirstNameAr', { dir: 'rtl' })}
-                {field('adminFamilyNameAr', { dir: 'rtl' })}
-              </div>
-              <SelectField
-                id={`${formId}-locale`}
-                name="locale"
-                label={text('create.locale')}
-                defaultValue="en"
-                disabled={pending}
-                error={errors.locale}
-                data-testid="create-org-locale"
-              >
-                <option value="en">{text('create.localeEn')}</option>
-                <option value="ar">{text('create.localeAr')}</option>
-              </SelectField>
-            </fieldset>
-            {/* The plan and a 30-day trial (WP-ADM-06, business flow B1). */}
-            <fieldset className="m-0 flex flex-col gap-4 rounded-lg border border-border p-4">
-              <legend className="px-1 font-semibold">{text('create.planSection')}</legend>
-              <SelectField
-                id={`${formId}-planId`}
-                name="planId"
-                label={text('create.plan')}
-                defaultValue=""
-                disabled={pending}
-                data-testid="create-org-plan"
-              >
-                <option value="">{text('organizationPlan.noPlan')}</option>
-                {(props.plans ?? []).map((plan) => (
-                  <option key={plan.planId} value={plan.planId}>
-                    {plan.name}
-                  </option>
-                ))}
-              </SelectField>
-              <div className="flex items-start gap-3">
-                <input
-                  id={`${formId}-trial`}
-                  type="checkbox"
-                  name="trial"
-                  defaultChecked
-                  disabled={pending}
-                  aria-describedby={`${formId}-trial-hint`}
-                  className="mt-0.5 size-5 shrink-0 accent-primary"
-                  data-testid="create-org-trial"
-                />
-                <span className="flex flex-col gap-0.5">
-                  <label htmlFor={`${formId}-trial`} className="cursor-pointer font-semibold">
-                    {text('create.trial')}
-                  </label>
-                  <span id={`${formId}-trial-hint`} className="text-sm text-text-muted">
-                    {text('create.trialHint')}
-                  </span>
-                </span>
-              </div>
-            </fieldset>
-            {failure ? (
-              <Alert tone="danger" data-testid="create-organization-error">
-                {failure}
-              </Alert>
-            ) : null}
-          </form>
+    <form
+      ref={form}
+      id={CREATE_FORM_ID}
+      noValidate
+      onSubmit={submit}
+      className="flex flex-col gap-4"
+    >
+      {failure ? (
+        <Alert tone="danger" data-testid="create-organization-error">
+          {failure}
+        </Alert>
+      ) : null}
+      {/* The name in the language chosen below first and required; the other language optional. */}
+      <div className={pair}>
+        {languages.map((l) =>
+          field(`name${suffix(l)}`, { required: `name${suffix(l)}` === requiredName, lang: l }),
         )}
-      </SidePanel>
-    </>
+      </div>
+      <SelectField
+        id={`${formId}-locale`}
+        name="locale"
+        label={text('create.locale')}
+        value={language}
+        onChange={(event) => {
+          setLanguage(event.target.value === 'ar' ? 'ar' : 'en');
+          // The required name moves with the language: an earlier «enter the name» no longer applies.
+          setErrors(({ nameAr: _ar, nameEn: _en, ...rest }) => rest);
+        }}
+        disabled={pending}
+        error={errors.locale}
+        hint={text('create.localeHint')}
+        data-testid="create-org-locale"
+      >
+        <option value="en">{text('create.localeEn')}</option>
+        <option value="ar">{text('create.localeAr')}</option>
+      </SelectField>
+      {field('slug', { required: true })}
+      {field('adminEmail', { required: true, type: 'email' })}
+      {/* The plan and a 30-day trial (WP-ADM-06, business flow B1). */}
+      <SelectField
+        id={`${formId}-planId`}
+        name="planId"
+        label={text('create.plan')}
+        defaultValue=""
+        disabled={pending}
+        data-testid="create-org-plan"
+      >
+        <option value="">{text('organizationPlan.noPlan')}</option>
+        {(props.plans ?? []).map((plan) => (
+          <option key={plan.planId} value={plan.planId}>
+            {plan.name}
+          </option>
+        ))}
+      </SelectField>
+      <div className="flex items-start gap-3">
+        <input
+          id={`${formId}-trial`}
+          type="checkbox"
+          name="trial"
+          defaultChecked
+          disabled={pending}
+          aria-describedby={`${formId}-trial-hint`}
+          className="mt-0.5 size-5 shrink-0 accent-primary"
+          data-testid="create-org-trial"
+        />
+        <span className="flex flex-col gap-0.5">
+          <label htmlFor={`${formId}-trial`} className="cursor-pointer font-semibold">
+            {text('create.trial')}
+          </label>
+          <span id={`${formId}-trial-hint`} className="text-sm text-text-muted">
+            {text('create.trialHint')}
+          </span>
+        </span>
+      </div>
+      {/* Everything optional waits behind «More»: the Organization Admin's names. */}
+      <button
+        type="button"
+        className="flex min-h-10 items-center gap-1.5 self-start rounded-full px-2 text-start text-sm font-semibold text-primary-text hover:bg-primary-subtle pointer-coarse:min-h-11"
+        aria-expanded={more}
+        aria-controls={`${formId}-more`}
+        onClick={() => {
+          setMore((current) => !current);
+        }}
+        data-testid="create-org-more"
+      >
+        <Icon name={more ? 'chevron-down' : 'chevron-end'} />
+        <span>
+          {text('create.more')}
+          <span className="font-normal text-text-muted">{` · ${text('create.moreSummary')}`}</span>
+        </span>
+      </button>
+      <fieldset
+        id={`${formId}-more`}
+        className={more ? 'm-0 flex min-w-0 flex-col gap-4 border-0 p-0' : 'hidden'}
+      >
+        <legend className="sr-only">{text('create.moreSummary')}</legend>
+        <p className="m-0 text-sm text-text-muted">{text('create.adminNamesHint')}</p>
+        {languages.map((l) => (
+          <div key={l} className={pair}>
+            {field(`adminFirstName${suffix(l)}`, { lang: l })}
+            {field(`adminFamilyName${suffix(l)}`, { lang: l })}
+          </div>
+        ))}
+      </fieldset>
+    </form>
   );
 }
 

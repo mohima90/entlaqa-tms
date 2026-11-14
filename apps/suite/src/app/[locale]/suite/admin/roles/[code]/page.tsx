@@ -29,7 +29,11 @@ import { PermissionsView } from '../../../../../../components/roles/permissions-
 import { RoleBuilderForm } from '../../../../../../components/roles/role-builder-form';
 import { SuiteShell } from '../../../../../../components/suite-shell';
 import { profileErrorTexts } from '../../../../../../lib/profile-texts';
-import type { BuilderScope } from '../../../../../../lib/role-builder';
+import {
+  type BuilderScope,
+  type RoleEditTab,
+  roleEditTab,
+} from '../../../../../../lib/role-builder';
 import {
   roleBuilderGroups,
   roleBuilderTexts,
@@ -57,9 +61,10 @@ type RoleTab = 'permissions' | 'scope' | 'across';
 /**
  * One role (FR-IAM-07; EP-ROLES; redesign package 3 — Shopify, Langdock, Gusto). A standard role is view
  * only: the header (what it does, Standard / Privileged, its holders, «Create a role from it»), then the
- * tabs Permissions (each Allowed / Not allowed in words, with a search) · Data this role sees · What this
- * role does across the product (BRD Appendix B, access levels in words). A custom role: the same view, or —
- * for the Organization Admin — its edit form and «Delete role» (only when nobody holds it).
+ * tabs at the side (the Kawadir pattern, WP-UX-01 e) Permissions (each Allowed / Not allowed in words, with a
+ * search) · Data this role sees · What this role does across the product (BRD Appendix B, access levels in
+ * words). A custom role: the same view, or — for the Organization Admin — its settings: «Name and scope»,
+ * «Permissions» and «Who holds it» (with «Delete role», only when nobody holds it) as side tabs, one save bar.
  */
 export default async function RolePage({
   params,
@@ -73,6 +78,9 @@ export default async function RolePage({
   const rawTab = (await searchParams).tab;
   const requested = Array.isArray(rawTab) ? rawTab[0] : rawTab;
   const tab: RoleTab = requested === 'scope' || requested === 'across' ? requested : 'permissions';
+  // A custom role's settings have their own sections (`?tab=permissions|holders`, else «Name and scope»).
+  const editTab = roleEditTab(requested);
+  let path = `/suite/admin/roles/${code}${tab === 'permissions' ? '' : `?tab=${tab}`}`;
   const context = await getSuiteContext(locale);
   const t = await getTranslations({ locale, namespace: 'rolesPage' });
   const users = await getTranslations({ locale, namespace: 'users' });
@@ -126,7 +134,8 @@ export default async function RolePage({
             description={builder('intro')}
           />
         );
-        content = <RoleEdit locale={locale} view={view} rolesHref={rolesHref} />;
+        content = <RoleEdit locale={locale} view={view} rolesHref={rolesHref} tab={editTab} />;
+        path = `/suite/admin/roles/${code}${editTab === 'details' ? '' : `?tab=${editTab}`}`;
       } else {
         header = await roleHeader(locale, view);
         content = <RoleView locale={locale} view={view} tab={tab} />;
@@ -135,12 +144,7 @@ export default async function RolePage({
   }
 
   return (
-    <SuiteShell
-      locale={locale}
-      context={context}
-      current="roles"
-      path={`/suite/admin/roles/${code}${tab === 'permissions' ? '' : `?tab=${tab}`}`}
-    >
+    <SuiteShell locale={locale} context={context} current="roles" path={path}>
       {header ?? (
         <PageHeader
           breadcrumbs={[
@@ -338,8 +342,18 @@ async function RoleView({
           {t('standardNote')}
         </Alert>
       ) : null}
-      <TabNav variant="underline" label={role.name[locale]} items={tabs} current={current} />
-      {body}
+      {/* The sections as tabs at the side (WP-UX-01 e): a column from 1200 px, rows above below it. */}
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[230px_minmax(0,1fr)] xl:gap-6">
+        <TabNav
+          variant="side"
+          label={role.name[locale]}
+          items={tabs}
+          current={current}
+          className="xl:sticky xl:top-24"
+          data-testid="role-tabs"
+        />
+        <div className="flex min-w-0 flex-col gap-5">{body}</div>
+      </div>
     </>
   );
 }
@@ -433,10 +447,12 @@ async function RoleEdit({
   locale,
   view,
   rolesHref,
+  tab,
 }: {
   locale: AppLocale;
   view: RoleDetailView;
   rolesHref: string;
+  tab: RoleEditTab;
 }) {
   const custom = view.custom;
   if (!custom) return null;
@@ -446,53 +462,55 @@ async function RoleEdit({
   const errors = await profileErrorTexts(locale);
   const held = custom.memberCount > 0 || custom.pendingInvitationCount > 0;
   return (
-    <>
-      <RoleBuilderForm
-        editing={{ id: custom.id, version: custom.version }}
-        // The stored names: one of the two may be missing (the default language's name is required).
-        initial={{
-          nameEn: custom.nameEn ?? '',
-          nameAr: custom.nameAr ?? '',
-          description: custom.description ?? '',
-          dataScope: custom.dataScope,
-          permissions: custom.permissions,
-        }}
-        groups={roleBuilderGroups(locale)}
-        nameLanguage={view.nameLanguage}
-        texts={texts}
-        errors={errors}
-        rolesHref={rolesHref}
-        locale={locale}
-        holdersText={builder('holders', { count: custom.memberCount })}
-      />
-      <Card title={builder('delete')} data-testid="role-delete-card">
-        <div className="flex flex-col gap-3">
-          {held ? (
-            <Alert tone="info" data-testid="role-in-use">
-              {builder('inUse', {
-                members: custom.memberCount,
-                invitations: custom.pendingInvitationCount,
-              })}
-            </Alert>
-          ) : (
-            <>
-              <p className="m-0 text-sm text-text-muted">{builder('deleteText')}</p>
-              <div>
-                <DeleteRoleButton
-                  id={custom.id}
-                  version={custom.version}
-                  texts={{
-                    ...texts,
-                    deleteTitle: t('deleteTitle', { name: view.role.name[locale] }),
-                  }}
-                  errors={errors}
-                  rolesHref={rolesHref}
-                />
-              </div>
-            </>
-          )}
-        </div>
-      </Card>
-    </>
+    <RoleBuilderForm
+      tab={tab}
+      roleHref={`${rolesHref}/${view.role.code}`}
+      editing={{ id: custom.id, version: custom.version }}
+      // The stored names: one of the two may be missing (the default language's name is required).
+      initial={{
+        nameEn: custom.nameEn ?? '',
+        nameAr: custom.nameAr ?? '',
+        description: custom.description ?? '',
+        dataScope: custom.dataScope,
+        permissions: custom.permissions,
+      }}
+      groups={roleBuilderGroups(locale)}
+      nameLanguage={view.nameLanguage}
+      texts={texts}
+      errors={errors}
+      rolesHref={rolesHref}
+      locale={locale}
+      holdersText={builder('holders', { count: custom.memberCount })}
+      holders={
+        <Card title={builder('delete')} data-testid="role-delete-card">
+          <div className="flex flex-col gap-3">
+            {held ? (
+              <Alert tone="info" data-testid="role-in-use">
+                {builder('inUse', {
+                  members: custom.memberCount,
+                  invitations: custom.pendingInvitationCount,
+                })}
+              </Alert>
+            ) : (
+              <>
+                <p className="m-0 text-sm text-text-muted">{builder('deleteText')}</p>
+                <div>
+                  <DeleteRoleButton
+                    id={custom.id}
+                    version={custom.version}
+                    texts={{
+                      ...texts,
+                      deleteTitle: t('deleteTitle', { name: view.role.name[locale] }),
+                    }}
+                    errors={errors}
+                    rolesHref={rolesHref}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        </Card>
+      }
+    />
   );
 }

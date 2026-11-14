@@ -281,6 +281,8 @@ async function Overview({
                 actions: t('cycle.columns.actions'),
               },
               view: t('cycle.view'),
+              emptyFilter: t('cycle.emptyFilter'),
+              showAll: t('cycle.showAllForms'),
             }}
           />
         </div>

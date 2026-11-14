@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { type ClaimsTx, runWithClaims } from './claims-tx';
 import { type AppDatabase, getDatabase } from './client';
 import { type EmailRouteRow, type EmailRouteSqlRow, toEmailRouteRow } from './email-route';
+import { organizationNames } from './organization-names';
 
 /**
  * E-mail sent the moment the action commits (WP-ADM-05 follow-up, PO 23 Oct 2026; migration 20261026110000).
@@ -57,7 +58,7 @@ export async function prepareInlineInvitation(
     recipient_en: string | null;
     inviter_ar: string | null;
     inviter_en: string | null;
-    organization_ar: string;
+    organization_ar: string | null;
     organization_en: string | null;
     primary_role: string;
     role_name_ar: string | null;
@@ -69,7 +70,8 @@ export async function prepareInlineInvitation(
     logo_asset_id: string | null;
   }>(sql`select * from private.inline_invitation_prepare(${invitationId}::uuid)`);
   if (!row) return null;
-  const organizationName = { ar: row.organization_ar, en: row.organization_en };
+  // An organization may have an English name only (PO 12 Nov 2026): the Arabic e-mail then names it in English.
+  const organizationName = organizationNames(row.organization_ar, row.organization_en);
   const colors =
     row.action_color !== null &&
     row.link_color !== null &&

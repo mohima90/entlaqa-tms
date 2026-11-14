@@ -5,6 +5,7 @@ import {
   publicTenantBrand,
 } from '@jadarat/platform-db';
 import type { AppLocale } from '@jadarat/platform-i18n';
+import { personDisplayName } from '@jadarat/platform-i18n/names';
 import type { Metadata } from 'next';
 import { cookies, headers } from 'next/headers';
 import { cache } from 'react';
@@ -34,7 +35,8 @@ export function toSignInBrand(brand: PublicTenantBrand, locale: AppLocale): Sign
       secondaryColor: brand.secondaryColor,
       useGradient: brand.useGradient,
     },
-    name: locale === 'en' ? (brand.nameEn ?? brand.nameAr) : brand.nameAr,
+    // The name in the page's language, else the one the organization has (one language is enough).
+    name: personDisplayName(locale, brand.nameAr, brand.nameEn),
     logoSrc: brandAssetPath(brand.logoAssetId),
     imageSrc: brandAssetPath(brand.signInImageAssetId),
     faviconSrc: brandAssetPath(brand.faviconAssetId),

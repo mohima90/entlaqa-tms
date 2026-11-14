@@ -255,11 +255,11 @@ describe('the profile input (validation)', () => {
     ).toEqual([]);
   });
 
-  it('requires both names, at most 80 characters, no control characters', () => {
+  it('requires both names, at most 200 characters (the database limit), no control characters', () => {
     expect(fields({ ...input, nameEn: '   ' })).toEqual(['nameEn']);
     expect(fields({ ...input, nameAr: '' })).toEqual(['nameAr']);
-    expect(fields({ ...input, nameAr: 'ن'.repeat(81) })).toEqual(['nameAr']);
-    expect(fields({ ...input, nameEn: 'x'.repeat(80) })).toEqual([]);
+    expect(fields({ ...input, nameAr: 'ن'.repeat(201) })).toEqual(['nameAr']);
+    expect(fields({ ...input, nameEn: 'x'.repeat(200) })).toEqual([]);
     expect(fields({ ...input, nameEn: 'Al\u0000Raya' })).toEqual(['nameEn']);
   });
 

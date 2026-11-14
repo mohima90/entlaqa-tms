@@ -156,6 +156,8 @@ test.describe('platform console: the Super Admin (configured deployment)', () =>
       await dialog.getByTestId('create-org-nameAr').fill(nameAr);
       await dialog.getByTestId('create-org-nameEn').fill(nameEn);
       await dialog.getByTestId('create-org-adminEmail').fill(adminEmail);
+      // The Organization Admin's names wait behind «More» (WP-UX-01 d).
+      await dialog.getByTestId('create-org-more').click();
       await dialog.getByTestId('create-org-adminFirstNameAr').fill('سارة');
       await dialog.getByTestId('create-org-adminFamilyNameAr').fill('العتيبي');
       await dialog.getByTestId('create-org-adminFirstNameEn').fill('Sara');

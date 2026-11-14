@@ -17,6 +17,8 @@ export interface SettingsCommonTexts {
   readonly close: string;
   /** «(مطلوب)» / "(required)" after a label. */
   readonly required: string;
+  /** «(اختياري)» / "(optional)" after a label. */
+  readonly optional: string;
   /** The «Verify with the app» banner: mfa.stepUpIntro and profile.mfa.verifyFirst. */
   readonly stepUpIntro: string;
   readonly verifyFirst: string;

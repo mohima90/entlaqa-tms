@@ -10,6 +10,13 @@
  */
 export type NameLanguage = 'ar' | 'en';
 
+/**
+ * The longest organization display name, in characters — one limit for creating an organization (the Super
+ * Admin console), its Branding page and provisioning, the one the database allows (tenants_name_ar_length_check,
+ * tenants_name_en_check: 200). Review of WP-UX-01 d, 14 Nov 2026 (it was 80 on Branding, 200 elsewhere).
+ */
+export const ORGANIZATION_NAME_MAX = 200;
+
 /** The four name fields a rule looks at (the father's and grandfather's names are always optional). */
 export type RequiredNameField = 'firstNameAr' | 'familyNameAr' | 'firstNameEn' | 'familyNameEn';
 

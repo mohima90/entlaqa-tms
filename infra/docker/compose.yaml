@@ -72,7 +72,7 @@ networks:
 
 services:
   db:
-    image: supabase/postgres:17.11.0.004@sha256:06ddc7962e11ab0f4f0334fd05671e97c30ea202f6e6a7113800bd3d6e416108
+    image: supabase/postgres:17.11.0.019@sha256:eca9f664ced0c453ae499e75bb503283831c94f2eef69fc2e69bf86f70278ddc
     <<: *hardening
     networks: [db-auth, db-app, db-storage]
     environment:
@@ -192,7 +192,7 @@ services:
   # Logs only its own errors (LOG_LEVEL error): its request lines (also refused requests, at warn) carry
   # the URL, and a download URL carries the original file name (Storage redacts only the token).
   storage:
-    image: supabase/storage-api:v1.83.5@sha256:11473750c5a07d82b010f51746c94c902405ce7576cdc74a070983cf19501742
+    image: supabase/storage-api:v1.94.0@sha256:d96ed16903aaaacd25a02376cee306e45e6fc6724b15ce18cb867f8045b3509c
     <<: *hardening
     read_only: true
     cap_drop: [ALL]
@@ -239,7 +239,7 @@ services:
   # from the image the first time the `clamav-db` volume is created, then from freshclam. Loading them
   # takes about a minute and some 1.5 GB of memory.
   clamd:
-    image: clamav/clamav:1.5.4-debian@sha256:9bb8712a50f0e75166e936c452cd82dd5e5be0b85586598930b5bbb84a99a578
+    image: clamav/clamav:1.5.4-debian@sha256:76a9c3b63764b78178dc68fa7efcceca0cde2c8c9d4f925a8e697cb4511f8fdc
     <<: *hardening
     read_only: true
     cap_drop: [ALL]
@@ -265,7 +265,7 @@ services:
   # The public mirror by default — a private in-country mirror for sovereign/air-gapped installations
   # (clamav/freshclam.conf). Not started by the smoke test (its signatures are those of the pinned image).
   freshclam:
-    image: clamav/clamav:1.5.4-debian@sha256:9bb8712a50f0e75166e936c452cd82dd5e5be0b85586598930b5bbb84a99a578
+    image: clamav/clamav:1.5.4-debian@sha256:76a9c3b63764b78178dc68fa7efcceca0cde2c8c9d4f925a8e697cb4511f8fdc
     <<: *hardening
     read_only: true
     cap_drop: [ALL]
@@ -285,7 +285,7 @@ services:
       - ./clamav/freshclam.conf:/etc/jadarat/freshclam.conf:ro
 
   gateway:
-    image: nginxinc/nginx-unprivileged:stable-alpine-slim@sha256:e28dcf0a161ddcbf228c7364b4a14f9bad4763ae8f5317c437b896afa3df4b84
+    image: nginxinc/nginx-unprivileged:stable-alpine-slim@sha256:5d8bb9437d74a600ec5dbf90c035451c724dc33eac8d3a71078f6f8612c345f6
     <<: *hardening
     read_only: true
     cap_drop: [ALL]
@@ -313,7 +313,7 @@ services:
   # GlitchTip share internal networks with it, none of them on a visitor's behalf). Separate from the Auth
   # gateway: stopping Auth's gateway (smoke.sh, Auth outage) leaves the app reachable.
   front:
-    image: nginxinc/nginx-unprivileged:stable-alpine-slim@sha256:e28dcf0a161ddcbf228c7364b4a14f9bad4763ae8f5317c437b896afa3df4b84
+    image: nginxinc/nginx-unprivileged:stable-alpine-slim@sha256:5d8bb9437d74a600ec5dbf90c035451c724dc33eac8d3a71078f6f8612c345f6
     <<: *hardening
     read_only: true
     cap_drop: [ALL]
@@ -459,7 +459,7 @@ services:
   #   NEW_USER_PASSWORD='…' docker compose --env-file .secrets/.env run --rm --user "$(id -u):$(id -g)" \
   #     -e NEW_USER_PASSWORD admin-cli admin@example.org
   admin-cli:
-    image: gcr.io/distroless/nodejs24-debian13:nonroot@sha256:9fc11f6ee65993285c0fe3c4c9bbc4fd275fd4470572f58834ce490df91056e3
+    image: gcr.io/distroless/nodejs24-debian13:nonroot@sha256:6abfcb367ebc291572c774c1592a986be2ab26a2486f73093401327495a5962a
     profiles: [tools]
     security_opt: ['no-new-privileges:true']
     read_only: true
@@ -479,7 +479,7 @@ services:
   # (invitations, password reset and "password changed", T-M2-17). Remove it when SMTP_URL points at a
   # real relay.
   mailpit:
-    image: axllent/mailpit:v1.31.6@sha256:23fe39e81bde596a918000b3135c0f85dc8bb4c9ea6be274b051143f3e300387
+    image: axllent/mailpit:v1.33.1@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
     <<: *hardening
     read_only: true
     cap_drop: [ALL]
@@ -503,7 +503,7 @@ services:
   # In-country error tracking (ADR 0009 §4, T-M1-D06): GlitchTip in all-in-one mode (web + worker, no
   # Valkey) with its own PostgreSQL. Errors arrive already scrubbed by the app; retention 90 days.
   errors-db:
-    image: postgres:17.11@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+    image: postgres:17.11@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f
     <<: *hardening
     cap_drop: [ALL]
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
@@ -522,7 +522,7 @@ services:
       retries: 30
 
   glitchtip:
-    image: glitchtip/glitchtip:6.2.6@sha256:a3d8eb1b36c1e1603d55ab32711ea3dd8115874742a781a57391a62a16e0dff6
+    image: glitchtip/glitchtip:7.0.0@sha256:c245745b4179667da3aebd73fb8d4f1fd918f7d68ba07d1fd73ea688933b6e01
     <<: *hardening
     read_only: true
     cap_drop: [ALL]

@@ -3,6 +3,7 @@ import type { AppError } from '@jadarat/platform-core';
 import { type NeedsFormSummary, localized } from '@jadarat/tms/needs-forms';
 import {
   Alert,
+  Badge,
   Button,
   ChoiceCard,
   Dialog,
@@ -17,6 +18,7 @@ import {
   TextField,
   buttonClasses,
   cn,
+  tableClasses,
   toast,
 } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
@@ -59,39 +61,19 @@ type DialogState =
 /** The create / duplicate / rename form: the dialog's footer submits it. */
 const DIALOG_FORM_ID = 'needs-form-dialog-form';
 const MENU_TRIGGER =
-  'grid size-10 shrink-0 place-items-center rounded-full border border-border-strong text-text-muted hover:bg-surface-hover hover:text-text disabled:opacity-60 pointer-coarse:size-11';
+  'grid size-10 shrink-0 place-items-center rounded-full text-text-muted hover:bg-surface-hover hover:text-text disabled:opacity-60 pointer-coarse:size-11';
 
-/** A small drawing of a form (sections and fields from the counts only: the list returns no more). */
-function Thumbnail({ sections, fields }: { sections: number; fields: number }) {
-  const perSection = Math.max(1, Math.ceil(Math.min(fields, 6) / Math.max(sections, 1)));
-  return (
-    <div
-      aria-hidden="true"
-      className="flex h-[150px] items-end justify-center overflow-hidden border-b border-border bg-surface-sunken px-8 pt-4.5"
-    >
-      <div className="flex h-full w-full max-w-[210px] flex-col gap-2 rounded-t-xl border border-b-0 border-border bg-surface px-3.5 pt-4">
-        <span className="h-1 w-2/5 rounded-full bg-border-strong" />
-        {Array.from({ length: Math.min(sections, 2) }, (_, s) => (
-          <span key={s} className="contents">
-            {s > 0 ? <span className="mt-1 h-1 w-1/3 rounded-full bg-primary/40" /> : null}
-            {Array.from({ length: perSection }, (_, i) => (
-              <span key={i} className="contents">
-                <span className="h-1 w-1/3 rounded-full bg-border" />
-                <span className="h-2.5 rounded-md border border-border" />
-              </span>
-            ))}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
+/** The list's views by state, with their counts. */
+const FORM_FILTERS = ['all', 'active', 'inactive'] as const;
+type FormFilter = (typeof FORM_FILTERS)[number];
 
 /**
- * Planning → Needs forms (T-M3-10; redesign package 4 — HoneyBook / Klaviyo templates): one card per form
- * with a thumbnail, quiet tags (★ Default, Locked, Off) and the locked explanation, one Edit / View button and
- * a ⋯ menu (Rename · Duplicate · Set as default · Switch on/off · Delete, last, in red) for the L&D Manager
- * (view only for the Training Coordinator). «Create form» is one centred popup, 672 px (the Kawadir pattern,
+ * Planning → Needs forms (T-M3-10; redesign package 4; the list shape of WP-UX-01 e, T-M3-21): the forms by
+ * state with their counts (All · On · Off, filtered in place), then a table in a card — one row per form with
+ * its name (★ Default), what it holds, its state (On / Off, Locked with the explanation), one Edit / View
+ * button and a ⋯ menu (Rename · Duplicate · Set as default · Switch on/off · Delete, last, in red) for the
+ * L&D Manager (view only for the Training Coordinator); with no form, an empty state that offers «Create
+ * form». «Create form» is one centred popup, 672 px (the Kawadir pattern,
  * forms standard rule 9; WP-UX-01 c, T-M3-21): the form's name in the organization's default language (the
  * other language optional) and what it starts from — the two fixed fields, or a copy of a form (the
  * Duplicate action); after Create or Duplicate the builder opens. Switching a form off can be
@@ -118,6 +100,15 @@ export function NeedsFormsLibrary(props: NeedsFormsLibraryProps) {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [filter, setFilter] = useState<FormFilter>('all');
+  const counts: Record<FormFilter, number> = {
+    all: forms.length,
+    active: forms.filter((form) => form.isActive).length,
+    inactive: forms.filter((form) => !form.isActive).length,
+  };
+  const shown = forms.filter(
+    (form) => filter === 'all' || (filter === 'active' ? form.isActive : !form.isActive),
+  );
 
   const nameOf = (form: NeedsFormSummary) => localized(form.name, locale);
   const builder = (formId: string) => `${props.builderHref}/${formId}`;
@@ -286,180 +277,263 @@ export function NeedsFormsLibrary(props: NeedsFormsLibraryProps) {
         </Alert>
       ) : null}
       {forms.length === 0 ? (
-        <EmptyState icon="form" title={text('title')} description={text('intro')} />
-      ) : (
-        <ul
-          className="m-0 grid list-none gap-4 p-0 md:grid-cols-2 xl:grid-cols-3"
-          aria-label={text('title')}
-          data-testid="needs-forms-list"
+        <section
+          className="rounded-xl border border-border bg-surface shadow-2"
+          data-testid="needs-forms-empty"
         >
-          {forms.map((form) => {
-            const name = nameOf(form);
-            const titleId = `needs-form-${form.id}`;
-            const locked = form.lockedAt !== null;
-            const editable = canManage && !locked;
-            return (
-              <li key={form.id}>
-                <article
-                  aria-labelledby={titleId}
-                  className={cn(
-                    'flex h-full flex-col overflow-hidden rounded-[22px] border border-border bg-surface shadow-1 hover:border-border-strong',
-                    form.isActive ? '' : 'opacity-80',
-                  )}
-                  data-testid="needs-form-card"
-                  data-form-id={form.id}
+          <EmptyState
+            icon="form"
+            title={text('emptyTitle')}
+            description={canManage ? text('emptyBody') : text('intro')}
+            action={
+              canManage ? (
+                <Button
+                  onClick={() => {
+                    open({ kind: 'create' });
+                  }}
                 >
-                  <Thumbnail sections={form.sectionCount} fields={form.fieldCount} />
-                  <div className="flex flex-1 flex-col gap-2.5 px-5 py-4.5">
-                    <h2 id={titleId} className="m-0 text-lg font-bold leading-snug">
-                      <a href={builder(form.id)} className="text-text no-underline hover:underline">
-                        {name}
-                      </a>
-                    </h2>
-                    {form.isDefault || locked || !form.isActive ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {form.isDefault ? (
-                          <span className="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary-subtle px-2 py-0.5 text-[13px] font-medium text-primary-text">
-                            <Icon name="star" className="size-3.5" />
-                            {text('defaultBadge')}
-                          </span>
-                        ) : null}
-                        {locked ? (
-                          <span className="inline-flex items-center gap-1 rounded-md border border-warning/30 bg-warning-subtle px-2 py-0.5 text-[13px] font-medium text-warning">
-                            <Icon name="lock" className="size-3.5" />
-                            {text('lockedBadge')}
-                          </span>
-                        ) : null}
-                        {!form.isActive ? (
-                          <span className="inline-flex items-center gap-1 rounded-md border border-border bg-surface-hover px-2 py-0.5 text-[13px] font-medium text-text-muted">
-                            <Icon name="power" className="size-3.5" />
-                            {text('inactiveBadge')}
-                          </span>
-                        ) : null}
-                      </div>
-                    ) : null}
-                    <p className="m-0 text-sm text-text-muted" data-testid="needs-form-stats">
-                      {text('statsCount', {
-                        sections: form.sectionCount,
-                        fields: form.fieldCount,
-                      })}
-                    </p>
-                    {locked ? (
-                      <p className="m-0 flex items-start gap-2 text-sm text-text-muted">
-                        <Icon name="info" className="mt-0.5 size-4" />
-                        <span>{text('lockedHint')}</span>
-                      </p>
-                    ) : null}
-                    <div className="mt-auto flex items-center justify-between gap-2 pt-2">
-                      <a
-                        href={builder(form.id)}
-                        aria-label={`${editable ? text('edit') : text('view')}: ${name}`}
-                        className={buttonClasses({ variant: 'secondary', size: 'sm' })}
-                        data-testid="needs-form-edit"
-                      >
-                        <Icon name={editable ? 'pencil' : 'eye'} />
-                        {editable ? text('edit') : text('view')}
-                      </a>
-                      {canManage ? (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger
-                            className={MENU_TRIGGER}
-                            aria-label={text('moreActions', { name })}
-                            disabled={pending}
-                            data-testid="needs-form-menu"
-                          >
-                            <Icon name="more" />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent>
-                            <DropdownMenuItem
-                              onSelect={() => {
-                                open({ kind: 'rename', form });
-                              }}
-                              data-testid="needs-form-rename"
-                            >
-                              <Icon name="pencil" />
-                              {text('rename')}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onSelect={() => {
-                                open({ kind: 'duplicate', form });
-                              }}
-                              data-testid="needs-form-duplicate"
-                            >
-                              <Icon name="copy" />
-                              {text('duplicate')}
-                            </DropdownMenuItem>
-                            {!form.isDefault ? (
-                              <>
-                                <DropdownMenuItem
-                                  disabled={!form.isActive}
-                                  onSelect={() => {
-                                    run(
-                                      () => api.setDefault(form.id),
-                                      text('defaultSet'),
-                                      () => undefined,
-                                    );
-                                  }}
-                                  data-testid="needs-form-set-default"
-                                >
-                                  <Icon name="star" />
-                                  {text('setDefault')}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={() => {
-                                    switchActive(form);
-                                  }}
-                                  data-testid="needs-form-toggle-active"
-                                >
-                                  <Icon name="power" />
-                                  {form.isActive ? text('deactivate') : text('activate')}
-                                </DropdownMenuItem>
-                                {!locked ? (
-                                  <>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                      tone="danger"
-                                      onSelect={() => {
-                                        setDeleting(form);
-                                      }}
-                                      data-testid="needs-form-delete"
-                                    >
-                                      <Icon name="trash" />
-                                      {text('delete')}
-                                    </DropdownMenuItem>
-                                  </>
-                                ) : null}
-                              </>
-                            ) : null}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      ) : null}
-                    </div>
-                  </div>
-                </article>
-              </li>
-            );
-          })}
-          {canManage && forms.length === 1 ? (
-            <li>
+                  <Icon name="plus" />
+                  {text('create')}
+                </Button>
+              ) : undefined
+            }
+          />
+        </section>
+      ) : (
+        <>
+          {/* The forms by state, with their counts (the list shape of WP-UX-01 e): filtered in place. */}
+          <div
+            role="group"
+            aria-label={text('filterLabel')}
+            className="mb-4 flex flex-wrap gap-2"
+            data-testid="needs-forms-filters"
+          >
+            {FORM_FILTERS.map((key) => (
               <button
+                key={key}
                 type="button"
+                aria-pressed={filter === key}
                 onClick={() => {
-                  open({ kind: 'create' });
+                  setFilter(key);
                 }}
-                className="flex h-full min-h-60 w-full flex-col items-center justify-center gap-3 rounded-[22px] border-[1.5px] border-dashed border-border-strong font-semibold text-primary-text hover:bg-primary-subtle"
+                className={cn(
+                  'inline-flex min-h-10 items-center gap-2 rounded-full border-[1.5px] px-3.5 text-[14.5px] font-medium transition-colors pointer-coarse:min-h-11',
+                  filter === key
+                    ? 'border-primary bg-primary-subtle text-primary-text'
+                    : 'border-border-strong bg-surface text-text hover:bg-surface-hover',
+                )}
+                data-testid={`needs-forms-filter-${key}`}
               >
-                <span
-                  aria-hidden="true"
-                  className="grid size-14 place-items-center rounded-[18px] bg-primary-subtle"
-                >
-                  <Icon name="plus" className="size-6" />
+                {text(`filters.${key}`)}
+                <span className="rounded-full bg-surface-hover px-2 text-[13px] font-semibold tabular-nums text-text-muted">
+                  {counts[key]}
                 </span>
-                {text('create')}
               </button>
-            </li>
-          ) : null}
-        </ul>
+            ))}
+          </div>
+          <section
+            aria-label={text('title')}
+            className="overflow-hidden rounded-xl border border-border bg-surface shadow-2"
+          >
+            <div
+              className={`${tableClasses.wrapper} focus-visible:outline-2 focus-visible:outline-offset-2`}
+              // Scrolls sideways on a narrow screen: focusable so the keyboard can scroll it too.
+              // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrollable region takes focus
+              tabIndex={0}
+              role="region"
+              aria-label={text('tableCaption')}
+            >
+              <table className={tableClasses.table} data-testid="needs-forms-list">
+                <caption className="sr-only">{text('tableCaption')}</caption>
+                <thead className={tableClasses.header}>
+                  <tr>
+                    <th scope="col" className={tableClasses.head}>
+                      {text('columns.form')}
+                    </th>
+                    <th scope="col" className={tableClasses.head}>
+                      {text('columns.content')}
+                    </th>
+                    <th scope="col" className={tableClasses.head}>
+                      {text('columns.status')}
+                    </th>
+                    <th scope="col" className={cn(tableClasses.head, 'text-end')}>
+                      <span className="sr-only">{text('columns.actions')}</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shown.map((form) => {
+                    const name = nameOf(form);
+                    const locked = form.lockedAt !== null;
+                    const editable = canManage && !locked;
+                    return (
+                      <tr
+                        key={form.id}
+                        className={tableClasses.row}
+                        data-testid="needs-form-card"
+                        data-form-id={form.id}
+                      >
+                        <th scope="row" className={cn(tableClasses.cell, 'text-start')}>
+                          <span className="flex min-w-56 flex-col items-start gap-1">
+                            <a href={builder(form.id)} className="font-semibold text-text">
+                              {name}
+                            </a>
+                            {form.isDefault ? (
+                              <span className="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary-subtle px-2 py-0.5 text-[13px] font-medium text-primary-text">
+                                <Icon name="star" className="size-3.5" />
+                                {text('defaultBadge')}
+                              </span>
+                            ) : null}
+                          </span>
+                        </th>
+                        <td
+                          className={cn(tableClasses.cell, 'whitespace-nowrap text-text-muted')}
+                          data-testid="needs-form-stats"
+                        >
+                          {text('statsCount', {
+                            sections: form.sectionCount,
+                            fields: form.fieldCount,
+                          })}
+                        </td>
+                        <td className={tableClasses.cell}>
+                          <span className="flex min-w-40 flex-col items-start gap-1">
+                            <span className="flex flex-wrap gap-1.5">
+                              {form.isActive ? (
+                                <Badge tone="success" dot>
+                                  {text('activeBadge')}
+                                </Badge>
+                              ) : (
+                                <Badge tone="neutral" dot>
+                                  {text('inactiveBadge')}
+                                </Badge>
+                              )}
+                              {locked ? (
+                                <Badge tone="warning">
+                                  <Icon name="lock" className="size-3.5" />
+                                  {text('lockedBadge')}
+                                </Badge>
+                              ) : null}
+                            </span>
+                            {locked ? (
+                              <span className="max-w-[34ch] text-[13px] text-text-muted">
+                                {text('lockedHint')}
+                              </span>
+                            ) : null}
+                          </span>
+                        </td>
+                        <td className={cn(tableClasses.cell, 'text-end')}>
+                          <span className="flex items-center justify-end gap-1.5">
+                            <a
+                              href={builder(form.id)}
+                              aria-label={`${editable ? text('edit') : text('view')}: ${name}`}
+                              className={buttonClasses({ variant: 'secondary', size: 'sm' })}
+                              data-testid="needs-form-edit"
+                            >
+                              <Icon name={editable ? 'pencil' : 'eye'} />
+                              {editable ? text('edit') : text('view')}
+                            </a>
+                            {canManage ? (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger
+                                  className={MENU_TRIGGER}
+                                  aria-label={text('moreActions', { name })}
+                                  disabled={pending}
+                                  data-testid="needs-form-menu"
+                                >
+                                  <Icon name="more" />
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent>
+                                  <DropdownMenuItem
+                                    onSelect={() => {
+                                      open({ kind: 'rename', form });
+                                    }}
+                                    data-testid="needs-form-rename"
+                                  >
+                                    <Icon name="pencil" />
+                                    {text('rename')}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={() => {
+                                      open({ kind: 'duplicate', form });
+                                    }}
+                                    data-testid="needs-form-duplicate"
+                                  >
+                                    <Icon name="copy" />
+                                    {text('duplicate')}
+                                  </DropdownMenuItem>
+                                  {!form.isDefault ? (
+                                    <>
+                                      <DropdownMenuItem
+                                        disabled={!form.isActive}
+                                        onSelect={() => {
+                                          run(
+                                            () => api.setDefault(form.id),
+                                            text('defaultSet'),
+                                            () => undefined,
+                                          );
+                                        }}
+                                        data-testid="needs-form-set-default"
+                                      >
+                                        <Icon name="star" />
+                                        {text('setDefault')}
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onSelect={() => {
+                                          switchActive(form);
+                                        }}
+                                        data-testid="needs-form-toggle-active"
+                                      >
+                                        <Icon name="power" />
+                                        {form.isActive ? text('deactivate') : text('activate')}
+                                      </DropdownMenuItem>
+                                      {!locked ? (
+                                        <>
+                                          <DropdownMenuSeparator />
+                                          <DropdownMenuItem
+                                            tone="danger"
+                                            onSelect={() => {
+                                              setDeleting(form);
+                                            }}
+                                            data-testid="needs-form-delete"
+                                          >
+                                            <Icon name="trash" />
+                                            {text('delete')}
+                                          </DropdownMenuItem>
+                                        </>
+                                      ) : null}
+                                    </>
+                                  ) : null}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            ) : null}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {shown.length === 0 ? (
+              <EmptyState
+                icon="form"
+                headingLevel={3}
+                title={text('emptyFilterTitle')}
+                action={
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setFilter('all');
+                    }}
+                  >
+                    {text('filters.showAll')}
+                  </Button>
+                }
+                data-testid="needs-forms-empty-filter"
+              />
+            ) : null}
+          </section>
+        </>
       )}
 
       <Dialog

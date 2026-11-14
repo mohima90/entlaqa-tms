@@ -582,7 +582,9 @@
     },
     "tabsLabel": "Profile sections",
     "tabs": {
-      "overview": "Overview"
+      "overview": "Overview",
+      "personal": "Personal details",
+      "work": "Work details"
     },
     "openSecurity": "Open sign-in and security",
     "invitedBanner": "This person hasn’t accepted the invitation yet. You can copy its code or link and share it with them.",
@@ -694,7 +696,6 @@
   },
   "editUser": {
     "title": "Edit user details",
-    "titleFor": "Edit details of {name}",
     "breadcrumb": "Team members",
     "breadcrumbLabel": "Breadcrumb",
     "details": "Basic information",
@@ -734,7 +735,6 @@
     "saving": "Saving…",
     "saved": "Changes saved.",
     "noChanges": "There are no changes to save.",
-    "backToProfile": "Back to the profile",
     "fieldErrors": {
       "required": "This field is required.",
       "name": "Must contain visible letters, be at most 60 characters, and the full name at most 200.",
@@ -1137,7 +1137,9 @@
       "viewNeeds": "View the needs of {name}",
       "extendedTo": "Extended to {date}",
       "progressIntroNeeds": "Department heads enter their training needs until the deadline. Open a row to read them, return them for changes or extend one department.",
-      "filterAll": "All"
+      "filterAll": "All",
+      "emptyFilter": "No forms with this status",
+      "showAllForms": "Show all forms"
     },
     "settings": {
       "title": "Planning settings",
@@ -2613,7 +2615,13 @@
     "newIntro": "Name the role and choose what it starts from. Its permissions and the data it sees open next.",
     "newNote": "Creating the role opens its page: tick its permissions, choose the data it sees and add a description. Nobody holds the role until you give it.",
     "creating": "Creating…",
-    "created": "Role created. Check its permissions and the data it sees."
+    "created": "Role created. Check its permissions and the data it sees.",
+    "tabsLabel": "Role settings",
+    "tabs": {
+      "details": "Name and scope",
+      "permissions": "Permissions",
+      "holders": "Who holds it"
+    }
   },
   "needsForms": {
     "title": "Needs forms",
@@ -2829,7 +2837,25 @@
     "saveField": "Save field",
     "saveSection": "Save section",
     "rowActions": "More actions for «{name}»",
-    "notSaved": "Not saved"
+    "notSaved": "Not saved",
+    "activeBadge": "On",
+    "emptyTitle": "No needs forms yet",
+    "emptyBody": "Create the form department heads fill in to propose their team’s training needs.",
+    "emptyFilterTitle": "No forms in this view",
+    "filterLabel": "Show forms",
+    "filters": {
+      "all": "All",
+      "active": "On",
+      "inactive": "Off",
+      "showAll": "Show all forms"
+    },
+    "tableCaption": "Needs forms of the organization",
+    "columns": {
+      "form": "Form",
+      "content": "Content",
+      "status": "Status",
+      "actions": "Actions"
+    }
   },
   "courses": {
     "title": "Courses",
@@ -3742,8 +3768,6 @@
       "colPeople": "People",
       "colActions": "Actions",
       "people": "{count, plural, =0 {No one} one {# person} other {# people}}",
-      "rename": "Rename grade {code}",
-      "deleteAria": "Delete grade {code}",
       "caption": "Grades of the organization",
       "emptyTitle": "No grades yet",
       "emptyBody": "Add the grade codes your organization uses. Then HR can give each person one.",
@@ -3770,7 +3794,10 @@
       "count": "{count, plural, one {# grade} other {# grades}}",
       "loadFailed": "The grades couldn’t be loaded. Reference: {correlationId}",
       "cancel": "Cancel",
-      "close": "Close"
+      "close": "Close",
+      "menuLabel": "More actions for grade {code}",
+      "renameItem": "Rename",
+      "deleteItem": "Delete"
     }
   },
   "plans": {

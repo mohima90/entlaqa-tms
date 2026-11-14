@@ -1,15 +1,25 @@
 'use client';
 import { formatHijriDate } from '@jadarat/platform-i18n/hijri';
-import { Alert, Badge, Button, Icon, TextField } from '@jadarat/ui';
+import { Alert, Badge, Button, Card, Icon, SaveBar, TextField, toast } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
-import { type SyntheticEvent, useEffect, useState, useTransition } from 'react';
+import { type ReactNode, type SyntheticEvent, useEffect, useState, useTransition } from 'react';
 import { updatePersonRecordAction, updateUserDetailsAction } from '../../actions/users';
 import { type ManagerChoice, editFieldErrorKey, managersFor } from '../../lib/edit-user-form';
+import {
+  type PersonFormState,
+  type PersonSettingsTab,
+  RECORD_KEYS,
+  changedKeys,
+  personVersionNumber,
+} from '../../lib/person-settings';
 import { NAME_PARTS, type NamePart, type PersonalDetailsFormState } from '../../lib/profile-form';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
+import { LoadLatestVersion, useFormBase, useLatestVersion } from '../latest-version';
+import { useFocusInvalid } from '../planning/use-focus-invalid';
 import { fieldErrorCodes } from '../profile/field-errors';
 import { SelectField } from '../select-field';
+import { LeaveGuard } from '../settings/leave-guard';
 import { OtherNameToggle } from './other-name-toggle';
 
 export interface UnitChoice {
@@ -21,10 +31,10 @@ export type GenderValue = '' | 'male' | 'female';
 export type CategoryValue = '' | 'management' | 'professional' | 'technical' | 'operational';
 
 /**
- * The grade and HR-only parts of the edit panel (WP-ADM-04). `locked`: a privileged member's record opened by
- * HR — the account details stay as they are, the grade and the HR details can still be filled (BR-PPL-f).
- * The HR card exists only for a member holding «View and edit HR-only fields» (`canEditHr`): for anyone else
- * the server sends no HR value and the form renders no card.
+ * The grade and HR-only parts of the person's settings (WP-ADM-04). `locked`: a privileged member's record
+ * opened by HR — the account details stay as they are, the grade and the HR details can still be filled
+ * (BR-PPL-f). The HR card exists only for a member holding «View and edit HR-only fields» (`canEditHr`): for
+ * anyone else the server sends no HR value and the form renders no card.
  */
 export interface EditRecordProps {
   readonly locked: boolean;
@@ -44,9 +54,11 @@ export interface EditRecordProps {
 }
 
 export interface EditUserFormProps {
+  /** The section that is open (each section is its own address, `?tab=`). */
+  readonly section: PersonSettingsTab;
   readonly locale: 'ar' | 'en';
   readonly personId: string;
-  /** Optimistic concurrency token; refreshed by the page after each save. */
+  /** Optimistic concurrency token («person:membership»); refreshed by the page after each save. */
   readonly version: string;
   readonly names: PersonalDetailsFormState;
   /**
@@ -72,26 +84,20 @@ export interface EditUserFormProps {
   /** Cost centres as choices (none: the field is hidden — before the migration or none defined). */
   readonly costCentres: readonly UnitChoice[];
   readonly managers: readonly ManagerChoice[];
-  /** Texts by key (translated on the server). */
+  /**
+   * Texts by key (translated on the server; namespace `editUser` plus `required`, `optional`, `part.*`,
+   * `language.*`, the section titles `section.personal|work`, and the save bar's and leave question's words).
+   */
   readonly labels: Readonly<Record<string, string>>;
   readonly fieldTexts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
-  readonly profileHref: string;
   /** Hijri equivalent of the stored hire date, formatted on the server (no hydration mismatch). */
   readonly hireOnHijri: string | undefined;
   /** The grade and the HR-only fields (WP-ADM-04). */
   readonly record: EditRecordProps;
-  /**
-   * In the side panel (redesign package 3): the form's id (the panel's footer submits it), and what the
-   * panel needs to know — unsaved changes, busy, saved (the panel then closes with a toast).
-   */
-  readonly panel?: {
-    readonly formId: string;
-    readonly onDirty: () => void;
-    readonly onPending: (pending: boolean) => void;
-    readonly onSaved: (changed: boolean) => void;
-  };
 }
+
+const FORM_ID = 'person-settings';
 
 /** The person already has a name (or a stored one to split) in that language. */
 function hasNames(names: PersonalDetailsFormState, script: 'Ar' | 'En'): boolean {
@@ -102,46 +108,118 @@ function hasNames(names: PersonalDetailsFormState, script: 'Ar' | 'En'): boolean
   );
 }
 
+/** The stored values with the account details of a save that went through (the record fields as stored). */
+function accountSaved(stored: PersonFormState, sent: PersonFormState): PersonFormState {
+  return {
+    ...sent,
+    gradeId: stored.gradeId,
+    gender: stored.gender,
+    birthDate: stored.birthDate,
+    category: stored.category,
+  };
+}
+
+/** The fields as the page loaded them. */
+function stateFrom(props: EditUserFormProps): PersonFormState {
+  const { names, values, record } = props;
+  const part = (key: `${NamePart}${'Ar' | 'En'}`) => names.values[key] ?? '';
+  return {
+    firstNameAr: part('firstNameAr'),
+    fatherNameAr: part('fatherNameAr'),
+    grandfatherNameAr: part('grandfatherNameAr'),
+    familyNameAr: part('familyNameAr'),
+    firstNameEn: part('firstNameEn'),
+    fatherNameEn: part('fatherNameEn'),
+    grandfatherNameEn: part('grandfatherNameEn'),
+    familyNameEn: part('familyNameEn'),
+    email: values.email,
+    mobile: names.values.mobileE164 ?? '',
+    preferredLocale: names.values.preferredLocale,
+    employeeNumber: values.employeeNumber,
+    hireOn: values.hireOn,
+    jobTitleAr: values.jobTitleAr,
+    jobTitleEn: values.jobTitleEn,
+    departmentId: values.departmentId,
+    branchId: values.branchId,
+    costCentreId: values.costCentreId,
+    managerPersonId: values.managerPersonId,
+    gradeId: record.gradeId,
+    gender: record.hr.gender,
+    birthDate: record.hr.birthDate,
+    category: record.hr.employmentCategory,
+  };
+}
+
 /**
- * Edit a user's details (T-M2-13, FR-IAM-01; fields of the approved screen 2): names (the organization's
- * default language first and required, PO 17 Oct 2026), contact,
- * employee number, language and placement. The login e-mail of a member with an account is shown
- * read-only. The direct manager is picked among the chosen department's managers, or all on request.
+ * A person's settings (T-M2-13, FR-IAM-01, WP-ADM-04; the Kawadir pattern — forms standard rule 9;
+ * WP-UX-01 e, T-M3-21): the former «Edit details» panel as two sections of the person's page, each its own
+ * address and its own save bar — «Personal details» (names, the organization's default language first and
+ * required, PO 17 Oct 2026; contact and language; the HR-only fields for who may edit them) and «Work
+ * details» (employee number, hire date, job title, placement, direct manager, grade). A save sends the whole
+ * record with its version: the open section's fields as typed, the others as stored (the rules, checks and
+ * audit are the panel's). An older copy is refused and «Load the latest version» is offered; typed entries
+ * are never replaced by a newer copy (`useFormBase`). Leaving with unsaved changes asks first; a refused
+ * save moves the focus to the first field with a message. The login e-mail of a member with an account is
+ * shown read-only; the direct manager is picked among the chosen department's managers, or all on request.
  */
 export function EditUserForm(props: EditUserFormProps) {
-  const { labels, fieldTexts, values, names } = props;
+  const { labels, fieldTexts, values, names, record, section } = props;
+  const text = (key: string) => labels[key] ?? key;
+  const rt = (key: string) => record.labels[key] ?? key;
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
+  const latestVersion = useLatestVersion();
   const [pending, startTransition] = useTransition();
-  const [message, setMessage] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
+  const { form, focusInvalid } = useFocusInvalid(pending);
+  const [state, setState] = useState<PersonFormState>(() => stateFrom(props));
+  // What the last save wrote counts as saved until the page has loaded the new version itself.
+  const [saved, setSaved] = useState<PersonFormState | null>(null);
+  // The version the last save of the account details returned: sent with the next save until the page has
+  // loaded that copy itself (no conflict with the form's own save; WP-UX-01 e review).
+  const [savedToken, setSavedToken] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
-  const [departmentId, setDepartmentId] = useState(values.departmentId);
-  const [branchId, setBranchId] = useState(values.branchId);
-  const [costCentreId, setCostCentreId] = useState(values.costCentreId);
-  const [hireOn, setHireOn] = useState(values.hireOn);
-  const [managerId, setManagerId] = useState(values.managerPersonId);
   const [showAll, setShowAll] = useState(false);
-  const record = props.record;
-  const rt = (key: string) => record.labels[key] ?? key;
-  const [gradeId, setGradeId] = useState(record.gradeId);
-  const [gender, setGender] = useState<GenderValue>(record.hr.gender);
-  const [birthDate, setBirthDate] = useState(record.hr.birthDate);
-  const [category, setCategory] = useState<CategoryValue>(record.hr.employmentCategory);
   const nameLanguage = props.nameLanguage;
   const otherScript = nameLanguage === 'ar' ? 'En' : 'Ar';
   const [showOther, setShowOther] = useState(() => hasNames(names, otherScript));
-  const managers = managersFor(props.managers, departmentId, showAll, managerId);
-  const text = (key: string) => labels[key] ?? key;
-  const panel = props.panel;
-  const onPending = panel?.onPending;
+  const base = useFormBase(
+    {
+      version: personVersionNumber(props.version),
+      initial: { token: props.version, state: stateFrom(props) },
+    },
+    (initial) => changedKeys(saved ?? initial.state, state).length > 0,
+    (latest) => {
+      setSaved(null);
+      setSavedToken(null);
+      setState(latest.state);
+      setFieldErrors({});
+    },
+  );
+  const stored = saved ?? base.initial.state;
+  const dirty = base.dirty;
+  const managers = managersFor(props.managers, state.departmentId, showAll, state.managerPersonId);
+
+  // Said to the page: it does not reload itself over unsaved entries (RefreshOnReturn, WP-FIX-03).
   useEffect(() => {
-    onPending?.(pending);
-  }, [pending, onPending]);
-  // The server answered with a refusal on the grade or the date of birth: focus moves to it (WCAG 3.3.1).
-  useEffect(() => {
-    const id = fieldErrors.gradeId ? 'edit-grade' : fieldErrors.birthDate ? 'edit-birthDate' : null;
-    if (id !== null) document.getElementById(id)?.focus();
-  }, [fieldErrors]);
+    if (dirty) document.body.dataset.unsaved = 'true';
+    else delete document.body.dataset.unsaved;
+    return () => {
+      delete document.body.dataset.unsaved;
+    };
+  }, [dirty]);
+
+  const set =
+    <K extends keyof PersonFormState>(key: K) =>
+    (value: PersonFormState[K]) => {
+      setState((current) => ({ ...current, [key]: value }));
+      setFieldErrors((current) =>
+        key in current
+          ? Object.fromEntries(Object.entries(current).filter(([field]) => field !== key))
+          : current,
+      );
+    };
+
   const birthHijri = (date: string): string | undefined => {
     if (date === record.hr.birthDate) return record.birthDateHijri;
     if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(date)) return undefined;
@@ -163,43 +241,53 @@ export function EditUserForm(props: EditUserFormProps) {
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const field = (name: string) => {
-      const value = form.get(name);
-      return typeof value === 'string' ? value : '';
-    };
+    const changed = changedKeys(stored, state);
+    // The account details (names, contact, placement) go through one action, with the version; the grade
+    // and the HR-only fields through the other — each only when something of it differs.
+    const accountChanged = !record.locked && changed.some((key) => !RECORD_KEYS.includes(key));
+    const gradeChanged = section === 'work' && changed.includes('gradeId');
+    const hrChanged =
+      section === 'personal' &&
+      record.canEditHr &&
+      changed.some((key) => key === 'gender' || key === 'birthDate' || key === 'category');
     const input = {
       personId: props.personId,
-      version: props.version,
-      firstNameAr: field('firstNameAr'),
-      fatherNameAr: field('fatherNameAr'),
-      grandfatherNameAr: field('grandfatherNameAr'),
-      familyNameAr: field('familyNameAr'),
-      firstNameEn: field('firstNameEn'),
-      fatherNameEn: field('fatherNameEn'),
-      grandfatherNameEn: field('grandfatherNameEn'),
-      familyNameEn: field('familyNameEn'),
+      version: savedToken ?? base.initial.token,
+      firstNameAr: state.firstNameAr,
+      fatherNameAr: state.fatherNameAr,
+      grandfatherNameAr: state.grandfatherNameAr,
+      familyNameAr: state.familyNameAr,
+      firstNameEn: state.firstNameEn,
+      fatherNameEn: state.fatherNameEn,
+      grandfatherNameEn: state.grandfatherNameEn,
+      familyNameEn: state.familyNameEn,
       // The login e-mail is not changed here (the server keeps it): not sent, not validated.
-      email: values.hasLogin ? '' : field('email'),
-      mobile: field('mobile'),
-      employeeNumber: field('employeeNumber'),
-      preferredLocale: field('preferredLocale') === 'en' ? ('en' as const) : ('ar' as const),
-      departmentId,
-      branchId,
+      email: values.hasLogin ? '' : state.email,
+      mobile: state.mobile,
+      employeeNumber: state.employeeNumber,
+      preferredLocale: state.preferredLocale,
+      departmentId: state.departmentId,
+      branchId: state.branchId,
       // Not sent while no cost centre exists (the server keeps what the person has).
-      ...(props.costCentres.length > 0 ? { costCentreId } : {}),
-      managerPersonId: managerId,
-      jobTitleAr: field('jobTitleAr'),
-      jobTitleEn: field('jobTitleEn'),
-      hireOn,
+      ...(props.costCentres.length > 0 ? { costCentreId: state.costCentreId } : {}),
+      managerPersonId: state.managerPersonId,
+      jobTitleAr: state.jobTitleAr,
+      jobTitleEn: state.jobTitleEn,
+      hireOn: state.hireOn,
     };
+    const snapshot = state;
     setMessage(null);
     setFieldErrors({});
     startTransition(async () => {
-      // A privileged member's record opened by HR: the account details are not saved (WP-ADM-04).
-      const result = record.locked ? null : await updateUserDetailsAction(input);
+      const result = accountChanged ? await updateUserDetailsAction(input) : null;
       if (result && !result.ok) {
         if (sessionRefused(result.error)) return;
+        // An older copy of the person (WP-FIX-03): what was typed stays; «Load the latest version» is offered.
+        const latest = latestVersion.offer(result.error, errorText(result.error, props.errors));
+        if (latest !== null) {
+          setMessage(latest);
+          return;
+        }
         if (result.error.code === 'VALIDATION_FAILED') {
           const codes = fieldErrorCodes(result.error);
           setFieldErrors(
@@ -211,64 +299,60 @@ export function EditUserForm(props: EditUserFormProps) {
               }),
             ),
           );
+          if (Object.keys(codes).some((path) => path.endsWith(otherScript))) setShowOther(true);
         }
-        if (
-          result.error.code === 'VALIDATION_FAILED' &&
-          Object.keys(fieldErrorCodes(result.error)).some((path) => path.endsWith(otherScript))
-        ) {
-          setShowOther(true);
-        }
-        setMessage({ tone: 'danger', text: errorText(result.error, props.errors) });
+        setMessage(errorText(result.error, props.errors));
+        focusInvalid();
         return;
       }
       const detailsChanged = result?.ok === true && result.value.changed.length > 0;
-      // The grade and the HR-only fields: a second action, only when something differs from what was loaded.
+      if (result?.ok === true && result.value.version !== null) setSavedToken(result.value.version);
       let recordChanged = false;
-      const hrChanged =
-        record.canEditHr &&
-        (gender !== record.hr.gender ||
-          birthDate !== record.hr.birthDate ||
-          category !== record.hr.employmentCategory);
-      if (gradeId !== record.gradeId || hrChanged) {
-        const saved = await updatePersonRecordAction({
+      if (gradeChanged || hrChanged) {
+        const savedRecord = await updatePersonRecordAction({
           personId: props.personId,
-          ...(gradeId !== record.gradeId ? { gradeId } : {}),
-          ...(record.canEditHr ? { hr: { gender, birthDate, employmentCategory: category } } : {}),
+          ...(gradeChanged ? { gradeId: state.gradeId } : {}),
+          ...(hrChanged
+            ? {
+                hr: {
+                  gender: state.gender,
+                  birthDate: state.birthDate,
+                  employmentCategory: state.category,
+                },
+              }
+            : {}),
         });
-        if (!saved.ok) {
-          if (sessionRefused(saved.error)) return;
-          // The details are saved already: the page shows them, and a new save starts from them.
+        if (!savedRecord.ok) {
+          // The account details are saved already: they count as saved (the next save sends only what is
+          // still unsaved — the grade or the HR fields — and, if the details change again, the version this
+          // save returned); the page shows them.
+          if (result?.ok === true) setSaved(accountSaved(stored, snapshot));
+          if (sessionRefused(savedRecord.error)) return;
           if (detailsChanged) router.refresh();
-          if (saved.error.code === 'VALIDATION_FAILED') {
-            const codes = fieldErrorCodes(saved.error);
+          if (savedRecord.error.code === 'VALIDATION_FAILED') {
+            const codes = fieldErrorCodes(savedRecord.error);
             setFieldErrors({
               ...(codes.gradeId ? { gradeId: rt('grade.errInvalid') } : {}),
               ...(codes.birthDate ? { birthDate: rt('hr.dobError') } : {}),
             });
           }
-          setMessage({
-            tone: 'danger',
-            text: detailsChanged ? rt('edit.partialSaved') : errorText(saved.error, props.errors),
-          });
+          setMessage(
+            detailsChanged ? rt('edit.partialSaved') : errorText(savedRecord.error, props.errors),
+          );
+          focusInvalid();
           return;
         }
-        recordChanged = saved.value.grade?.changed === true || saved.value.hrChanged.length > 0;
+        recordChanged =
+          savedRecord.value.grade?.changed === true || savedRecord.value.hrChanged.length > 0;
       }
+      setSaved(snapshot);
+      toast.success(detailsChanged || recordChanged ? text('saved') : text('noChanges'));
       router.refresh();
-      const anyChange = detailsChanged || recordChanged;
-      if (panel) {
-        panel.onSaved(anyChange);
-        return;
-      }
-      setMessage({
-        tone: 'success',
-        text: anyChange ? text('saved') : text('noChanges'),
-      });
     });
   }
 
   const nameField = (part: NamePart, script: 'Ar' | 'En') => {
-    const name = `${part}${script}`;
+    const name = `${part}${script}` as const;
     // The default language's first and family names — unless a long name stored without parts is kept
     // when no parts are entered.
     const key = script === 'Ar' ? 'ar' : 'en';
@@ -285,7 +369,10 @@ export function EditUserForm(props: EditUserFormProps) {
         marker={required ? text('required') : text('optional')}
         required={required}
         maxLength={60}
-        defaultValue={names.values[name as keyof typeof names.values] ?? ''}
+        value={state[name]}
+        onChange={(event) => {
+          set(name)(event.target.value);
+        }}
         dir={script === 'Ar' ? 'rtl' : 'ltr'}
         lang={script === 'Ar' ? 'ar' : 'en'}
         autoComplete="off"
@@ -298,7 +385,7 @@ export function EditUserForm(props: EditUserFormProps) {
   const nameSet = (script: 'Ar' | 'En') => {
     const key = script === 'Ar' ? 'ar' : 'en';
     return (
-      <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0">
+      <fieldset className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
         <legend className="mb-2 font-semibold">
           {text(script === 'Ar' ? 'arabicName' : 'englishName')}
         </legend>
@@ -310,377 +397,449 @@ export function EditUserForm(props: EditUserFormProps) {
             {text('currentName')} <bdi>{names.unsplit[key]}</bdi> {text('currentNameKept')}
           </p>
         ) : null}
-        {NAME_PARTS.map((part) => nameField(part, script))}
+        {/* Paired from 768 px: first and father's name, grandfather's and family name. */}
+        <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2">
+          {NAME_PARTS.map((part) => nameField(part, script))}
+        </div>
       </fieldset>
     );
   };
 
-  return (
-    <form
-      id={panel?.formId}
-      className="flex flex-col gap-6"
-      onSubmit={onSubmit}
-      // Any typed or picked value is a change the panel warns about before closing.
-      onChange={panel?.onDirty}
-      noValidate
-      data-testid="edit-user"
-    >
-      {record.locked ? (
-        <Alert tone="info" data-testid="edit-locked-note">
-          {rt('edit.lockedNote')}
-        </Alert>
-      ) : null}
-      <fieldset
-        disabled={record.locked}
-        className="m-0 flex min-w-0 flex-col gap-6 border-0 p-0"
-        data-testid="edit-account"
-      >
-        {nameSet(nameLanguage === 'ar' ? 'Ar' : 'En')}
-        {showOther ? (
-          nameSet(otherScript)
-        ) : (
-          <OtherNameToggle
-            label={text(otherScript === 'Ar' ? 'addArabicName' : 'addEnglishName')}
-            focusId={`edit-firstName${otherScript}`}
-            disabled={pending}
-            onOpen={() => {
-              setShowOther(true);
-            }}
-          />
-        )}
+  const lockedNote = record.locked ? (
+    <Alert tone="info" data-testid="edit-locked-note">
+      {rt('edit.lockedNote')}
+    </Alert>
+  ) : null;
 
-        <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0">
-          <legend className="mb-2 font-semibold">{text('contact')}</legend>
-          {values.hasLogin ? (
+  let content: ReactNode;
+  if (section === 'personal') {
+    content = (
+      <>
+        {lockedNote}
+        <Card title={text('section.personal')} headingLevel={2}>
+          <fieldset
+            disabled={record.locked}
+            className="m-0 flex min-w-0 flex-col gap-6 border-0 p-0"
+            data-testid="edit-account"
+          >
+            {nameSet(nameLanguage === 'ar' ? 'Ar' : 'En')}
+            {showOther ? (
+              nameSet(otherScript)
+            ) : (
+              <OtherNameToggle
+                label={text(otherScript === 'Ar' ? 'addArabicName' : 'addEnglishName')}
+                focusId={`edit-firstName${otherScript}`}
+                disabled={pending}
+                onOpen={() => {
+                  setShowOther(true);
+                }}
+              />
+            )}
+          </fieldset>
+        </Card>
+        <Card title={text('contact')} headingLevel={2}>
+          <fieldset
+            disabled={record.locked}
+            className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0"
+          >
+            <legend className="sr-only">{text('contact')}</legend>
+            {values.hasLogin ? (
+              <TextField
+                id="edit-email"
+                type="email"
+                label={text('email')}
+                hint={text('emailIsLogin')}
+                value={values.email}
+                readOnly
+                dir="ltr"
+              />
+            ) : (
+              <TextField
+                id="edit-email"
+                name="email"
+                type="email"
+                label={text('email')}
+                marker={text('optional')}
+                hint={text('emailHint')}
+                value={state.email}
+                onChange={(event) => {
+                  set('email')(event.target.value);
+                }}
+                dir="ltr"
+                autoComplete="off"
+                maxLength={254}
+                error={fieldErrors.email}
+                disabled={pending}
+              />
+            )}
             <TextField
-              id="edit-email"
-              type="email"
-              label={text('email')}
-              hint={text('emailIsLogin')}
-              value={values.email}
-              readOnly
-              dir="ltr"
-            />
-          ) : (
-            <TextField
-              id="edit-email"
-              name="email"
-              type="email"
-              label={text('email')}
+              id="edit-mobile"
+              name="mobile"
+              type="tel"
+              label={text('mobile')}
               marker={text('optional')}
-              hint={text('emailHint')}
-              defaultValue={values.email}
+              hint={
+                <>
+                  {text('mobileHint')} <bdi dir="ltr">+966 55 123 4567</bdi>
+                </>
+              }
+              value={state.mobile}
+              onChange={(event) => {
+                set('mobile')(event.target.value);
+              }}
               dir="ltr"
               autoComplete="off"
-              maxLength={254}
-              error={fieldErrors.email}
+              maxLength={32}
+              error={fieldErrors.mobile}
               disabled={pending}
             />
-          )}
-          <TextField
-            id="edit-mobile"
-            name="mobile"
-            type="tel"
-            label={text('mobile')}
-            marker={text('optional')}
-            hint={
-              <>
-                {text('mobileHint')} <bdi dir="ltr">+966 55 123 4567</bdi>
-              </>
-            }
-            defaultValue={names.values.mobileE164 ?? ''}
-            dir="ltr"
-            autoComplete="off"
-            maxLength={32}
-            error={fieldErrors.mobile}
-            disabled={pending}
-          />
-          <SelectField
-            id="edit-language"
-            name="preferredLocale"
-            label={text('language')}
-            defaultValue={names.values.preferredLocale}
-            disabled={pending}
-          >
-            <option value="ar">{text('language.ar')}</option>
-            <option value="en">{text('language.en')}</option>
-          </SelectField>
-        </fieldset>
-
-        <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0">
-          <legend className="mb-2 font-semibold">{text('work')}</legend>
-          <TextField
-            id="edit-employeeNumber"
-            name="employeeNumber"
-            label={text('employeeNumber')}
-            marker={text('optional')}
-            hint={text('employeeNumberHint')}
-            defaultValue={values.employeeNumber}
-            dir="ltr"
-            autoComplete="off"
-            maxLength={40}
-            error={fieldErrors.employeeNumber}
-            disabled={pending}
-          />
-          <TextField
-            id="edit-hireOn"
-            name="hireOn"
-            type="date"
-            label={text('hireDate')}
-            marker={text('optional')}
-            hint={hijri(hireOn)}
-            value={hireOn}
-            onChange={(event) => {
-              setHireOn(event.target.value);
-            }}
-            dir="ltr"
-            min="1900-01-01"
-            max="2100-12-31"
-            error={fieldErrors.hireOn}
-            disabled={pending}
-          />
-          <TextField
-            id="edit-jobTitleAr"
-            name="jobTitleAr"
-            label={text('jobTitleAr')}
-            marker={text('optional')}
-            defaultValue={values.jobTitleAr}
-            dir="rtl"
-            lang="ar"
-            maxLength={150}
-            autoComplete="off"
-            error={fieldErrors.jobTitleAr}
-            disabled={pending}
-          />
-          <TextField
-            id="edit-jobTitleEn"
-            name="jobTitleEn"
-            label={text('jobTitleEn')}
-            marker={text('optional')}
-            defaultValue={values.jobTitleEn}
-            dir="ltr"
-            lang="en"
-            maxLength={150}
-            autoComplete="off"
-            error={fieldErrors.jobTitleEn}
-            disabled={pending}
-          />
-          <SelectField
-            id="edit-department"
-            name="departmentId"
-            label={text('department')}
-            marker={text('optional')}
-            value={departmentId}
-            onChange={(event) => {
-              setDepartmentId(event.target.value);
-            }}
-            error={fieldErrors.departmentId}
-            disabled={pending}
-          >
-            <option value="">{text('noDepartment')}</option>
-            {props.departments.map((unit) => (
-              <option key={unit.id} value={unit.id}>
-                {unit.name}
-              </option>
-            ))}
-          </SelectField>
-          <SelectField
-            id="edit-branch"
-            name="branchId"
-            label={text('branch')}
-            marker={text('optional')}
-            value={branchId}
-            onChange={(event) => {
-              setBranchId(event.target.value);
-            }}
-            error={fieldErrors.branchId}
-            disabled={pending}
-          >
-            <option value="">{text('noBranch')}</option>
-            {props.branches.map((unit) => (
-              <option key={unit.id} value={unit.id}>
-                {unit.name}
-              </option>
-            ))}
-          </SelectField>
-          {props.costCentres.length > 0 ? (
             <SelectField
-              id="edit-cost-centre"
-              name="costCentreId"
-              label={text('costCentre')}
-              marker={text('optional')}
-              hint={costCentreId === '' ? text('costCentreFromUnit') : text('costCentreHint')}
-              value={costCentreId}
+              id="edit-language"
+              name="preferredLocale"
+              label={text('language')}
+              value={state.preferredLocale}
               onChange={(event) => {
-                setCostCentreId(event.target.value);
+                set('preferredLocale')(event.target.value === 'en' ? 'en' : 'ar');
               }}
-              error={fieldErrors.costCentreId}
               disabled={pending}
-              data-testid="edit-cost-centre"
             >
-              <option value="">{text('noCostCentre')}</option>
-              {props.costCentres.map((choice) => (
-                <option key={choice.id} value={choice.id}>
-                  {choice.name}
+              <option value="ar">{text('language.ar')}</option>
+              <option value="en">{text('language.en')}</option>
+            </SelectField>
+          </fieldset>
+        </Card>
+        {record.canEditHr ? (
+          <Card
+            title={
+              <span className="flex flex-wrap items-center gap-2">
+                {rt('hr.title')}
+                <Badge>
+                  <Icon name="lock" className="size-3.5" />
+                  {rt('hr.lock')}
+                </Badge>
+              </span>
+            }
+            description={rt('hr.sectionHint')}
+            headingLevel={2}
+            data-testid="edit-hr-details"
+          >
+            <div className="flex flex-col gap-4">
+              <SelectField
+                id="edit-gender"
+                name="gender"
+                label={rt('hr.gender')}
+                marker={text('optional')}
+                value={state.gender}
+                onChange={(event) => {
+                  set('gender')(event.target.value as GenderValue);
+                }}
+                disabled={pending}
+              >
+                <option value="">{rt('hr.notSet')}</option>
+                <option value="male">{rt('hr.male')}</option>
+                <option value="female">{rt('hr.female')}</option>
+              </SelectField>
+              <SelectField
+                id="edit-category"
+                name="employmentCategory"
+                label={rt('hr.category')}
+                marker={text('optional')}
+                value={state.category}
+                onChange={(event) => {
+                  set('category')(event.target.value as CategoryValue);
+                }}
+                disabled={pending}
+              >
+                <option value="">{rt('hr.notSet')}</option>
+                <option value="management">{rt('hr.cat.management')}</option>
+                <option value="professional">{rt('hr.cat.professional')}</option>
+                <option value="technical">{rt('hr.cat.technical')}</option>
+                <option value="operational">{rt('hr.cat.operational')}</option>
+              </SelectField>
+              <TextField
+                id="edit-birthDate"
+                name="birthDate"
+                type="date"
+                label={rt('hr.dob')}
+                marker={text('optional')}
+                hint={birthHijri(state.birthDate)}
+                value={state.birthDate}
+                onChange={(event) => {
+                  set('birthDate')(event.target.value);
+                }}
+                dir="ltr"
+                min="1900-01-01"
+                error={fieldErrors.birthDate}
+                disabled={pending}
+              />
+              <p className="m-0 text-[13.5px] text-text-muted">{rt('hr.audit')}</p>
+            </div>
+          </Card>
+        ) : null}
+      </>
+    );
+  } else {
+    content = (
+      <>
+        {lockedNote}
+        <Card title={text('section.work')} headingLevel={2}>
+          <fieldset
+            disabled={record.locked}
+            className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0"
+            data-testid="edit-account"
+          >
+            <legend className="sr-only">{text('section.work')}</legend>
+            <TextField
+              id="edit-employeeNumber"
+              name="employeeNumber"
+              label={text('employeeNumber')}
+              marker={text('optional')}
+              hint={text('employeeNumberHint')}
+              value={state.employeeNumber}
+              onChange={(event) => {
+                set('employeeNumber')(event.target.value);
+              }}
+              dir="ltr"
+              autoComplete="off"
+              maxLength={40}
+              error={fieldErrors.employeeNumber}
+              disabled={pending}
+            />
+            <TextField
+              id="edit-hireOn"
+              name="hireOn"
+              type="date"
+              label={text('hireDate')}
+              marker={text('optional')}
+              hint={hijri(state.hireOn)}
+              value={state.hireOn}
+              onChange={(event) => {
+                set('hireOn')(event.target.value);
+              }}
+              dir="ltr"
+              min="1900-01-01"
+              max="2100-12-31"
+              error={fieldErrors.hireOn}
+              disabled={pending}
+            />
+            {/* The job title in both languages: a short natural pair, side by side from 768 px. */}
+            <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2">
+              {(nameLanguage === 'ar' ? (['Ar', 'En'] as const) : (['En', 'Ar'] as const)).map(
+                (script) => {
+                  const key = script === 'Ar' ? 'jobTitleAr' : 'jobTitleEn';
+                  return (
+                    <TextField
+                      key={key}
+                      id={`edit-${key}`}
+                      name={key}
+                      label={text(key)}
+                      marker={text('optional')}
+                      value={state[key]}
+                      onChange={(event) => {
+                        set(key)(event.target.value);
+                      }}
+                      dir={script === 'Ar' ? 'rtl' : 'ltr'}
+                      lang={script === 'Ar' ? 'ar' : 'en'}
+                      maxLength={150}
+                      autoComplete="off"
+                      error={fieldErrors[key]}
+                      disabled={pending}
+                    />
+                  );
+                },
+              )}
+            </div>
+            <SelectField
+              id="edit-department"
+              name="departmentId"
+              label={text('department')}
+              marker={text('optional')}
+              value={state.departmentId}
+              onChange={(event) => {
+                set('departmentId')(event.target.value);
+              }}
+              error={fieldErrors.departmentId}
+              disabled={pending}
+            >
+              <option value="">{text('noDepartment')}</option>
+              {props.departments.map((unit) => (
+                <option key={unit.id} value={unit.id}>
+                  {unit.name}
                 </option>
               ))}
             </SelectField>
-          ) : null}
+            <SelectField
+              id="edit-branch"
+              name="branchId"
+              label={text('branch')}
+              marker={text('optional')}
+              value={state.branchId}
+              onChange={(event) => {
+                set('branchId')(event.target.value);
+              }}
+              error={fieldErrors.branchId}
+              disabled={pending}
+            >
+              <option value="">{text('noBranch')}</option>
+              {props.branches.map((unit) => (
+                <option key={unit.id} value={unit.id}>
+                  {unit.name}
+                </option>
+              ))}
+            </SelectField>
+            {props.costCentres.length > 0 ? (
+              <SelectField
+                id="edit-cost-centre"
+                name="costCentreId"
+                label={text('costCentre')}
+                marker={text('optional')}
+                hint={
+                  state.costCentreId === '' ? text('costCentreFromUnit') : text('costCentreHint')
+                }
+                value={state.costCentreId}
+                onChange={(event) => {
+                  set('costCentreId')(event.target.value);
+                }}
+                error={fieldErrors.costCentreId}
+                disabled={pending}
+                data-testid="edit-cost-centre"
+              >
+                <option value="">{text('noCostCentre')}</option>
+                {props.costCentres.map((choice) => (
+                  <option key={choice.id} value={choice.id}>
+                    {choice.name}
+                  </option>
+                ))}
+              </SelectField>
+            ) : null}
+            <div className="flex flex-col gap-2">
+              <SelectField
+                id="edit-manager"
+                name="managerPersonId"
+                label={text('manager')}
+                marker={text('optional')}
+                hint={
+                  showAll || state.departmentId === ''
+                    ? text('managerHintAll')
+                    : text('managerHint')
+                }
+                value={state.managerPersonId}
+                onChange={(event) => {
+                  set('managerPersonId')(event.target.value);
+                }}
+                error={fieldErrors.managerPersonId}
+                disabled={pending}
+              >
+                <option value="">{text('noManager')}</option>
+                {managers.map((manager) => (
+                  <option key={manager.personId} value={manager.personId}>
+                    {manager.active ? manager.name : `${manager.name} ${text('inactive')}`}
+                  </option>
+                ))}
+              </SelectField>
+              {state.departmentId !== '' ? (
+                <div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    aria-controls="edit-manager"
+                    aria-pressed={showAll}
+                    onClick={() => {
+                      setShowAll((all) => !all);
+                    }}
+                    disabled={pending}
+                  >
+                    {showAll ? text('departmentManagersOnly') : text('allDepartmentsManagers')}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          </fieldset>
+        </Card>
+        <Card title={rt('grade.label')} description={rt('grade.hint')} headingLevel={2}>
           <div className="flex flex-col gap-2">
             <SelectField
-              id="edit-manager"
-              name="managerPersonId"
-              label={text('manager')}
+              id="edit-grade"
+              name="gradeId"
+              label={rt('grade.label')}
               marker={text('optional')}
-              hint={showAll || departmentId === '' ? text('managerHintAll') : text('managerHint')}
-              value={managerId}
+              hint={record.grades.length === 0 ? rt('grade.emptyHint') : undefined}
+              value={state.gradeId}
               onChange={(event) => {
-                setManagerId(event.target.value);
+                set('gradeId')(event.target.value);
               }}
-              error={fieldErrors.managerPersonId}
-              disabled={pending}
+              error={fieldErrors.gradeId}
+              disabled={pending || record.grades.length === 0}
             >
-              <option value="">{text('noManager')}</option>
-              {managers.map((manager) => (
-                <option key={manager.personId} value={manager.personId}>
-                  {manager.active ? manager.name : `${manager.name} ${text('inactive')}`}
+              <option value="">{rt('grade.none')}</option>
+              {record.grades.map((grade) => (
+                <option key={grade.id} value={grade.id}>
+                  {grade.code}
                 </option>
               ))}
             </SelectField>
-            {departmentId !== '' ? (
-              <div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  aria-controls="edit-manager"
-                  aria-pressed={showAll}
-                  onClick={() => {
-                    setShowAll((all) => !all);
-                  }}
-                  disabled={pending}
-                >
-                  {showAll ? text('departmentManagersOnly') : text('allDepartmentsManagers')}
-                </Button>
-              </div>
-            ) : null}
+            <p className="m-0">
+              <a href={record.gradesHref} data-testid="edit-manage-grades">
+                {record.grades.length === 0 ? rt('grade.addSome') : rt('grade.manage')}
+              </a>
+            </p>
           </div>
-        </fieldset>
-      </fieldset>
+        </Card>
+      </>
+    );
+  }
 
-      <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0">
-        <legend className="mb-2 font-semibold">{rt('grade.label')}</legend>
-        <div className="flex flex-col gap-2">
-          <SelectField
-            id="edit-grade"
-            name="gradeId"
-            label={rt('grade.label')}
-            marker={text('optional')}
-            hint={record.grades.length === 0 ? rt('grade.emptyHint') : rt('grade.hint')}
-            value={gradeId}
-            onChange={(event) => {
-              setGradeId(event.target.value);
-            }}
-            error={fieldErrors.gradeId}
-            disabled={pending || record.grades.length === 0}
-          >
-            <option value="">{rt('grade.none')}</option>
-            {record.grades.map((grade) => (
-              <option key={grade.id} value={grade.id}>
-                {grade.code}
-              </option>
-            ))}
-          </SelectField>
-          <p className="m-0">
-            <a href={record.gradesHref} data-testid="edit-manage-grades">
-              {record.grades.length === 0 ? rt('grade.addSome') : rt('grade.manage')}
-            </a>
-          </p>
-        </div>
-      </fieldset>
-
-      {record.canEditHr ? (
-        <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0" data-testid="edit-hr-details">
-          <legend className="mb-2 flex flex-wrap items-center gap-2 font-semibold">
-            {rt('hr.title')}
-            <Badge>
-              <Icon name="lock" className="size-3.5" />
-              {rt('hr.lock')}
-            </Badge>
-          </legend>
-          <p className="m-0 text-[13.5px] text-text-muted">{rt('hr.sectionHint')}</p>
-          <SelectField
-            id="edit-gender"
-            name="gender"
-            label={rt('hr.gender')}
-            marker={text('optional')}
-            value={gender}
-            onChange={(event) => {
-              setGender(event.target.value as GenderValue);
-            }}
-            disabled={pending}
-          >
-            <option value="">{rt('hr.notSet')}</option>
-            <option value="male">{rt('hr.male')}</option>
-            <option value="female">{rt('hr.female')}</option>
-          </SelectField>
-          <SelectField
-            id="edit-category"
-            name="employmentCategory"
-            label={rt('hr.category')}
-            marker={text('optional')}
-            value={category}
-            onChange={(event) => {
-              setCategory(event.target.value as CategoryValue);
-            }}
-            disabled={pending}
-          >
-            <option value="">{rt('hr.notSet')}</option>
-            <option value="management">{rt('hr.cat.management')}</option>
-            <option value="professional">{rt('hr.cat.professional')}</option>
-            <option value="technical">{rt('hr.cat.technical')}</option>
-            <option value="operational">{rt('hr.cat.operational')}</option>
-          </SelectField>
-          <TextField
-            id="edit-birthDate"
-            name="birthDate"
-            type="date"
-            label={rt('hr.dob')}
-            marker={text('optional')}
-            hint={birthHijri(birthDate)}
-            value={birthDate}
-            onChange={(event) => {
-              setBirthDate(event.target.value);
-            }}
-            dir="ltr"
-            min="1900-01-01"
-            error={fieldErrors.birthDate}
-            disabled={pending}
-          />
-          <p className="m-0 text-[13.5px] text-text-muted">{rt('hr.audit')}</p>
-        </fieldset>
-      ) : null}
-
-      {message?.tone === 'danger' ? (
+  return (
+    <form
+      ref={form}
+      id={FORM_ID}
+      className="flex min-w-0 flex-col gap-4"
+      onSubmit={onSubmit}
+      onReset={(event) => {
+        // The save bar's «Discard changes»: back to the stored values (not the browser's reset).
+        event.preventDefault();
+        setState(stored);
+        setFieldErrors({});
+        setMessage(null);
+      }}
+      noValidate
+      data-testid="edit-user"
+      data-section={section}
+    >
+      {message ? (
         <Alert tone="danger" data-testid="edit-user-message">
-          {message.text}
+          {message}
+          <LoadLatestVersion message={message} />
         </Alert>
       ) : null}
-      {/* Kept rendered so "Saved" is announced when its text changes (Alert docs). */}
-      <div role="status" aria-live="polite">
-        {message?.tone === 'success' ? (
-          <Alert tone="success" role="none" data-testid="edit-user-message">
-            {message.text}
-          </Alert>
-        ) : null}
-      </div>
-      {panel ? null : (
-        <div className="flex flex-wrap items-center gap-4">
-          <Button type="submit" disabled={pending}>
-            {pending ? text('saving') : text('save')}
-          </Button>
-          <a href={props.profileHref}>{text('backToProfile')}</a>
-        </div>
-      )}
+      {content}
+      <p className="m-0 flex gap-2 text-sm text-text-muted">
+        <Icon name="shield" className="mt-0.5 size-4 shrink-0" />
+        {text('intro')}
+      </p>
+      {dirty || pending ? (
+        <SaveBar
+          state={pending ? 'saving' : 'unsaved'}
+          form={FORM_ID}
+          texts={{
+            unsaved: text('unsavedChanges'),
+            saving: text('saving'),
+            saved: '',
+            save: text('save'),
+            cancel: text('discardChanges'),
+          }}
+        />
+      ) : null}
+      <LeaveGuard
+        active={dirty && !pending}
+        texts={{
+          leaveTitle: text('leaveTitle'),
+          leaveText: text('leaveText'),
+          leaveStay: text('leaveStay'),
+          leaveGo: text('leaveGo'),
+          close: text('close'),
+        }}
+      />
     </form>
   );
 }

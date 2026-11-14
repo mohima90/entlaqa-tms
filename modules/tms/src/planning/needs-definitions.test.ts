@@ -32,6 +32,7 @@ vi.mock('@jadarat/platform-db', () => db);
 
 const repo = vi.hoisted(() => ({
   organizationToday: vi.fn(),
+  cycleConsolidating: vi.fn(),
   getCycle: vi.fn(),
   getDepartment: vi.fn(),
   listNeeds: vi.fn(),
@@ -261,6 +262,7 @@ const baseNeed = {
 
 beforeEach(() => {
   repo.organizationToday.mockResolvedValue('2026-10-27');
+  repo.cycleConsolidating.mockResolvedValue(false);
   repo.getCycle.mockResolvedValue(cycle());
   repo.getDepartment.mockResolvedValue(department());
   repo.listNeeds.mockResolvedValue([
@@ -865,6 +867,7 @@ describe('the L&D Manager returns and extends', () => {
       2,
       'returned',
       'Please add the sales academy',
+      null,
     );
     expect(audits).toEqual([
       expect.objectContaining({
@@ -922,5 +925,118 @@ describe('the L&D Manager returns and extends', () => {
       deadline: '2026-12-20',
     });
     expect(!closed.ok && closed.error.code).toBe('PLAN_NEEDS_CLOSED');
+  });
+
+  // WP-LD-02: once the needs are closed and the training plan is consolidated, a return reopens the department
+  // until a day of its own; the L&D Manager may also reopen a department until any day from today.
+  it('returns during consolidation only with a deadline of the department’s own', async () => {
+    const { action, audits } = runtime('training_manager');
+    repo.getCycle.mockResolvedValue(cycle({ status: 'closed' }));
+    repo.cycleConsolidating.mockResolvedValue(true);
+    repo.getDepartment.mockResolvedValue(department({ status: 'submitted' }));
+    const ref = { cycleId: CYCLE, departmentId: SALES, version: 2, note: 'Split by level' };
+    const missing = await action(defs.returnNeedsActionDefinition())(ref);
+    expect(!missing.ok && missing.error.fieldErrors).toEqual([
+      { path: 'deadline', code: 'REQUIRED' },
+    ]);
+    const past = await action(defs.returnNeedsActionDefinition())({
+      ...ref,
+      deadline: '2026-10-26',
+    });
+    expect(!past.ok && past.error.fieldErrors).toEqual([{ path: 'deadline', code: 'IN_PAST' }]);
+    const returned = await action(defs.returnNeedsActionDefinition())({
+      ...ref,
+      deadline: '2026-10-27',
+    });
+    expect(returned.ok && returned.value).toMatchObject({
+      deadline: '2026-10-27',
+      consolidating: true,
+    });
+    expect(repo.setDepartmentStatus).toHaveBeenLastCalledWith(
+      {},
+      CYCLE,
+      SALES,
+      2,
+      'returned',
+      'Split by level',
+      '2026-10-27',
+    );
+    expect(audits).toEqual([
+      expect.objectContaining({
+        action: 'tms.plan_needs.returned',
+        data: {
+          cycleId: CYCLE,
+          departmentId: SALES,
+          noteLength: 14,
+          deadline: '2026-10-27',
+          duringConsolidation: true,
+        },
+      }),
+    ]);
+  });
+
+  it('refuses a return in a closed cycle without a plan', async () => {
+    const { action } = runtime('training_manager');
+    repo.getCycle.mockResolvedValue(cycle({ status: 'closed' }));
+    repo.getDepartment.mockResolvedValue(department({ status: 'submitted' }));
+    const refused = await action(defs.returnNeedsActionDefinition())({
+      cycleId: CYCLE,
+      departmentId: SALES,
+      version: 2,
+      note: 'x',
+      deadline: '2026-10-28',
+    });
+    expect(!refused.ok && refused.error.code).toBe('PLAN_NEEDS_CLOSED');
+  });
+
+  it('reopens a department during consolidation until any day from today, within the period', async () => {
+    const { action } = runtime('training_manager');
+    repo.getCycle.mockResolvedValue(cycle({ status: 'closed' }));
+    repo.cycleConsolidating.mockResolvedValue(true);
+    const ref = { cycleId: CYCLE, departmentId: SALES, version: 2 };
+    const reopened = await action(defs.extendDepartmentDeadlineActionDefinition())({
+      ...ref,
+      deadline: '2026-10-27',
+    });
+    expect(reopened.ok).toBe(true);
+    const past = await action(defs.extendDepartmentDeadlineActionDefinition())({
+      ...ref,
+      deadline: '2026-10-20',
+    });
+    expect(!past.ok && past.error.fieldErrors).toEqual([{ path: 'deadline', code: 'IN_PAST' }]);
+  });
+});
+
+describe('the head while the plan is consolidated (WP-LD-02)', () => {
+  it('enters needs of a returned department until its own deadline, and never recalls', async () => {
+    const { query } = runtime('department_head', [SALES]);
+    repo.getCycle.mockResolvedValue(cycle({ status: 'closed' }));
+    repo.cycleConsolidating.mockResolvedValue(true);
+    repo.getDepartment.mockResolvedValue(
+      department({ status: 'returned', deadline: '2026-10-30' }),
+    );
+    const view = await query(defs.departmentNeedsQueryDefinition())({
+      cycleId: CYCLE,
+      departmentId: SALES,
+    });
+    expect(view.ok && view.value).toMatchObject({
+      entryOpen: true,
+      deadline: '2026-10-30',
+      can: { edit: true, recall: false },
+    });
+    repo.getDepartment.mockResolvedValue(
+      department({ status: 'submitted', deadline: '2026-10-30' }),
+    );
+    const submitted = await query(defs.departmentNeedsQueryDefinition())({
+      cycleId: CYCLE,
+      departmentId: SALES,
+    });
+    expect(submitted.ok && submitted.value.can).toMatchObject({ edit: false, recall: false });
+    repo.getDepartment.mockResolvedValue(department({ status: 'draft', deadline: null }));
+    const notReopened = await query(defs.departmentNeedsQueryDefinition())({
+      cycleId: CYCLE,
+      departmentId: SALES,
+    });
+    expect(notReopened.ok && notReopened.value.entryOpen).toBe(false);
   });
 });

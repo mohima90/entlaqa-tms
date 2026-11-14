@@ -292,6 +292,11 @@ interface DepartmentState {
   readonly today: string;
   readonly deadline: string;
   readonly open: boolean;
+  /**
+   * The needs are closed and the training plan is consolidated (WP-LD-02): only a department returned for
+   * changes or reopened by the L&D Manager enters needs — until its own deadline — and nobody recalls.
+   */
+  readonly consolidating: boolean;
 }
 
 /** The cycle and the department row; a draft cycle has no needs entry yet (404). */
@@ -304,13 +309,22 @@ async function departmentState(
   const department = await repo.getDepartment(ctx.tx, ref.cycleId, ref.departmentId);
   if (!department) return err(appError('NOT_FOUND'));
   const today = await repo.organizationToday(ctx.tx);
-  const deadline = departmentDeadline(cycle.deadline, department.deadline);
+  const consolidating =
+    cycle.status === 'closed' && (await repo.cycleConsolidating(ctx.tx, cycle.id));
+  // While the plan is consolidated only the department's own deadline counts (a return or a reopening).
+  const deadline =
+    consolidating && department.deadline !== null
+      ? department.deadline
+      : departmentDeadline(cycle.deadline, department.deadline);
   return ok({
     cycle,
     department,
     today,
     deadline,
-    open: entryOpen(cycle.status, deadline, today),
+    open: consolidating
+      ? department.deadline !== null && today <= department.deadline
+      : entryOpen(cycle.status, deadline, today),
+    consolidating,
   });
 }
 
@@ -359,7 +373,7 @@ async function buildView(
   access: DepartmentAccess,
   state: DepartmentState,
 ): Promise<DepartmentNeedsView> {
-  const { cycle, department, today, deadline, open } = state;
+  const { cycle, department, today, deadline, open, consolidating } = state;
   const needs = await repo.listNeeds(ctx.tx, cycle.id, department.departmentId);
   const personIds = [
     ...needs.flatMap((n) => n.personIds),
@@ -445,9 +459,12 @@ async function buildView(
     can: {
       edit,
       submit: edit && needs.length > 0,
-      recall: role === 'head' && open && department.status === 'submitted',
-      return: canManage && cycle.status === 'open' && department.status === 'submitted',
-      extend: canManage && cycle.status === 'open',
+      recall: role === 'head' && open && !consolidating && department.status === 'submitted',
+      return:
+        canManage &&
+        (cycle.status === 'open' || consolidating) &&
+        department.status === 'submitted',
+      extend: canManage && (cycle.status === 'open' || consolidating),
     },
     team: edit ? await listDepartmentTeam(ctx.tx, department.departmentId) : [],
     courses:
@@ -486,7 +503,11 @@ export function myNeedsQueryDefinition(): QueryDefinition<
         const department = byId.get(row.departmentId);
         // The database already limited the rows to the effective head; the rule is repeated here.
         if (!department || effectiveHead(tree, row.departmentId)?.personId !== personId) return [];
-        const deadline = departmentDeadline(row.cycleDeadline, row.deadline);
+        // A department returned or reopened while the plan is consolidated: its own deadline (WP-LD-02).
+        const deadline =
+          row.consolidating && row.deadline !== null
+            ? row.deadline
+            : departmentDeadline(row.cycleDeadline, row.deadline);
         return [
           {
             cycleId: row.cycleId,
@@ -497,7 +518,7 @@ export function myNeedsQueryDefinition(): QueryDefinition<
             status: formStatus(row.status, deadline, today),
             deadline,
             daysLeft: daysUntil(today, deadline),
-            entryOpen: entryOpen('open', deadline, today),
+            entryOpen: today <= deadline,
             needsCount: row.needsCount,
             seats: row.seats,
             cost: row.cost,
@@ -946,9 +967,16 @@ export function saveDepartmentAnswersActionDefinition(): ActionDefinition<
 // ---------------------------------------------------------------------------------------------------
 
 /** «Return for changes» (business flow D14): the head reads the note on their needs page. */
+export interface NeedsReturned extends DepartmentChanged {
+  /** The department's own deadline set with the return, or null. */
+  readonly deadline: string | null;
+  /** Returned while the training plan was consolidated (WP-LD-02). */
+  readonly consolidating: boolean;
+}
+
 export function returnNeedsActionDefinition(): ActionDefinition<
   typeof ReturnNeedsInput,
-  DepartmentChanged,
+  NeedsReturned,
   UserTx
 > {
   return {
@@ -957,9 +985,24 @@ export function returnNeedsActionDefinition(): ActionDefinition<
     handler: async ({ ctx, input }) => {
       const state = await departmentState(ctx, input);
       if (!state.ok) return state;
-      if (state.value.cycle.status !== 'open') return err(appError(NeedsErrors.PLAN_NEEDS_CLOSED));
+      const { cycle, today, deadline, consolidating } = state.value;
+      if (cycle.status !== 'open' && !consolidating)
+        return err(appError(NeedsErrors.PLAN_NEEDS_CLOSED));
       if (state.value.department.status !== 'submitted')
         return err(appError(NeedsErrors.PLAN_NEEDS_NOT_SUBMITTED));
+      // While the plan is consolidated the department reopens until a day of its own (WP-LD-02); in an open
+      // cycle a day may come with the return, as an extension.
+      const issues: { path: string; code: string }[] = [];
+      if (input.deadline === undefined) {
+        if (consolidating) issues.push({ path: 'deadline', code: 'REQUIRED' });
+      } else if (input.deadline < today) {
+        issues.push({ path: 'deadline', code: 'IN_PAST' });
+      } else if (input.deadline > cycle.periodEnd) {
+        issues.push({ path: 'deadline', code: 'AFTER_PERIOD' });
+      } else if (!consolidating && input.deadline <= deadline) {
+        issues.push({ path: 'deadline', code: 'NOT_LATER' });
+      }
+      if (issues.length > 0) return validation(issues);
       const changed = await repo.setDepartmentStatus(
         ctx.tx,
         input.cycleId,
@@ -967,16 +1010,24 @@ export function returnNeedsActionDefinition(): ActionDefinition<
         input.version,
         'returned',
         input.note,
+        input.deadline ?? null,
       );
       if (changed.outcome !== 'ok') return err(departmentOutcomeError(changed.outcome));
       return ok({
         cycleId: input.cycleId,
         departmentId: input.departmentId,
         version: changed.version,
+        deadline: input.deadline ?? null,
+        consolidating,
       });
     },
     // The note is free text for the head: audited as present, not quoted.
-    audit: (input, output) => audit('returned', output, { noteLength: input.note.length }),
+    audit: (input, output) =>
+      audit('returned', output, {
+        noteLength: input.note.length,
+        ...(output.deadline === null ? {} : { deadline: output.deadline }),
+        ...(output.consolidating ? { duringConsolidation: true } : {}),
+      }),
   };
 }
 
@@ -985,7 +1036,11 @@ export interface DepartmentDeadlineExtended extends DepartmentChanged {
   readonly after: string;
 }
 
-/** An extension for one department (Q3): later than its effective deadline, today or later, within the period. */
+/**
+ * An extension for one department (Q3): later than its effective deadline, today or later, within the period.
+ * Once the needs are closed and the plan is consolidated: reopening the department until a day from today
+ * (WP-LD-02).
+ */
 export function extendDepartmentDeadlineActionDefinition(): ActionDefinition<
   typeof ExtendDepartmentDeadlineInput,
   DepartmentDeadlineExtended,
@@ -997,9 +1052,13 @@ export function extendDepartmentDeadlineActionDefinition(): ActionDefinition<
     handler: async ({ ctx, input }) => {
       const state = await departmentState(ctx, input);
       if (!state.ok) return state;
-      const { cycle, deadline, today } = state.value;
-      if (cycle.status !== 'open') return err(appError(NeedsErrors.PLAN_NEEDS_CLOSED));
-      if (input.deadline <= deadline) return validation([{ path: 'deadline', code: 'NOT_LATER' }]);
+      const { cycle, deadline, today, consolidating } = state.value;
+      if (cycle.status !== 'open' && !consolidating)
+        return err(appError(NeedsErrors.PLAN_NEEDS_CLOSED));
+      // While the plan is consolidated the L&D Manager reopens a department until any day from today
+      // (business flow §6 (b); WP-LD-02); in an open cycle the day only moves later.
+      if (!consolidating && input.deadline <= deadline)
+        return validation([{ path: 'deadline', code: 'NOT_LATER' }]);
       if (input.deadline < today) return validation([{ path: 'deadline', code: 'IN_PAST' }]);
       if (input.deadline > cycle.periodEnd)
         return validation([{ path: 'deadline', code: 'AFTER_PERIOD' }]);

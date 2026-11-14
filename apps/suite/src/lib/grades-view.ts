@@ -36,8 +36,8 @@ export interface GradeRowView {
   readonly people: number;
   /** «3 people» / «No one». */
   readonly peopleText: string;
-  readonly renameLabel: string;
-  readonly deleteLabel: string;
+  /** The row's «⋯» menu, named after the grade («More actions for grade G7»). */
+  readonly menuLabel: string;
   /** «2 people have this grade. They will show the new code.» (only when someone holds it). */
   readonly editNote: string | null;
   readonly editTitle: string;

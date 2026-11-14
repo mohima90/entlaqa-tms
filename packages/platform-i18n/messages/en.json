@@ -582,7 +582,9 @@
     },
     "tabsLabel": "Profile sections",
     "tabs": {
-      "overview": "Overview"
+      "overview": "Overview",
+      "personal": "Personal details",
+      "work": "Work details"
     },
     "openSecurity": "Open sign-in and security",
     "invitedBanner": "This person hasn’t accepted the invitation yet. You can copy its code or link and share it with them.",
@@ -694,7 +696,6 @@
   },
   "editUser": {
     "title": "Edit user details",
-    "titleFor": "Edit details of {name}",
     "breadcrumb": "Team members",
     "breadcrumbLabel": "Breadcrumb",
     "details": "Basic information",
@@ -734,7 +735,6 @@
     "saving": "Saving…",
     "saved": "Changes saved.",
     "noChanges": "There are no changes to save.",
-    "backToProfile": "Back to the profile",
     "fieldErrors": {
       "required": "This field is required.",
       "name": "Must contain visible letters, be at most 60 characters, and the full name at most 200.",
@@ -3739,8 +3739,6 @@
       "colPeople": "People",
       "colActions": "Actions",
       "people": "{count, plural, =0 {No one} one {# person} other {# people}}",
-      "rename": "Rename grade {code}",
-      "deleteAria": "Delete grade {code}",
       "caption": "Grades of the organization",
       "emptyTitle": "No grades yet",
       "emptyBody": "Add the grade codes your organization uses. Then HR can give each person one.",
@@ -3767,7 +3765,10 @@
       "count": "{count, plural, one {# grade} other {# grades}}",
       "loadFailed": "The grades couldn’t be loaded. Reference: {correlationId}",
       "cancel": "Cancel",
-      "close": "Close"
+      "close": "Close",
+      "menuLabel": "More actions for grade {code}",
+      "renameItem": "Rename",
+      "deleteItem": "Delete"
     }
   },
   "plans": {

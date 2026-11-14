@@ -256,12 +256,16 @@ test.describe('users pages', () => {
     await expect(page.getByRole('link', { name: 'Recent activity' })).toHaveCount(0);
     await expect(page.getByTestId('user-profile')).toContainText('Mona Saeed Alzahrani');
 
-    // No user.update: no edit button, and the edit panel refuses
+    // No user.update: no edit button, no settings tabs, and the old edit address refuses
     await expect(page.getByTestId('edit-user-link')).toHaveCount(0);
     await expect(page.getByTestId('profile-actions')).toHaveCount(0);
-    await page.goto(`/en/suite/admin/users/${KHALID}/edit`);
     await expect(
-      page.getByTestId('edit-user-panel').getByText("You don't have permission to do this."),
+      page.getByTestId('profile-tabs').getByRole('link', { name: 'Personal details' }),
+    ).toHaveCount(0);
+    await page.goto(`/en/suite/admin/users/${KHALID}/edit`);
+    await expect(page).toHaveURL(new RegExp(`/en/suite/admin/users/${KHALID}\\?tab=personal$`));
+    await expect(
+      page.getByTestId('edit-user-refused').getByText("You don't have permission to do this."),
     ).toBeVisible();
     await expect(page.getByTestId('edit-user')).toHaveCount(0);
     // No roles & permissions page either (T-M2-05: tenant-wide role.read)
@@ -280,54 +284,29 @@ test.describe('users pages', () => {
   });
 
   // Runs last: it changes Khalid's English name, which the tests above read in Arabic.
-  test('Organization Admin edits details in the side panel: unique employee number, manager picker, unsaved changes, audit', async ({
+  test('Organization Admin edits details in the settings tabs: unique employee number, manager picker, unsaved changes, audit', async ({
     page,
   }) => {
     await signIn(page);
     await page.goto(`/en/suite/admin/users/${KHALID}`);
+    // «Edit details» opens the person's «Personal details» tab (the Kawadir pattern, WP-UX-01 e).
     await page.getByTestId('edit-user-link').click();
-    await expect(page).toHaveURL(new RegExp(`/en/suite/admin/users/${KHALID}/edit$`));
-    const panel = page.getByTestId('edit-user-panel');
-    await expect(
-      panel.getByRole('heading', { name: 'Edit details of خالد إبراهيم الشهري' }),
-    ).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/en/suite/admin/users/${KHALID}\\?tab=personal$`));
+    const tabs = page.getByTestId('profile-tabs');
+    await expect(tabs.getByRole('link', { name: 'Personal details' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
     const form = page.getByTestId('edit-user');
     // The login e-mail is shown, not editable
     await expect(form.getByLabel('Work email')).toHaveValue('sample.khalid@sovereign.example');
     await expect(form.getByLabel('Work email')).toHaveAttribute('readonly', '');
     // The Arabic name had no parts: it was placed in "First name" to be split
     await expect(form.getByText('The full name was placed in "First name"')).toBeVisible();
+    // Nothing changed yet: no save bar.
+    await expect(page.getByTestId('save-bar')).toHaveCount(0);
     await expectNoSeriousA11yViolations(page);
 
-    // Manager picker: the department's managers; another department keeps the current manager;
-    // "all departments" shows everyone with a managing role.
-    const manager = form.getByRole('combobox', { name: /Direct manager/ });
-    await expect(manager).toHaveValue('5eed1000-0000-4000-8000-000000000003'); // Mona
-    await form
-      .getByRole('combobox', { name: /^Department/ })
-      .selectOption({ label: 'Academy · Section' });
-    await expect(manager.getByRole('option')).toHaveText([
-      'No direct manager',
-      'Mona Saeed Alzahrani',
-    ]);
-    await form.getByRole('button', { name: /Show managers of all departments/ }).click();
-    await expect(manager.getByRole('option')).toHaveCount(3); // + the Organization Admin (heads TRN)
-    await form.getByRole('button', { name: /department's managers only/ }).click();
-    await form.getByRole('combobox', { name: /^Department/ }).selectOption({
-      label: 'Training and development · Department',
-    });
-
-    // Closing with unsaved changes asks first; «Keep editing» keeps them.
-    await page.keyboard.press('Escape');
-    const discard = page.getByTestId('discard-dialog');
-    await expect(discard).toContainText('Discard your changes?');
-    // The ✕ is «Close» (it keeps editing too); «Keep editing» is the footer's button only.
-    await expect(discard.getByRole('button', { name: 'Close' })).toHaveCount(1);
-    await discard.getByRole('button', { name: 'Keep editing' }).click();
-    await expect(panel).toBeVisible();
-
-    // Sarah's employee number is taken: the field says so and nothing is saved
-    await form.getByRole('textbox', { name: /Employee number/ }).fill('EMP-1187');
     // English is the organization's default language: the English names come first and are required
     // (guided-test feedback #2); Khalid's Arabic name follows.
     await form
@@ -352,36 +331,73 @@ test.describe('users pages', () => {
       .getByRole('textbox', { name: /Family name/ })
       .nth(1)
       .fill('الشهري');
-    await page.getByTestId('edit-user-save').click();
-    await expect(form.getByText('This employee number belongs to someone else')).toBeVisible();
 
-    // Eastern Arabic digits are stored as Western digits; saved → the panel closes with a toast.
+    // Leaving the tab with unsaved changes asks first; «Stay on this page» keeps them.
+    await tabs.getByRole('link', { name: 'Work details' }).click();
+    const leave = page.getByTestId('leave-guard');
+    await expect(leave).toContainText('Leave without saving?');
+    // The ✕ is «Close»; «Stay on this page» is the footer's button.
+    await expect(leave.getByRole('button', { name: 'Close' })).toHaveCount(1);
+    await leave.getByRole('button', { name: 'Stay on this page' }).click();
+    await page.getByTestId('save-bar-save').click();
+    await expect(toasts(page)).toContainText('Changes saved.');
+    await expect(page.getByTestId('save-bar')).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Khalid Alshehri');
+
+    // Work details: its own address and its own save bar.
+    await tabs.getByRole('link', { name: 'Work details' }).click();
+    await expect(page).toHaveURL(new RegExp(`/en/suite/admin/users/${KHALID}\\?tab=work$`));
+    await expectNoSeriousA11yViolations(page);
+
+    // Manager picker: the department's managers; another department keeps the current manager;
+    // "all departments" shows everyone with a managing role.
+    const manager = form.getByRole('combobox', { name: /Direct manager/ });
+    await expect(manager).toHaveValue('5eed1000-0000-4000-8000-000000000003'); // Mona
+    await form
+      .getByRole('combobox', { name: /^Department/ })
+      .selectOption({ label: 'Academy · Section' });
+    await expect(manager.getByRole('option')).toHaveText([
+      'No direct manager',
+      'Mona Saeed Alzahrani',
+    ]);
+    await form.getByRole('button', { name: /Show managers of all departments/ }).click();
+    await expect(manager.getByRole('option')).toHaveCount(3); // + the Organization Admin (heads TRN)
+    await form.getByRole('button', { name: /department's managers only/ }).click();
+    await form.getByRole('combobox', { name: /^Department/ }).selectOption({
+      label: 'Training and development · Department',
+    });
+
+    // Sarah's employee number is taken: the field says so, takes the focus, and nothing is saved
+    await form.getByRole('textbox', { name: /Employee number/ }).fill('EMP-1187');
+    await page.getByTestId('save-bar-save').click();
+    await expect(form.getByText('This employee number belongs to someone else')).toBeVisible();
+    await expect(form.getByRole('textbox', { name: /Employee number/ })).toBeFocused();
+
+    // Eastern Arabic digits are stored as Western digits; saved → a toast, the bar goes away.
     await form.getByRole('textbox', { name: /Employee number/ }).fill('EMP-٢٠٤١');
     await form.getByRole('textbox', { name: /Job title in Arabic/ }).fill('محاسب');
-    await page.getByTestId('edit-user-save').click();
-    await expect(panel).toBeHidden();
+    await page.getByTestId('save-bar-save').click();
     await expect(toasts(page)).toContainText('Changes saved.');
-    await expect(page).toHaveURL(new RegExp(`/en/suite/admin/users/${KHALID}$`));
-    // Focus is back on «Edit details».
-    await expect(page.getByTestId('edit-user-link')).toBeFocused();
-    // Saving again with the refreshed version: nothing changed
-    await page.getByTestId('edit-user-link').click();
-    await page.getByTestId('edit-user-save').click();
-    await expect(toasts(page)).toContainText('There are no changes to save.');
+    await expect(page.getByTestId('save-bar')).toHaveCount(0);
+    // «Discard changes» puts the saved values back.
+    await form.getByRole('textbox', { name: /Employee number/ }).fill('EMP-9');
+    await page.getByRole('button', { name: 'Discard changes' }).click();
+    await expect(form.getByRole('textbox', { name: /Employee number/ })).toHaveValue('EMP-2041');
 
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Khalid Alshehri');
+    await page.getByTestId('profile-tabs').getByRole('link', { name: 'Overview' }).click();
     const profile = page.getByTestId('user-profile');
     await expect(profile).toContainText('EMP-2041');
     await expect(profile).toContainText('Mona Saeed Alzahrani');
     await page.goto(`/en/suite/admin/users/${KHALID}?tab=activity`);
     await expect(page.getByTestId('user-activity')).toContainText('Details updated');
 
-    // Arabic: the old address opens the panel, right to left
-    await page.goto(`/ar/suite/admin/users/${SARA}/edit`);
+    // Arabic: the old address opens the settings tab it asks for, right to left
+    await page.goto(`/ar/suite/admin/users/${SARA}/edit?tab=work`);
+    await expect(page).toHaveURL(new RegExp(`/ar/suite/admin/users/${SARA}\\?tab=work$`));
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(
-      page.getByRole('heading', { name: 'تعديل بيانات سارة عبدالله القحطاني' }),
-    ).toBeVisible();
+      page.getByTestId('profile-tabs').getByRole('link', { name: 'بيانات العمل' }),
+    ).toHaveAttribute('aria-current', 'page');
     await expect(page.getByRole('combobox', { name: /الإدارة/ })).toHaveValue(/.+/);
     // Hire date: Gregorian field, Hijri equivalent shown under it
     await expect(page.getByText('يوافق 22 شعبان 1445 هـ')).toBeVisible();

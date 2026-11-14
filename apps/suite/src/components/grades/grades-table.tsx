@@ -4,13 +4,17 @@ import {
   type Breadcrumb,
   Button,
   Dialog,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
   EmptyState,
   Icon,
   ListCard,
   ListCards,
   PageHeader,
   TextField,
-  iconButtonClasses,
   tableClasses,
   toast,
 } from '@jadarat/ui';
@@ -46,7 +50,8 @@ type DialogState =
 
 /**
  * Organization → Grades (WP-ADM-04; design S04-5): the organization's list of grade codes, kept by HR and the
- * Organization Admin. A table (cards on phones) with the code, how many people hold it, rename and delete.
+ * Organization Admin. A table (cards on phones) with the code, how many people hold it, and the row's «⋯» menu
+ * (Rename · Delete — the list shape of WP-UX-01 e).
  * Add and rename use a one-field popup (448 px, «Cancel» then the primary button at the end — forms standard
  * rule 9, PO 12 Nov 2026): the message goes on the field when the button is pressed and focus moves to it. A grade people still hold cannot be deleted — the dialog says why and what to do. Every
  * change is audited (codes only).
@@ -141,31 +146,38 @@ export function GradesTable(props: GradesTableProps) {
   }
 
   const actions = (grade: GradeRowView) => (
-    <span className="flex items-center justify-end gap-1">
-      <button
-        type="button"
-        className={iconButtonClasses}
-        aria-label={grade.renameLabel}
-        onClick={() => {
-          setError(undefined);
-          setDialog({ kind: 'form', grade });
-        }}
-        data-testid={`grade-rename-${grade.code}`}
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className="grid size-10 shrink-0 place-items-center rounded-full text-text-muted hover:bg-surface-hover hover:text-text pointer-coarse:size-11"
+        aria-label={grade.menuLabel}
+        data-testid={`grade-menu-${grade.code}`}
       >
-        <Icon name="pencil" />
-      </button>
-      <button
-        type="button"
-        className={iconButtonClasses}
-        aria-label={grade.deleteLabel}
-        onClick={() => {
-          setDialog({ kind: grade.people > 0 ? 'blocked' : 'delete', grade });
-        }}
-        data-testid={`grade-delete-${grade.code}`}
-      >
-        <Icon name="trash" />
-      </button>
-    </span>
+        <Icon name="more" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent aria-label={grade.menuLabel}>
+        <DropdownMenuItem
+          onSelect={() => {
+            setError(undefined);
+            setDialog({ kind: 'form', grade });
+          }}
+          data-testid={`grade-rename-${grade.code}`}
+        >
+          <Icon name="pencil" />
+          {text('renameItem')}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          tone="danger"
+          onSelect={() => {
+            setDialog({ kind: grade.people > 0 ? 'blocked' : 'delete', grade });
+          }}
+          data-testid={`grade-delete-${grade.code}`}
+        >
+          <Icon name="trash" />
+          {text('deleteItem')}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 
   const addButton = (

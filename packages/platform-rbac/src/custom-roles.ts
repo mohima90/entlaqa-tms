@@ -144,6 +144,18 @@ export const CUSTOM_ROLE_PERMISSIONS: readonly CustomRolePermission[] = [
     group: 'planning',
     use: 'organization_only',
   },
+  // The training plan (WP-LD-02, feedback #4; migration 20261115100000): follows the role's scope — a role limited
+  // to «A department» builds the plan for that unit and everything under it (the department-limited L&D Manager).
+  {
+    permission: tmsPlanningPermissions['tms.training_plan.read'],
+    group: 'planning',
+    use: 'scoped',
+  },
+  {
+    permission: tmsPlanningPermissions['tms.training_plan.manage'],
+    group: 'planning',
+    use: 'scoped',
+  },
   // Needs forms (T-M3-10; usable in custom roles since PO, 17 Oct 2026 — migration 20261020200000): the
   // forms library is organization data without personal data (like the course library); designing forms
   // is administrative (a role that sees the whole organization).

@@ -156,6 +156,9 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       c['tms.course.archive'],
       pln['tms.plan_cycle.read'],
       pln['tms.plan_cycle.manage'],
+      // Consolidates the needs into the training plan and checks the budget (WP-LD-02).
+      pln['tms.training_plan.read'],
+      pln['tms.training_plan.manage'],
       // Designs the needs forms (T-M3-10; PO, 17 Oct 2026, business flow EP-PLN §12).
       tms['tms.needs_form.read'],
       tms['tms.needs_form.manage'],
@@ -177,6 +180,8 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       c['tms.course_cost.read'],
       c['tms.course.manage'],
       pln['tms.plan_cycle.read'],
+      // Reads the training plan (BRD Appendix B, Training plan «V»; WP-LD-02).
+      pln['tms.training_plan.read'],
       // Reads the needs forms (T-M3-10; PO, 17 Oct 2026).
       tms['tms.needs_form.read'],
     ),

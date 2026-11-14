@@ -632,10 +632,39 @@ async function UsersList({
 
       {nothingToShow ? (
         <Card data-testid="users-empty">
+          {/* The empty state offers the next step (the list shape of WP-UX-01 e): clear the filters, or
+              invite the first person. */}
           <EmptyState
             icon={activeTab === 'invited' ? 'mail' : 'people'}
             title={filtered ? t('emptyFilteredTitle') : t('emptyTitle')}
             description={filtered ? t('emptyFilteredBody') : t('emptyBody')}
+            action={
+              filtered ? (
+                <Link
+                  href={usersListHref(locale, params, {
+                    q: undefined,
+                    role: undefined,
+                    department: undefined,
+                    branch: undefined,
+                    page: undefined,
+                  })}
+                  className={buttonClasses({ variant: 'secondary', size: 'md' })}
+                  data-testid="users-empty-clear"
+                >
+                  {t('clearFilters')}
+                </Link>
+              ) : view.canInvite ? (
+                <Link
+                  href={usersInviteHref(locale, params)}
+                  scroll={false}
+                  className={buttonClasses({ variant: 'primary', size: 'md' })}
+                  data-testid="users-empty-invite"
+                >
+                  <Icon name="user-plus" />
+                  {invitationTexts('inviteUser')}
+                </Link>
+              ) : undefined
+            }
           />
         </Card>
       ) : rows.length === 0 ? null : (

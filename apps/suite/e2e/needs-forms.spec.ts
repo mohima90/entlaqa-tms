@@ -66,10 +66,11 @@ async function dismissToasts(page: Page) {
   while ((await close.count()) > 0) await close.first().click();
 }
 
+/** A form's row in the library's table (the list shape of WP-UX-01 e), found by its name's link. */
 const card = (page: Page, name: string) =>
   page
     .getByTestId('needs-form-card')
-    .filter({ has: page.getByRole('heading', { name, exact: true }) });
+    .filter({ has: page.getByRole('link', { name, exact: true }) });
 
 /** The builder's Outline / Preview tabs (below the widest screens the panes are tabs). */
 async function showPane(page: Page, pane: 'outline' | 'preview') {
@@ -259,6 +260,10 @@ for (const locale of ['en', 'ar'] as const) {
     await card(page, t.copyName).getByTestId('needs-form-menu').click();
     await page.getByTestId('needs-form-toggle-active').click();
     await expect(card(page, t.copyName)).toContainText(locale === 'en' ? 'Off' : 'متوقف');
+    // The views by state count it (the list shape of WP-UX-01 e) and filter the table in place.
+    await page.getByTestId('needs-forms-filter-inactive').click();
+    await expect(page.getByTestId('needs-form-card')).toHaveCount(1);
+    await page.getByTestId('needs-forms-filter-all').click();
     await page.getByTestId('toast-action').click();
     await expect(
       card(page, t.copyName).getByText(locale === 'en' ? 'Off' : 'متوقف', { exact: true }),

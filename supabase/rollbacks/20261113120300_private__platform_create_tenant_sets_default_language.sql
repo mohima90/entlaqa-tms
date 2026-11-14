@@ -130,6 +130,6 @@ comment on function private.platform_create_tenant(text, text, text, text, text,
   'SECURITY-RELEVANT (FR-ADM-17). Creates an organization (as provisioning) and its Organization Admin''s pending invitation with its first code. Super Admins only (app_server, valid session).';
 
 revoke update (default_locale) on platform.tenant_settings from platform_admin_guard;
-revoke select (tenant_id, version) on platform.tenant_settings from platform_admin_guard;
+revoke select (tenant_id, version, created_at) on platform.tenant_settings from platform_admin_guard;
 drop policy if exists tenant_settings_platform_admin_guard_update on platform.tenant_settings;
 drop policy if exists tenant_settings_platform_admin_guard_read on platform.tenant_settings;

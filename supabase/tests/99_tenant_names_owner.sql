@@ -138,13 +138,28 @@ begin
                        and not has_column_privilege('platform_admin_guard', 'platform.tenant_settings', 'timezone', 'update')
                        and not has_column_privilege('platform_admin_guard', 'platform.tenant_settings', 'industry', 'select')
                        and not has_table_privilege('platform_admin_guard', 'platform.tenant_settings', 'delete'),
-    'platform_admin_guard changes only default_locale and reads only tenant_id and version');
+    'platform_admin_guard changes only default_locale and reads only tenant_id, version and created_at');
 end $$;
 -- A settings row already saved (version > 1) is out of the guard's reach.
 set local role platform_admin_guard;
 select tests.assert_eq(tests.rows_affected(format(
   $q$update platform.tenant_settings set default_locale = 'en' where tenant_id = %L$q$, current_setting('tests.names_ar'))),
   0::bigint, 'platform_admin_guard cannot change the language of a saved organization');
+reset role;
+-- Nor that of an organization provisioned earlier and never saved (version 1, created before this
+-- transaction): only the row added in the same transaction as platform_create_tenant is in reach.
+insert into platform.tenants (slug, name_en) values ('names-provisioned', 'Provisioned Co');
+alter table platform.tenant_settings disable trigger tenant_settings_stamp;
+update platform.tenant_settings s set created_at = now() - interval '1 day'
+from platform.tenants t where t.id = s.tenant_id and t.slug = 'names-provisioned';
+alter table platform.tenant_settings enable trigger tenant_settings_stamp;
+select tests.assert_eq((select s.version from platform.tenant_settings s join platform.tenants t on t.id = s.tenant_id
+                        where t.slug = 'names-provisioned'), 1, 'a provisioned organization never saved');
+set local role platform_admin_guard;
+select tests.assert_eq(tests.rows_affected(
+  $q$update platform.tenant_settings s set default_locale = 'ar'
+     where s.tenant_id = (select t.id from platform.tenants t where t.slug = 'names-provisioned')$q$),
+  0::bigint, 'platform_admin_guard cannot change the language of an organization created in another transaction');
 reset role;
 rollback;
 

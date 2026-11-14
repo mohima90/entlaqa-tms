@@ -6,17 +6,18 @@
 -- default_locale to p_locale in the same transaction, right after the tenants_settings trigger has added the
 -- settings row; the invitation and the person keep p_locale as before.
 --
--- What platform_admin_guard (the function's owner) gains, nothing more: reading tenant_settings' tenant_id and
--- version, and changing default_locale of a settings row never saved yet (version 1 — the row this
--- transaction's trigger just added). The function is otherwise as in 20261113120200 and keeps its owner
+-- What platform_admin_guard (the function's owner) gains, nothing more: reading tenant_settings' tenant_id,
+-- version and created_at, and changing default_locale of the settings row added in the SAME transaction
+-- (created_at = now(), the transaction's start, and never saved: version 1) — the row of the organization
+-- being created, never another organization's (review of WP-UX-01 d, 14 Nov 2026). The function is otherwise as in 20261113120200 and keeps its owner
 -- (CREATE OR REPLACE keeps it), SECURITY DEFINER, search_path and grants. The stamp trigger bumps the row's
 -- version to 2 and leaves updated_by empty (no claims: a platform operation, as provisioning). PII: none.
 
 create policy tenant_settings_platform_admin_guard_read on platform.tenant_settings for select
   to platform_admin_guard using (true);
 create policy tenant_settings_platform_admin_guard_update on platform.tenant_settings for update
-  to platform_admin_guard using (version = 1) with check (true);
-grant select (tenant_id, version) on platform.tenant_settings to platform_admin_guard;
+  to platform_admin_guard using (version = 1 and created_at = now()) with check (true);
+grant select (tenant_id, version, created_at) on platform.tenant_settings to platform_admin_guard;
 grant update (default_locale) on platform.tenant_settings to platform_admin_guard;
 
 create or replace function private.platform_create_tenant(
@@ -102,7 +103,7 @@ begin
   -- the language of new people — is the one chosen when it is created, as the invitation's. The settings row
   -- was just added by the tenants_settings trigger with the defaults (English).
   update platform.tenant_settings s set default_locale = p_locale
-  where s.tenant_id = v_tenant and s.version = 1;
+  where s.tenant_id = v_tenant and s.version = 1 and s.created_at = now();
 
   -- The person record: the names given, else the neutral name provisioning uses until the invitee sets
   -- their own on the sign-up page.

@@ -2610,7 +2610,13 @@
     "newIntro": "Name the role and choose what it starts from. Its permissions and the data it sees open next.",
     "newNote": "Creating the role opens its page: tick its permissions, choose the data it sees and add a description. Nobody holds the role until you give it.",
     "creating": "Creating…",
-    "created": "Role created. Check its permissions and the data it sees."
+    "created": "Role created. Check its permissions and the data it sees.",
+    "tabsLabel": "Role settings",
+    "tabs": {
+      "details": "Name and scope",
+      "permissions": "Permissions",
+      "holders": "Who holds it"
+    }
   },
   "needsForms": {
     "title": "Needs forms",

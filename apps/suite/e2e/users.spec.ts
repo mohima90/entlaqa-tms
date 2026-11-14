@@ -33,6 +33,14 @@ const members = (page: Page) =>
     .filter({ visible: true });
 const member = (page: Page, name: string) => members(page).filter({ hasText: name });
 
+/** A section of a custom role's page (side tabs, WP-UX-01 e): one form, switched in place. */
+async function roleTab(page: Page, name: RegExp) {
+  await page.getByTestId('role-tabs').getByRole('link', { name }).click();
+}
+const PERMISSIONS_TAB = /^(Permissions|الصلاحيات)/;
+const DETAILS_TAB = /^(Name and scope|الاسم والنطاق)/;
+const HOLDERS_TAB = /^(Who holds it|من يحمله)/;
+
 /** The toasts of the page (a polite live region). */
 /** The toast region, named in the page's language. */
 const toasts = (page: Page) =>
@@ -411,8 +419,9 @@ test.describe('users pages', () => {
     await mainNavigation(page).getByRole('link', { name: 'Roles & permissions' }).click();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Roles & permissions');
     // Six standard roles and the organization's custom «Line Manager» role (seed-users.sql).
-    await expect(page.getByTestId('roles-standard').getByRole('listitem')).toHaveCount(6);
-    await expect(page.getByTestId('roles-custom').getByRole('listitem')).toHaveCount(1);
+    // Each group is a table in a card (WP-UX-01 e): one row per role.
+    await expect(page.getByTestId('roles-standard').locator('tbody tr')).toHaveCount(6);
+    await expect(page.getByTestId('roles-custom').locator('tbody tr')).toHaveCount(1);
     await expect(page.getByTestId('role-row-tenant_admin')).toContainText('Privileged');
     await expect(page.getByTestId('role-row-custom_5eed00000001')).toContainText('3 permissions');
     await expect(page.getByTestId('create-role-link')).toBeVisible();
@@ -598,19 +607,26 @@ test.describe('users pages', () => {
     await page.waitForURL(/\/en\/suite\/admin\/roles\/custom_[0-9a-f]{12}$/);
     const builder = page.getByTestId('role-builder');
     await expect(page.getByTestId('role-privileged-notice')).toBeVisible(); // audit log: high risk
+    // The role's sections are tabs at the side, one form (WP-UX-01 e): «Permissions» keeps its address.
+    await roleTab(page, PERMISSIONS_TAB);
+    await expect(page).toHaveURL(/\?tab=permissions$/);
     const permissions = builder.getByTestId('role-permissions');
     await permissions.getByRole('checkbox', { name: /View the audit log/ }).uncheck();
     // Changed: the save bar appears.
     await expect(page.getByTestId('save-bar')).toContainText('You have unsaved changes.');
     await expect(page.getByTestId('role-privileged-notice')).toHaveCount(0);
     // Administrative permissions need the whole organization: a narrower scope clears them — Undo brings
-    // the scope and the ticks back.
+    // the scope and the ticks back. Moving between the sections keeps every change.
     await permissions.getByRole('checkbox', { name: 'Invite users' }).check();
+    await roleTab(page, DETAILS_TAB);
     await builder.locator('#role-scope-team').check();
     await expect(builder.getByTestId('role-scope-cleared')).toBeVisible();
+    await roleTab(page, PERMISSIONS_TAB);
     await expect(permissions.getByRole('checkbox', { name: 'Invite users' })).toBeDisabled();
+    await roleTab(page, DETAILS_TAB);
     await builder.getByTestId('role-scope-undo').click();
     await expect(builder.locator('#role-scope-organization')).toBeChecked();
+    await roleTab(page, PERMISSIONS_TAB);
     await expect(permissions.getByRole('checkbox', { name: 'Invite users' })).toBeChecked();
     await permissions.getByRole('checkbox', { name: 'Invite users' }).uncheck();
     // Who can give what (PO, 17 Oct 2026): the training permissions, which the Organization Admin does not
@@ -659,7 +675,7 @@ test.describe('users pages', () => {
 
     // Arabic: the role's page in Arabic; it cannot be deleted while Mona holds it (also in the ⋯ menu).
     await page.goto('/en/suite/admin/roles');
-    const row = page.getByTestId('roles-custom').getByRole('listitem').filter({ hasText: name });
+    const row = page.getByTestId('roles-custom').locator('tbody tr').filter({ hasText: name });
     await row.getByRole('button', { name: `More actions for ${name}` }).click();
     await expect(page.getByRole('menuitem', { name: /Delete role/ })).toBeDisabled();
     await page.keyboard.press('Escape');
@@ -668,14 +684,14 @@ test.describe('users pages', () => {
     await page.waitForURL(/\/roles\/custom_[0-9a-f]{12}$/);
     const code = /\/roles\/(custom_[0-9a-f]{12})$/.exec(page.url())?.[1] ?? '';
     expect(code).toMatch(/^custom_[0-9a-f]{12}$/);
-    await page.goto(`/ar/suite/admin/roles/${code}`);
+    await page.goto(`/ar/suite/admin/roles/${code}?tab=holders`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.getByTestId('role-in-use')).toContainText('أسند إليهم دورًا آخر أولًا');
     await expectNoSeriousA11yViolations(page);
 
     // Mona gets her «Line Manager» role back; then the custom role is deleted.
     await changeRole(page, 'Mona Saeed Alzahrani', /^Line Manager/);
-    await page.goto(`/en/suite/admin/roles/${code}`);
+    await page.goto(`/en/suite/admin/roles/${code}?tab=holders`);
     await page.getByTestId('role-delete').click();
     await page.getByTestId('role-delete-confirm').click();
     await expect(page).toHaveURL(/\/en\/suite\/admin\/roles$/);
@@ -701,10 +717,12 @@ test.describe('users pages', () => {
     await create.getByTestId('role-create-submit').click();
     await page.waitForURL(/\/en\/suite\/admin\/roles\/custom_[0-9a-f]{12}$/);
     const builder = page.getByTestId('role-builder');
+    await roleTab(page, PERMISSIONS_TAB);
     await builder
       .getByTestId('role-permissions')
       .getByRole('checkbox', { name: 'View users' })
       .check();
+    await roleTab(page, DETAILS_TAB);
     await builder.locator('#role-scope-departments').check();
     await expect(builder.locator('#role-scope-departments-description')).toContainText(
       'picked when the role is given',
@@ -753,6 +771,7 @@ test.describe('users pages', () => {
     await expect(member(page, 'Mona Saeed Alzahrani').getByTestId('role-unit')).toHaveCount(0);
     await page.goto('/en/suite/admin/roles');
     await page.getByTestId('roles-custom').getByRole('link', { name, exact: true }).click();
+    await roleTab(page, HOLDERS_TAB);
     await page.getByTestId('role-delete').click();
     await page.getByTestId('role-delete-confirm').click();
     await expect(page).toHaveURL(/\/en\/suite\/admin\/roles$/);
@@ -781,14 +800,16 @@ test.describe('users pages', () => {
     const builder = page.getByTestId('role-builder');
     await expect(page.getByTestId('role-privileged-notice')).toContainText('هذا الدور مميز');
     await expect(builder.getByTestId('role-builder-announcer')).toContainText('هذا الدور مميز');
+    await roleTab(page, HOLDERS_TAB);
     await expect(page.getByTestId('role-summary')).toContainText('يرى');
     await expectNoSeriousA11yViolations(page);
     await page.goto('/ar/suite/admin/roles');
-    const row = page.getByTestId('roles-custom').getByRole('listitem').filter({ hasText: name });
+    const row = page.getByTestId('roles-custom').locator('tbody tr').filter({ hasText: name });
     await expect(row).toContainText('مميز');
     await row.getByRole('link', { name, exact: true }).click();
     // Editing: who holds the role is said with the privileged notice (review L10).
     await expect(page.getByTestId('role-holders')).toHaveText('لا يحمل أحد هذا الدور بعد.');
+    await roleTab(page, HOLDERS_TAB);
     await page.getByTestId('role-delete').click();
     await page.getByTestId('role-delete-confirm').click();
     await expect(page).toHaveURL(/\/ar\/suite\/admin\/roles$/);
@@ -814,6 +835,7 @@ test.describe('users pages', () => {
     await create.getByTestId('role-create-submit').click();
     await page.waitForURL(/\/en\/suite\/admin\/roles\/custom_[0-9a-f]{12}$/);
     const builder = page.getByTestId('role-builder');
+    await roleTab(page, PERMISSIONS_TAB);
     await builder.getByRole('checkbox', { name: 'View users' }).check();
     await builder.getByRole('checkbox', { name: 'Invite users' }).check();
     await expect(page.getByTestId('role-privileged-notice')).toBeVisible();
@@ -839,6 +861,7 @@ test.describe('users pages', () => {
       await changeRole(page, 'Mona Saeed Alzahrani', /^Line Manager/);
       await page.goto('/en/suite/admin/roles');
       await page.getByTestId('roles-custom').getByRole('link', { name, exact: true }).click();
+      await roleTab(page, HOLDERS_TAB);
       await page.getByTestId('role-delete').click();
       await page.getByTestId('role-delete-confirm').click();
       await expect(page).toHaveURL(/\/en\/suite\/admin\/roles$/);

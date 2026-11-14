@@ -9,11 +9,20 @@ import {
   Icon,
   ListSearch,
   SaveBar,
+  TabNav,
   TextField,
   toast,
 } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
-import { type SyntheticEvent, useEffect, useRef, useState, useTransition } from 'react';
+import {
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  type SyntheticEvent,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+} from 'react';
 import { updateCustomRoleAction } from '../../actions/roles';
 import { fillText } from '../../lib/fill-text';
 import {
@@ -24,7 +33,11 @@ import {
   builderFieldError,
   builderIsPrivileged,
   changeScope,
+  ROLE_EDIT_TABS,
+  type RoleEditTab,
   permissionBlock,
+  roleEditTab,
+  roleEditTabOf,
   togglePermission,
 } from '../../lib/role-builder';
 import { nameOrder } from '../../lib/structure-form';
@@ -49,7 +62,15 @@ export interface RoleBuilderFormProps {
   readonly locale: 'ar' | 'en';
   /** Editing: «N people hold this role» (formatted on the server), shown with the privileged notice. */
   readonly holdersText?: string;
+  /** The section open first (`?tab=`): «Name and scope», «Permissions» or «Who holds it». */
+  readonly tab: RoleEditTab;
+  /** The role page's address (locale included), without `?tab=`. */
+  readonly roleHref: string;
+  /** «Who holds it»: what the server says about deleting the role (in use, or «Delete role»). */
+  readonly holders: ReactNode;
 }
+
+const TAB_ICON = { details: 'pencil', permissions: 'key', holders: 'people' } as const;
 
 type FieldErrors = Partial<Record<keyof BuilderValues, string>>;
 
@@ -69,11 +90,14 @@ function sameValues(a: BuilderValues, b: BuilderValues): boolean {
 /**
  * A custom role's own page — the builder (FR-IAM-07; EP-ROLES; redesign package 3 — Shopify's role editor,
  * Employment Hero, Clerk's unsaved bar). A role is created in the «Create role» popup (start from + names;
- * the Kawadir pattern, WP-UX-01 c) and opens here: its name in the organization's default language (the
- * other language optional) and its description; the data the role sees as cards; the
- * permissions by module with a search; a sticky summary (what it sees, how many permissions, high-risk ones,
- * the privileged notice, its holders). The save bar appears once something changed; leaving with unsaved
- * changes asks first. When a narrower scope clears administrative permissions, the notice offers «Undo»
+ * the Kawadir pattern, WP-UX-01 c) and opens here, its sections as tabs at the side (WP-UX-01 e, T-M3-21),
+ * each its own address (`?tab=`): «Name and scope» — its name in the organization's default language (the
+ * other language optional), its description and the data the role sees as cards; «Permissions» — by module,
+ * with a search; «Who holds it» — the summary (what it sees, how many permissions, high-risk ones), its
+ * holders and «Delete role». The sections are one form: moving between them keeps what was changed (a
+ * narrower scope clears permissions on the other tab), and one save bar saves the role once something
+ * changed; a refused field opens its section. The privileged notice stays above every section. Leaving the
+ * page with unsaved changes asks first. When a narrower scope clears administrative permissions, the notice offers «Undo»
  * (the ticks come back with the scope). Same rules as before — administrative permissions need the whole
  * organization; a high-risk or user / role management permission makes the role privileged; the action and
  * the database check everything again. Notices are announced through one live region (WCAG 4.1.3).
@@ -96,6 +120,7 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [leaving, setLeaving] = useState<string | null>(null);
+  const [tab, setTab] = useState<RoleEditTab>(props.tab);
   const privileged = builderIsPrivileged(groups, values.permissions);
   const chosen = new Set(values.permissions);
   const dirty = !sameValues(values, saved);
@@ -114,8 +139,8 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
       if (!(anchor instanceof HTMLAnchorElement) || anchor.target === '_blank') return;
       const url = new URL(anchor.href, window.location.href);
       if (url.origin !== window.location.origin) return;
-      if (url.pathname === window.location.pathname && url.search === window.location.search)
-        return;
+      // The same page (another of its sections): the tabs keep the changes, nothing to ask.
+      if (url.pathname === window.location.pathname) return;
       event.preventDefault();
       event.stopPropagation();
       setLeaving(url.pathname + url.search + url.hash);
@@ -130,6 +155,25 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
       window.removeEventListener('beforeunload', onBeforeUnload);
     };
   }, []);
+
+  /** Opens a section: the same form, so nothing typed is lost; the address says which one is open. */
+  function openTab(next: RoleEditTab) {
+    setTab(next);
+    const href = next === 'details' ? props.roleHref : `${props.roleHref}?tab=${next}`;
+    window.history.replaceState(window.history.state, '', href);
+  }
+
+  /** A click on a section's link switches in place (a modified click opens it as a link). */
+  function onTabClick(event: ReactMouseEvent<HTMLDivElement>) {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    const anchor = (event.target as Element | null)?.closest('a[href]');
+    if (!(anchor instanceof HTMLAnchorElement)) return;
+    const next = roleEditTab(new URL(anchor.href, window.location.href).searchParams.get('tab'));
+    event.preventDefault();
+    openTab(next);
+  }
 
   function update(next: Partial<BuilderValues>) {
     setValues((current) => ({ ...current, ...next }));
@@ -167,6 +211,8 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
     }
     if (Object.keys(missing).length > 0) {
       setFieldErrors(missing);
+      openTab('details');
+      focusFirstInvalid();
       return;
     }
     const input = {
@@ -220,9 +266,23 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
           }
         }
         setFieldErrors(next);
+        // The refused field's section opens, and the focus goes to the field.
+        const first = (Object.keys(next) as (keyof BuilderValues)[])[0];
+        if (first) openTab(roleEditTabOf(first));
+        focusFirstInvalid();
       }
       setMessage(errorText(result.error, props.errors));
     });
+  }
+
+  /** After a refusal: the first field with a message takes the focus once its section is shown. */
+  function focusFirstInvalid() {
+    window.setTimeout(() => {
+      document
+        .getElementById(FORM_ID)
+        ?.querySelector<HTMLElement>('[aria-invalid="true"], [role="alert"]')
+        ?.focus();
+    }, 0);
   }
 
   const needle = query.trim().toLocaleLowerCase();
@@ -261,241 +321,54 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
 
   return (
     <>
-      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <form
-          id={FORM_ID}
-          className="flex min-w-0 flex-col gap-5"
-          onSubmit={onSubmit}
-          onReset={(event) => {
-            // The save bar's Cancel: back to the last saved values (not the browser's reset).
-            event.preventDefault();
-            setValues(saved);
-            setCleared(null);
-            setFieldErrors({});
-            setMessage(null);
-          }}
-          noValidate
-          data-testid="role-builder"
-        >
-          <Card title={text('details')}>
-            <div className="grid grid-cols-1 gap-4">
-              {/* The organization's default language first (required), then the other one (optional). */}
-              {nameOrder(props.nameLanguage).map((language) => {
-                const field = language === 'ar' ? 'nameAr' : 'nameEn';
-                // A role named before the rule may have no name in today's default language: the
-                // asterisk shows where a name is asked now (a changed name, or one that is stored).
-                const required =
-                  language === props.nameLanguage &&
-                  (props.initial[field] !== '' ||
-                    values.nameEn !== props.initial.nameEn ||
-                    values.nameAr !== props.initial.nameAr);
-                return (
-                  <TextField
-                    key={field}
-                    id={`role-name-${language}`}
-                    label={text(field)}
-                    marker={text(required ? 'required' : 'optional')}
-                    hint={text('nameHint')}
-                    value={values[field]}
-                    onChange={(event) => {
-                      update({ [field]: event.target.value });
-                    }}
-                    maxLength={80}
-                    required={required}
-                    dir={language === 'ar' ? 'rtl' : 'ltr'}
-                    lang={language}
-                    autoComplete="off"
-                    error={fieldErrors[field]}
-                    disabled={pending}
-                  />
-                );
-              })}
-              <div className="flex flex-col gap-1">
-                <label htmlFor="role-description" className="text-sm font-medium">
-                  {text('description')}
-                  <span className="ms-1 font-normal text-text-muted">{text('optional')}</span>
-                </label>
-                <p id="role-description-hint" className="m-0 text-sm text-text-muted">
-                  {text('descriptionHint')}
-                </p>
-                <textarea
-                  id="role-description"
-                  value={values.description}
-                  onChange={(event) => {
-                    update({ description: event.target.value });
-                  }}
-                  maxLength={500}
-                  rows={3}
-                  aria-describedby={
-                    fieldErrors.description
-                      ? 'role-description-hint role-description-error'
-                      : 'role-description-hint'
-                  }
-                  aria-invalid={fieldErrors.description ? true : undefined}
-                  disabled={pending}
-                  className={`w-full rounded-2xl border bg-surface px-4 py-2 text-sm text-text shadow-1 disabled:cursor-not-allowed disabled:bg-surface-sunken ${
-                    fieldErrors.description ? 'border-danger' : 'border-border-strong'
-                  }`}
-                />
-                {fieldErrors.description ? (
-                  <p id="role-description-error" className="m-0 text-sm font-medium text-danger">
-                    {fieldErrors.description}
-                  </p>
-                ) : null}
-              </div>
-            </div>
-          </Card>
-
-          <Card title={text('dataScope')}>
-            <div className="flex flex-col gap-3">
-              {/* One polite live region, always mounted: what changed is announced once (WCAG 4.1.3). */}
-              <p
-                className="sr-only"
-                role="status"
-                aria-live="polite"
-                data-testid="role-builder-announcer"
-              >
-                {[cleared ? text('scopeCleared') : '', privileged ? text('privilegedNotice') : '']
-                  .filter(Boolean)
-                  .join(' ')}
-              </p>
-              {cleared ? (
-                <Alert
-                  tone="warning"
-                  role="note"
-                  data-testid="role-scope-cleared"
-                  action={
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={undoScope}
-                      data-testid="role-scope-undo"
-                    >
-                      <Icon name="undo" className="size-4" />
-                      {text('undo')}
-                    </Button>
-                  }
-                >
-                  {text('scopeCleared')}
-                </Alert>
-              ) : null}
-              <fieldset
-                className="m-0 grid grid-cols-1 gap-3 border-0 p-0 md:grid-cols-2"
-                aria-describedby={fieldErrors.dataScope ? 'role-scope-error' : undefined}
-              >
-                <legend className="sr-only">{text('dataScope')}</legend>
-                {BUILDER_SCOPES.map((scope) => (
-                  <ChoiceCard
-                    key={scope}
-                    id={`role-scope-${scope}`}
-                    name="dataScope"
-                    value={scope}
-                    checked={values.dataScope === scope}
-                    onChange={() => {
-                      onScope(scope);
-                    }}
-                    disabled={pending}
-                    title={text(`scopes.${scope}.label`)}
-                    description={text(`scopes.${scope}.hint`)}
-                    data-testid={`role-scope-card-${scope}`}
-                  />
-                ))}
-              </fieldset>
-              {fieldErrors.dataScope ? (
-                <p id="role-scope-error" className="m-0 text-sm font-medium text-danger">
-                  {fieldErrors.dataScope}
-                </p>
-              ) : null}
-            </div>
-          </Card>
-
-          <Card
-            title={text('permissions')}
-            actions={
-              <Badge tone="neutral">
-                {count(text('countLabel'), values.permissions.length, all.length)}
-              </Badge>
-            }
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[230px_minmax(0,1fr)] xl:gap-6">
+        {/* The section links switch in place (one form, nothing typed is lost); each keeps its address. */}
+        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- delegates the clicks of the links inside, which keep their own keyboard behaviour */}
+        <div onClick={onTabClick} className="min-w-0 xl:sticky xl:top-24">
+          <TabNav
+            variant="side"
+            label={text('tabsLabel')}
+            current={tab}
+            items={ROLE_EDIT_TABS.map((key) => ({
+              key,
+              href: key === 'details' ? props.roleHref : `${props.roleHref}?tab=${key}`,
+              label: text(`tabs.${key}`),
+              icon: TAB_ICON[key],
+              ...(key === 'permissions' ? { count: values.permissions.length } : {}),
+            }))}
+            data-testid="role-tabs"
+          />
+        </div>
+        <div className="flex min-w-0 flex-col gap-5">
+          <form
+            id={FORM_ID}
+            className="flex min-w-0 flex-col gap-5"
+            onSubmit={onSubmit}
+            onReset={(event) => {
+              // The save bar's Cancel: back to the last saved values (not the browser's reset).
+              event.preventDefault();
+              setValues(saved);
+              setCleared(null);
+              setFieldErrors({});
+              setMessage(null);
+            }}
+            noValidate
+            data-testid="role-builder"
+            data-tab={tab}
           >
-            <div className="flex flex-col gap-3">
-              <p className="m-0 text-sm text-text-muted">{text('permissionsHint')}</p>
-              <ListSearch
-                id="role-permission-search"
-                label={text('searchPermissions')}
-                placeholder={text('searchPermissions')}
-                value={query}
-                onChange={(event) => {
-                  setQuery(event.target.value);
-                }}
-              />
-              {accordionGroups.length === 0 ? (
-                <p role="status" className="m-0 text-text-muted">
-                  {text('noMatches')}
-                </p>
-              ) : (
-                <ChecklistAccordion
-                  // A new search shows its groups open.
-                  key={needle}
-                  groups={accordionGroups}
-                  onToggle={(code, on) => {
-                    update({ permissions: togglePermission(groups, values.permissions, code, on) });
-                    // A tick after the scope change: «Undo» would throw it away, so it is no longer offered.
-                    setCleared(null);
-                  }}
-                  countLabel={(checked, total) => count(text('countLabel'), checked, total)}
-                  idPrefix="role-permission"
-                  defaultOpen="all"
-                  data-testid="role-permissions"
-                />
-              )}
-              {fieldErrors.permissions ? (
-                <p className="m-0 text-sm font-medium text-danger" role="alert">
-                  {fieldErrors.permissions}
-                </p>
-              ) : null}
-            </div>
-          </Card>
-
-          {message ? (
-            <Alert tone="danger" data-testid="role-builder-message">
-              {message}
-              <LoadLatestVersion message={message} />
-            </Alert>
-          ) : null}
-        </form>
-
-        <aside className="lg:sticky lg:top-24" aria-labelledby="role-summary-heading">
-          <Card>
-            <h2 id="role-summary-heading" className="m-0 mb-3 text-lg font-bold">
-              {text('summary')}
-            </h2>
-            <dl className="m-0 flex flex-col text-sm" data-testid="role-summary">
-              <div className="flex justify-between gap-3 border-b border-border py-2.5">
-                <dt className="text-text-muted">{text('summarySees')}</dt>
-                <dd className="m-0 text-end font-semibold">
-                  {text(`scopes.${values.dataScope}.label`)}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-3 border-b border-border py-2.5">
-                <dt className="text-text-muted">{text('permissions')}</dt>
-                <dd className="m-0 text-end font-semibold">
-                  {count(text('countLabel'), values.permissions.length, all.length)}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-3 py-2.5">
-                <dt className="text-text-muted">{text('highRisk')}</dt>
-                <dd className="m-0 text-end font-semibold">
-                  {text(`highRiskCount.${String(highRisk)}`)}
-                </dd>
-              </div>
-            </dl>
+            {/* One polite live region, always mounted: what changed is announced once (WCAG 4.1.3). */}
+            <p
+              className="sr-only"
+              role="status"
+              aria-live="polite"
+              data-testid="role-builder-announcer"
+            >
+              {[cleared ? text('scopeCleared') : '', privileged ? text('privilegedNotice') : '']
+                .filter(Boolean)
+                .join(' ')}
+            </p>
             {privileged ? (
-              <Alert
-                tone="warning"
-                role="note"
-                className="mt-3"
-                data-testid="role-privileged-notice"
-              >
+              <Alert tone="warning" role="note" data-testid="role-privileged-notice">
                 {text('privilegedNotice')}
                 {props.holdersText ? (
                   <span className="mt-1 block font-medium" data-testid="role-holders">
@@ -503,17 +376,226 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
                   </span>
                 ) : null}
               </Alert>
-            ) : props.holdersText ? (
-              <p className="m-0 mt-3 text-sm font-medium" data-testid="role-holders">
-                {props.holdersText}
-              </p>
             ) : null}
-            <p className="m-0 mt-3 flex gap-2 text-sm text-text-muted">
-              <Icon name="shield" className="mt-0.5 size-4 shrink-0" />
-              {text('audited')}
-            </p>
-          </Card>
-        </aside>
+            {tab === 'details' ? (
+              <>
+                <Card title={text('details')}>
+                  <div className="grid grid-cols-1 gap-4">
+                    {/* The organization's default language first (required), then the other one (optional). */}
+                    {nameOrder(props.nameLanguage).map((language) => {
+                      const field = language === 'ar' ? 'nameAr' : 'nameEn';
+                      // A role named before the rule may have no name in today's default language: the
+                      // asterisk shows where a name is asked now (a changed name, or one that is stored).
+                      const required =
+                        language === props.nameLanguage &&
+                        (props.initial[field] !== '' ||
+                          values.nameEn !== props.initial.nameEn ||
+                          values.nameAr !== props.initial.nameAr);
+                      return (
+                        <TextField
+                          key={field}
+                          id={`role-name-${language}`}
+                          label={text(field)}
+                          marker={text(required ? 'required' : 'optional')}
+                          hint={text('nameHint')}
+                          value={values[field]}
+                          onChange={(event) => {
+                            update({ [field]: event.target.value });
+                          }}
+                          maxLength={80}
+                          required={required}
+                          dir={language === 'ar' ? 'rtl' : 'ltr'}
+                          lang={language}
+                          autoComplete="off"
+                          error={fieldErrors[field]}
+                          disabled={pending}
+                        />
+                      );
+                    })}
+                    <div className="flex flex-col gap-1">
+                      <label htmlFor="role-description" className="text-sm font-medium">
+                        {text('description')}
+                        <span className="ms-1 font-normal text-text-muted">{text('optional')}</span>
+                      </label>
+                      <p id="role-description-hint" className="m-0 text-sm text-text-muted">
+                        {text('descriptionHint')}
+                      </p>
+                      <textarea
+                        id="role-description"
+                        value={values.description}
+                        onChange={(event) => {
+                          update({ description: event.target.value });
+                        }}
+                        maxLength={500}
+                        rows={3}
+                        aria-describedby={
+                          fieldErrors.description
+                            ? 'role-description-hint role-description-error'
+                            : 'role-description-hint'
+                        }
+                        aria-invalid={fieldErrors.description ? true : undefined}
+                        disabled={pending}
+                        className={`w-full rounded-2xl border bg-surface px-4 py-2 text-sm text-text shadow-1 disabled:cursor-not-allowed disabled:bg-surface-sunken ${
+                          fieldErrors.description ? 'border-danger' : 'border-border-strong'
+                        }`}
+                      />
+                      {fieldErrors.description ? (
+                        <p
+                          id="role-description-error"
+                          className="m-0 text-sm font-medium text-danger"
+                        >
+                          {fieldErrors.description}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                </Card>
+
+                <Card title={text('dataScope')}>
+                  <div className="flex flex-col gap-3">
+                    {cleared ? (
+                      <Alert
+                        tone="warning"
+                        role="note"
+                        data-testid="role-scope-cleared"
+                        action={
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={undoScope}
+                            data-testid="role-scope-undo"
+                          >
+                            <Icon name="undo" className="size-4" />
+                            {text('undo')}
+                          </Button>
+                        }
+                      >
+                        {text('scopeCleared')}
+                      </Alert>
+                    ) : null}
+                    <fieldset
+                      className="m-0 grid grid-cols-1 gap-3 border-0 p-0 md:grid-cols-2"
+                      aria-describedby={fieldErrors.dataScope ? 'role-scope-error' : undefined}
+                    >
+                      <legend className="sr-only">{text('dataScope')}</legend>
+                      {BUILDER_SCOPES.map((scope) => (
+                        <ChoiceCard
+                          key={scope}
+                          id={`role-scope-${scope}`}
+                          name="dataScope"
+                          value={scope}
+                          checked={values.dataScope === scope}
+                          onChange={() => {
+                            onScope(scope);
+                          }}
+                          disabled={pending}
+                          title={text(`scopes.${scope}.label`)}
+                          description={text(`scopes.${scope}.hint`)}
+                          data-testid={`role-scope-card-${scope}`}
+                        />
+                      ))}
+                    </fieldset>
+                    {fieldErrors.dataScope ? (
+                      <p id="role-scope-error" className="m-0 text-sm font-medium text-danger">
+                        {fieldErrors.dataScope}
+                      </p>
+                    ) : null}
+                  </div>
+                </Card>
+              </>
+            ) : null}
+            {tab === 'permissions' ? (
+              <Card
+                title={text('permissions')}
+                actions={
+                  <Badge tone="neutral">
+                    {count(text('countLabel'), values.permissions.length, all.length)}
+                  </Badge>
+                }
+              >
+                <div className="flex flex-col gap-3">
+                  <p className="m-0 text-sm text-text-muted">{text('permissionsHint')}</p>
+                  <ListSearch
+                    id="role-permission-search"
+                    label={text('searchPermissions')}
+                    placeholder={text('searchPermissions')}
+                    value={query}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                    }}
+                  />
+                  {accordionGroups.length === 0 ? (
+                    <p role="status" className="m-0 text-text-muted">
+                      {text('noMatches')}
+                    </p>
+                  ) : (
+                    <ChecklistAccordion
+                      // A new search shows its groups open.
+                      key={needle}
+                      groups={accordionGroups}
+                      onToggle={(code, on) => {
+                        update({
+                          permissions: togglePermission(groups, values.permissions, code, on),
+                        });
+                        // A tick after the scope change: «Undo» would throw it away, so it is no longer offered.
+                        setCleared(null);
+                      }}
+                      countLabel={(checked, total) => count(text('countLabel'), checked, total)}
+                      idPrefix="role-permission"
+                      defaultOpen="all"
+                      data-testid="role-permissions"
+                    />
+                  )}
+                  {fieldErrors.permissions ? (
+                    <p className="m-0 text-sm font-medium text-danger" role="alert">
+                      {fieldErrors.permissions}
+                    </p>
+                  ) : null}
+                </div>
+              </Card>
+            ) : null}
+            {tab === 'holders' ? (
+              <Card title={text('summary')}>
+                <dl className="m-0 flex flex-col text-sm" data-testid="role-summary">
+                  <div className="flex justify-between gap-3 border-b border-border py-2.5">
+                    <dt className="text-text-muted">{text('summarySees')}</dt>
+                    <dd className="m-0 text-end font-semibold">
+                      {text(`scopes.${values.dataScope}.label`)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-3 border-b border-border py-2.5">
+                    <dt className="text-text-muted">{text('permissions')}</dt>
+                    <dd className="m-0 text-end font-semibold">
+                      {count(text('countLabel'), values.permissions.length, all.length)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-3 py-2.5">
+                    <dt className="text-text-muted">{text('highRisk')}</dt>
+                    <dd className="m-0 text-end font-semibold">
+                      {text(`highRiskCount.${String(highRisk)}`)}
+                    </dd>
+                  </div>
+                </dl>
+                {!privileged && props.holdersText ? (
+                  <p className="m-0 mt-3 text-sm font-medium" data-testid="role-holders">
+                    {props.holdersText}
+                  </p>
+                ) : null}
+                <p className="m-0 mt-3 flex gap-2 text-sm text-text-muted">
+                  <Icon name="shield" className="mt-0.5 size-4 shrink-0" />
+                  {text('audited')}
+                </p>
+              </Card>
+            ) : null}
+            {message ? (
+              <Alert tone="danger" data-testid="role-builder-message">
+                {message}
+                <LoadLatestVersion message={message} />
+              </Alert>
+            ) : null}
+          </form>
+          {tab === 'holders' ? props.holders : null}
+        </div>
       </div>
 
       {dirty || pending ? (

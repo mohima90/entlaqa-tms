@@ -4,8 +4,10 @@ import { FIELD_TYPES, NEEDS_FORM_LIMITS, OPTION_VALUE_RE, PEOPLE_MODES } from '.
 
 /**
  * Inputs of the needs-form builder's actions (T-M3-10): untrusted, validated with zod before anything
- * else (defineAction → 422 VALIDATION_FAILED with field errors). Bilingual texts are required in both
- * languages (the glossary's rule for organization-defined names), trimmed, without invisible-only text.
+ * else (defineAction → 422 VALIDATION_FAILED with field errors). The builder's bilingual texts (sections,
+ * fields, options) are required in both languages, trimmed, without invisible-only text. A FORM's name is
+ * required in the organization's default language only (WP-UX-01 c; PO, 12 Nov 2026): each name may be
+ * empty here, and the handlers ask for the required one (rules.ts `formNameProblems`).
  */
 
 const text = (max: number) =>
@@ -15,6 +17,17 @@ const text = (max: number) =>
     .min(1)
     .max(max)
     .refine((value) => hasVisibleText(value), { message: 'invisible' });
+
+/** A form's name in ONE language: may be empty (null); a given name is checked as before. */
+const nameInOneLanguage = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .refine((value) => value === '' || hasVisibleText(value), { message: 'invisible' })
+    .nullable()
+    .optional()
+    .transform((value) => (value === undefined || value === null || value === '' ? null : value));
 
 /** Optional text: empty becomes null. */
 const optionalText = (max: number) =>
@@ -28,8 +41,8 @@ const id = z.uuid();
 const formRef = { formId: id };
 
 export const FormNamesInput = z.strictObject({
-  nameEn: text(NEEDS_FORM_LIMITS.nameLength),
-  nameAr: text(NEEDS_FORM_LIMITS.nameLength),
+  nameEn: nameInOneLanguage(NEEDS_FORM_LIMITS.nameLength),
+  nameAr: nameInOneLanguage(NEEDS_FORM_LIMITS.nameLength),
 });
 
 export const CreateNeedsFormInput = FormNamesInput;

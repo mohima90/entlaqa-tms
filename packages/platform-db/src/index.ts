@@ -349,7 +349,9 @@ export { NAME_PART_MAX, keepsUnsplitDisplayName } from './names';
 export {
   englishOnlyNamesExist,
   forgetSchemaPresenceForTests,
+  oneNameColumnExists,
   setStructureCompletionForTests,
+  storableNamePair,
   structureCompletionExists,
 } from './custom-roles-present';
 export {
@@ -413,6 +415,7 @@ export {
 export {
   type LevelNames,
   MAX_STRUCTURE_LEVELS,
+  type NamedOrgThing,
   type PersonOption,
   type StructureLevelLabel,
   type StructureLevelRow,
@@ -433,6 +436,7 @@ export {
   previewStructureUnitMove,
   reorderStructureUnit,
   structureLevelsLocked,
+  getStoredNames,
   hasUnitsBelowFirstLevel,
   listActivePersonOptions,
   listStructureLevelLabels,
@@ -465,12 +469,10 @@ export {
   type OrgBranch,
   type OrgDepartment,
   type OrgStructure,
-  MEMBER_SEARCH,
   TEAM_LIMIT,
   getMemberOptionsByIds,
   listDepartmentTeam,
   listOrgStructure,
-  searchMemberOptions,
 } from './org-directory';
 export {
   EVENT_TYPE_PATTERN,

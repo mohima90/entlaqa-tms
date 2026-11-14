@@ -1,8 +1,9 @@
 import 'server-only';
-import { sql } from 'drizzle-orm';
-import { structureCompletionExists } from './custom-roles-present';
+import { type SQL, sql } from 'drizzle-orm';
+import { storableStructureNames, structureCompletionExists } from './custom-roles-present';
 import { listStructureLevels, listStructureUnits, structureRefusalOf } from './structure';
 import type { StructureRefusal } from './structure';
+import { getTenantDefaultLocale } from './tenants';
 import type { UserTx } from './with-user-tx';
 
 /**
@@ -10,14 +11,19 @@ import type { UserTx } from './with-user-tx';
  * EP-ORG-structure-completion.md §3 D, PO 24 Oct 2026). What the check needs to know about the organization, and
  * applying the good rows in one transaction under the organization's hierarchy lock. A row with a new code creates
  * a unit; an existing code updates its names, branch, default cost centre and head — the import never moves,
- * deactivates or deletes a unit (BR-ORG-k). The calling action authorizes (`platform.org.manage`) and audits; the
+ * deactivates or deletes a unit (BR-ORG-k), and never clears a name (an empty name cell keeps the unit's name). The calling action authorizes (`platform.org.manage`) and audits; the
  * database repeats every rule.
  */
 export interface UnitImportContext {
+  /**
+   * The organization's default language: the language whose unit name every row must give (the other
+   * language's name is optional — migration 20261113100000; PO, 12 Nov 2026).
+   */
+  readonly nameLanguage: 'ar' | 'en';
   readonly levels: readonly {
     readonly ordinal: number;
-    readonly nameEn: string;
-    readonly nameAr: string;
+    readonly nameEn: string | null;
+    readonly nameAr: string | null;
   }[];
   readonly units: readonly {
     readonly id: string;
@@ -62,6 +68,7 @@ export async function loadUnitImportContext(
             sql`, `,
           )})`);
   return {
+    nameLanguage: await getTenantDefaultLocale(tx),
     levels: levels.map((l) => ({ ordinal: l.ordinal, nameEn: l.nameEn, nameAr: l.nameAr })),
     units: units.map((u) => ({
       id: u.id,
@@ -87,8 +94,9 @@ export type UnitImportOperation =
       readonly kind: 'create';
       readonly row: number;
       readonly code: string;
-      readonly nameEn: string;
-      readonly nameAr: string;
+      /** One of the two may be null (the check requires the organization's default language's name). */
+      readonly nameEn: string | null;
+      readonly nameAr: string | null;
       /** An existing unit's id, … */
       readonly parentId: string | null;
       /** … or the code of a unit this import creates in an earlier row. */
@@ -102,8 +110,9 @@ export type UnitImportOperation =
       readonly row: number;
       readonly id: string;
       readonly version: number;
-      readonly nameEn: string;
-      readonly nameAr: string;
+      /** undefined: the unit keeps its name in that language (no such column, or an empty cell). */
+      readonly nameEn: string | undefined;
+      readonly nameAr: string | undefined;
       /** undefined: the unit keeps its value (the column is not in the file, or the head was not found). */
       readonly branchId: string | null | undefined;
       readonly defaultCostCentreId: string | null | undefined;
@@ -171,10 +180,12 @@ export async function applyUnitImport(
         const sortOrder = await orderOf(parentId);
         const costCentreColumn = completed ? sql`, default_cost_centre_id` : sql``;
         const costCentreValue = completed ? sql`, ${op.defaultCostCentreId}::uuid` : sql``;
+        // One name only once the database takes it (deploy window: storableStructureNames).
+        const names = await storableStructureNames(tx, op);
         const [row] = await tx.execute<{ id: string }>(sql`
           insert into platform.departments (code, name_ar, name_en, parent_id, branch_id, head_person_id, sort_order
                                             ${costCentreColumn})
-          values (${op.code}, ${op.nameAr}, ${op.nameEn}, ${parentId}::uuid, ${op.branchId}::uuid,
+          values (${op.code}, ${names.nameAr}, ${names.nameEn}, ${parentId}::uuid, ${op.branchId}::uuid,
                   ${op.headPersonId}::uuid, ${sortOrder} ${costCentreValue})
           returning id`);
         if (!row) throw new Error('applyUnitImport: no row returned');
@@ -182,13 +193,17 @@ export async function applyUnitImport(
         createdCodes.push(op.code);
       } else {
         // Only what the file gives: a value left undefined is kept.
-        const sets = [sql`name_ar = ${op.nameAr}`, sql`name_en = ${op.nameEn}`];
+        // (The check gives the name in the organization's default language, so there is always one.)
+        const sets: SQL[] = [];
+        if (op.nameAr !== undefined) sets.push(sql`name_ar = ${op.nameAr}`);
+        if (op.nameEn !== undefined) sets.push(sql`name_en = ${op.nameEn}`);
         if (op.branchId !== undefined) sets.push(sql`branch_id = ${op.branchId}::uuid`);
         if (op.headPersonId !== undefined)
           sets.push(sql`head_person_id = ${op.headPersonId}::uuid`);
         if (completed && op.defaultCostCentreId !== undefined) {
           sets.push(sql`default_cost_centre_id = ${op.defaultCostCentreId}::uuid`);
         }
+        if (sets.length === 0) continue;
         const rows = await tx.execute(sql`update platform.departments
           set ${sql.join(sets, sql`, `)}
           where id = ${op.id}::uuid and version = ${op.version} and deleted_at is null

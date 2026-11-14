@@ -47,8 +47,8 @@ type DialogState =
 /**
  * Organization → Grades (WP-ADM-04; design S04-5): the organization's list of grade codes, kept by HR and the
  * Organization Admin. A table (cards on phones) with the code, how many people hold it, rename and delete.
- * Add and rename use a one-field dialog: the message goes on the field when the button is pressed and focus
- * moves to it. A grade people still hold cannot be deleted — the dialog says why and what to do. Every
+ * Add and rename use a one-field popup (448 px, «Cancel» then the primary button at the end — forms standard
+ * rule 9, PO 12 Nov 2026): the message goes on the field when the button is pressed and focus moves to it. A grade people still hold cannot be deleted — the dialog says why and what to do. Every
  * change is audited (codes only).
  */
 export function GradesTable(props: GradesTableProps) {
@@ -276,9 +276,21 @@ export function GradesTable(props: GradesTableProps) {
         description={editing?.editNote ?? undefined}
         closeLabel={text('close')}
         canClose={() => !busy}
+        size="sm"
         data-testid="grade-dialog"
+        footer={
+          <>
+            <Button variant="secondary" onClick={close} disabled={busy}>
+              {text('cancel')}
+            </Button>
+            <Button type="submit" form="grade-form" busy={busy} data-testid="grade-save">
+              {editing ? text('saveConfirm') : text('addConfirm')}
+            </Button>
+          </>
+        }
       >
         <form
+          id="grade-form"
           className="flex flex-col gap-4"
           onSubmit={(event) => {
             void submitForm(event);
@@ -292,6 +304,8 @@ export function GradesTable(props: GradesTableProps) {
             name="code"
             label={text('codeLabel')}
             hint={text('codeHint')}
+            // The red asterisk (forms standard rule 8); the control itself says «required».
+            required
             defaultValue={editing?.code ?? ''}
             dir="ltr"
             maxLength={24}
@@ -300,14 +314,6 @@ export function GradesTable(props: GradesTableProps) {
             error={error}
             disabled={busy}
           />
-          <div className="flex flex-col-reverse gap-2.5 sm:flex-row sm:justify-end">
-            <Button variant="secondary" onClick={close} disabled={busy}>
-              {text('cancel')}
-            </Button>
-            <Button type="submit" busy={busy} data-testid="grade-save">
-              {editing ? text('saveConfirm') : text('addConfirm')}
-            </Button>
-          </div>
         </form>
       </Dialog>
 

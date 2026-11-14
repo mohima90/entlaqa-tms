@@ -172,3 +172,53 @@ test('the menu links Structure and Branches (Organization group)', async ({ page
     page.getByTestId('structure-views').getByRole('link', { name: 'Departments' }),
   ).toHaveAttribute('aria-current', 'page');
 });
+
+/**
+ * A «create» popup of the organization set-up without a database (WP-UX-01 b; forms standard rules 8–9, PO
+ * 12 Nov 2026): «Add grade» is one centred popup — at most 448 px, the field marked with the red asterisk,
+ * «Cancel» then the primary button at the end; focus moves into it and back to the button that opened it;
+ * the message goes on the field. The popups that need data (department, branch, cost centre, level, change
+ * role, invite) are walked in the self-hosted smoke: invitations.spec.ts and users.spec.ts.
+ */
+for (const [locale, t] of [
+  [
+    'en',
+    { title: 'Add a grade', code: 'Grade code', add: 'Add grade', empty: 'Enter a grade code.' },
+  ],
+  [
+    'ar',
+    { title: 'إضافة درجة', code: 'رمز الدرجة', add: 'إضافة الدرجة', empty: 'أدخل رمز الدرجة.' },
+  ],
+] as const) {
+  test(`«Add grade» opens as a small centred popup (${locale})`, async ({ page }) => {
+    await page.goto(`/${locale}/suite/admin/grades`);
+    const opener = page.getByTestId('grade-add').first();
+    await opener.click();
+    const popup = page.getByTestId('grade-dialog');
+    await expect(popup.getByRole('heading', { level: 2 })).toHaveText(t.title);
+    // Focus is inside the popup; the page behind it is inert (a modal <dialog>).
+    expect(await popup.evaluate((d) => d.contains(document.activeElement))).toBe(true);
+    expect(await popup.evaluate((d) => d.matches(':modal'))).toBe(true);
+    // 448 px at most, never wider than the screen.
+    const box = await popup.boundingBox();
+    expect(box?.width ?? 0).toBeLessThanOrEqual(448);
+    expect(box?.width ?? 0).toBeLessThanOrEqual(page.viewportSize()?.width ?? 0);
+    // The required field: a red asterisk (hidden from assistive technology), the control says «required».
+    const code = popup.getByLabel(t.code);
+    await expect(code).toHaveAttribute('required', '');
+    await expect(popup.locator('label[for="grade-code"] [data-required-mark]')).toHaveText('*');
+    // «Cancel» then the primary button, at the end of the popup.
+    const buttons = popup.getByRole('button');
+    await expect(buttons.last()).toHaveText(t.add);
+    await expect(buttons.last()).toHaveAttribute('type', 'submit');
+    // The message goes on the field, and focus with it.
+    await buttons.last().click();
+    await expect(popup.getByText(t.empty)).toBeVisible();
+    await expect(code).toBeFocused();
+    await expectNoSeriousA11yViolations(page);
+    // Escape closes it; focus returns to the button that opened it.
+    await page.keyboard.press('Escape');
+    await expect(popup).toBeHidden();
+    await expect(opener).toBeFocused();
+  });
+}

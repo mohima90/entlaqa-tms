@@ -616,8 +616,9 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText("Mona Saeed Alzahrani's authenticator app will be removed");
     await expectNoSeriousA11yViolations(page);
-    // The dialog's close button carries the same name (closing cancels): the footer button is last.
-    await dialog.getByRole('button', { name: 'Cancel' }).last().click();
+    // One «Cancel» (the footer's) and one «Close» (the ✕): each button has its own name.
+    await expect(dialog.getByRole('button', { name: 'Close' })).toHaveCount(1);
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(dialog).toBeHidden();
     await expect(page.getByTestId('user-mfa-status')).toContainText('On · authenticator app since');
     await page.getByTestId('user-mfa-reset-open').click();

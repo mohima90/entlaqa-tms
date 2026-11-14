@@ -30,6 +30,9 @@ Once a year the L&D Manager asks every Department Head what training their team 
 3. **L&D Manager → Planning → Settings** (once): default approval chain (Department Head → Finance approver → management approver) and default reminder days (7 and 2 days before the deadline).
 
 **B. Cycle set-up (FR-PLN-02)**
+
+> **How it is presented since 12 Nov 2026 (forms standard rules 8–9; WP-UX-01 a, T-M3-20):** the steps below are no longer a six-step page. **New cycle** is one popup on the cycles list (name, plan period, needs deadline, departments — all by default — and the needs form); budgets, instructions, reminders and the needs form are optional and live on the cycle's **Settings** page (tabs at the side); **Launch** is an action of the cycle's row menu with a small confirmation. The *Approval chain* part is gone (§13 e): the launch asks for none. What is asked, the rules and the launch itself are unchanged. **«Edit»** in the row menu is the same popup and **one save**: the names, the dates, the needs form and the departments (with the branches) are written together or not at all. A new cycle no longer stores a copy of the default approval chain; chains stored with older cycles are left as they are.
+
 4. **L&D Manager → Planning cycles → New cycle** (full page, steps):
    - *Basics*: name (AR/EN), planning period (default = the next fiscal year from General settings), deadline for department forms, instructions to department heads.
    - *Scope*: departments and/or branches in scope → the screen lists the forms that will be sent (one per department in scope) and warns about **departments without a head**.

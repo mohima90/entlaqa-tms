@@ -9,7 +9,10 @@ import {
   setBranchStatus,
   updateBranch,
 } from './branches';
-import { setStructureCompletionForTests } from './custom-roles-present';
+import {
+  forgetSchemaPresenceForTests,
+  setStructureCompletionForTests,
+} from './custom-roles-present';
 
 // The database before WP-HR-01's migrations unless a test says otherwise (no presence query in the fakes).
 beforeEach(() => {
@@ -18,13 +21,19 @@ beforeEach(() => {
 
 const dialect = new PgDialect();
 
-function fakeTx(results: (unknown[] | Error)[]) {
+/**
+ * A transaction that answers each query in turn. The catalog lookup of the deploy window (may a branch be
+ * saved with one name only yet — migration 20261113100000) is answered `present` (or by `absent`) and not
+ * recorded.
+ */
+function fakeTx(results: (unknown[] | Error)[], absent = false) {
   const executed: { sql: string; params: unknown[] }[] = [];
   return {
     executed,
     tx: {
       execute: (query: SQL) => {
         const q = dialect.sqlToQuery(query);
+        if (q.sql.includes('to_regclass(')) return Promise.resolve([{ present: !absent }]);
         executed.push({ sql: q.sql, params: q.params });
         const next = results.shift() ?? [];
         return next instanceof Error ? Promise.reject(next) : Promise.resolve(next);
@@ -141,6 +150,23 @@ describe('writes', () => {
       pgError('23505', { constraint_name: 'branches_tenant_code_uq' }),
     ]);
     expect(await createBranch(taken.tx, input)).toEqual({ ok: false, refusal: 'code_taken' });
+  });
+
+  it('stores a branch named in English only; before migration 20261113100000 the name fills the Arabic slot', async () => {
+    const english = { ...input, nameAr: null, nameEn: 'Jeddah' };
+    forgetSchemaPresenceForTests();
+    const after = fakeTx([...LOCKS, [{ id: 'jed' }], [row('jed', { name_ar: null })]]);
+    expect(await createBranch(after.tx, english)).toMatchObject({
+      ok: true,
+      after: { nameAr: null },
+    });
+    expect(writes(after)[0]?.params.slice(0, 3)).toEqual([english.code, null, 'Jeddah']);
+    // The deploy window: the column still refuses NULL.
+    forgetSchemaPresenceForTests();
+    const before = fakeTx([...LOCKS, [{ id: 'jed' }], [row('jed')]], true);
+    expect((await createBranch(before.tx, english)).ok).toBe(true);
+    expect(writes(before)[0]?.params.slice(0, 3)).toEqual([english.code, 'Jeddah', 'Jeddah']);
+    forgetSchemaPresenceForTests();
   });
 
   it('updates and deactivates with the version checked', async () => {

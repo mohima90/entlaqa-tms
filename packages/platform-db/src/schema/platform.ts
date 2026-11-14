@@ -168,7 +168,8 @@ export const branches = platform.table('branches', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull(),
   code: text('code').notNull(),
-  nameAr: text('name_ar').notNull(),
+  // One of the two names may be missing, never both (migration 20261113100000).
+  nameAr: text('name_ar'),
   nameEn: text('name_en'),
   parentBranchId: uuid('parent_branch_id'),
   countryCode: char('country_code', { length: 2 }),
@@ -185,7 +186,8 @@ export const departments = platform.table('departments', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull(),
   code: text('code').notNull(),
-  nameAr: text('name_ar').notNull(),
+  // One of the two names may be missing, never both (migration 20261113100000).
+  nameAr: text('name_ar'),
   nameEn: text('name_en'),
   parentId: uuid('parent_id'),
   branchId: uuid('branch_id'),

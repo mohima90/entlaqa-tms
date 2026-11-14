@@ -30,7 +30,7 @@ async function rowMenu(page: Page, row: ReturnType<typeof rowsOf>, name: string,
   await row.getByRole('button', { name: `More actions for ${name}` }).click();
   await page.getByRole('menuitem', { name: entry }).click();
 }
-/** «Send invitation» sits in the invite panel's footer (redesign package 3). */
+/** «Send invitation» sits in the invite popup's footer (forms standard rule 9; `invite-panel` is its test id). */
 const sendInvitation = (page: Page, locale: 'ar' | 'en' = 'en') =>
   page
     .getByTestId('invite-panel')
@@ -103,14 +103,14 @@ test.describe('invitations (admin side)', () => {
   test.skip(!email || !password, 'SIGNED_IN_E2E_* not set');
   test.describe.configure({ mode: 'serial' });
 
-  test('English: invite in the side panel, see it on the Pending invites view, resend, revoke', async ({
+  test('English: invite in the popup, see it on the Pending invites view, resend, revoke', async ({
     page,
   }) => {
     const invitee = `invitee-en-${run}@sovereign.example`;
     await signIn(page);
     await page.goto('/en/suite/admin/users');
     await page.getByTestId('invite-user-link').click();
-    // The panel's own address; the list stays behind it.
+    // The popup's own address; the list stays behind it.
     await expect(page).toHaveURL(/\/en\/suite\/admin\/users\/invite$/);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Team members');
     await expect(
@@ -130,27 +130,33 @@ test.describe('invitations (admin side)', () => {
     await expect(page.getByTestId('invite-message')).toBeVisible();
     await expect(form.locator('#invite-email-error')).toBeVisible();
     // The names follow the organization's default language (English; guided-test feedback #2): the
-    // English first and family names are required, the Arabic ones optional behind a button.
+    // English first and family names are required, the Arabic ones optional behind «More options» (with
+    // the department, branch, direct manager and employee number — forms standard rule 9).
     await expect(form.locator('#invite-firstNameEn-error')).toHaveText('This field is required.');
     await expect(form.locator('#invite-familyNameEn-error')).toHaveText('This field is required.');
-    await expect(form.locator('#invite-firstNameAr')).toHaveCount(0);
+    const more = form.getByTestId('invite-more');
+    await expect(more).toHaveAttribute('aria-expanded', 'false');
+    await expect(form.locator('#invite-firstNameAr')).toBeHidden();
+    await expect(form.locator('#invite-employeeNumber')).toBeHidden();
     await expect(form.locator('#invite-role-error')).toHaveText('Choose a role.');
 
     // English names only: the invitation is created without an Arabic name.
     await form.locator('#invite-email').fill(invitee.toUpperCase());
     await form.locator('#invite-firstNameEn').fill('Noura');
     await form.locator('#invite-familyNameEn').fill('Aldossari');
-    await expect(
-      form.getByRole('button', { name: 'Add the name in Arabic (optional)' }),
-    ).toBeVisible();
+    await more.click();
+    await expect(more).toHaveAttribute('aria-expanded', 'true');
+    await expect(form.locator('#invite-firstNameAr')).toBeVisible();
+    await expect(form.locator('#invite-department')).toBeVisible();
     await form.locator('#invite-employeeNumber').fill(`EMP-${run}`);
+    await expectNoSeriousA11yViolations(page);
     await form
       .getByRole('combobox', { name: /^Role/ })
       .selectOption({ label: 'Training Coordinator' });
     await form.getByRole('radio', { name: 'English' }).check();
     await sendInvitation(page).click();
 
-    // Kawadir: the code and the copy buttons right away (no e-mail needed), in the same panel.
+    // Kawadir: the code and the copy buttons right away (no e-mail needed), in the same popup.
     const panel = page.getByTestId('invitation-created-panel');
     await expect(panel.getByRole('heading', { name: 'Invitation created' })).toBeFocused();
     const code = (await panel.getByTestId('invite-code').textContent()) ?? '';
@@ -165,9 +171,11 @@ test.describe('invitations (admin side)', () => {
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(code);
     await expectNoSeriousA11yViolations(page);
 
-    // «Invite another user» keeps the role and the language from the last invitation.
+    // «Invite another user» keeps the role and the language from the last invitation; «More options» is
+    // closed again, as no department, branch or manager behind it was kept (it stays open when one is).
     await page.getByTestId('invite-another').click();
     await expect(page.getByTestId('invite-kept')).toBeVisible();
+    await expect(form.getByTestId('invite-more')).toHaveAttribute('aria-expanded', 'false');
     await expect(form.getByRole('combobox', { name: /^Role/ })).toHaveValue('training_coordinator');
     await expect(form.locator('#invite-email')).toHaveValue('');
 
@@ -176,7 +184,7 @@ test.describe('invitations (admin side)', () => {
     await page.keyboard.press('Escape');
     const discard = page.getByTestId('discard-dialog');
     await expect(discard).toBeVisible();
-    await discard.getByRole('button', { name: 'Keep editing' }).last().click();
+    await discard.getByRole('button', { name: 'Keep editing' }).click();
     await expect(discard).toBeHidden();
     await expect(form.locator('#invite-email')).toHaveValue('draft@sovereign.example');
     await page.keyboard.press('Escape');
@@ -234,11 +242,11 @@ test.describe('invitations (admin side)', () => {
     const invite = async () => {
       await form.locator('#invite-email').fill(invitee);
       // The English names are required (the organization's default language); the Arabic ones are
-      // added with «إضافة الاسم بالعربية (اختياري)» and shown on the Arabic pages.
+      // added under «خيارات أكثر» and shown on the Arabic pages.
       await form.locator('#invite-firstNameEn').fill('Ahmed');
       await form.locator('#invite-familyNameEn').fill('Mansour');
-      await form.getByRole('button', { name: 'إضافة الاسم بالعربية (اختياري)' }).click();
-      await expect(form.locator('#invite-firstNameAr')).toBeFocused();
+      await form.getByTestId('invite-more').click();
+      await expect(form.getByTestId('invite-more')).toContainText('خيارات أكثر');
       await form.locator('#invite-firstNameAr').fill('أحمد');
       await form.locator('#invite-familyNameAr').fill('منصور');
       await form.getByRole('combobox', { name: /^الدور/ }).selectOption({ label: 'موظف' });
@@ -461,7 +469,7 @@ test.describe('organization structure (HR Manager)', () => {
       .getByTestId('unit-cost-centre')
       .selectOption({ label: `${costCentre} · Sales ${run}` });
     await unitDialog.getByTestId('unit-dialog-submit').click();
-    // After saving, the next step is offered (Kawadir: «then it asks for the next level»): a fresh panel
+    // After saving, the next step is offered (Kawadir: «then it asks for the next level»): a fresh popup
     // for a Section under the new department, with the parent's name in its description.
     await expect(unitDialog.getByTestId('unit-dialog-added')).toBeVisible();
     await unitDialog.getByTestId('unit-dialog-add-under').click();
@@ -472,12 +480,14 @@ test.describe('organization structure (HR Manager)', () => {
     await expect(sales.getByTestId('unit-level').first()).toHaveText('Department');
     await expect(sales).toContainText('Head:');
     const child = `SUB${run}`;
+    // English is the organization's default language: the Arabic name is optional (left empty here; the
+    // tree and the pickers show the English one in both languages — PO, 12 Nov 2026).
     await unitDialog.locator('#unit-nameEn').fill(`Sales team ${run}`);
-    await unitDialog.locator('#unit-nameAr').fill(`فريق المبيعات ${run}`);
+    await expect(unitDialog.locator('#unit-nameAr')).not.toHaveAttribute('required', '');
     await unitDialog.getByTestId('unit-more').click();
     await unitDialog.locator('#unit-code').fill(child);
     await unitDialog.getByTestId('unit-dialog-submit').click();
-    // «Add another Section»: a fresh, empty panel for a sibling; closed without saving.
+    // «Add another Section»: a fresh, empty popup for a sibling; closed without saving.
     await unitDialog.getByTestId('unit-dialog-add-another').click();
     await expect(unitDialog.getByRole('heading', { level: 2 })).toHaveText('Add Section');
     await expect(unitDialog.locator('#unit-nameEn')).toHaveValue('');
@@ -608,6 +618,11 @@ test.describe('organization structure (HR Manager)', () => {
     await branchPanel.locator('#branch-nameEn').fill(`Smoke branch ${run}`);
     await branchPanel.locator('#branch-nameAr').fill(`فرع تجريبي ${run}`);
     await branchPanel.locator('#branch-code').fill(branchCode);
+    // The popup asks the names, the code and the time zone; the address, the location and the branch's own
+    // week wait behind «More options» (forms standard rule 9).
+    await expect(branchPanel.locator('#branch-timezone')).toBeVisible();
+    await expect(branchPanel.locator('#branch-addressEn')).toBeHidden();
+    await branchPanel.getByTestId('branch-more').click();
     await branchPanel.locator('#branch-addressEn').fill('King Fahd Road');
     await branchPanel.locator('#branch-latitude').fill('24.7136');
     await branchPanel.locator('#branch-longitude').fill('46.6753');
@@ -619,9 +634,11 @@ test.describe('organization structure (HR Manager)', () => {
     await expect(branchPanel).toBeHidden();
     const branchRow = hrPage.getByTestId(`branch-row-${branchCode}`);
     await expect(branchRow).toContainText('Active');
-    // Saved: the edit panel shows the location and the branch's own week.
+    // Saved: the edit popup shows the location and the branch's own week («More options» open).
     await branchRow.getByTestId('branch-menu').click();
     await hrPage.getByRole('menuitem', { name: 'Edit' }).click();
+    await expect(branchPanel.getByTestId('branch-more')).toHaveAttribute('aria-expanded', 'true');
+    await expect(branchPanel.locator('#branch-latitude')).toBeVisible();
     await expect(branchPanel.locator('#branch-latitude')).toHaveValue('24.7136');
     await expect(branchPanel.getByTestId('branch-week-same')).not.toBeChecked();
     await expect(branchPanel.getByTestId('branch-day-4-endsAt')).toHaveValue('12:00');

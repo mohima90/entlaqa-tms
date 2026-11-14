@@ -35,7 +35,7 @@ import { pageDates } from '../../../../lib/page-dates';
 import { myProfileQuery, mySecurityQuery } from '../../../../lib/users-queries';
 import { describeUserAgent } from '../../../../lib/user-agent';
 import { type LevelLabel, unitFieldLabel } from '../../../../lib/structure-view';
-import { localizedName, roleName } from '../../../../lib/users-view';
+import { localizedName, localizedNameOrNull, roleName } from '../../../../lib/users-view';
 
 /**
  * My profile (FR-IAM-16, T-M2-15a; PO decision 5 Oct 2026): the member changes their own personal
@@ -160,8 +160,7 @@ async function MyProfile({
   const format = await getFormatter({ locale });
   const errors = await profileErrorTexts(locale);
   const none = <NotSet label={users('noneLabel')} />;
-  const named = (ar: string | null, en: string | null) =>
-    ar ? localizedName(locale, ar, en) : null;
+  const named = (ar: string | null, en: string | null) => localizedNameOrNull(locale, ar, en);
   const jobTitle =
     locale === 'en' ? (profile.jobTitleEn ?? profile.jobTitleAr) : profile.jobTitleAr;
   const unitName = named(profile.departmentNameAr, profile.departmentNameEn);

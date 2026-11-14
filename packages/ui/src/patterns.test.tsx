@@ -295,7 +295,7 @@ describe('page patterns (Kawadir)', () => {
     expect(html).toMatch(/aria-current="page"[^>]*>Pending invites<span[^>]*>\(3\)/);
   });
 
-  it('TabNav side: a column of links at the side that wraps into rows on phones', () => {
+  it('TabNav side: a column of links at the side that wraps into rows on narrower screens', () => {
     const html = renderToStaticMarkup(
       <TabNav
         label="Cycle settings"
@@ -308,8 +308,9 @@ describe('page patterns (Kawadir)', () => {
       />,
     );
     expect(html).toContain('<nav aria-label="Cycle settings"');
-    // Rows that wrap on phones, a column from the medium breakpoint.
-    expect(html).toMatch(/<ul class="[^"]*flex-wrap[^"]*md:flex-col[^"]*"/);
+    // Rows that wrap on phones and tablets, a column from the wide breakpoint (xl, 1200 px).
+    expect(html).toMatch(/<ul class="[^"]*flex-wrap[^"]*xl:flex-col[^"]*"/);
+    expect(html).not.toMatch(/md:flex-col/);
     expect(html.match(/aria-current="page"/g)).toHaveLength(1);
     expect(html).toMatch(
       /href="\?tab=reminders" aria-current="page" class="[^"]*bg-surface-selected/,

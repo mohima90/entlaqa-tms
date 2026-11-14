@@ -10,6 +10,7 @@ import {
   type CourseValues,
   type DeliveryType,
   courseSearchKey,
+  generatedCourseCode,
 } from './model';
 
 /**
@@ -25,8 +26,8 @@ export const COURSE_LIST_LIMIT = 500;
 interface RawCourse extends Record<string, unknown> {
   id: string;
   code: string;
-  title_en: string;
-  title_ar: string;
+  title_en: string | null;
+  title_ar: string | null;
   description_en: string | null;
   description_ar: string | null;
   category_id: string | null;
@@ -131,17 +132,23 @@ export async function getCourse(tx: UserTx, id: string): Promise<CourseRow | nul
   return row ? toCourse(row, true) : null;
 }
 
+/** The organization's categories, by name (the English one, or the Arabic one of a category without it). */
 export async function listCourseCategories(tx: UserTx): Promise<CourseCategoryRow[]> {
-  const rows = await tx.execute<{ id: string; name_en: string; name_ar: string }>(sql`
-    select k.id, k.name_en, k.name_ar from tms.course_categories k order by lower(k.name_en), k.id`);
+  const rows = await tx.execute<{ id: string; name_en: string | null; name_ar: string | null }>(sql`
+    select k.id, k.name_en, k.name_ar from tms.course_categories k
+    order by lower(coalesce(k.name_en, k.name_ar)), k.id`);
   return rows.map((r) => ({ id: r.id, nameEn: r.name_en, nameAr: r.name_ar }));
 }
 
 export async function insertCourseCategory(
   tx: UserTx,
-  names: { readonly nameEn: string; readonly nameAr: string },
+  names: { readonly nameEn: string | null; readonly nameAr: string | null },
 ): Promise<CourseCategoryRow> {
-  const [row] = await tx.execute<{ id: string; name_en: string; name_ar: string }>(sql`
+  const [row] = await tx.execute<{
+    id: string;
+    name_en: string | null;
+    name_ar: string | null;
+  }>(sql`
     insert into tms.course_categories (name_en, name_ar) values (${names.nameEn}, ${names.nameAr})
     returning id, name_en, name_ar`);
   if (!row) throw new Error('insertCourseCategory: no row returned');
@@ -163,6 +170,38 @@ export async function insertCourse(tx: UserTx, values: StoredValues): Promise<st
     returning id`);
   if (!row) throw new Error('insertCourse: no row returned');
   return row.id;
+}
+
+/** How many codes `insertCourseWithGeneratedCode` tries before it gives up. */
+const GENERATED_CODE_ATTEMPTS = 50;
+
+/**
+ * Adds a course that came without a code (WP-UX-01 c): it gets the next free `CRS-0001`, `CRS-0002`… —
+ * counted from the organization's courses, and moved on while another course has that code (also one added
+ * at the same moment: the insert waits for it, then skips). Null when no free code was found.
+ */
+export async function insertCourseWithGeneratedCode(
+  tx: UserTx,
+  values: Omit<StoredValues, 'code'>,
+): Promise<string | null> {
+  const [counted] = await tx.execute<{ total: string | number }>(
+    sql`select count(*) as total from tms.courses c`,
+  );
+  const first = Number(counted?.total ?? 0) + 1;
+  for (let n = first; n < first + GENERATED_CODE_ATTEMPTS; n += 1) {
+    const [row] = await tx.execute<{ id: string }>(sql`
+      insert into tms.courses (code, title_en, title_ar, description_en, description_ar, category_id, delivery_type,
+                               duration_hours, duration_days, min_participants, max_participants,
+                               est_cost_per_session, est_cost_per_participant)
+      values (${generatedCourseCode(n)}, ${values.titleEn}, ${values.titleAr}, ${values.descriptionEn},
+              ${values.descriptionAr}, ${values.categoryId}::uuid, ${values.deliveryType}, ${values.durationHours},
+              ${values.durationDays}, ${values.minParticipants}, ${values.maxParticipants},
+              ${values.estCostPerSession}, ${values.estCostPerParticipant})
+      on conflict (tenant_id, lower(code)) do nothing
+      returning id`);
+    if (row) return row.id;
+  }
+  return null;
 }
 
 /** Updates a course still at `expectedVersion`; false when it is not (or not visible). */

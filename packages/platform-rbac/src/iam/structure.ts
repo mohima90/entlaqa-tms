@@ -25,11 +25,11 @@ import {
   structureLevelsLocked,
   updateStructureUnit,
 } from '@jadarat/platform-db';
-import { hasVisibleText } from '@jadarat/platform-i18n';
 import { z } from 'zod';
 import type { ActionContext, ActionDefinition } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import { platformPermissions } from '../platform-permissions';
+import { defaultNameError, nameInOneLanguage } from './default-language-name';
 import { type HeadRoleOutcome, giveHeadRole } from './head-role';
 
 /**
@@ -45,25 +45,17 @@ import { type HeadRoleOutcome, giveHeadRole } from './head-role';
  *     removed; a unit sits directly under the level above and never below the last level; a unit with units,
  *     active people or role scopes under it is not deleted — it can be deactivated) and the write policy of
  *     the levels (platform.org.manage).
+ *   - Names (WP-UX-01 b; PO, 12 Nov 2026): a level and a unit are named in the organization's default language;
+ *     the other language is optional (default-language-name.ts; the database refuses a row without any name).
  *   - Audited (BR-ORG-f): platform.org.level_added / level_renamed / level_removed and
  *     platform.org.unit_created / unit_updated (heads included) / unit_status_changed / unit_deleted, with the
  *     values before and after (names, codes and ids: no personal data beyond the head's person id).
  */
 const p = platformPermissions;
 
-const levelName = z
-  .string()
-  .trim()
-  .min(1)
-  .max(60)
-  .refine((value) => hasVisibleText(value), { message: 'invisible' });
-
-const unitName = z
-  .string()
-  .trim()
-  .min(1)
-  .max(200)
-  .refine((value) => hasVisibleText(value), { message: 'invisible' });
+// One of the two names may be empty: which one is required is the handlers' rule (defaultNameError).
+const levelName = nameInOneLanguage(60);
+const unitName = nameInOneLanguage(200);
 
 const optionalId = z
   .union([z.uuid(), z.literal('')])
@@ -272,7 +264,12 @@ export function addStructureLevelActionDefinition(): ActionDefinition<
   return {
     permission: p['platform.org.manage'],
     input: LevelInput,
-    handler: async ({ ctx, input }) => result(await addStructureLevel(ctx.tx, input)),
+    handler: async ({ ctx, input }) => {
+      // The name in the organization's default language is required (PO, 12 Nov 2026).
+      const nameError = await defaultNameError(ctx.tx, input);
+      if (nameError) return err(nameError);
+      return result(await addStructureLevel(ctx.tx, input));
+    },
     audit: (_input, output) => ({
       action: 'platform.org.level_added',
       entityType: 'structure_level',
@@ -291,13 +288,16 @@ export function renameStructureLevelActionDefinition(): ActionDefinition<
   return {
     permission: p['platform.org.manage'],
     input: RenameLevelInput,
-    handler: async ({ ctx, input }) =>
-      result(
-        await renameStructureLevel(ctx.tx, input.id, input.version, {
-          nameEn: input.nameEn,
-          nameAr: input.nameAr,
-        }),
-      ),
+    handler: async ({ ctx, input }) => {
+      const names = { nameEn: input.nameEn, nameAr: input.nameAr };
+      const nameError = await defaultNameError(ctx.tx, names, {
+        thing: 'level',
+        id: input.id,
+        version: input.version,
+      });
+      if (nameError) return err(nameError);
+      return result(await renameStructureLevel(ctx.tx, input.id, input.version, names));
+    },
     audit: (_input, output) => ({
       action: 'platform.org.level_renamed',
       entityType: 'structure_level',
@@ -359,6 +359,9 @@ export function createStructureUnitActionDefinition(): ActionDefinition<
     input: CreateUnitInput,
     handler: async ({ ctx, input }) => {
       const { parentId, ...fields } = input;
+      // The name in the organization's default language is required (PO, 12 Nov 2026).
+      const nameError = await defaultNameError(ctx.tx, fields);
+      if (nameError) return err(nameError);
       return withHeadRole(ctx, await createStructureUnit(ctx.tx, parentId, fields));
     },
     audit: (_input, output) => ({
@@ -381,6 +384,8 @@ export function updateStructureUnitActionDefinition(): ActionDefinition<
     input: UpdateUnitInput,
     handler: async ({ ctx, input }) => {
       const { id, version, ...fields } = input;
+      const nameError = await defaultNameError(ctx.tx, fields, { thing: 'unit', id, version });
+      if (nameError) return err(nameError);
       return withHeadRole(ctx, await updateStructureUnit(ctx.tx, id, version, fields));
     },
     audit: (_input, output) => ({

@@ -12,6 +12,7 @@ import {
 } from '@jadarat/platform-rbac';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  courseSettingsQueryDefinition,
   coursesPageQueryDefinition,
   createCourseActionDefinition,
   setCourseStatusActionDefinition,
@@ -25,15 +26,23 @@ const db = vi.hoisted(() => ({
   listCourseCategories: vi.fn(),
   getCourse: vi.fn(),
   insertCourse: vi.fn(),
+  insertCourseWithGeneratedCode: vi.fn(),
   insertCourseCategory: vi.fn(),
   updateCourseRow: vi.fn(),
   updateCourseStatus: vi.fn(),
   COURSE_LIST_LIMIT: 2,
 }));
 vi.mock('./db', () => db);
+const platform = vi.hoisted(() => ({
+  // The organization's default language (PO, 12 Nov 2026): English unless a test says otherwise.
+  getTenantDefaultLocale: vi.fn((): Promise<'ar' | 'en'> => Promise.resolve('en')),
+  // The database after migration 20261113110000: names are stored as given.
+  storableNamePair: vi.fn((_tx: unknown, _slot: unknown, names: unknown) => Promise.resolve(names)),
+}));
 vi.mock('@jadarat/platform-db', async (importOriginal) => ({
   ...(await importOriginal<typeof PlatformDb>()),
   getTenantCurrencyCode: vi.fn(() => Promise.resolve('SAR')),
+  ...platform,
 }));
 
 const TX = 'tx' as unknown as UserTx;
@@ -114,6 +123,8 @@ beforeEach(() => {
   db.countCourseStatuses.mockResolvedValue({ total: 1, active: 1, archived: 0 });
   db.listCourseCategories.mockResolvedValue([]);
   db.insertCourse.mockResolvedValue(ID);
+  db.insertCourseWithGeneratedCode.mockResolvedValue(ID);
+  platform.getTenantDefaultLocale.mockResolvedValue('en');
   db.insertCourseCategory.mockResolvedValue({ id: CATEGORY, nameEn: 'Safety', nameAr: 'السلامة' });
   db.getCourse.mockResolvedValue(row());
   db.updateCourseRow.mockResolvedValue(true);
@@ -214,6 +225,52 @@ describe('coursesPageQueryDefinition', () => {
       const refused = await query(bad);
       expect(!refused.ok && refused.error.code).toBe('VALIDATION_FAILED');
     }
+    // «Add course» asks the title in the organization's default language first.
+    expect(result.ok && result.value.nameLanguage).toBe('en');
+  });
+});
+
+describe('courseSettingsQueryDefinition (WP-UX-01 c: a course’s settings page)', () => {
+  const read = (role: SystemRoleCode, grants?: readonly Grant[]) =>
+    createDefineQuery(runtime(role, [], grants).rt)(courseSettingsQueryDefinition())({ id: ID });
+
+  it('gives the course, the categories, the currency and the name rule to who manages the library', async () => {
+    platform.getTenantDefaultLocale.mockResolvedValue('ar');
+    const result = await read('training_manager');
+    expect(result.ok && result.value).toMatchObject({
+      course: { id: ID, estCostPerSession: 15000 },
+      categories: [],
+      currency: 'SAR',
+      canManage: true,
+      canSeeCosts: true,
+      nameLanguage: 'ar',
+    });
+    expect(db.getCourse).toHaveBeenCalledWith(TX, ID);
+  });
+
+  it('a reader gets it read-only; the costs only with tms.course_cost.read', async () => {
+    const reader = await read('department_head', [
+      { permission: 'tms.course.read', scope: { type: 'tenant' } },
+    ]);
+    expect(reader.ok && reader.value).toMatchObject({
+      course: { estCostPerSession: null, estCostPerParticipant: null, costCurrency: null },
+      canManage: false,
+      canSeeCosts: false,
+    });
+  });
+
+  it('refuses who may not read the library (403), an unknown course (404) and a bad id (422)', async () => {
+    const admin = await read('tenant_admin');
+    expect(!admin.ok && admin.error.code).toBe('FORBIDDEN');
+    expect(db.getCourse).not.toHaveBeenCalled();
+    // Another organization's course is never returned by row-level security: the same answer.
+    db.getCourse.mockResolvedValueOnce(null);
+    const missing = await read('training_manager');
+    expect(!missing.ok && missing.error.code).toBe('NOT_FOUND');
+    const bad = await createDefineQuery(runtime('training_manager').rt)(
+      courseSettingsQueryDefinition(),
+    )({ id: "1' or 1=1" });
+    expect(!bad.ok && bad.error.code).toBe('VALIDATION_FAILED');
   });
 });
 
@@ -249,6 +306,119 @@ describe('createCourseActionDefinition (audited; a reusable service underneath)'
         }),
       }),
     );
+  });
+
+  it('«Add course»: a course sent without a code gets the next free one', async () => {
+    const { rt, writeAudit } = runtime('training_coordinator');
+    db.getCourse.mockResolvedValue(row({ code: 'CRS-0003' }));
+    const { code: _code, ...withoutCode } = values;
+    const result = await createDefineAction(rt)(createCourseActionDefinition())(withoutCode);
+    expect(result.ok && result.value.after.code).toBe('CRS-0003');
+    expect(db.insertCourse).not.toHaveBeenCalled();
+    const [, stored] = db.insertCourseWithGeneratedCode.mock.calls[0] as [unknown, object];
+    expect(stored).toMatchObject({ titleEn: 'Strategic management', categoryId: null });
+    expect(stored).not.toHaveProperty('code');
+    expect(writeAudit).toHaveBeenCalledWith(
+      TX,
+      expect.anything(),
+      expect.objectContaining({
+        action: 'tms.course.created',
+        data: expect.objectContaining({ after: expect.objectContaining({ code: 'CRS-0003' }) }),
+      }),
+    );
+    // An empty code is the same as none; a given code is still checked.
+    await createDefineAction(rt)(createCourseActionDefinition())({ ...values, code: '  ' });
+    expect(db.insertCourseWithGeneratedCode).toHaveBeenCalledTimes(2);
+    const bad = await createDefineAction(rt)(createCourseActionDefinition())({
+      ...values,
+      code: 'two words',
+    });
+    expect(!bad.ok && bad.error.code).toBe('VALIDATION_FAILED');
+    // No free code among the ones tried: said on the code, which the settings page asks.
+    db.insertCourseWithGeneratedCode.mockResolvedValueOnce(null);
+    const none = await createDefineAction(rt)(createCourseActionDefinition())(withoutCode);
+    expect(!none.ok && none.error.fieldErrors).toEqual([{ path: 'code', code: 'CODE_TAKEN' }]);
+  });
+
+  it('the title in the organization’s default language is required, the other one optional', async () => {
+    const create = createDefineAction(runtime('training_manager').rt)(
+      createCourseActionDefinition(),
+    );
+    // English is the default language: an English title alone is enough…
+    const englishOnly = await create({ ...values, titleAr: '' });
+    expect(englishOnly.ok).toBe(true);
+    expect(db.insertCourse).toHaveBeenLastCalledWith(
+      TX,
+      expect.objectContaining({ titleEn: 'Strategic management', titleAr: null }),
+    );
+    db.insertCourse.mockClear();
+    // …and an Arabic title alone is refused, on the English field.
+    const arabicOnly = await create({ ...values, titleEn: ' ' });
+    expect(!arabicOnly.ok && arabicOnly.error.fieldErrors).toEqual([
+      { path: 'titleEn', code: 'REQUIRED' },
+    ]);
+    expect(db.insertCourse).not.toHaveBeenCalled();
+    // A new category follows the same rule.
+    const category = await create({
+      ...values,
+      category: { kind: 'new', nameEn: '', nameAr: 'السلامة' },
+    });
+    expect(!category.ok && category.error.fieldErrors).toEqual([
+      { path: 'category.nameEn', code: 'REQUIRED' },
+    ]);
+    expect(db.insertCourseCategory).not.toHaveBeenCalled();
+    // With Arabic as the default language it is the other way round.
+    platform.getTenantDefaultLocale.mockResolvedValue('ar');
+    const arabicDefault = await create({
+      ...values,
+      titleEn: '',
+      category: { kind: 'new', nameEn: '', nameAr: 'السلامة' },
+    });
+    expect(arabicDefault.ok).toBe(true);
+    expect(db.insertCourseCategory).toHaveBeenCalledWith(
+      TX,
+      expect.objectContaining({ nameEn: null, nameAr: 'السلامة' }),
+    );
+    const noArabic = await create({ ...values, titleAr: '' });
+    expect(!noArabic.ok && noArabic.error.fieldErrors).toEqual([
+      { path: 'titleAr', code: 'REQUIRED' },
+    ]);
+  });
+
+  it('before migration 20261113110000 the given title fills the other slot (deploy window)', async () => {
+    platform.storableNamePair.mockResolvedValueOnce({
+      nameAr: 'Strategic management',
+      nameEn: 'Strategic management',
+    });
+    const result = await createDefineAction(runtime('training_manager').rt)(
+      createCourseActionDefinition(),
+    )({ ...values, titleAr: '' });
+    expect(result.ok).toBe(true);
+    expect(platform.storableNamePair).toHaveBeenCalledWith(
+      TX,
+      { table: 'tms.courses', column: 'title_ar' },
+      { nameAr: null, nameEn: 'Strategic management' },
+    );
+    expect(db.insertCourse).toHaveBeenCalledWith(
+      TX,
+      expect.objectContaining({
+        titleEn: 'Strategic management',
+        titleAr: 'Strategic management',
+      }),
+    );
+  });
+
+  it('refuses a new category whose name another category already shows (review finding 3)', async () => {
+    // «Safety» is named in English only: it shows «Safety» in Arabic too.
+    db.listCourseCategories.mockResolvedValue([{ id: CATEGORY, nameEn: 'Safety', nameAr: null }]);
+    const result = await createDefineAction(runtime('training_manager').rt)(
+      createCourseActionDefinition(),
+    )({ ...values, category: { kind: 'new', nameEn: 'Fire', nameAr: 'safety' } });
+    expect(!result.ok && result.error.fieldErrors).toEqual([
+      { path: 'category.nameAr', code: 'NAME_TAKEN' },
+    ]);
+    expect(db.insertCourseCategory).not.toHaveBeenCalled();
+    expect(db.insertCourse).not.toHaveBeenCalled();
   });
 
   it('checks the rules across fields before writing', async () => {
@@ -417,6 +587,40 @@ describe('updateCourseActionDefinition', () => {
         }),
       }),
     );
+  });
+
+  it('asks for the default language’s title when the titles change; titles left as stored pass', async () => {
+    const update = createDefineAction(runtime('training_manager').rt)(
+      updateCourseActionDefinition(),
+    );
+    platform.getTenantDefaultLocale.mockResolvedValue('ar');
+    // Titled in English only, before Arabic became the default language: its hours can still change.
+    db.getCourse.mockResolvedValue(row({ titleAr: null }));
+    const untouched = await update({
+      ...values,
+      titleAr: '',
+      durationHours: 6,
+      id: ID,
+      version: 1,
+    });
+    expect(untouched.ok).toBe(true);
+    expect(db.updateCourseRow).toHaveBeenCalledWith(
+      TX,
+      ID,
+      1,
+      expect.objectContaining({ titleAr: null, durationHours: 6 }),
+    );
+    db.updateCourseRow.mockClear();
+    // A changed title without the Arabic one is refused.
+    const renamed = await update({ ...values, titleEn: 'New', titleAr: '', id: ID, version: 1 });
+    expect(!renamed.ok && renamed.error.fieldErrors).toEqual([
+      { path: 'titleAr', code: 'REQUIRED' },
+    ]);
+    expect(db.updateCourseRow).not.toHaveBeenCalled();
+    // The code is always required when a course is changed.
+    const { code: _code, ...withoutCode } = values;
+    const noCode = await update({ ...withoutCode, id: ID, version: 1 } as never);
+    expect(!noCode.ok && noCode.error.code).toBe('VALIDATION_FAILED');
   });
 
   it('refuses an unknown course (404) and a stale version (409)', async () => {

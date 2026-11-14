@@ -23,6 +23,7 @@ import { useRouter } from 'next/navigation';
 import { type SyntheticEvent, useMemo, useState, useTransition } from 'react';
 import { previewSummaries } from '../../lib/needs-forms-preview';
 import type { LibraryResult } from '../../lib/needs-forms-api';
+import { nameOrder } from '../../lib/structure-form';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { SelectField } from '../select-field';
@@ -41,6 +42,8 @@ export interface NeedsFormsLibraryProps {
   /** The forms read on the server (live); the preview reads the tab's copy. */
   readonly initialForms: readonly NeedsFormSummary[];
   readonly canManage: boolean;
+  /** The language whose form name is required: the organization's default language (PO, 12 Nov 2026). */
+  readonly nameLanguage: 'ar' | 'en';
   readonly texts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
   /** The builder's path without the form id (locale included). */
@@ -53,6 +56,8 @@ type DialogState =
   | { readonly kind: 'rename'; readonly form: NeedsFormSummary }
   | null;
 
+/** The create / duplicate / rename form: the dialog's footer submits it. */
+const DIALOG_FORM_ID = 'needs-form-dialog-form';
 const MENU_TRIGGER =
   'grid size-10 shrink-0 place-items-center rounded-full border border-border-strong text-text-muted hover:bg-surface-hover hover:text-text disabled:opacity-60 pointer-coarse:size-11';
 
@@ -86,8 +91,10 @@ function Thumbnail({ sections, fields }: { sections: number; fields: number }) {
  * Planning → Needs forms (T-M3-10; redesign package 4 — HoneyBook / Klaviyo templates): one card per form
  * with a thumbnail, quiet tags (★ Default, Locked, Off) and the locked explanation, one Edit / View button and
  * a ⋯ menu (Rename · Duplicate · Set as default · Switch on/off · Delete, last, in red) for the L&D Manager
- * (view only for the Training Coordinator). «Create form» starts from the two fixed fields or from a copy of
- * a form (the Duplicate action); after Create or Duplicate the builder opens. Switching a form off can be
+ * (view only for the Training Coordinator). «Create form» is one centred popup, 672 px (the Kawadir pattern,
+ * forms standard rule 9; WP-UX-01 c, T-M3-21): the form's name in the organization's default language (the
+ * other language optional) and what it starts from — the two fixed fields, or a copy of a form (the
+ * Duplicate action); after Create or Duplicate the builder opens. Switching a form off can be
  * undone from the toast (Switch on). The default form cannot be switched off or deleted; a locked form (used
  * by a launched cycle) cannot be deleted.
  */
@@ -158,8 +165,9 @@ export function NeedsFormsLibrary(props: NeedsFormsLibraryProps) {
       setStartFrom('blank');
       setCopyOf(forms.find((f) => f.isDefault)?.id ?? forms[0]?.id ?? '');
     } else if (next.kind === 'duplicate') {
-      setNameEn(`${next.form.name.en}${text('copySuffixEn')}`);
-      setNameAr(`${next.form.name.ar}${text('copySuffixAr')}`);
+      // A form named in one language only ('' for the other): the copy starts named the same way.
+      setNameEn(next.form.name.en === '' ? '' : `${next.form.name.en}${text('copySuffixEn')}`);
+      setNameAr(next.form.name.ar === '' ? '' : `${next.form.name.ar}${text('copySuffixAr')}`);
     } else {
       setNameEn(next.form.name.en);
       setNameAr(next.form.name.ar);
@@ -171,6 +179,18 @@ export function NeedsFormsLibrary(props: NeedsFormsLibraryProps) {
     event.preventDefault();
     if (!dialog) return;
     const names = { nameEn, nameAr };
+    // The name in the organization's default language is required; the other one is optional. A rename
+    // that leaves both names as they are stored passes (a form named before the default language changed).
+    const requiredName = props.nameLanguage === 'ar' ? 'nameAr' : 'nameEn';
+    const unchanged =
+      dialog.kind === 'rename' &&
+      dialog.form.name.en === nameEn.trim() &&
+      dialog.form.name.ar === nameAr.trim();
+    if (names[requiredName].trim() === '' && !unchanged) {
+      setFieldErrors({ [requiredName]: text('fieldErrors.REQUIRED') });
+      setMessage(null);
+      return;
+    }
     const close = () => {
       setDialog(null);
     };
@@ -450,42 +470,69 @@ export function NeedsFormsLibrary(props: NeedsFormsLibraryProps) {
         title={dialogTitle}
         description={dialogDesc}
         closeLabel={text('close')}
-        size={dialog?.kind === 'create' ? 'lg' : 'md'}
+        canClose={() => !pending}
+        size="rich"
         data-testid="needs-form-dialog"
+        // «Cancel», then the primary button at the end — the dialog keeps them in view while it scrolls.
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              type="button"
+              disabled={pending}
+              onClick={() => {
+                setDialog(null);
+              }}
+              data-testid="needs-form-dialog-cancel"
+            >
+              {text('cancel')}
+            </Button>
+            <Button
+              type="submit"
+              form={DIALOG_FORM_ID}
+              disabled={pending}
+              busy={pending}
+              data-testid="needs-form-dialog-submit"
+            >
+              {pending ? text('saving') : submitLabel}
+            </Button>
+          </>
+        }
       >
-        <form className="flex flex-col gap-4" onSubmit={submit} noValidate>
+        <form id={DIALOG_FORM_ID} className="flex flex-col gap-4" onSubmit={submit} noValidate>
           {message ? (
             <Alert tone="danger" data-testid="needs-form-dialog-error">
               {message}
             </Alert>
           ) : null}
-          <TextField
-            id="needs-form-name-en"
-            label={text('nameEn')}
-            marker={text('markerRequired')}
-            dir="ltr"
-            value={nameEn}
-            maxLength={120}
-            required
-            error={fieldErrors.nameEn}
-            onChange={(e) => {
-              setNameEn(e.target.value);
-            }}
-          />
-          <TextField
-            id="needs-form-name-ar"
-            label={text('nameAr')}
-            marker={text('markerRequired')}
-            dir="rtl"
-            lang="ar"
-            value={nameAr}
-            maxLength={120}
-            required
-            error={fieldErrors.nameAr}
-            onChange={(e) => {
-              setNameAr(e.target.value);
-            }}
-          />
+          {/* The name in the organization's default language first and required; the other language is
+              optional (PO, 12 Nov 2026). Side by side on a desktop, one per row on a phone. */}
+          <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2">
+            {nameOrder(props.nameLanguage).map((language) => {
+              const key = language === 'ar' ? 'nameAr' : 'nameEn';
+              const required = language === props.nameLanguage;
+              return (
+                <TextField
+                  key={key}
+                  id={`needs-form-name-${language}`}
+                  label={text(key)}
+                  marker={text(required ? 'markerRequired' : 'markerOptional')}
+                  dir={language === 'ar' ? 'rtl' : 'ltr'}
+                  lang={language}
+                  value={language === 'ar' ? nameAr : nameEn}
+                  maxLength={120}
+                  required={required}
+                  autoComplete="off"
+                  disabled={pending}
+                  error={fieldErrors[key]}
+                  onChange={(e) => {
+                    (language === 'ar' ? setNameAr : setNameEn)(e.target.value);
+                    setFieldErrors(({ [key]: _fixed, ...rest }) => rest);
+                  }}
+                />
+              );
+            })}
+          </div>
           {dialog?.kind === 'create' && forms.length > 0 ? (
             <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
               <legend className="mb-2 p-0 text-sm font-semibold">{text('startFrom')}</legend>
@@ -528,26 +575,6 @@ export function NeedsFormsLibrary(props: NeedsFormsLibraryProps) {
               </ChoiceCard>
             </fieldset>
           ) : null}
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button
-              variant="secondary"
-              type="button"
-              disabled={pending}
-              onClick={() => {
-                setDialog(null);
-              }}
-            >
-              {text('cancel')}
-            </Button>
-            <Button
-              type="submit"
-              disabled={pending}
-              busy={pending}
-              data-testid="needs-form-dialog-submit"
-            >
-              {pending ? text('saving') : submitLabel}
-            </Button>
-          </div>
         </form>
       </Dialog>
 

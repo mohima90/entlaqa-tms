@@ -61,6 +61,7 @@ import {
   envelopeState,
   formStatus,
   needsTotals,
+  structureName,
 } from './model';
 import * as repo from './repository';
 
@@ -121,7 +122,8 @@ export interface NeedView {
 
 export interface CourseOption {
   readonly id: string;
-  readonly title: { readonly ar: string; readonly en: string };
+  /** One of the two may be missing (a course is titled in the organization's default language). */
+  readonly title: { readonly ar: string | null; readonly en: string | null };
 }
 
 export interface DepartmentNeedsView {
@@ -220,7 +222,7 @@ function units(structure: OrgStructure): StructureUnit[] {
     branchId: d.branchId,
     active: d.active,
     sortOrder: d.sortOrder,
-    nameAr: d.nameAr,
+    nameAr: structureName(d).ar,
     headPersonId: d.head?.personId ?? null,
   }));
 }
@@ -401,7 +403,7 @@ async function buildView(
     },
     department: {
       id: department.departmentId,
-      name: { ar: access.department.nameAr, en: access.department.nameEn },
+      name: structureName(access.department),
       levelOrdinal: access.department.levelOrdinal,
       head: headUnit?.head ? { ar: headUnit.head.nameAr, en: headUnit.head.nameEn } : null,
       version: department.version,
@@ -490,7 +492,7 @@ export function myNeedsQueryDefinition(): QueryDefinition<
             cycleId: row.cycleId,
             cycleName: { ar: row.cycleNameAr, en: row.cycleNameEn },
             departmentId: row.departmentId,
-            departmentName: { ar: department.nameAr, en: department.nameEn },
+            departmentName: structureName(department),
             levelOrdinal: department.levelOrdinal,
             status: formStatus(row.status, deadline, today),
             deadline,

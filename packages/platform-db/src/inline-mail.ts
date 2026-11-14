@@ -89,9 +89,14 @@ export async function prepareInlineInvitation(
       row.inviter_ar === null ? organizationName : { ar: row.inviter_ar, en: row.inviter_en },
     organizationName,
     primaryRole: row.primary_role,
+    // A custom role may be named in one language only (migration 20261113110400): the e-mail in the other
+    // language then names the role as it exists, never by its code.
     primaryRoleName:
-      row.role_name_ar !== null && row.role_name_en !== null
-        ? { ar: row.role_name_ar, en: row.role_name_en }
+      row.role_name_ar !== null || row.role_name_en !== null
+        ? {
+            ar: row.role_name_ar ?? row.role_name_en ?? '',
+            en: row.role_name_en ?? row.role_name_ar ?? '',
+          }
         : null,
     expiresAt: new Date(row.expires_at),
     sourceKey: row.source_key,

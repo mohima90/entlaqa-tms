@@ -10,6 +10,7 @@ import { Button, buttonClasses } from './button';
 import { Card } from './card';
 import { ChoiceCard } from './choice-card';
 import { CopyButton } from './copy-button';
+import { Dialog } from './dialog';
 import { FilterBar, FilterMenu, ListCard, ListCards, ListSearch, Pagination } from './index';
 import { Icon } from './icons';
 import { PageHeader } from './page-header';
@@ -22,7 +23,7 @@ import { ViewCards } from './view-cards';
 /**
  * People & roles in direction C (redesign package 3, approved by the PO on 21 Oct 2026): Team members
  * with the attention strip, instant filter pills and the row menu; the quick look and the change-role
- * panel; a person's profile with its tabs; the roles list and a role's permissions in words; the import's
+ * popup; a person's profile with its tabs; the roles list and a role's permissions in words; the import's
  * confirmation with its options. The markup follows apps/suite (components/users, components/roles,
  * components/user-import); sample names and figures only. Tagged `brand-matrix`: also with organization
  * colours (FR-ADM-07).
@@ -416,9 +417,10 @@ const ROLES: readonly { code: string; name: Copy; description: Copy; privileged?
 function RolePanel({ globals }: { globals: Globals }) {
   const [role, setRole] = useState('finance');
   return (
-    <SidePanel
+    <Dialog
       open
       onClose={() => undefined}
+      size="rich"
       title={pick(globals, {
         ar: 'تغيير دور منى القحطاني',
         en: 'Change the role of Mona Al-Qahtani',
@@ -430,16 +432,8 @@ function RolePanel({ globals }: { globals: Globals }) {
       closeLabel={pick(globals, T.close)}
       footer={
         <>
-          <p className="m-0 basis-full text-sm text-text-muted">
-            {pick(globals, {
-              ar: 'يُسجَّل كل تغيير للدور في سجل التدقيق.',
-              en: 'Every role change is recorded in the audit log.',
-            })}
-          </p>
-          <div className="ms-auto flex gap-2.5">
-            <Button variant="secondary">{pick(globals, { ar: 'إلغاء', en: 'Cancel' })}</Button>
-            <Button>{pick(globals, { ar: 'حفظ الدور', en: 'Save role' })}</Button>
-          </div>
+          <Button variant="secondary">{pick(globals, { ar: 'إلغاء', en: 'Cancel' })}</Button>
+          <Button>{pick(globals, { ar: 'حفظ الدور', en: 'Save role' })}</Button>
         </>
       }
     >
@@ -481,11 +475,20 @@ function RolePanel({ globals }: { globals: Globals }) {
           </ChoiceCard>
         ))}
       </fieldset>
-    </SidePanel>
+      <p className="m-0 text-[13px] text-text-muted">
+        {pick(globals, {
+          ar: 'يُسجَّل كل تغيير للدور في سجل التدقيق.',
+          en: 'Every role change is recorded in the audit log.',
+        })}
+      </p>
+    </Dialog>
   );
 }
 
-/** Change role in one side panel: role cards, the current one marked, privileged ones unavailable. */
+/**
+ * Change role in one centred popup (672 px; forms standard rule 9, PO 12 Nov 2026): role cards, the current
+ * one marked, privileged ones unavailable; «Cancel» then «Save role» at the end.
+ */
 export const ChangeRole: Story = {
   render: (_args, { globals }) => (
     <TeamPage globals={globals}>

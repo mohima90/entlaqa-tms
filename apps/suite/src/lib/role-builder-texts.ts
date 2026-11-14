@@ -11,16 +11,16 @@ import {
   roleStartValues,
 } from '@jadarat/platform-rbac';
 import { getTranslations } from 'next-intl/server';
-import type { BuilderGroup, BuilderStart } from './role-builder';
+import {
+  type BuilderGroup,
+  type BuilderStart,
+  type BuilderValues,
+  applyStart,
+} from './role-builder';
 
 /** Text keys of the role builder (namespace `roleBuilder`). */
 const KEYS = [
   'details',
-  'startFrom',
-  'startHint',
-  'startPlaceholder',
-  'startStandard',
-  'startTemplate',
   'nameEn',
   'nameAr',
   'nameHint',
@@ -131,6 +131,57 @@ function groupsOf(locale: 'ar' | 'en', entries: readonly CustomRolePermission[])
         organizationOnly: entry.use === 'organization_only',
       })),
   })).filter((group) => group.permissions.length > 0);
+}
+
+/** Text keys of «Create role» (the popup; namespace `roleBuilder`). */
+const CREATE_KEYS = [
+  'titleNew',
+  'newIntro',
+  'newNote',
+  'startFrom',
+  'startHint',
+  'startStandard',
+  'startTemplate',
+  'nameEn',
+  'nameAr',
+  'cancel',
+  'creating',
+  'created',
+  'fieldErrors.required',
+  'fieldErrors.name',
+  'fieldErrors.nameTaken',
+] as const;
+
+/** The texts of «Create role», translated on the server. */
+export async function roleCreateTexts(locale: 'ar' | 'en'): Promise<Record<string, string>> {
+  const t = await getTranslations({ locale, namespace: 'roleBuilder' });
+  const common = await getTranslations({ locale, namespace: 'common' });
+  const texts: Record<string, string> = Object.fromEntries(CREATE_KEYS.map((k) => [k, t(k)]));
+  texts.required = common('required');
+  texts.optional = common('optional');
+  texts.close = common('close');
+  return texts;
+}
+
+const EMPTY_ROLE: BuilderValues = {
+  nameEn: '',
+  nameAr: '',
+  description: '',
+  dataScope: 'organization',
+  permissions: [],
+};
+
+/**
+ * «Start from» as «Create role» sends it: each choice with what it gives already worked out (`applyStart`:
+ * its scope, and its permissions of the catalogue — an administrative one only with the whole organization),
+ * so the popup needs no permission catalogue.
+ */
+export async function roleCreateStarts(locale: 'ar' | 'en'): Promise<BuilderStart[]> {
+  const groups = roleBuilderGroups(locale);
+  return (await roleBuilderStarts(locale)).map((start) => {
+    const applied = applyStart(groups, EMPTY_ROLE, start);
+    return { ...start, dataScope: applied.dataScope, permissions: applied.permissions };
+  });
 }
 
 /** «Start from»: a blank role, a copy of a standard role, or a template (code presets, not roles). */

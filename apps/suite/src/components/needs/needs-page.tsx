@@ -36,7 +36,7 @@ import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { LoadLatestVersion, useFormBase, useLatestVersion } from '../latest-version';
 import { NeedsFormRenderer, type NeedsFormAnswers } from '../needs-forms/needs-form-renderer';
-import { NeedPanel } from './need-panel';
+import { NeedDialog } from './need-dialog';
 import { useNeedsTexts } from './use-needs-texts';
 
 export interface NeedsPageProps {
@@ -489,7 +489,7 @@ export function NeedsPage(props: NeedsPageProps) {
       ) : null}
 
       {isHead ? (
-        <NeedPanel
+        <NeedDialog
           locale={locale}
           open={panel.open}
           onClose={() => {

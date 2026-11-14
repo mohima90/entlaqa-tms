@@ -6,7 +6,8 @@ import { levelOrdinalOf } from './level-ordinal';
 /** A department or branch as a filter choice (T-M2-04 users list; FR-ADM-04/05 subset). */
 export interface OrgUnitOption {
   readonly id: string;
-  readonly nameAr: string;
+  /** One of the two names may be missing, never both (migration 20261113100000). */
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
   /**
    * A unit's level (platform.structure_levels ordinal; its name labels the field, guided-test feedback #3);
@@ -28,7 +29,7 @@ export async function listOrgUnitOptions(tx: UserTx): Promise<OrgUnitOptions> {
   const read = async (query: SQL): Promise<OrgUnitOption[]> => {
     const rows = await tx.execute<{
       id: string;
-      name_ar: string;
+      name_ar: string | null;
       name_en: string | null;
       level_ordinal: number | null;
     }>(query);
@@ -41,9 +42,9 @@ export async function listOrgUnitOptions(tx: UserTx): Promise<OrgUnitOptions> {
   };
   const departments = await read(sql`
     select id, name_ar, name_en, level_ordinal from platform.departments
-    where deleted_at is null order by sort_order, name_ar, id`);
+    where deleted_at is null order by sort_order, coalesce(name_ar, name_en), id`);
   const branches = await read(sql`
     select id, name_ar, name_en, null::smallint as level_ordinal from platform.branches
-    where deleted_at is null order by is_headquarters desc, name_ar, id`);
+    where deleted_at is null order by is_headquarters desc, coalesce(name_ar, name_en), id`);
   return { departments, branches };
 }

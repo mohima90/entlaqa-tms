@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   localizedName,
+  localizedNameOrNull,
   roleName,
   teamCounts,
   usersListHref,
@@ -65,6 +66,16 @@ describe('names', () => {
     expect(localizedName('en', 'سارة', null)).toBe('سارة');
     // A person with an English name only (PO 17 Oct 2026).
     expect(localizedName('ar', null, 'Sarah')).toBe('Sarah');
+  });
+
+  it('a unit or branch named in one language only is still named; «none» is neither name', () => {
+    // English is the organization's default language: the unit has no Arabic name (PO, 12 Nov 2026).
+    expect(localizedNameOrNull('ar', null, 'Sales')).toBe('Sales');
+    expect(localizedNameOrNull('en', null, 'Sales')).toBe('Sales');
+    expect(localizedNameOrNull('en', 'المبيعات', null)).toBe('المبيعات');
+    expect(localizedNameOrNull('ar', 'المبيعات', 'Sales')).toBe('المبيعات');
+    // No unit at all.
+    expect(localizedNameOrNull('en', null, null)).toBeNull();
   });
 
   it('shows system role names and leaves unknown codes visible', () => {

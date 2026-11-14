@@ -9,9 +9,8 @@ import {
   savePlanCycleBudgetsActionDefinition,
   savePlanCycleRemindersActionDefinition,
   savePlanCycleScopeActionDefinition,
-  savePlanCycleStepsActionDefinition,
   savePlanningSettingsActionDefinition,
-  searchPlanApproversActionDefinition,
+  updatePlanCycleActionDefinition,
   updatePlanCycleBasicsActionDefinition,
 } from '../planning/definitions';
 
@@ -20,10 +19,10 @@ import {
  * in ../planning/definitions.ts; the database enforces who may write and the state model.
  */
 export const createPlanCycleAction = defineAction(createPlanCycleActionDefinition());
+export const updatePlanCycleAction = defineAction(updatePlanCycleActionDefinition());
 export const updatePlanCycleBasicsAction = defineAction(updatePlanCycleBasicsActionDefinition());
 export const savePlanCycleScopeAction = defineAction(savePlanCycleScopeActionDefinition());
 export const savePlanCycleBudgetsAction = defineAction(savePlanCycleBudgetsActionDefinition());
-export const savePlanCycleStepsAction = defineAction(savePlanCycleStepsActionDefinition());
 export const savePlanCycleRemindersAction = defineAction(savePlanCycleRemindersActionDefinition());
 export const launchPlanCycleAction = defineAction(launchPlanCycleActionDefinition());
 export const extendPlanCycleDeadlineAction = defineAction(
@@ -31,4 +30,3 @@ export const extendPlanCycleDeadlineAction = defineAction(
 );
 export const deletePlanCycleAction = defineAction(deletePlanCycleActionDefinition());
 export const savePlanningSettingsAction = defineAction(savePlanningSettingsActionDefinition());
-export const searchPlanApproversAction = defineAction(searchPlanApproversActionDefinition());

@@ -1,29 +1,13 @@
 'use client';
-import {
-  Alert,
-  Badge,
-  Button,
-  Icon,
-  SidePanel,
-  TextField,
-  buttonClasses,
-  toast,
-} from '@jadarat/ui';
+import { Alert, Badge, Button, Dialog, Icon, TextField, buttonClasses, toast } from '@jadarat/ui';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import {
-  type ReactNode,
-  type SyntheticEvent,
-  useEffect,
-  useRef,
-  useState,
-  useTransition,
-} from 'react';
+import { type SyntheticEvent, useEffect, useRef, useState, useTransition } from 'react';
 import { invitePrivilegedUserAction, inviteUserAction } from '../../actions/invitations';
 import { type ManagerChoice, managersFor } from '../../lib/edit-user-form';
 import { returnFocusTo } from '../../lib/focus-return';
 import { displayInviteCode } from '../../lib/invite-code';
-import { createdName, inviteFieldError } from '../../lib/invite-form';
+import { createdName, inviteFieldError, keptBehindMore } from '../../lib/invite-form';
 import { inviteLink } from '../../lib/invite-link';
 import {
   type RoleOption,
@@ -47,7 +31,6 @@ import { fieldErrorCodes } from '../profile/field-errors';
 import { SelectField } from '../select-field';
 import type { UnitChoice } from './edit-user-form';
 import type { InviteCodeValue, InviteCopyTexts } from './invite-code-copy';
-import { OtherNameToggle } from './other-name-toggle';
 import { DiscardDialog, type DiscardTexts } from './discard-dialog';
 import { RoleSelect, type RoleSelectTexts } from './role-select';
 import { HeadConfirmDialog, HeadUnitField, type HeadUnitTexts } from './head-unit-field';
@@ -75,13 +58,13 @@ export interface InviteUserFormProps {
   readonly labels: Readonly<Record<string, string>>;
   readonly fieldTexts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
-  /** The list behind the panel (closing returns to it) and its «Pending invites» view. */
+  /** The list behind the popup (closing returns to it) and its «Pending invites» view. */
   readonly usersHref: string;
   readonly invitedHref: string;
   readonly rolesHref: string;
   /** The code and link of the success view (Kawadir). */
   readonly copyTexts: InviteCopyTexts;
-  /** «Discard your changes?» (namespace `users`) before the panel closes with something typed. */
+  /** «Discard your changes?» (namespace `users`) before the popup closes with something typed. */
   readonly discardTexts: DiscardTexts;
   /** The page's language: the success view names the invitee in it (English name when given). */
   readonly uiLocale: 'ar' | 'en';
@@ -156,14 +139,25 @@ function CopyBox({
   );
 }
 
+/** The fields behind «More options», in the order they appear, with the element that shows each one's refusal. */
+const MORE_FIELD_IDS = {
+  departmentId: 'invite-department',
+  branchId: 'invite-branch',
+  managerPersonId: 'invite-manager',
+  employeeNumber: 'invite-employeeNumber',
+} as const;
+
 /**
- * Invite a user in a side panel over Team members (T-M2-07, FR-IAM-03, BR-IAM-1; redesign package 3 —
- * Greptile and Melio's invite drawers): work e-mail, the name in the organization's default language
- * (required, first) and in the other one behind «Add the name in …», placement, one role (EP-ROLES:
- * privileged roles listed but unavailable unless Organization Admin), the invitation language. Sent → the
- * same panel shows the code and the link to copy (Kawadir; no e-mail needed), the list behind updates its
- * counts, and «Invite another user» keeps the unit, branch, manager, role and language. Same validation,
- * permissions and actions as the page it replaces; its own address (`/users/invite`) still opens it.
+ * Invite a member in one centred popup over Team members (672 px; forms standard rule 9 — the Kawadir
+ * pattern, PO 12 Nov 2026; before: a side panel. T-M2-07, FR-IAM-03, BR-IAM-1): the few fields needed now —
+ * work e-mail, the first and family names in the organization's default language, one role (EP-ROLES:
+ * privileged roles listed but unavailable unless Organization Admin; a department-limited role asks its
+ * unit, the Department Head role its department) and the invitation language. Everything optional waits
+ * behind «More options» in the same popup: department, branch, direct manager, employee number and the
+ * names in the other language. Sent → the same popup shows the code and the link to copy (Kawadir; no
+ * e-mail needed), the list behind updates its counts, and «Invite another user» keeps the unit, branch,
+ * manager, role and language. Same validation, permissions and actions as before; its own address
+ * (`/users/invite`) still opens it.
  */
 export function InviteUserPanel(props: InviteUserFormProps) {
   const { labels, fieldTexts, roles } = props;
@@ -176,7 +170,9 @@ export function InviteUserPanel(props: InviteUserFormProps) {
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
   const nameLanguage = props.defaultLocale;
   const otherLanguage = nameLanguage === 'ar' ? 'en' : 'ar';
-  const [showOther, setShowOther] = useState(false);
+  const otherSuffix = otherLanguage === 'ar' ? 'Ar' : 'En';
+  // «More options» starts closed; a refused field inside opens it.
+  const [more, setMore] = useState(false);
   const [departmentId, setDepartmentId] = useState('');
   const [branchId, setBranchId] = useState('');
   const [managerId, setManagerId] = useState('');
@@ -239,11 +235,11 @@ export function InviteUserPanel(props: InviteUserFormProps) {
     };
     const input = {
       email: field('email'),
-      // The other language's names only when its fields were opened.
-      firstNameAr: nameLanguage === 'ar' || showOther ? field('firstNameAr') : '',
-      familyNameAr: nameLanguage === 'ar' || showOther ? field('familyNameAr') : '',
-      firstNameEn: nameLanguage === 'en' || showOther ? field('firstNameEn') : '',
-      familyNameEn: nameLanguage === 'en' || showOther ? field('familyNameEn') : '',
+      // The other language's names sit behind «More options» (empty unless typed there).
+      firstNameAr: field('firstNameAr'),
+      familyNameAr: field('familyNameAr'),
+      firstNameEn: field('firstNameEn'),
+      familyNameEn: field('familyNameEn'),
       departmentId,
       branchId,
       managerPersonId: managerId,
@@ -327,8 +323,25 @@ export function InviteUserPanel(props: InviteUserFormProps) {
         for (const name of missingNameFields(nameLanguage, input)) {
           errors[name] ??= fieldTexts.required ?? '';
         }
-        const suffix = otherLanguage === 'ar' ? 'Ar' : 'En';
-        if (errors[`firstName${suffix}`] ?? errors[`familyName${suffix}`]) setShowOther(true);
+        // A refused field under «More options» is shown, not hidden: open it and move to the field.
+        const hidden =
+          Object.entries(MORE_FIELD_IDS).find(([name]) => errors[name] !== undefined)?.[1] ??
+          (errors[`firstName${otherSuffix}`] !== undefined
+            ? `invite-firstName${otherSuffix}`
+            : errors[`familyName${otherSuffix}`] !== undefined
+              ? `invite-familyName${otherSuffix}`
+              : null);
+        if (hidden !== null) {
+          setMore(true);
+          // Only when nothing in view was refused too: the first refused field in view keeps the focus.
+          if (
+            Object.keys(errors).every(
+              (name) => name in MORE_FIELD_IDS || name.endsWith(otherSuffix),
+            )
+          ) {
+            requestAnimationFrame(() => document.getElementById(hidden)?.focus());
+          }
+        }
         setFieldErrors(errors);
       }
       setMessage(errorText(result.error, props.errors));
@@ -336,37 +349,33 @@ export function InviteUserPanel(props: InviteUserFormProps) {
   }
 
   /**
-   * First and family name of one language, each labelled with its language («First name in English» /
-   * «الاسم الأول بالعربية»: the two sets look alike, WCAG 2.4.6); the default language's are required.
+   * First and family name of one language side by side on a desktop (a natural pair), one per row on
+   * phones — each labelled with its language («First name in English» / «الاسم الأول بالعربية»: the two
+   * sets look alike, WCAG 2.4.6); the default language's are required.
    */
   const nameFields = (language: 'ar' | 'en', required: boolean) => {
     const suffix = language === 'ar' ? 'Ar' : 'En';
-    return (['firstName', 'familyName'] as const).map((part) => (
-      <TextField
-        key={`${part}${suffix}`}
-        id={`invite-${part}${suffix}`}
-        name={`${part}${suffix}`}
-        label={text(`${part}${suffix}`)}
-        marker={required ? text('required') : text('optional')}
-        required={required}
-        maxLength={60}
-        dir={language === 'ar' ? 'rtl' : 'ltr'}
-        lang={language}
-        autoComplete="off"
-        error={fieldErrors[`${part}${suffix}`]}
-        disabled={pending}
-      />
-    ));
+    return (
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        {(['firstName', 'familyName'] as const).map((part) => (
+          <TextField
+            key={`${part}${suffix}`}
+            id={`invite-${part}${suffix}`}
+            name={`${part}${suffix}`}
+            label={text(`${part}${suffix}`)}
+            marker={required ? text('required') : text('optional')}
+            required={required}
+            maxLength={60}
+            dir={language === 'ar' ? 'rtl' : 'ltr'}
+            lang={language}
+            autoComplete="off"
+            error={fieldErrors[`${part}${suffix}`]}
+            disabled={pending}
+          />
+        ))}
+      </div>
+    );
   };
-
-  const section = (title: string, children: ReactNode, grid = true) => (
-    <fieldset
-      className={`m-0 border-0 border-b border-border p-0 pb-5 last:border-b-0 ${grid ? 'grid grid-cols-1 gap-4' : 'flex flex-col gap-3'}`}
-    >
-      <legend className="mb-3 text-base font-bold">{title}</legend>
-      {children}
-    </fieldset>
-  );
 
   const value = created?.value;
   const link = value
@@ -375,17 +384,17 @@ export function InviteUserPanel(props: InviteUserFormProps) {
 
   return (
     <>
-      <SidePanel
+      <Dialog
         open={open}
         onClose={() => {
           setOpen(false);
           close();
         }}
         canClose={canClose}
+        size="rich"
         title={text('title')}
         description={created ? undefined : text('intro')}
         closeLabel={text('close')}
-        size="lg"
         data-testid="invite-panel"
         footer={
           created ? (
@@ -396,47 +405,47 @@ export function InviteUserPanel(props: InviteUserFormProps) {
                   event.preventDefault();
                   close(props.invitedHref);
                 }}
-                className={buttonClasses({ variant: 'ghost', size: 'md' })}
+                className={`${buttonClasses({ variant: 'ghost', size: 'md' })} sm:me-auto`}
                 data-testid="invite-to-list"
               >
                 {text('created.toList')}
               </Link>
-              <div className="ms-auto flex flex-wrap gap-2.5">
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    setCreated(null);
-                    setDirty(false);
-                    setShowOther(false);
-                    setFieldErrors({});
-                    setMessage(null);
-                    // Kept from the last invitation: placement, role and language (redesign package 3).
-                    setKept(
-                      departmentId !== '' ||
-                        branchId !== '' ||
-                        managerId !== '' ||
-                        role !== '' ||
-                        invitationLocale !== props.defaultLocale,
-                    );
-                    setFormKey((k) => k + 1);
-                  }}
-                  data-testid="invite-another"
-                >
-                  <Icon name="user-plus" className="size-4" />
-                  {text('created.inviteAnother')}
-                </Button>
-                <Button
-                  onClick={() => {
-                    setOpen(false);
-                  }}
-                  data-testid="invite-done"
-                >
-                  {text('done')}
-                </Button>
-              </div>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setCreated(null);
+                  setDirty(false);
+                  // «More» stays open while something behind it is kept (a department, a branch or a
+                  // manager): a kept choice is never out of sight in the next invitation.
+                  setMore(keptBehindMore({ departmentId, branchId, managerId }));
+                  setFieldErrors({});
+                  setMessage(null);
+                  // Kept from the last invitation: placement, role and language (redesign package 3).
+                  setKept(
+                    departmentId !== '' ||
+                      branchId !== '' ||
+                      managerId !== '' ||
+                      role !== '' ||
+                      invitationLocale !== props.defaultLocale,
+                  );
+                  setFormKey((k) => k + 1);
+                }}
+                data-testid="invite-another"
+              >
+                <Icon name="user-plus" className="size-4" />
+                {text('created.inviteAnother')}
+              </Button>
+              <Button
+                onClick={() => {
+                  setOpen(false);
+                }}
+                data-testid="invite-done"
+              >
+                {text('done')}
+              </Button>
             </>
           ) : (
-            <div className="ms-auto flex flex-wrap gap-2.5">
+            <>
               <Button
                 variant="secondary"
                 disabled={pending}
@@ -454,7 +463,7 @@ export function InviteUserPanel(props: InviteUserFormProps) {
               >
                 {pending ? text('submitting') : text('submit')}
               </Button>
-            </div>
+            </>
           )
         }
       >
@@ -494,7 +503,7 @@ export function InviteUserPanel(props: InviteUserFormProps) {
           <form
             id="invite-user-form"
             key={formKey}
-            className="flex flex-col gap-5"
+            className="flex flex-col gap-4"
             onSubmit={onSubmit}
             onChange={() => {
               setDirty(true);
@@ -507,208 +516,93 @@ export function InviteUserPanel(props: InviteUserFormProps) {
                 <Badge tone="brand">{text('keptFromLast')}</Badge>
               </p>
             ) : null}
-            {section(
-              text('person'),
-              <>
-                <TextField
-                  id="invite-email"
-                  name="email"
-                  type="email"
-                  label={text('email')}
-                  marker={text('required')}
-                  hint={text('emailHint')}
-                  required
-                  dir="ltr"
-                  autoComplete="off"
-                  maxLength={254}
-                  error={fieldErrors.email}
-                  disabled={pending}
-                  className=""
-                />
-                {nameFields(nameLanguage, true)}
-                {showOther ? (
-                  nameFields(otherLanguage, false)
-                ) : (
-                  <OtherNameToggle
-                    label={text(otherLanguage === 'ar' ? 'addArabicName' : 'addEnglishName')}
-                    focusId={`invite-firstName${otherLanguage === 'ar' ? 'Ar' : 'En'}`}
-                    disabled={pending}
-                    onOpen={() => {
-                      setShowOther(true);
-                    }}
-                  />
-                )}
-              </>,
-            )}
-            {section(
-              text('work'),
-              <>
-                <SelectField
-                  id="invite-department"
-                  label={text('department')}
-                  marker={text('optional')}
-                  value={departmentId}
-                  onChange={(event) => {
-                    setDepartmentId(event.target.value);
-                  }}
-                  error={fieldErrors.departmentId}
-                  disabled={pending}
-                >
-                  <option value="">{text('noDepartment')}</option>
-                  {props.departments.map((unit) => (
-                    <option key={unit.id} value={unit.id}>
-                      {unit.name}
-                    </option>
-                  ))}
-                </SelectField>
-                <SelectField
-                  id="invite-branch"
-                  label={text('branch')}
-                  marker={text('optional')}
-                  value={branchId}
-                  onChange={(event) => {
-                    setBranchId(event.target.value);
-                  }}
-                  error={fieldErrors.branchId}
-                  disabled={pending}
-                >
-                  <option value="">{text('noBranch')}</option>
-                  {props.branches.map((unit) => (
-                    <option key={unit.id} value={unit.id}>
-                      {unit.name}
-                    </option>
-                  ))}
-                </SelectField>
-                <div className="flex flex-col gap-2">
-                  <SelectField
-                    id="invite-manager"
-                    label={text('manager')}
-                    marker={text('optional')}
-                    hint={
-                      allManagers || departmentId === ''
-                        ? text('managerHintAll')
-                        : text('managerHint')
-                    }
-                    value={managerId}
-                    onChange={(event) => {
-                      setManagerId(event.target.value);
-                    }}
-                    error={fieldErrors.managerPersonId}
-                    disabled={pending}
-                  >
-                    <option value="">{text('noManager')}</option>
-                    {managers.map((manager) => (
-                      <option key={manager.personId} value={manager.personId}>
-                        {manager.name}
-                      </option>
-                    ))}
-                  </SelectField>
-                  {departmentId !== '' ? (
-                    <div>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        aria-controls="invite-manager"
-                        aria-pressed={allManagers}
-                        onClick={() => {
-                          setAllManagers((all) => !all);
-                        }}
-                        disabled={pending}
-                      >
-                        {allManagers
-                          ? text('departmentManagersOnly')
-                          : text('allDepartmentsManagers')}
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-                <TextField
-                  id="invite-employeeNumber"
-                  name="employeeNumber"
-                  label={text('employeeNumber')}
-                  marker={text('optional')}
-                  hint={text('employeeNumberHint')}
-                  dir="ltr"
-                  autoComplete="off"
-                  maxLength={40}
-                  error={fieldErrors.employeeNumber}
-                  disabled={pending}
-                />
-              </>,
-            )}
-            {section(
-              text('role'),
-              <>
-                <RoleSelect
-                  id="invite-role"
-                  value={role}
-                  onChange={(code) => {
-                    setRole(code);
-                    if (!needsScopeUnit(roles, code)) setScopeUnitId('');
-                    if (code !== DEPARTMENT_HEAD_ROLE) setHeadUnitId('');
-                    setFieldErrors(
-                      ({ role: _cleared, scopeUnitId: _unit, headUnitId: _head, ...rest }) => rest,
-                    );
-                  }}
-                  options={roles}
-                  texts={props.roleTexts}
-                  marker={text('required')}
-                  hint={text('roleHint')}
-                  error={fieldErrors.role}
-                  disabled={pending}
-                />
-                {withUnit ? (
-                  <ScopeUnitSelect
-                    id="invite-unit"
-                    value={scopeUnitId}
-                    onChange={(id) => {
-                      setScopeUnitId(id);
-                      setFieldErrors(({ scopeUnitId: _cleared, ...rest }) => rest);
-                    }}
-                    choices={props.scopeUnits}
-                    texts={props.unitTexts}
-                    marker={text('required')}
-                    error={fieldErrors.scopeUnitId}
-                    disabled={pending}
-                  />
-                ) : null}
-                {picksHead ? (
-                  <HeadUnitField
-                    id="invite-head-unit"
-                    value={headUnitId}
-                    onChange={(id) => {
-                      setHeadUnitId(id);
-                      setFieldErrors(({ headUnitId: _cleared, ...rest }) => rest);
-                    }}
-                    units={props.scopeUnits}
-                    heads={props.headUnits.heads}
-                    personId={null}
-                    ownUnitId={ownUnitId}
-                    texts={props.headTexts}
-                    marker={text('required')}
-                    error={fieldErrors.headUnitId}
-                    disabled={pending}
-                    locale={props.uiLocale}
-                  />
-                ) : null}
-                {readsHeadedDepartments(roles, role) && !picksHead ? (
-                  <Alert tone="info" data-testid="role-departments-hint">
-                    {text('departmentsHint')}
-                  </Alert>
-                ) : null}
-                {lockedSome && props.labels.privilegedLocked ? (
-                  <p className="m-0 text-sm text-text-muted" data-testid="privileged-locked">
-                    {text('privilegedLocked')}
-                  </p>
-                ) : null}
-                <a href={props.rolesHref} className="text-sm">
-                  {text('rolesHelp')}
-                </a>
-              </>,
-              false,
-            )}
-            <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
-              <legend className="mb-1 text-base font-bold">{text('language')}</legend>
+            <TextField
+              id="invite-email"
+              name="email"
+              type="email"
+              label={text('email')}
+              marker={text('required')}
+              hint={text('emailHint')}
+              required
+              dir="ltr"
+              autoComplete="off"
+              maxLength={254}
+              error={fieldErrors.email}
+              disabled={pending}
+            />
+            {nameFields(nameLanguage, true)}
+            <RoleSelect
+              id="invite-role"
+              value={role}
+              onChange={(code) => {
+                setRole(code);
+                if (!needsScopeUnit(roles, code)) setScopeUnitId('');
+                if (code !== DEPARTMENT_HEAD_ROLE) setHeadUnitId('');
+                setFieldErrors(
+                  ({ role: _cleared, scopeUnitId: _unit, headUnitId: _head, ...rest }) => rest,
+                );
+              }}
+              options={roles}
+              texts={props.roleTexts}
+              marker={text('required')}
+              hint={text('roleHint')}
+              error={fieldErrors.role}
+              disabled={pending}
+            />
+            {withUnit ? (
+              <ScopeUnitSelect
+                id="invite-unit"
+                value={scopeUnitId}
+                onChange={(id) => {
+                  setScopeUnitId(id);
+                  setFieldErrors(({ scopeUnitId: _cleared, ...rest }) => rest);
+                }}
+                choices={props.scopeUnits}
+                texts={props.unitTexts}
+                marker={text('required')}
+                error={fieldErrors.scopeUnitId}
+                disabled={pending}
+              />
+            ) : null}
+            {picksHead ? (
+              <HeadUnitField
+                id="invite-head-unit"
+                value={headUnitId}
+                onChange={(id) => {
+                  setHeadUnitId(id);
+                  setFieldErrors(({ headUnitId: _cleared, ...rest }) => rest);
+                }}
+                units={props.scopeUnits}
+                heads={props.headUnits.heads}
+                personId={null}
+                ownUnitId={ownUnitId}
+                texts={props.headTexts}
+                marker={text('required')}
+                error={fieldErrors.headUnitId}
+                disabled={pending}
+                locale={props.uiLocale}
+              />
+            ) : null}
+            {readsHeadedDepartments(roles, role) && !picksHead ? (
+              <Alert tone="info" data-testid="role-departments-hint">
+                {text('departmentsHint')}
+              </Alert>
+            ) : null}
+            {lockedSome && props.labels.privilegedLocked ? (
+              <p className="m-0 text-sm text-text-muted" data-testid="privileged-locked">
+                {text('privilegedLocked')}
+              </p>
+            ) : null}
+            <p className="m-0">
+              <a
+                href={props.rolesHref}
+                className="inline-flex min-h-6 items-center text-sm pointer-coarse:min-h-11"
+              >
+                {text('rolesHelp')}
+              </a>
+            </p>
+            <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">
+              <legend className="mb-1 text-sm font-semibold">{text('language')}</legend>
               <div className="flex flex-wrap gap-6">
                 {(['ar', 'en'] as const).map((language) => (
                   <label key={language} className="inline-flex min-h-11 items-center gap-2">
@@ -728,6 +622,120 @@ export function InviteUserPanel(props: InviteUserFormProps) {
                 ))}
               </div>
             </fieldset>
+            {/* Everything optional waits behind «More options» (forms standard rule 9). Hidden, never
+                unmounted: what was typed or chosen there is still sent. */}
+            <button
+              type="button"
+              className="flex min-h-10 flex-wrap items-center gap-1.5 self-start rounded-full px-2 text-start text-sm font-semibold text-primary-text hover:bg-primary-subtle pointer-coarse:min-h-11"
+              aria-expanded={more}
+              aria-controls="invite-more"
+              disabled={pending}
+              onClick={() => {
+                setMore((current) => !current);
+              }}
+              data-testid="invite-more"
+            >
+              <Icon name={more ? 'chevron-down' : 'chevron-end'} />
+              {text('more')}
+              <span className="font-normal text-text-muted">
+                {' · '}
+                {text(otherLanguage === 'ar' ? 'moreSummaryArabic' : 'moreSummaryEnglish')}
+              </span>
+            </button>
+            <div id="invite-more" className={more ? 'flex flex-col gap-4' : 'hidden'}>
+              <SelectField
+                id="invite-department"
+                label={text('department')}
+                marker={text('optional')}
+                value={departmentId}
+                onChange={(event) => {
+                  setDepartmentId(event.target.value);
+                }}
+                error={fieldErrors.departmentId}
+                disabled={pending}
+              >
+                <option value="">{text('noDepartment')}</option>
+                {props.departments.map((unit) => (
+                  <option key={unit.id} value={unit.id}>
+                    {unit.name}
+                  </option>
+                ))}
+              </SelectField>
+              <SelectField
+                id="invite-branch"
+                label={text('branch')}
+                marker={text('optional')}
+                value={branchId}
+                onChange={(event) => {
+                  setBranchId(event.target.value);
+                }}
+                error={fieldErrors.branchId}
+                disabled={pending}
+              >
+                <option value="">{text('noBranch')}</option>
+                {props.branches.map((unit) => (
+                  <option key={unit.id} value={unit.id}>
+                    {unit.name}
+                  </option>
+                ))}
+              </SelectField>
+              <div className="flex flex-col gap-2">
+                <SelectField
+                  id="invite-manager"
+                  label={text('manager')}
+                  marker={text('optional')}
+                  hint={
+                    allManagers || departmentId === ''
+                      ? text('managerHintAll')
+                      : text('managerHint')
+                  }
+                  value={managerId}
+                  onChange={(event) => {
+                    setManagerId(event.target.value);
+                  }}
+                  error={fieldErrors.managerPersonId}
+                  disabled={pending}
+                >
+                  <option value="">{text('noManager')}</option>
+                  {managers.map((manager) => (
+                    <option key={manager.personId} value={manager.personId}>
+                      {manager.name}
+                    </option>
+                  ))}
+                </SelectField>
+                {departmentId !== '' ? (
+                  <div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      aria-controls="invite-manager"
+                      aria-pressed={allManagers}
+                      onClick={() => {
+                        setAllManagers((all) => !all);
+                      }}
+                      disabled={pending}
+                    >
+                      {allManagers
+                        ? text('departmentManagersOnly')
+                        : text('allDepartmentsManagers')}
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+              <TextField
+                id="invite-employeeNumber"
+                name="employeeNumber"
+                label={text('employeeNumber')}
+                marker={text('optional')}
+                hint={text('employeeNumberHint')}
+                dir="ltr"
+                autoComplete="off"
+                maxLength={40}
+                error={fieldErrors.employeeNumber}
+                disabled={pending}
+              />
+              {nameFields(otherLanguage, false)}
+            </div>
             <Alert tone="info" data-testid="invite-notice">
               {text('expiryNotice')}
             </Alert>
@@ -738,7 +746,7 @@ export function InviteUserPanel(props: InviteUserFormProps) {
             ) : null}
           </form>
         )}
-      </SidePanel>
+      </Dialog>
       <HeadConfirmDialog
         open={askReplace !== null && replacedHead !== null}
         title={headText('replaceTitle', { unit: headUnitName })}
@@ -755,6 +763,7 @@ export function InviteUserPanel(props: InviteUserFormProps) {
         })()}
         confirm={headText('replaceConfirm')}
         cancel={headText('cancel')}
+        close={text('close')}
         busy={pending}
         onConfirm={() => {
           if (askReplace) send({ ...askReplace, replaceHead: true });

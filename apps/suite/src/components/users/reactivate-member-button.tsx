@@ -87,7 +87,7 @@ export function ReactivateMemberButton(props: ReactivateMemberButtonProps) {
         }}
         title={text('button')}
         description={text('confirm')}
-        closeLabel={text('keep')}
+        closeLabel={text('close')}
         size="sm"
         data-testid="reactivate-dialog"
         footer={

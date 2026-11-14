@@ -331,9 +331,11 @@ export function EditUserForm(props: EditUserFormProps) {
           if (detailsChanged) router.refresh();
           if (savedRecord.error.code === 'VALIDATION_FAILED') {
             const codes = fieldErrorCodes(savedRecord.error);
+            // A date the input check refuses (out of range) comes back under the input's own path
+            // («hr.birthDate»); a date the database refuses (in the future) under «birthDate».
             setFieldErrors({
               ...(codes.gradeId ? { gradeId: rt('grade.errInvalid') } : {}),
-              ...(codes.birthDate ? { birthDate: rt('hr.dobError') } : {}),
+              ...(codes.birthDate || codes['hr.birthDate'] ? { birthDate: rt('hr.dobError') } : {}),
             });
           }
           setMessage(

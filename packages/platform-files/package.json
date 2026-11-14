@@ -21,7 +21,7 @@
     "@jadarat/platform-core": "workspace:*",
     "@jadarat/platform-db": "workspace:*",
     "@jadarat/platform-jobs": "workspace:*",
-    "file-type": "22.2.0",
+    "file-type": "22.3.0",
     "server-only": "0.0.1"
   },
   "peerDependencies": {
@@ -30,10 +30,10 @@
   "devDependencies": {
     "@jadarat/config": "workspace:*",
     "@types/node": "24.19.2",
-    "@vitest/coverage-v8": "5.0.5",
+    "@vitest/coverage-v8": "5.1.0",
     "drizzle-orm": "0.45.4",
-    "next": "16.4.3",
+    "next": "16.4.6",
     "typescript": "6.0.3",
-    "vitest": "5.0.5"
+    "vitest": "5.1.0"
   }
 }

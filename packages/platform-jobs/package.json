@@ -32,10 +32,10 @@
     "@jadarat/platform-core": "workspace:*",
     "@types/node": "24.19.2",
     "@types/pg": "8.23.1",
-    "@vitest/coverage-v8": "5.0.5",
+    "@vitest/coverage-v8": "5.1.0",
     "drizzle-orm": "0.45.4",
-    "next": "16.4.3",
+    "next": "16.4.6",
     "typescript": "6.0.3",
-    "vitest": "5.0.5"
+    "vitest": "5.1.0"
   }
 }

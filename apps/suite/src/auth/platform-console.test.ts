@@ -141,7 +141,11 @@ describe('createOrganizationAction', () => {
     ['Arabic chosen and the Arabic name left out', { nameAr: undefined }, 'nameAr'],
     ['English chosen and no English name', { locale: 'en', nameEn: ' ' }, 'nameEn'],
     ['English chosen and the English name left out', { locale: 'en', nameEn: undefined }, 'nameEn'],
-    ['no language sent (English) and only the Arabic name', { locale: undefined, nameEn: '' }, 'nameEn'],
+    [
+      'no language sent (English) and only the Arabic name',
+      { locale: undefined, nameEn: '' },
+      'nameEn',
+    ],
     ['an English name of invisible characters', { locale: 'en', nameEn: '\u200f\u200f' }, 'nameEn'],
     ['an Arabic name of invisible characters', { nameAr: '‏‏' }, 'nameAr'],
     ['a control character', { nameAr: 'منشأة\u0007' }, 'nameAr'],

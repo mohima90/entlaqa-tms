@@ -157,8 +157,10 @@ export interface SessionTenant {
  * invalid or expired session.
  */
 export async function listSessionTenants(tx: UserTx): Promise<readonly SessionTenant[]> {
-  const rows = await tx.execute<{ tenant_id: string; name_ar: string | null; name_en: string | null }>(
-    sql`select tenant_id, name_ar, name_en from private.session_tenants()`,
-  );
+  const rows = await tx.execute<{
+    tenant_id: string;
+    name_ar: string | null;
+    name_en: string | null;
+  }>(sql`select tenant_id, name_ar, name_en from private.session_tenants()`);
   return rows.map((row) => ({ tenantId: row.tenant_id, nameAr: row.name_ar, nameEn: row.name_en }));
 }

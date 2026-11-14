@@ -1,4 +1,5 @@
 import { hasVisibleText } from '@jadarat/platform-i18n';
+import { ORGANIZATION_NAME_MAX } from '@jadarat/platform-i18n/names';
 import { EmailAddress, EmailProviderInput, SenderName } from '@jadarat/platform-notifications';
 import { z } from 'zod';
 import { organizationNameField } from './organization-name-field';
@@ -27,8 +28,8 @@ export const CreateOrganizationInput = z
   .strictObject({
     slug: z.string().refine(isOrganizationSlug, { message: 'slug' }),
     // One name is enough — the one in the language chosen below (PO, 12 Nov 2026); see superRefine.
-    nameAr: organizationName(200).optional(),
-    nameEn: organizationName(200).optional(),
+    nameAr: organizationName(ORGANIZATION_NAME_MAX).optional(),
+    nameEn: organizationName(ORGANIZATION_NAME_MAX).optional(),
     adminEmail: z.string().trim().toLowerCase().max(254).pipe(z.email()),
     adminFirstNameAr: personName,
     adminFamilyNameAr: personName,

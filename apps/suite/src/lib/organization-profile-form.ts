@@ -1,3 +1,4 @@
+import { ORGANIZATION_NAME_MAX } from '@jadarat/platform-i18n/names';
 import { normalizeDigits } from '@jadarat/platform-i18n/text';
 
 /**
@@ -5,7 +6,7 @@ import { normalizeDigits } from '@jadarat/platform-i18n/text';
  * server validates again (platform-rbac OrganizationProfileInput) and the database once more; these rules
  * give the admin the field-level message before anything is sent, and never drop what was typed.
  */
-export const ORGANIZATION_NAME_MAX = 80;
+export { ORGANIZATION_NAME_MAX };
 
 /**
  * The profile and regional settings as the General page edits them. The organization's display names moved

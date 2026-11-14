@@ -1,6 +1,7 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
 import { type ClaimsTx, runWithClaims } from './claims-tx';
+import { storableNamePair } from './custom-roles-present';
 import { type AppDatabase, getDatabase } from './client';
 import { DomainError } from './domain-error';
 import { pgError } from './pg-error';
@@ -350,8 +351,14 @@ export async function saveBranding(
             returning version`);
     if (!saved) return { outcome: 'refused' };
     if (after.nameAr !== before.nameAr || after.nameEn !== before.nameEn) {
+      // One name only once the database takes it (deploy window of 20261113120000: storableNamePair).
+      const stored = await storableNamePair(
+        tx,
+        { table: 'platform.tenants', column: 'name_ar' },
+        after,
+      );
       const [names] = await tx.execute(sql`
-        update platform.tenants set name_ar = ${after.nameAr}, name_en = ${after.nameEn}
+        update platform.tenants set name_ar = ${stored.nameAr}, name_en = ${stored.nameEn}
         where id = (select private.current_tenant_id())
         returning id`);
       if (!names) return { outcome: 'refused' };

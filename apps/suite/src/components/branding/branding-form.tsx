@@ -53,6 +53,7 @@ import {
 } from '../../lib/branding-view';
 import { fillText } from '../../lib/fill-text';
 import { cleanName, validateOrganizationName } from '../../lib/organization-profile-form';
+import { nameOrder } from '../../lib/structure-form';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { LeaveGuard } from '../settings/leave-guard';
@@ -108,6 +109,11 @@ export interface BrandingFormValues {
 
 export interface BrandingFormProps {
   readonly locale: 'ar' | 'en';
+  /**
+   * The organization's default language: its name in it is required and asked first, the other language is
+   * optional (PO 12 Nov 2026; review of WP-UX-01 d — an organization may have one name only).
+   */
+  readonly nameLanguage: 'ar' | 'en';
   /** Sign-in and database configured: uploads and saving work. Otherwise the page is a preview. */
   readonly live: boolean;
   readonly editable: boolean;
@@ -265,7 +271,9 @@ function formatBytes(bytes: number, locale: 'ar' | 'en'): string {
 }
 
 export function BrandingForm(props: BrandingFormProps) {
-  const { texts, live, locale, common } = props;
+  const { texts, live, locale, common, nameLanguage } = props;
+  const requiredName = nameLanguage === 'ar' ? 'nameAr' : 'nameEn';
+  const fieldOrder = fieldOrderFor(nameLanguage);
   const t = useCallback((key: string) => texts[key] ?? key, [texts]);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
@@ -485,6 +493,8 @@ export function BrandingForm(props: BrandingFormProps) {
   function validate(): Partial<Record<Field, string>> {
     const errors: Partial<Record<Field, string>> = {};
     for (const field of ['nameEn', 'nameAr'] as const) {
+      // The other language's name may stay empty; a given one keeps the same rules.
+      if (field !== requiredName && cleanName(values[field]) === '') continue;
       const problem = validateOrganizationName(values[field]);
       if (problem) errors[field] = t(`fieldErrors.${problem}`);
     }
@@ -496,7 +506,7 @@ export function BrandingForm(props: BrandingFormProps) {
     return errors;
   }
 
-  const firstInvalid = FIELD_ORDER.find((field) => fieldErrors[field] !== undefined) ?? null;
+  const firstInvalid = fieldOrder.find((field) => fieldErrors[field] !== undefined) ?? null;
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -504,7 +514,7 @@ export function BrandingForm(props: BrandingFormProps) {
     setMessage(null);
     const found = validate();
     setFieldErrors(found);
-    const first = FIELD_ORDER.find((field) => found[field] !== undefined);
+    const first = fieldOrder.find((field) => found[field] !== undefined);
     if (first) {
       setRefused(true);
       document.getElementById(`brand-${first}`)?.focus();
@@ -576,7 +586,11 @@ export function BrandingForm(props: BrandingFormProps) {
             updateSlot(slot, (state) => saveRefused(state, reason));
           } else if (path === 'websiteUrl') fromServer.websiteUrl = t('website.invalid');
           else if (path === 'nameEn' || path === 'nameAr')
-            fromServer[path] = t('fieldErrors.nameInvalid');
+            fromServer[path] = t(
+              fieldError.code === 'REQUIRED'
+                ? 'fieldErrors.nameRequired'
+                : 'fieldErrors.nameInvalid',
+            );
           else if (path === 'primaryColor' || path === 'secondaryColor') {
             fromServer[path] = t('colors.hexInvalid');
           }
@@ -875,39 +889,31 @@ export function BrandingForm(props: BrandingFormProps) {
             className="flex flex-col gap-4"
           >
             <div className="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-4">
-              <TextField
-                id="brand-nameEn"
-                dir="ltr"
-                lang="en"
-                autoComplete="organization"
-                label={t('names.nameEn')}
-                marker={common.required}
-                aria-required
-                hint={t('names.hint')}
-                error={fieldErrors.nameEn}
-                value={values.nameEn}
-                onChange={(event) => {
-                  set('nameEn', event.target.value);
-                }}
-                disabled={disabled}
-                data-testid="brand-nameEn"
-              />
-              <TextField
-                id="brand-nameAr"
-                dir="rtl"
-                lang="ar"
-                label={t('names.nameAr')}
-                marker={common.required}
-                aria-required
-                hint={t('names.hint')}
-                error={fieldErrors.nameAr}
-                value={values.nameAr}
-                onChange={(event) => {
-                  set('nameAr', event.target.value);
-                }}
-                disabled={disabled}
-                data-testid="brand-nameAr"
-              />
+              {/* The default language's name first and required; the other language optional. */}
+              {nameOrder(nameLanguage).map((language) => {
+                const field = language === 'ar' ? 'nameAr' : 'nameEn';
+                const required = field === requiredName;
+                return (
+                  <TextField
+                    key={field}
+                    id={`brand-${field}`}
+                    dir={language === 'ar' ? 'rtl' : 'ltr'}
+                    lang={language}
+                    autoComplete={language === 'en' ? 'organization' : undefined}
+                    label={t(`names.${field}`)}
+                    marker={required ? common.required : common.optional}
+                    aria-required={required || undefined}
+                    hint={t('names.hint')}
+                    error={fieldErrors[field]}
+                    value={values[field]}
+                    onChange={(event) => {
+                      set(field, event.target.value);
+                    }}
+                    disabled={disabled}
+                    data-testid={`brand-${field}`}
+                  />
+                );
+              })}
             </div>
             <TextField
               id="brand-websiteUrl"
@@ -1198,7 +1204,11 @@ export function BrandingForm(props: BrandingFormProps) {
 }
 
 /** The form's fields in page order (the first one with an error gets the focus). */
-const FIELD_ORDER = ['nameEn', 'nameAr', 'websiteUrl', 'primaryColor', 'secondaryColor'] as const;
+/** The fields in the page's order: the default language's name first (the first refused one takes focus). */
+function fieldOrderFor(nameLanguage: 'ar' | 'en'): readonly Field[] {
+  const names = nameOrder(nameLanguage).map((l) => (l === 'ar' ? 'nameAr' : 'nameEn'));
+  return [...names, 'websiteUrl', 'primaryColor', 'secondaryColor'];
+}
 
 /** A field's visible label (the save bar's «Go to …»). */
 function fieldLabel(field: Field, t: (key: string) => string): string {

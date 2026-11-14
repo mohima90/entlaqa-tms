@@ -8,11 +8,11 @@ import {
   listCostCentres,
   updateCostCentre,
 } from '@jadarat/platform-db';
-import { hasVisibleText } from '@jadarat/platform-i18n';
 import { z } from 'zod';
 import type { ActionDefinition } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import { platformPermissions } from '../platform-permissions';
+import { defaultNameError, nameInOneLanguage } from './default-language-name';
 import { ORG_CODE } from './structure';
 
 /**
@@ -20,16 +20,13 @@ import { ORG_CODE } from './structure';
  * PO 24 Oct 2026: the finance codes that pay; each person has one). Read with `platform.org.read`, changed with
  * `platform.org.manage` (the HR Manager), as the rest of the structure. The database checks the codes, the names
  * and that one in use is not deleted. Audited: platform.org.cost_centre_created / cost_centre_updated /
- * cost_centre_deleted (codes and names before and after; no personal data).
+ * cost_centre_deleted (codes and names before and after; no personal data). Names (WP-UX-01 b; PO, 12 Nov
+ * 2026): a cost centre is named in the organization's default language; the other language is optional
+ * (default-language-name.ts) — one saved with its names as they were (activate, deactivate) is not asked again.
  */
 const p = platformPermissions;
 
-const optionalName = z
-  .string()
-  .trim()
-  .max(120)
-  .refine((value) => value === '' || hasVisibleText(value), { message: 'invisible' })
-  .transform((value) => (value === '' ? null : value));
+const optionalName = nameInOneLanguage(120);
 
 const fields = {
   code: z.string().trim().regex(ORG_CODE),
@@ -38,15 +35,13 @@ const fields = {
   status: z.enum(['active', 'inactive']),
 };
 
-const someName = (value: { nameEn: string | null; nameAr: string | null }) =>
-  value.nameEn !== null || value.nameAr !== null;
-
-export const CostCentreInput = z
-  .strictObject(fields)
-  .refine(someName, { message: 'name_required', path: ['nameEn'] });
-export const UpdateCostCentreInput = z
-  .strictObject({ id: z.uuid(), version: z.number().int().min(1), ...fields })
-  .refine(someName, { message: 'name_required', path: ['nameEn'] });
+// Which name is required is the handlers' rule (the organization's default language, defaultNameError).
+export const CostCentreInput = z.strictObject(fields);
+export const UpdateCostCentreInput = z.strictObject({
+  id: z.uuid(),
+  version: z.number().int().min(1),
+  ...fields,
+});
 export const CostCentreRefInput = z.strictObject({
   id: z.uuid(),
   version: z.number().int().min(1),
@@ -121,7 +116,12 @@ export function createCostCentreActionDefinition(): ActionDefinition<
   return {
     permission: p['platform.org.manage'],
     input: CostCentreInput,
-    handler: async ({ ctx, input }) => result(await createCostCentre(ctx.tx, input)),
+    handler: async ({ ctx, input }) => {
+      // The name in the organization's default language is required (PO, 12 Nov 2026).
+      const nameError = await defaultNameError(ctx.tx, input);
+      if (nameError) return err(nameError);
+      return result(await createCostCentre(ctx.tx, input));
+    },
     audit: (_input, output) => ({
       action: 'platform.org.cost_centre_created',
       entityType: 'cost_centre',
@@ -142,6 +142,12 @@ export function updateCostCentreActionDefinition(): ActionDefinition<
     input: UpdateCostCentreInput,
     handler: async ({ ctx, input }) => {
       const { id, version, ...fields } = input;
+      const nameError = await defaultNameError(ctx.tx, fields, {
+        thing: 'cost_centre',
+        id,
+        version,
+      });
+      if (nameError) return err(nameError);
       return result(await updateCostCentre(ctx.tx, id, version, fields));
     },
     audit: (_input, output) => ({

@@ -4,10 +4,11 @@ import {
   type CourseCategoryRow,
   type CourseCounts,
   type CourseRow,
-  DELIVERY_TYPES,
   OFFERED_DELIVERY_TYPES,
   countCourses,
+  courseCategoryName,
   courseMatches,
+  courseTitle,
 } from '@jadarat/tms/courses';
 import { Alert, PageHeader } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
@@ -38,16 +39,20 @@ interface CoursesPageData {
   readonly canManage: boolean;
   readonly canArchive: boolean;
   readonly canSeeCosts: boolean;
+  /** The language whose title is required: the organization's default language. */
+  readonly nameLanguage: 'ar' | 'en';
   readonly preview: boolean;
 }
 
 /**
  * Courses (T-M3-03; FR-CAT-01, FR-CAT-10; redesign package 4): view cards as the status filter, instant
- * search and filter pills, the list (cards on phones), a course's read panel, add / edit in a side panel,
- * archive / restore with Undo. Holders of tms.course.read see the library (L&D Manager, Training
- * Coordinator, HR Manager, Department Head); tms.course.manage adds and edits, tms.course.archive archives
- * and restores; the estimated costs show for tms.course_cost.read, in the organization's currency (General
- * settings). The Organization Admin has no training access (BR-IAM-4).
+ * search and filter pills, the list (cards on phones), a course's read panel. The Kawadir pattern
+ * (WP-UX-01 c, T-M3-21): «Add course» is one popup, the rest of a course is on its Settings page
+ * (`[courseId]/settings`), archive / restore from the row menu after a small confirmation, with Undo.
+ * Holders of tms.course.read see the library (L&D Manager, Training Coordinator, HR Manager, Department
+ * Head); tms.course.manage adds and edits, tms.course.archive archives and restores; the estimated costs
+ * show for tms.course_cost.read, in the organization's currency (General settings). The Organization Admin
+ * has no training access (BR-IAM-4).
  */
 export default async function CoursesPage({
   params,
@@ -76,6 +81,8 @@ export default async function CoursesPage({
       canManage: true,
       canArchive: true,
       canSeeCosts: true,
+      // The example library is titled in both languages: the page's language is asked first.
+      nameLanguage: locale,
       preview: true,
     };
   } else {
@@ -125,17 +132,20 @@ export default async function CoursesPage({
     const integer = (n: number) => format.number(n, 'integer');
     const amount = (value: number, currency: string) =>
       format.number(value, { style: 'currency', currency, maximumFractionDigits: 2 });
-    const categoryName = (category: CourseCategoryRow) =>
-      locale === 'ar' ? category.nameAr : category.nameEn;
+    // A category and a course may be named in one language only: the name that exists is shown.
+    const categoryName = (category: CourseCategoryRow) => courseCategoryName(category, locale);
     const categories = new Map(page.categories.map((c) => [c.id, c]));
     const items: CourseListItem[] = page.courses.map((course) => {
       const category = course.categoryId ? categories.get(course.categoryId) : undefined;
       const currency = course.costCurrency ?? page.currency;
       const description = locale === 'ar' ? course.descriptionAr : course.descriptionEn;
+      const title = courseTitle(course, locale);
+      const otherTitle = courseTitle(course, locale === 'ar' ? 'en' : 'ar');
       return {
         course,
-        title: locale === 'ar' ? course.titleAr : course.titleEn,
-        otherTitle: locale === 'ar' ? course.titleEn : course.titleAr,
+        title,
+        // The other language's title under it — when the course has one.
+        otherTitle: otherTitle === title ? null : otherTitle,
         description: description === '' ? null : description,
         category: category ? categoryName(category) : null,
         deliveryType: t(`deliveryTypes.${course.deliveryType}`),
@@ -178,22 +188,14 @@ export default async function CoursesPage({
         canArchive={page.canArchive}
         canSeeCosts={page.canSeeCosts}
         truncated={page.truncated}
-        form={{
-          categories: page.categories.map((c) => ({ id: c.id, name: categoryName(c) })),
+        add={{
+          nameLanguage: page.nameLanguage,
           deliveryTypes: OFFERED_DELIVERY_TYPES.map((value) => ({
             value,
             label: t(`deliveryTypes.${value}`),
           })),
-          // A stored course may still have one of the other types: it keeps its label in the form.
-          deliveryTypeLabels: Object.fromEntries(
-            DELIVERY_TYPES.map((value) => [value, t(`deliveryTypes.${value}`)]),
-          ),
-          currency: page.currency,
-          showCosts: page.canSeeCosts,
-          preview: page.preview,
-          texts,
-          errors: errorTexts,
         }}
+        preview={page.preview}
         texts={texts}
         errors={errorTexts}
         notices={

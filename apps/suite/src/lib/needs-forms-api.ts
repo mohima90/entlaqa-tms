@@ -163,13 +163,14 @@ const trimmed = (names: Names): Names => ({
   nameEn: names.nameEn.trim(),
   nameAr: names.nameAr.trim(),
 });
-const namesProblem = (names: Names): AppError | null => {
-  const fieldErrors = [
-    ...(names.nameEn.trim() === '' ? [{ path: 'nameEn', code: 'REQUIRED' }] : []),
-    ...(names.nameAr.trim() === '' ? [{ path: 'nameAr', code: 'REQUIRED' }] : []),
-  ];
-  return fieldErrors.length > 0 ? appError('VALIDATION_FAILED', { fieldErrors }) : null;
-};
+/**
+ * The preview's light version of the server's rule: a form has a name in at least one language (which one
+ * is required — the organization's default language — is asked by the dialog before it sends).
+ */
+const namesProblem = (names: Names): AppError | null =>
+  names.nameEn.trim() === '' && names.nameAr.trim() === ''
+    ? appError('VALIDATION_FAILED', { fieldErrors: [{ path: 'nameEn', code: 'REQUIRED' }] })
+    : null;
 
 export function previewApi(): NeedsFormsApi {
   const store = browserPreview();

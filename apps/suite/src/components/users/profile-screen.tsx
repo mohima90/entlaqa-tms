@@ -70,7 +70,7 @@ import {
   memberSecurityQuery,
   userProfileQuery,
 } from '../../lib/users-queries';
-import { localizedName, roleName } from '../../lib/users-view';
+import { localizedName, localizedNameOrNull, roleName } from '../../lib/users-view';
 import { NotSet } from '../not-set';
 import { SessionsTable } from '../sessions/sessions-table';
 import { SuiteShell } from '../suite-shell';
@@ -221,7 +221,7 @@ const DEACTIVATION_KEYS = [
 
 interface UnitOption {
   readonly id: string;
-  readonly nameAr: string;
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
   readonly levelOrdinal: number | null;
 }
@@ -341,12 +341,12 @@ async function profilePage(
   const base = `/${locale}${profilePath(profile.personId)}`;
   const tabQuery = tab === 'overview' ? '' : `?tab=${tab}`;
   const dates = pageDates(locale, { regional: input.regional });
-  const department = profile.departmentNameAr
-    ? localizedName(locale, profile.departmentNameAr, profile.departmentNameEn)
-    : null;
-  const branch = profile.branchNameAr
-    ? localizedName(locale, profile.branchNameAr, profile.branchNameEn)
-    : null;
+  const department = localizedNameOrNull(
+    locale,
+    profile.departmentNameAr,
+    profile.departmentNameEn,
+  );
+  const branch = localizedNameOrNull(locale, profile.branchNameAr, profile.branchNameEn);
   const jobTitle =
     locale === 'en' ? (profile.jobTitleEn ?? profile.jobTitleAr) : profile.jobTitleAr;
   const accountStatus: AccountStatus = profile.membershipStatus ?? 'none';
@@ -598,6 +598,7 @@ async function profilePage(
                 confirm: t('mfaResetConfirm'),
                 resetting: t('mfaResetting'),
                 cancel: t('mfaResetCancel'),
+                close: (await getTranslations({ locale, namespace: 'common' }))('close'),
                 done: t('mfaResetDone', { name: '{name}' }),
               }}
               errors={securityErrors}
@@ -759,12 +760,12 @@ async function basicInformation(
   const copyTexts = await inviteCopyTexts(locale);
   const format = await getFormatter({ locale });
   const none = <NotSet label={users('noneLabel')} />;
-  const department = profile.departmentNameAr
-    ? localizedName(locale, profile.departmentNameAr, profile.departmentNameEn)
-    : null;
-  const branch = profile.branchNameAr
-    ? localizedName(locale, profile.branchNameAr, profile.branchNameEn)
-    : null;
+  const department = localizedNameOrNull(
+    locale,
+    profile.departmentNameAr,
+    profile.departmentNameEn,
+  );
+  const branch = localizedNameOrNull(locale, profile.branchNameAr, profile.branchNameEn);
   const jobTitle =
     locale === 'en' ? (profile.jobTitleEn ?? profile.jobTitleAr) : profile.jobTitleAr;
   const copyable = (label: string, value: string | null) =>
@@ -970,6 +971,7 @@ async function editPanel(
     body: users('discardBody'),
     keepEditing: users('keepEditing'),
     discard: users('discard'),
+    close: editRoles('close'),
   };
   const result = await editUserQuery({ personId });
   if (!result.ok) {
@@ -1217,9 +1219,7 @@ async function deactivateDialog(
   const roleText = profile.roles?.[0]
     ? roleName(locale, profile.roles[0].roleCode, profile.roles[0].customName)
     : null;
-  const unitText = profile.departmentNameAr
-    ? localizedName(locale, profile.departmentNameAr, profile.departmentNameEn)
-    : null;
+  const unitText = localizedNameOrNull(locale, profile.departmentNameAr, profile.departmentNameEn);
   const texts: Record<string, string> = {
     close: editRoles('close'),
     cancel: t('cancel'),

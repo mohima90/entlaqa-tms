@@ -3,6 +3,7 @@ import {
   branchFieldText,
   costCentreFieldText,
   levelFieldText,
+  nameOrder,
   unitFieldText,
 } from './structure-form';
 
@@ -33,6 +34,31 @@ describe('unitFieldText', () => {
     });
     expect(unitFieldText('parentId', 'PARENT_NOT_FOUND').key).toBe('fieldErrors.parentNotFound');
     expect(unitFieldText('other', 'X').field).toBe('form');
+  });
+});
+
+describe('the name in the organization’s default language (PO, 12 Nov 2026)', () => {
+  it('asks the default language’s name first', () => {
+    expect(nameOrder('en')).toEqual(['en', 'ar']);
+    expect(nameOrder('ar')).toEqual(['ar', 'en']);
+  });
+
+  it('says «required» on the missing default-language name of every form', () => {
+    for (const fieldText of [unitFieldText, levelFieldText, branchFieldText, costCentreFieldText]) {
+      expect(fieldText('nameEn', 'REQUIRED')).toEqual({
+        field: 'nameEn',
+        key: 'fieldErrors.required',
+      });
+      expect(fieldText('nameAr', 'REQUIRED')).toEqual({
+        field: 'nameAr',
+        key: 'fieldErrors.required',
+      });
+    }
+    // A given name that is not valid keeps its own rule.
+    expect(costCentreFieldText('nameAr', 'INVISIBLE')).toEqual({
+      field: 'nameAr',
+      key: 'costCentres.name',
+    });
   });
 });
 

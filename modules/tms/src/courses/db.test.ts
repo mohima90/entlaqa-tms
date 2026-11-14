@@ -8,6 +8,7 @@ import {
   getCourse,
   insertCourse,
   insertCourseCategory,
+  insertCourseWithGeneratedCode,
   listCourseCategories,
   listCourses,
   updateCourseRow,
@@ -135,6 +136,41 @@ describe('course library SQL (T-M3-03)', () => {
     expect(await updateCourseStatus(tx, 'c9', 2, 'archived')).toBe(false);
     expect(executed[1]?.sql).toContain('insert into tms.courses');
     expect(executed[2]?.sql).toContain('where id = $14::uuid and version = $15');
+  });
+
+  it('a course without a code gets the next free CRS- number, skipping the ones taken', async () => {
+    const { code: _code, ...withoutCode } = values;
+    // Two courses so far: CRS-0003 is taken (the insert writes nothing), CRS-0004 is free.
+    const { tx, executed } = fakeTx([{ total: '2' }], [], [{ id: 'c10' }]);
+    expect(await insertCourseWithGeneratedCode(tx, withoutCode)).toBe('c10');
+    expect(executed[0]?.sql).toContain('select count(*) as total from tms.courses');
+    expect(executed[1]?.sql).toContain('on conflict (tenant_id, lower(code)) do nothing');
+    expect(executed[1]?.params[0]).toBe('CRS-0003');
+    expect(executed[2]?.params[0]).toBe('CRS-0004');
+    // Fifty taken in a row: none (the caller says so on the code).
+    const none = fakeTx();
+    expect(await insertCourseWithGeneratedCode(none.tx, withoutCode)).toBeNull();
+    expect(none.executed).toHaveLength(51);
+    expect(none.executed[1]?.params[0]).toBe('CRS-0001');
+  });
+
+  it('reads courses and categories named in one language, and lists categories by the name that exists', async () => {
+    const { tx, executed } = fakeTx(
+      [{ ...raw, title_ar: null }],
+      [
+        { id: 'k1', name_en: null, name_ar: 'القيادة' },
+        { id: 'k2', name_en: 'Safety', name_ar: null },
+      ],
+    );
+    expect(await getCourse(tx, 'c1')).toMatchObject({
+      titleEn: 'Strategic management',
+      titleAr: null,
+    });
+    expect(await listCourseCategories(tx)).toEqual([
+      { id: 'k1', nameEn: null, nameAr: 'القيادة' },
+      { id: 'k2', nameEn: 'Safety', nameAr: null },
+    ]);
+    expect(executed[1]?.sql).toContain('order by lower(coalesce(k.name_en, k.name_ar))');
   });
 
   it('fails loudly when the database returns no row for an insert', async () => {

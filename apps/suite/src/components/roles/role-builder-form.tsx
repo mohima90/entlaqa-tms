@@ -14,36 +14,32 @@ import {
 } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { type SyntheticEvent, useEffect, useRef, useState, useTransition } from 'react';
-import { createCustomRoleAction, updateCustomRoleAction } from '../../actions/roles';
+import { updateCustomRoleAction } from '../../actions/roles';
 import { fillText } from '../../lib/fill-text';
 import {
   BUILDER_SCOPES,
   type BuilderGroup,
   type BuilderScope,
-  type BuilderStart,
   type BuilderValues,
-  applyStart,
   builderFieldError,
   builderIsPrivileged,
   changeScope,
   permissionBlock,
   togglePermission,
 } from '../../lib/role-builder';
+import { nameOrder } from '../../lib/structure-form';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { LoadLatestVersion, useLatestVersion } from '../latest-version';
 import { DiscardDialog } from '../users/discard-dialog';
-import { SelectField } from '../select-field';
 
 export interface RoleBuilderFormProps {
-  /** Edit an existing custom role (its id and version), or create one. */
-  readonly editing: { readonly id: string; readonly version: number } | null;
+  /** The custom role (its id and version): a role is created in the «Create role» popup first. */
+  readonly editing: { readonly id: string; readonly version: number };
   readonly initial: BuilderValues;
   readonly groups: readonly BuilderGroup[];
-  /** «Start from» choices (create only; empty when editing). */
-  readonly starts: readonly BuilderStart[];
-  /** The start already applied to `initial` («create a role from it»), or ''. */
-  readonly initialStart?: string;
+  /** The language whose name is required: the organization's default language (PO, 12 Nov 2026). */
+  readonly nameLanguage: 'ar' | 'en';
   /** Texts by key (namespace `roleBuilder`, translated on the server; `scopes.<s>.label|hint`). */
   readonly texts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
@@ -71,8 +67,10 @@ function sameValues(a: BuilderValues, b: BuilderValues): boolean {
 }
 
 /**
- * Create or edit a custom role (FR-IAM-07; EP-ROLES; redesign package 3 — Shopify's role editor, Employment
- * Hero, Clerk's unsaved bar): names, description and «start from»; the data the role sees as cards; the
+ * A custom role's own page — the builder (FR-IAM-07; EP-ROLES; redesign package 3 — Shopify's role editor,
+ * Employment Hero, Clerk's unsaved bar). A role is created in the «Create role» popup (start from + names;
+ * the Kawadir pattern, WP-UX-01 c) and opens here: its name in the organization's default language (the
+ * other language optional) and its description; the data the role sees as cards; the
  * permissions by module with a search; a sticky summary (what it sees, how many permissions, high-risk ones,
  * the privileged notice, its holders). The save bar appears once something changed; leaving with unsaved
  * changes asks first. When a narrower scope clears administrative permissions, the notice offers «Undo»
@@ -89,7 +87,6 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
   const [pending, startTransition] = useTransition();
   const [values, setValues] = useState<BuilderValues>(props.initial);
   const [saved, setSaved] = useState<BuilderValues>(props.initial);
-  const [start, setStart] = useState(props.initialStart ?? '');
   // The scope and ticks before a narrower scope cleared administrative permissions (for «Undo»).
   const [cleared, setCleared] = useState<{
     readonly scope: BuilderScope;
@@ -141,15 +138,6 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
     );
   }
 
-  function onStart(value: string) {
-    setStart(value);
-    const choice = props.starts.find((s) => s.value === value);
-    if (!choice) return;
-    setValues((current) => applyStart(groups, current, choice));
-    setCleared(null);
-    setFieldErrors({});
-  }
-
   function onScope(scope: BuilderScope) {
     const next = changeScope(groups, values.permissions, scope);
     setCleared(
@@ -168,8 +156,15 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
     event.preventDefault();
     setMessage(null);
     const missing: FieldErrors = {};
-    if (values.nameEn.trim() === '') missing.nameEn = text('fieldErrors.required');
-    if (values.nameAr.trim() === '') missing.nameAr = text('fieldErrors.required');
+    // The name in the organization's default language is required, the other one optional. Names left as
+    // they are stored pass (a role named before the organization changed its default language).
+    const requiredName = props.nameLanguage === 'ar' ? 'nameAr' : 'nameEn';
+    const namesUntouched =
+      values.nameEn.trim() === props.initial.nameEn &&
+      values.nameAr.trim() === props.initial.nameAr;
+    if (values[requiredName].trim() === '' && !namesUntouched) {
+      missing[requiredName] = text('fieldErrors.required');
+    }
     if (Object.keys(missing).length > 0) {
       setFieldErrors(missing);
       return;
@@ -182,13 +177,11 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
       permissions: [...values.permissions],
     };
     startTransition(async () => {
-      const result = props.editing
-        ? await updateCustomRoleAction({
-            ...input,
-            id: props.editing.id,
-            version: props.editing.version,
-          })
-        : await createCustomRoleAction(input);
+      const result = await updateCustomRoleAction({
+        ...input,
+        id: props.editing.id,
+        version: props.editing.version,
+      });
       if (result.ok) {
         setSaved(values);
         dirtyRef.current = false;
@@ -266,11 +259,6 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
   const count = (template: string, checked: number, total: number) =>
     fillText(template, { checked, total }, props.locale);
 
-  const startGroups = (['blank', 'standard', 'template'] as const).map((group) => ({
-    group,
-    starts: props.starts.filter((s) => s.group === group),
-  }));
-
   return (
     <>
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -291,79 +279,37 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
         >
           <Card title={text('details')}>
             <div className="grid grid-cols-1 gap-4">
-              {props.starts.length > 0 ? (
-                <div className="">
-                  <SelectField
-                    id="role-start"
-                    label={text('startFrom')}
-                    hint={text('startHint')}
-                    value={start}
+              {/* The organization's default language first (required), then the other one (optional). */}
+              {nameOrder(props.nameLanguage).map((language) => {
+                const field = language === 'ar' ? 'nameAr' : 'nameEn';
+                // A role named before the rule may have no name in today's default language: the
+                // asterisk shows where a name is asked now (a changed name, or one that is stored).
+                const required =
+                  language === props.nameLanguage &&
+                  (props.initial[field] !== '' ||
+                    values.nameEn !== props.initial.nameEn ||
+                    values.nameAr !== props.initial.nameAr);
+                return (
+                  <TextField
+                    key={field}
+                    id={`role-name-${language}`}
+                    label={text(field)}
+                    marker={text(required ? 'required' : 'optional')}
+                    hint={text('nameHint')}
+                    value={values[field]}
                     onChange={(event) => {
-                      onStart(event.target.value);
+                      update({ [field]: event.target.value });
                     }}
+                    maxLength={80}
+                    required={required}
+                    dir={language === 'ar' ? 'rtl' : 'ltr'}
+                    lang={language}
+                    autoComplete="off"
+                    error={fieldErrors[field]}
                     disabled={pending}
-                    data-testid="role-start"
-                  >
-                    <option value="" disabled>
-                      {text('startPlaceholder')}
-                    </option>
-                    {startGroups.map(({ group, starts }) =>
-                      group === 'blank' ? (
-                        starts.map((s) => (
-                          <option key={s.value} value={s.value}>
-                            {s.label}
-                          </option>
-                        ))
-                      ) : starts.length > 0 ? (
-                        <optgroup
-                          key={group}
-                          label={text(group === 'standard' ? 'startStandard' : 'startTemplate')}
-                        >
-                          {starts.map((s) => (
-                            <option key={s.value} value={s.value}>
-                              {s.label}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ) : null,
-                    )}
-                  </SelectField>
-                </div>
-              ) : null}
-              <TextField
-                id="role-name-en"
-                label={text('nameEn')}
-                marker={text('required')}
-                hint={text('nameHint')}
-                value={values.nameEn}
-                onChange={(event) => {
-                  update({ nameEn: event.target.value });
-                }}
-                maxLength={80}
-                required
-                dir="ltr"
-                lang="en"
-                autoComplete="off"
-                error={fieldErrors.nameEn}
-                disabled={pending}
-              />
-              <TextField
-                id="role-name-ar"
-                label={text('nameAr')}
-                marker={text('required')}
-                hint={text('nameHint')}
-                value={values.nameAr}
-                onChange={(event) => {
-                  update({ nameAr: event.target.value });
-                }}
-                maxLength={80}
-                required
-                dir="rtl"
-                lang="ar"
-                autoComplete="off"
-                error={fieldErrors.nameAr}
-                disabled={pending}
-              />
+                  />
+                );
+              })}
               <div className="flex flex-col gap-1">
                 <label htmlFor="role-description" className="text-sm font-medium">
                   {text('description')}
@@ -602,6 +548,7 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
           body: text('discardBody'),
           keepEditing: text('keepEditing'),
           discard: text('discard'),
+          close: text('close'),
         }}
         onKeep={() => {
           setLeaving(null);

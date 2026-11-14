@@ -174,6 +174,7 @@ function standardOnly(code: string): RoleDetailView {
     custom: null,
     memberCount: null,
     canManage: false,
+    nameLanguage: 'en',
   };
 }
 
@@ -240,7 +241,8 @@ async function roleHeader(locale: AppLocale, view: RoleDetailView): Promise<Reac
       actions={
         standard && view.canManage && role.code !== 'tenant_admin' ? (
           <Link
-            href={`/${locale}/suite/admin/roles/new?from=standard:${role.code}`}
+            // Roles & permissions opens «Create role» on this role (the popup; WP-UX-01 c).
+            href={`/${locale}/suite/admin/roles?new=1&from=standard:${role.code}`}
             className={buttonClasses({ variant: 'primary', size: 'md' })}
             data-testid="role-copy"
           >
@@ -447,15 +449,16 @@ async function RoleEdit({
     <>
       <RoleBuilderForm
         editing={{ id: custom.id, version: custom.version }}
+        // The stored names: one of the two may be missing (the default language's name is required).
         initial={{
-          nameEn: custom.nameEn,
-          nameAr: custom.nameAr,
+          nameEn: custom.nameEn ?? '',
+          nameAr: custom.nameAr ?? '',
           description: custom.description ?? '',
           dataScope: custom.dataScope,
           permissions: custom.permissions,
         }}
         groups={roleBuilderGroups(locale)}
-        starts={[]}
+        nameLanguage={view.nameLanguage}
         texts={texts}
         errors={errors}
         rolesHref={rolesHref}
@@ -480,9 +483,7 @@ async function RoleEdit({
                   version={custom.version}
                   texts={{
                     ...texts,
-                    deleteTitle: t('deleteTitle', {
-                      name: custom[locale === 'ar' ? 'nameAr' : 'nameEn'],
-                    }),
+                    deleteTitle: t('deleteTitle', { name: view.role.name[locale] }),
                   }}
                   errors={errors}
                   rolesHref={rolesHref}

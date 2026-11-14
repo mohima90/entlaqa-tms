@@ -902,6 +902,33 @@ deactivate_e2e returns
         where m.user_id = '$DEACT_ID' and ra.role_code = 'department_head'")" == "1" ]] ||
   { echo "smoke: the reactivated member's roles changed" >&2; exit 1; }
 unset answer wrong unknown rows_before DEACT_REFRESH SECOND_REFRESH
+echo "smoke: planning cycle (EP-PLN, WP-UX-01 a) — an L&D Manager creates a cycle in the popup, edits it, sets a budget, launches it from the row menu; a Training Coordinator follows read-only; in Arabic and English"
+# Before the security journey: the organization does not require an authenticator code yet.
+plan_member() { # plan_member <email> <user id> <name ar> <name en> <role>
+  q "with t as (select id from platform.tenants where slug = 'sovereign-smoke'),
+       p as (insert into platform.persons (tenant_id, display_name_ar, display_name_en, email)
+             select id, '$3', '$4', '$1' from t returning id, tenant_id),
+       m as (insert into platform.tenant_memberships (tenant_id, user_id, person_id, status)
+             select tenant_id, '$2', id, 'active' from p returning id, tenant_id)
+     insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
+     select tenant_id, id, '$5', true from m" >/dev/null
+}
+PLAN_EMAIL="lnd-$(date +%s)@sovereign.example"
+PLAN_PASSWORD="Lnd-$(openssl rand -hex 16)"
+plan_member "$PLAN_EMAIL" "$(create_user "$PLAN_EMAIL" "$PLAN_PASSWORD")" 'ليلى التطوير' 'Layla Development' training_manager
+PLAN_COORD_EMAIL="coord-$(date +%s)@sovereign.example"
+PLAN_COORD_PASSWORD="Coord-$(openssl rand -hex 16)"
+plan_member "$PLAN_COORD_EMAIL" "$(create_user "$PLAN_COORD_EMAIL" "$PLAN_COORD_PASSWORD")" 'سامي المنسق' 'Sami Coordinator' training_coordinator
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 PLANNING_E2E_EMAIL="$PLAN_EMAIL" \
+  PLANNING_E2E_PASSWORD="$PLAN_PASSWORD" PLANNING_E2E_COORDINATOR_EMAIL="$PLAN_COORD_EMAIL" \
+  PLANNING_E2E_COORDINATOR_PASSWORD="$PLAN_COORD_PASSWORD" \
+  pnpm exec playwright test e2e/planning-journey.spec.ts --project=desktop-chromium)
+# The cycle opened without an approval chain (EP-PLN §13 e) and nothing was copied into it.
+[[ "$(q "select count(*) from tms.plan_cycles c join platform.tenants t on t.id = c.tenant_id
+        where t.slug = 'sovereign-smoke' and c.status = 'open'")" == "1" ]] ||
+  { echo "smoke: the planning journey did not leave exactly one open cycle" >&2; exit 1; }
+unset PLAN_PASSWORD PLAN_COORD_PASSWORD
+
 echo "smoke: security policy (T-M2-10) — apps turned on with the e-mailed code, the password-only attack, policy without a code (PO decision 14 Oct 2026), MFA required, sessions, lost-app reset"
 # The last browser journey: it makes an authenticator app required for everyone in the organization. The
 # spec reads the set-up e-mails' codes and links from Mailpit and ages codes through

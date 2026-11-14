@@ -4,6 +4,7 @@ import {
   Alert,
   Badge,
   Button,
+  Dialog,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -36,17 +37,18 @@ import {
   useTransition,
 } from 'react';
 import { setCourseStatusAction } from '../../actions/courses';
-import { type CoursesParams, coursesHref } from '../../lib/courses-view';
+import { type CoursesParams, courseSettingsHref, coursesHref } from '../../lib/courses-view';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { useLatestVersion } from '../latest-version';
-import { CourseForm, type CourseFormSharedProps } from './course-form';
+import { CourseAddDialog } from './course-add-dialog';
 
 /** A course with what the list shows about it, formatted on the server (plural forms, amounts). */
 export interface CourseListItem {
   readonly course: CourseRow;
   readonly title: string;
-  readonly otherTitle: string;
+  /** The title in the other language; null when the course has none (or the same). */
+  readonly otherTitle: string | null;
   readonly description: string | null;
   readonly category: string | null;
   readonly deliveryType: string;
@@ -68,7 +70,15 @@ export interface CoursesScreenProps {
   readonly canArchive: boolean;
   readonly canSeeCosts: boolean;
   readonly truncated: boolean;
-  readonly form: CourseFormSharedProps;
+  /** What «Add course» needs. */
+  readonly add: {
+    /** The language whose title is required: the organization's default language. */
+    readonly nameLanguage: 'ar' | 'en';
+    /** The delivery types offered, in list order, with their names. */
+    readonly deliveryTypes: readonly { readonly value: string; readonly label: string }[];
+  };
+  /** Without a database: nothing is saved (example courses). */
+  readonly preview: boolean;
   /** The `courses` messages, raw; plus `required`, `optional`, `undo`. */
   readonly texts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
@@ -76,15 +86,11 @@ export interface CoursesScreenProps {
   readonly notices?: ReactNode;
 }
 
-type Panel =
-  | { readonly kind: 'view'; readonly id: string }
-  | { readonly kind: 'edit'; readonly id: string }
-  | { readonly kind: 'add' }
-  | null;
+type Panel = { readonly kind: 'view'; readonly id: string } | { readonly kind: 'add' } | null;
 
 /** Milliseconds the search waits after the last key before it applies (the list is a server read). */
 const SEARCH_PAUSE = 400;
-const FORM_ID = 'course-panel-form';
+const ADD_COURSE_ID = 'course-add';
 const MENU_TRIGGER =
   'grid size-9 place-items-center rounded-full text-text-muted hover:bg-surface-hover hover:text-text pointer-coarse:size-11';
 
@@ -92,9 +98,10 @@ const MENU_TRIGGER =
  * The course library (T-M3-03; FR-CAT-01, FR-CAT-10; redesign package 4 — Deel, Uxcel, Teachable, Notion
  * Mail): view cards (All · Active · Archived) as the status filter; search and filter pills that apply at
  * once (same query, same address); a table with the course as code + title + the title in the other
- * language (cards on phones); a course opens in a read panel with Edit / Archive; Add and Edit in a side
- * panel; Archive and Restore without a confirmation, with Undo in the toast (each is the other's action,
- * both audited).
+ * language (cards on phones); a course opens in a read panel. The Kawadir pattern (forms standard rule 9;
+ * WP-UX-01 c, T-M3-21): «Add course» is one centred popup; the row's «⋯» menu leads to the course's
+ * Settings page and archives or restores it after a small confirmation, with Undo in the toast (each is the
+ * other's action, both audited).
  */
 export function CoursesScreen(props: CoursesScreenProps) {
   const { locale, params, texts } = props;
@@ -114,7 +121,13 @@ export function CoursesScreen(props: CoursesScreenProps) {
   const [, startNavigation] = useTransition();
   const [statusPending, startStatus] = useTransition();
   const [panel, setPanel] = useState<Panel>(null);
-  const [formPending, setFormPending] = useState(false);
+  /** The course whose archive / restore question is open, as the list held it then. */
+  const [asking, setAsking] = useState<{
+    readonly item: CourseListItem;
+    readonly archive: boolean;
+  } | null>(null);
+  // The control that opened a popup (a row's menu button, «Add course»): focus goes back to it.
+  const returnTo = useRef<string>(ADD_COURSE_ID);
   const [query, setQuery] = useState(params.q ?? '');
   const timer = useRef<number | undefined>(undefined);
   const latest = useRef(params);
@@ -146,11 +159,24 @@ export function CoursesScreen(props: CoursesScreenProps) {
 
   const byId = (id: string) => props.items.find((item) => item.course.id === id) ?? null;
   const viewing = panel?.kind === 'view' ? byId(panel.id) : null;
-  const editing = panel?.kind === 'edit' ? byId(panel.id) : null;
+  const menuId = (id: string) => `course-menu-button-${id}`;
+  /** After a popup has closed: back to the control that opened it; «Add course» if it is gone. */
+  const focusOpener = () => {
+    window.setTimeout(() => {
+      (
+        document.getElementById(returnTo.current) ?? document.getElementById(ADD_COURSE_ID)
+      )?.focus();
+    }, 0);
+  };
+  const ask = (item: CourseListItem, archive: boolean, from: string) => {
+    returnTo.current = from;
+    setAsking({ item, archive });
+  };
 
   /** Archive or restore; Undo in the toast is the opposite action (both audited as before). */
   function setStatus(item: CourseListItem, archive: boolean, undo = true) {
-    if (props.form.preview) {
+    if (props.preview) {
+      setAsking(null);
       toast.info(text('previewNotSaved'));
       return;
     }
@@ -161,6 +187,7 @@ export function CoursesScreen(props: CoursesScreenProps) {
         status: archive ? 'archived' : 'active',
       });
       if (result.ok) {
+        setAsking(null);
         setPanel(null);
         toast.success(archive ? text('archived') : text('restored'), {
           ...(undo
@@ -179,6 +206,7 @@ export function CoursesScreen(props: CoursesScreenProps) {
         return;
       }
       if (sessionRefused(result.error)) return;
+      setAsking(null);
       toast.error(
         // An older copy of the list (WP-FIX-03): the latest version is loaded here, by itself.
         latestVersion.refresh(result.error, text('conflict')) ??
@@ -201,6 +229,7 @@ export function CoursesScreen(props: CoursesScreenProps) {
     return (
       <DropdownMenu>
         <DropdownMenuTrigger
+          id={menuId(item.course.id)}
           className={MENU_TRIGGER}
           aria-label={`${text('columns.actions')}: ${code}`}
           disabled={statusPending}
@@ -219,14 +248,14 @@ export function CoursesScreen(props: CoursesScreenProps) {
             {item.title}
           </DropdownMenuItem>
           {props.canManage && active ? (
-            <DropdownMenuItem
-              onSelect={() => {
-                setPanel({ kind: 'edit', id: item.course.id });
-              }}
-              data-testid={`course-edit-${code}`}
-            >
-              <Icon name="pencil" />
-              {text('editCourse', { code })}
+            <DropdownMenuItem asChild>
+              <a
+                href={courseSettingsHref(locale, item.course.id)}
+                data-testid={`course-edit-${code}`}
+              >
+                <Icon name="settings" />
+                {text('settings.open')}
+              </a>
             </DropdownMenuItem>
           ) : null}
           {props.canArchive ? (
@@ -235,7 +264,7 @@ export function CoursesScreen(props: CoursesScreenProps) {
               <DropdownMenuItem
                 tone={active ? 'danger' : 'default'}
                 onSelect={() => {
-                  setStatus(item, active);
+                  ask(item, active, menuId(item.course.id));
                 }}
                 data-testid={`course-${active ? 'archive' : 'restore'}-${code}`}
               >
@@ -297,7 +326,9 @@ export function CoursesScreen(props: CoursesScreenProps) {
         actions={
           props.canManage ? (
             <Button
+              id={ADD_COURSE_ID}
               onClick={() => {
+                returnTo.current = ADD_COURSE_ID;
                 setPanel({ kind: 'add' });
               }}
               data-testid="course-add"
@@ -393,9 +424,12 @@ export function CoursesScreen(props: CoursesScreenProps) {
                   </a>
                 ) : props.canManage ? (
                   <Button
+                    id="course-add-first"
                     onClick={() => {
+                      returnTo.current = 'course-add-first';
                       setPanel({ kind: 'add' });
                     }}
+                    data-testid="course-add-first"
                   >
                     <Icon name="plus" />
                     {text('addCourse')}
@@ -459,13 +493,15 @@ export function CoursesScreen(props: CoursesScreenProps) {
                           >
                             {item.title}
                           </button>
-                          <span
-                            className="text-[13px] font-normal text-text-muted"
-                            lang={locale === 'ar' ? 'en' : 'ar'}
-                            dir="auto"
-                          >
-                            {item.otherTitle}
-                          </span>
+                          {item.otherTitle ? (
+                            <span
+                              className="text-[13px] font-normal text-text-muted"
+                              lang={locale === 'ar' ? 'en' : 'ar'}
+                              dir="auto"
+                            >
+                              {item.otherTitle}
+                            </span>
+                          ) : null}
                         </span>
                       </th>
                       <td className={tableClasses.cell}>
@@ -558,9 +594,11 @@ export function CoursesScreen(props: CoursesScreenProps) {
                 </bdi>
                 {statusBadge(viewing)}
               </span>
-              <span lang={locale === 'ar' ? 'en' : 'ar'} dir="auto">
-                {viewing.otherTitle}
-              </span>
+              {viewing.otherTitle ? (
+                <span lang={locale === 'ar' ? 'en' : 'ar'} dir="auto">
+                  {viewing.otherTitle}
+                </span>
+              ) : null}
             </span>
           ) : null
         }
@@ -577,9 +615,10 @@ export function CoursesScreen(props: CoursesScreenProps) {
                       ? 'text-danger hover:bg-danger-subtle'
                       : undefined
                   }
+                  id="course-panel-status"
                   disabled={statusPending}
                   onClick={() => {
-                    setStatus(viewing, viewing.course.status === 'active');
+                    ask(viewing, viewing.course.status === 'active', 'course-panel-status');
                   }}
                   aria-label={
                     viewing.course.status === 'active'
@@ -592,17 +631,14 @@ export function CoursesScreen(props: CoursesScreenProps) {
                 </Button>
               ) : null}
               {props.canManage && viewing.course.status === 'active' ? (
-                <Button
-                  className="ms-auto"
-                  onClick={() => {
-                    setPanel({ kind: 'edit', id: viewing.course.id });
-                  }}
-                  aria-label={text('editCourse', { code: viewing.course.code })}
+                <a
+                  href={courseSettingsHref(locale, viewing.course.id)}
+                  className={cn(buttonClasses({ variant: 'primary', size: 'md' }), 'ms-auto')}
                   data-testid="course-panel-edit"
                 >
-                  <Icon name="pencil" />
-                  {text('edit')}
-                </Button>
+                  <Icon name="settings" />
+                  {text('settings.open')}
+                </a>
               ) : null}
             </>
           ) : null
@@ -640,55 +676,68 @@ export function CoursesScreen(props: CoursesScreenProps) {
         ) : null}
       </SidePanel>
 
-      <SidePanel
-        open={panel?.kind === 'add' || editing !== null}
+      <CourseAddDialog
+        open={panel?.kind === 'add'}
         onClose={() => {
-          setPanel((current) =>
-            current?.kind === 'add' || current?.kind === 'edit' ? null : current,
-          );
+          setPanel((current) => (current?.kind === 'add' ? null : current));
+          focusOpener();
         }}
-        title={editing ? text('form.editTitle') : text('form.addTitle')}
-        description={text('form.intro')}
+        nameLanguage={props.add.nameLanguage}
+        deliveryTypes={props.add.deliveryTypes}
+        preview={props.preview}
+        texts={texts}
+        errors={props.errors}
+      />
+
+      {/* Archive / restore: a small confirmation (forms standard rule 9); Undo stays in the toast. */}
+      <Dialog
+        open={asking !== null}
+        onClose={() => {
+          setAsking(null);
+          focusOpener();
+        }}
+        canClose={() => !statusPending}
+        size="sm"
+        tone={asking?.archive ? 'warning' : undefined}
+        title={asking?.archive === false ? text('restoreTitle') : text('archiveTitle')}
+        description={
+          asking
+            ? text(asking.archive ? 'archiveBody' : 'restoreBody', { title: asking.item.title })
+            : undefined
+        }
         closeLabel={text('form.close')}
-        size="lg"
-        data-testid="course-dialog"
+        data-testid="course-status-dialog"
         footer={
           <>
             <Button
               variant="secondary"
-              className="ms-auto"
-              disabled={formPending}
+              disabled={statusPending}
               onClick={() => {
-                setPanel(null);
+                setAsking(null);
+                focusOpener();
               }}
+              data-testid="course-status-cancel"
             >
-              {text('form.cancel')}
+              {text('keep')}
             </Button>
             <Button
-              type="submit"
-              form={FORM_ID}
-              disabled={formPending}
-              busy={formPending}
-              data-testid="course-save"
+              variant={asking?.archive ? 'danger' : 'primary'}
+              disabled={statusPending}
+              busy={statusPending}
+              onClick={() => {
+                if (asking) setStatus(asking.item, asking.archive);
+              }}
+              data-testid="course-status-confirm"
             >
-              {formPending ? text('form.saving') : text('form.save')}
+              {statusPending
+                ? text('working')
+                : asking?.archive === false
+                  ? text('restore')
+                  : text('archive')}
             </Button>
           </>
         }
-      >
-        {panel?.kind === 'add' || editing ? (
-          <CourseForm
-            key={editing ? editing.course.id : 'new'}
-            id={FORM_ID}
-            course={editing?.course ?? null}
-            {...props.form}
-            onDone={() => {
-              setPanel(null);
-            }}
-            onPending={setFormPending}
-          />
-        ) : null}
-      </SidePanel>
+      />
     </>
   );
 }

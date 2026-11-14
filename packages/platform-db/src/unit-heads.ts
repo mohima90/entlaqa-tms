@@ -44,7 +44,7 @@ export async function listHeadedUnitIds(tx: UserTx, personId: string): Promise<r
   const rows = await tx.execute<{ id: string }>(sql`
     select d.id from platform.departments d
     where d.head_person_id = ${personId}::uuid and d.deleted_at is null
-    order by d.sort_order, d.name_ar, d.id`);
+    order by d.sort_order, coalesce(d.name_ar, d.name_en), d.id`);
   return rows.map((r) => r.id);
 }
 

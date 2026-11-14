@@ -6,8 +6,17 @@
 
 export interface LevelLabel {
   readonly ordinal: number;
-  readonly nameEn: string;
-  readonly nameAr: string;
+  /**
+   * One of the two may be missing, never both (migration 20261113100000: the name in the organization's
+   * default language is required, the other one optional).
+   */
+  readonly nameEn: string | null;
+  readonly nameAr: string | null;
+}
+
+/** A level's name in the page's language, else the name that exists. */
+export function levelLabel(level: LevelLabel, locale: 'ar' | 'en'): string {
+  return (locale === 'ar' ? (level.nameAr ?? level.nameEn) : (level.nameEn ?? level.nameAr)) ?? '';
 }
 
 export interface TreeNode {
@@ -62,7 +71,7 @@ export function levelName(
 ): string {
   const level = levels.find((l) => l.ordinal === ordinal);
   if (!level) return ordinal === null ? '' : String(ordinal);
-  return locale === 'ar' ? level.nameAr : level.nameEn;
+  return levelLabel(level, locale);
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -104,7 +113,7 @@ export function unitsLabel(
 ): string {
   const top = firstLevel(levels);
   if (top === null || showsUnitLevels(levels, ordinals)) return neutral;
-  return locale === 'ar' ? top.nameAr : top.nameEn;
+  return levelLabel(top, locale);
 }
 
 /**
@@ -128,7 +137,7 @@ export function orgUnitsLabel(
 ): string {
   const top = firstLevel(levels);
   if (top === null || unitsBelowFirstLevel) return neutral;
-  return locale === 'ar' ? top.nameAr : top.nameEn;
+  return levelLabel(top, locale);
 }
 
 /** The label of a field holding one unit:that unit's level name, else `neutral` (no unit, unknown level). */
@@ -139,7 +148,7 @@ export function unitFieldLabel(
   neutral: string,
 ): string {
   const level = levels.find((l) => l.ordinal === ordinal);
-  return level ? (locale === 'ar' ? level.nameAr : level.nameEn) : neutral;
+  return level ? levelLabel(level, locale) : neutral;
 }
 
 /** A unit's name, followed by its level when `show` («Retail Sales · Unit»). */
@@ -152,7 +161,7 @@ export function unitNameWithLevel(
 ): string {
   if (!show) return name;
   const level = levels.find((l) => l.ordinal === ordinal);
-  return level ? `${name} · ${locale === 'ar' ? level.nameAr : level.nameEn}` : name;
+  return level ? `${name} · ${levelLabel(level, locale)}` : name;
 }
 
 /** The level below `ordinal` (what «Add <next level>» adds), or null under the last level. */
@@ -165,7 +174,8 @@ export function nextLevel(
 
 /** A unit as the picker offers it. */
 export interface ScopeUnitSource extends TreeNode {
-  readonly nameAr: string;
+  /** One of the two names may be missing, never both (migration 20261113100000). */
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
   readonly levelOrdinal: number | null;
   readonly active: boolean;
@@ -188,7 +198,8 @@ export function scopeUnitChoices(
   locale: 'ar' | 'en',
 ): ScopeUnitChoice[] {
   return treeOrder(units).map(({ node, depth }) => {
-    const name = locale === 'en' ? (node.nameEn ?? node.nameAr) : node.nameAr;
+    const name =
+      (locale === 'en' ? (node.nameEn ?? node.nameAr) : (node.nameAr ?? node.nameEn)) ?? '';
     const level = levelName(levels, node.levelOrdinal, locale);
     return {
       id: node.id,
@@ -246,11 +257,27 @@ export function suggestUnitCode(nameEn: string, existingCodes: readonly string[]
   const base = (
     words.length >= 2 ? words.map((word) => word[0] ?? '').join('') : (words[0] ?? '').slice(0, 3)
   ).toUpperCase();
+  return freeUnitCode(base, existingCodes);
+}
+
+/**
+ * The code suggested for a unit named in Arabic only (the English name is optional when Arabic is the
+ * organization's default language — PO, 12 Nov 2026): «UNIT», then «UNIT-2», «UNIT-3»… — a code needs Latin
+ * letters or digits, which an Arabic name does not give. The person can still type their own under «More».
+ */
+export function fallbackUnitCode(existingCodes: readonly string[]): string {
+  return freeUnitCode('UNIT', existingCodes);
+}
+
+/**
+ * `base`, or «base-2», «base-3»… — the first number no other unit has, however many units there are (an
+ * organization with a hundred units named in Arabic only still gets a code; review of WP-UX-01 b).
+ */
+function freeUnitCode(base: string, existingCodes: readonly string[]): string {
   const taken = new Set(existingCodes.map((code) => code.toUpperCase()));
   if (!taken.has(base)) return base;
-  for (let n = 2; n < 100; n += 1) {
-    const candidate = `${base}-${String(n)}`;
-    if (!taken.has(candidate)) return candidate;
-  }
-  return '';
+  // At most `taken.size` candidates can be taken, so the loop ends within `taken.size + 1` steps.
+  let n = 2;
+  while (taken.has(`${base}-${String(n)}`)) n += 1;
+  return `${base}-${String(n)}`;
 }

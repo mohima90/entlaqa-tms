@@ -31,8 +31,6 @@ const db = vi.hoisted(() => ({
   ),
   listOrgStructure: vi.fn(),
   getMemberOptionsByIds: vi.fn(),
-  searchMemberOptions: vi.fn(),
-  MEMBER_SEARCH: { minLength: 2, maxLength: 100, limit: 50 },
   getOrganizationProfile: vi.fn(),
   schema: {},
   MFA_MODES: ['off', 'optional', 'required_all', 'required_roles'],
@@ -72,6 +70,7 @@ describe('planning server actions (deny by default)', () => {
           periodStart: '2027-01-01',
           periodEnd: '2027-12-31',
           deadline: '2026-11-30',
+          departmentIds: ['66666666-6666-4666-8666-666666666661'],
         }),
       () =>
         actions.updatePlanCycleBasicsAction({
@@ -84,6 +83,18 @@ describe('planning server actions (deny by default)', () => {
           deadline: '2026-11-30',
         }),
       () =>
+        actions.updatePlanCycleAction({
+          id: CYCLE,
+          version: 1,
+          nameAr: 'خطة',
+          nameEn: 'Plan',
+          periodStart: '2027-01-01',
+          periodEnd: '2027-12-31',
+          deadline: '2026-11-30',
+          departmentIds: [],
+          branchIds: [],
+        }),
+      () =>
         actions.savePlanCycleScopeAction({
           id: CYCLE,
           version: 1,
@@ -91,22 +102,12 @@ describe('planning server actions (deny by default)', () => {
           branchIds: [],
         }),
       () => actions.savePlanCycleBudgetsAction({ id: CYCLE, version: 1, budgets: [] }),
-      () =>
-        actions.savePlanCycleStepsAction({
-          id: CYCLE,
-          version: 1,
-          steps: [{ kind: 'department_heads', nameAr: 'ر', nameEn: 'H', approverPersonId: null }],
-        }),
       () => actions.savePlanCycleRemindersAction({ id: CYCLE, version: 1, reminderDays: [7] }),
       () => actions.launchPlanCycleAction({ id: CYCLE, version: 1 }),
       () =>
         actions.extendPlanCycleDeadlineAction({ id: CYCLE, version: 1, deadline: '2026-12-01' }),
       () => actions.deletePlanCycleAction({ id: CYCLE, version: 1 }),
-      () =>
-        actions.savePlanningSettingsAction({
-          reminderDays: [7],
-          steps: [{ kind: 'department_heads', nameAr: 'ر', nameEn: 'H', approverPersonId: null }],
-        }),
+      () => actions.savePlanningSettingsAction({ reminderDays: [7] }),
     ];
     for (const call of calls) {
       const result = await call();

@@ -42,6 +42,8 @@ export interface BranchesTableProps {
   readonly countries: readonly Choice[];
   readonly timeZones: readonly Choice[];
   readonly defaultTimeZone: string;
+  /** The organization's default language: the branch form requires its name and asks it first. */
+  readonly nameLanguage: 'ar' | 'en';
   /** The organization's week and the day names (the branch form's working week, WP-HR-01). */
   readonly organizationWeek: BranchPanelProps['organizationWeek'];
   readonly weekdays: BranchPanelProps['weekdays'];
@@ -51,7 +53,7 @@ export interface BranchesTableProps {
   readonly undoLabel: string;
   readonly errors: ErrorTexts;
   readonly locale: 'ar' | 'en';
-  /** The page's header (rendered here: «Add branch» opens the side panel of this list). */
+  /** The page's header (rendered here: «Add branch» opens the popup of this list). */
   readonly header: {
     readonly title: string;
     readonly description: string;
@@ -446,6 +448,7 @@ export function BranchesTable(props: BranchesTableProps) {
           countries={props.countries}
           timeZones={props.timeZones}
           defaultTimeZone={props.defaultTimeZone}
+          nameLanguage={props.nameLanguage}
           organizationWeek={props.organizationWeek}
           weekdays={props.weekdays}
           detailsAvailable={props.detailsAvailable}

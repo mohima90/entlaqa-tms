@@ -14,9 +14,7 @@ const db = vi.hoisted(() => ({
   getMemberOptionsByIds: vi.fn(),
   listDepartmentTeam: vi.fn(),
   listStructureLevelLabels: vi.fn(),
-  searchMemberOptions: vi.fn(),
   getOrganizationProfile: vi.fn(),
-  MEMBER_SEARCH: { minLength: 2, maxLength: 100, limit: 50 },
   // Read when @jadarat/platform-rbac loads (its security settings schema, T-M2-10).
   MFA_MODES: ['off', 'optional', 'required_all', 'required_roles'],
   BRAND_IMAGE_KINDS: ['logo', 'favicon', 'sign_in_image'],

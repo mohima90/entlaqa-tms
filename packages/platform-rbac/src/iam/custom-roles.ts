@@ -5,9 +5,11 @@ import {
   type UserTx,
   createCustomRole,
   deleteCustomRole,
+  getCustomRole,
+  getTenantDefaultLocale,
+  listCustomRoles,
   updateCustomRole,
 } from '@jadarat/platform-db';
-import { hasVisibleText } from '@jadarat/platform-i18n';
 import { z } from 'zod';
 import {
   CUSTOM_ROLE_PERMISSIONS,
@@ -16,11 +18,19 @@ import {
 } from '../custom-roles';
 import type { ActionDefinition } from '../define-action';
 import { platformPermissions } from '../platform-permissions';
+import {
+  type NamePair,
+  missingDefaultName,
+  nameInOneLanguage,
+  shownNameClash,
+} from './default-language-name';
 
 /**
  * Custom roles (FR-IAM-07, EP-ROLES; PO 17 Oct 2026): the Organization Admin (`platform.role.manage`,
  * high risk: the session is confirmed with Auth) creates, changes and deletes the organization's own roles.
- * The rules are checked here first (field errors for the form) and again by the database guards: names
+ * The rules are checked here first (field errors for the form) and again by the database guards: a name in
+ * the organization's default language (the other language is optional — PO, 12 Nov 2026; the database asks
+ * for a name in at least one), names
  * unique in the organization (Arabic and English), permissions from the catalogue only — any of them, also
  * ones the Organization Admin does not hold itself (who can give what, PO 17 Oct 2026) — administrative
  * ones only with the whole organization as scope, and a role still held
@@ -31,12 +41,11 @@ const p = platformPermissions;
 
 const CATALOGUE: readonly string[] = CUSTOM_ROLE_PERMISSIONS.map((e) => e.permission.code);
 
-const roleName = z
-  .string()
-  .trim()
-  .min(1)
-  .max(80)
-  .refine((value) => hasVisibleText(value), { message: 'invisible' });
+/**
+ * A role's name in ONE language: may be empty (null) — which one is required is the handler's rule
+ * (`nameProblem`: the organization's default language). A given name is checked as before.
+ */
+const roleName = nameInOneLanguage(80);
 
 export const CustomRoleInput = z.strictObject({
   nameEn: roleName,
@@ -68,6 +77,38 @@ function validation(
   params?: Record<string, number>,
 ) {
   return appError('VALIDATION_FAILED', { fieldErrors, ...(params ? { params } : {}) });
+}
+
+/**
+ * The name the organization's default language requires (WP-UX-01 c; PO, 12 Nov 2026 — the rule of people,
+ * planning cycles and the organization's structure, iam/default-language-name.ts): with English as the
+ * default language the English name is required and the Arabic one optional, and the other way round. A
+ * save that leaves the stored names (`before`) as they are passes: a role named before the rule, or before
+ * the organization changed its default language, can still get other permissions.
+ */
+async function nameProblem(
+  tx: UserTx,
+  input: NamePair,
+  before?: NamePair | null,
+): Promise<AppError | null> {
+  const field = missingDefaultName(await getTenantDefaultLocale(tx), input, before);
+  return field === null ? null : validation([{ path: field, code: 'REQUIRED' }]);
+}
+
+/**
+ * A new or changed name that another role already SHOWS in the same language (its own name, or the other
+ * language's standing in for a missing one — review finding 3): NAME_TAKEN on the field, or null. Names
+ * left as stored (`before`) are not asked.
+ */
+async function shownNameTaken(
+  tx: UserTx,
+  input: NamePair,
+  before?: (NamePair & { readonly id: string }) | null,
+): Promise<AppError | null> {
+  if (before?.nameAr === input.nameAr && before.nameEn === input.nameEn) return null;
+  const others = (await listCustomRoles(tx)).filter((role) => role.id !== before?.id);
+  const field = shownNameClash(input, others);
+  return field === null ? null : validation([{ path: field, code: 'NAME_TAKEN' }]);
 }
 
 /** The builder's rules (same as the database): field errors on `permissions`, or null. */
@@ -152,7 +193,10 @@ export function createCustomRoleActionDefinition(): ActionDefinition<
     permission: p['platform.role.manage'],
     input: CustomRoleInput,
     handler: async ({ ctx, input }) => {
-      const problem = permissionErrors(input);
+      const problem =
+        (await nameProblem(ctx.tx, input)) ??
+        (await shownNameTaken(ctx.tx, input)) ??
+        permissionErrors(input);
       if (problem) return err(problem);
       const outcome = await createCustomRole(ctx.tx, input);
       return outcome.ok ? ok(saved(outcome)) : err(refusal(outcome));
@@ -175,7 +219,12 @@ export function updateCustomRoleActionDefinition(): ActionDefinition<
     permission: p['platform.role.manage'],
     input: UpdateCustomRoleInput,
     handler: async ({ ctx, input }) => {
-      const problem = permissionErrors(input);
+      // An unknown role has no stored names: the rule applies, and the update answers «not found».
+      const stored = await getCustomRole(ctx.tx, { id: input.id });
+      const problem =
+        (await nameProblem(ctx.tx, input, stored)) ??
+        (await shownNameTaken(ctx.tx, input, stored)) ??
+        permissionErrors(input);
       if (problem) return err(problem);
       const outcome = await updateCustomRole(ctx.tx, input.id, input.version, input);
       return outcome.ok ? ok(saved(outcome)) : err(refusal(outcome));

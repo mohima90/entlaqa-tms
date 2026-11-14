@@ -10,6 +10,11 @@ import { sql } from 'drizzle-orm';
  */
 export interface NeedsFormOption {
   readonly id: string;
+  /**
+   * A form is named in the organization's default language and the other language is optional (migration
+   * 20261113110200): `ar` carries the English name when the form has no Arabic one, so every reader shows
+   * the name that exists.
+   */
   readonly name: { readonly ar: string; readonly en: string | null };
   readonly isDefault: boolean;
   /** Offered for new cycles; a switched-off form is listed only as a cycle's current form (C-6). */
@@ -18,7 +23,7 @@ export interface NeedsFormOption {
 
 interface Row extends Record<string, unknown> {
   id: string;
-  name_ar: string;
+  name_ar: string | null;
   name_en: string | null;
   is_default: boolean;
   is_active: boolean;
@@ -38,10 +43,10 @@ export async function listNeedsFormOptions(
   const rows = await tx.execute<Row>(sql`
     select id, name_ar, name_en, is_default, is_active from tms.needs_forms
     where is_active or id = ${include}::uuid
-    order by is_default desc, is_active desc, lower(name_en), id`);
+    order by is_default desc, is_active desc, lower(coalesce(name_en, name_ar)), id`);
   return rows.map((row) => ({
     id: row.id,
-    name: { ar: row.name_ar, en: row.name_en },
+    name: { ar: row.name_ar ?? row.name_en ?? '', en: row.name_en },
     isDefault: row.is_default,
     active: row.is_active,
   }));

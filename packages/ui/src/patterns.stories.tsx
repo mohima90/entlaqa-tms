@@ -363,6 +363,239 @@ export const DialogClosed: Story = {
   render: (_args, { globals }) => <DialogDemo globals={globals} startOpen={false} />,
 };
 
+function RichDialogDemo({ globals }: { globals: Record<string, unknown> }) {
+  const [open, setOpen] = useState(true);
+  const close = () => {
+    setOpen(false);
+  };
+  return (
+    <div className="bg-bg p-6">
+      <Button
+        onClick={() => {
+          setOpen(true);
+        }}
+      >
+        <Icon name="plus" />
+        {pick(globals, { ar: 'دورة جديدة', en: 'New cycle' })}
+      </Button>
+      <Dialog
+        open={open}
+        onClose={close}
+        size="rich"
+        title={pick(globals, { ar: 'دورة تخطيط جديدة', en: 'New planning cycle' })}
+        description={pick(globals, {
+          ar: 'يصل نموذج الاحتياجات إلى رؤساء الإدارات عند إطلاقها. يمكنك تغيير كل شيء قبل ذلك.',
+          en: 'Department heads get a needs form when you launch it. You can change everything until then.',
+        })}
+        closeLabel={pick(globals, { ar: 'إغلاق', en: 'Close' })}
+        footer={
+          <>
+            <Button variant="secondary" onClick={close}>
+              {pick(globals, { ar: 'إلغاء', en: 'Cancel' })}
+            </Button>
+            <Button onClick={close}>
+              {pick(globals, { ar: 'إنشاء الدورة', en: 'Create cycle' })}
+            </Button>
+          </>
+        }
+      >
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <TextField
+            id="story-cycle-name"
+            label={pick(globals, { ar: 'اسم الدورة', en: 'Cycle name' })}
+            defaultValue={pick(globals, { ar: 'خطة التدريب 2027', en: 'Training plan 2027' })}
+            required
+          />
+          <TextField
+            id="story-cycle-name-other"
+            label={pick(globals, {
+              ar: 'اسم الدورة (بالإنجليزية)',
+              en: 'Cycle name (Arabic)',
+            })}
+          />
+        </div>
+        <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-3">
+          <TextField
+            id="story-cycle-start"
+            type="date"
+            label={pick(globals, { ar: 'بداية الخطة', en: 'Plan starts' })}
+            defaultValue="2027-01-01"
+            required
+          />
+          <TextField
+            id="story-cycle-end"
+            type="date"
+            label={pick(globals, { ar: 'نهاية الخطة', en: 'Plan ends' })}
+            defaultValue="2027-12-31"
+            required
+          />
+          <TextField
+            id="story-cycle-deadline"
+            type="date"
+            label={pick(globals, { ar: 'آخر موعد للاحتياجات', en: 'Needs deadline' })}
+            defaultValue="2026-12-15"
+            required
+          />
+        </div>
+        <p className="m-0 rounded-xl bg-surface-sunken px-3.5 py-3 text-[13px] text-text-muted">
+          {pick(globals, {
+            ar: 'الميزانيات والتعليمات والتذكيرات اختيارية، وتجدها لاحقًا في إعدادات الدورة.',
+            en: 'Budgets, instructions and reminders are optional. Add them later from the cycle\u2019s Settings.',
+          })}
+        </p>
+      </Dialog>
+    </div>
+  );
+}
+
+/**
+ * Creating a rich thing: one centred popup, 672 px (`size="rich"`; forms standard rule 9) — the few fields
+ * needed now, a red asterisk on the required ones, «Cancel» then the primary button at the end. Fields that
+ * sit side by side from the `md` width (600 px) stack one per row on phones.
+ */
+export const DialogRichCreate: Story = {
+  render: (_args, { globals }) => <RichDialogDemo globals={globals} />,
+};
+
+function LongDialogDemo({
+  globals,
+  kind,
+}: {
+  globals: Record<string, unknown>;
+  kind: 'form' | 'text';
+}) {
+  const [open, setOpen] = useState(true);
+  const close = () => {
+    setOpen(false);
+  };
+  const rows = Array.from({ length: 12 }, (_, index) => index + 1);
+  return (
+    <div className="bg-bg p-6">
+      <Button
+        onClick={() => {
+          setOpen(true);
+        }}
+      >
+        {pick(globals, { ar: 'فتح النافذة', en: 'Open the popup' })}
+      </Button>
+      <Dialog
+        open={open}
+        onClose={close}
+        size={kind === 'form' ? 'rich' : 'sm'}
+        title={
+          kind === 'form'
+            ? pick(globals, { ar: 'فرع جديد', en: 'New branch' })
+            : pick(globals, { ar: 'ما الذي يتغيّر؟', en: 'What changes?' })
+        }
+        description={pick(globals, {
+          ar: 'العنوان والأزرار يبقيان ظاهرين، والمحتوى وحده يتحرّك.',
+          en: 'The heading and the buttons stay in view; only the content scrolls.',
+        })}
+        closeLabel={pick(globals, { ar: 'إغلاق', en: 'Close' })}
+        footer={
+          <>
+            <Button variant="secondary" onClick={close}>
+              {pick(globals, { ar: 'إلغاء', en: 'Cancel' })}
+            </Button>
+            <Button onClick={close}>{pick(globals, { ar: 'حفظ', en: 'Save' })}</Button>
+          </>
+        }
+      >
+        {kind === 'form'
+          ? rows.map((row) => (
+              <TextField
+                key={row}
+                id={`story-long-field-${String(row)}`}
+                label={pick(globals, {
+                  ar: `الحقل ${String(row)}`,
+                  en: `Field ${String(row)}`,
+                })}
+              />
+            ))
+          : rows.map((row) => (
+              <p key={row} className="m-0 text-text-muted">
+                {pick(globals, {
+                  ar: `${String(row)}. يبقى كل ما أدخلته محفوظًا، ويمكنك التراجع عن هذا التغيير في أي وقت من صفحة الإعدادات.`,
+                  en: `${String(row)}. Everything you entered is kept, and you can undo this change at any time from the settings page.`,
+                })}
+              </p>
+            ))}
+      </Dialog>
+    </div>
+  );
+}
+
+/**
+ * A popup taller than the screen: the heading and the buttons stay in view, only the body scrolls, and a
+ * line separates the buttons from what scrolls behind them. Tab moves through the fields and the body
+ * scrolls with the focus.
+ */
+export const DialogLongForm: Story = {
+  render: (_args, { globals }) => <LongDialogDemo globals={globals} kind="form" />,
+};
+
+/**
+ * The same with text only: nothing in the body takes the focus, so the body itself is a keyboard stop
+ * (named by the title) and the arrow keys scroll it.
+ */
+export const DialogLongText: Story = {
+  render: (_args, { globals }) => <LongDialogDemo globals={globals} kind="text" />,
+};
+
+/**
+ * A thing's own settings page: its sections as tabs at the side (`TabNav variant="side"`), the open section
+ * next to them, from the `xl` width (1200 px). On phones and tablets the tabs wrap into rows above the content.
+ */
+export const SideTabs: Story = {
+  render: (_args, { globals }) => (
+    <div className="grid grid-cols-1 items-start gap-4 bg-bg p-6 xl:grid-cols-[230px_minmax(0,1fr)] xl:gap-6">
+      <TabNav
+        variant="side"
+        label={pick(globals, { ar: 'إعدادات الدورة', en: 'Cycle settings' })}
+        current="departments"
+        items={[
+          {
+            key: 'departments',
+            href: '#departments',
+            icon: 'structure',
+            label: pick(globals, { ar: 'الإدارات والميزانيات', en: 'Departments & budgets' }),
+          },
+          {
+            key: 'instructions',
+            href: '#instructions',
+            icon: 'info',
+            label: pick(globals, { ar: 'تعليمات للرؤساء', en: 'Instructions to heads' }),
+          },
+          {
+            key: 'reminders',
+            href: '#reminders',
+            icon: 'bell',
+            label: pick(globals, { ar: 'التذكيرات', en: 'Reminders' }),
+          },
+          {
+            key: 'form',
+            href: '#form',
+            icon: 'flag',
+            label: pick(globals, { ar: 'نموذج الاحتياجات', en: 'Needs form' }),
+          },
+        ]}
+      />
+      <Card
+        title={pick(globals, { ar: 'الإدارات والميزانيات', en: 'Departments & budgets' })}
+        description={pick(globals, {
+          ar: 'حدّد ميزانية للإدارة إن أردت. يراها رئيسها أثناء التخطيط؛ تنبّه ولا تمنع.',
+          en: 'Give a department a budget if you want one. Its head sees it while planning. It warns, it never blocks.',
+        })}
+        headingLevel={2}
+      >
+        <p className="m-0 text-text-muted">
+          {pick(globals, { ar: 'محتوى القسم المفتوح.', en: 'The open section\u2019s content.' })}
+        </p>
+      </Card>
+    </div>
+  ),
+};
+
 const toasts = createToastStore();
 
 function ToastsDemo({ globals }: { globals: Record<string, unknown> }) {

@@ -16,11 +16,16 @@ import {
   listCostCentres,
   updateCostCentre,
 } from './cost-centres';
+import { listOrgUnitOptions } from './org';
 import {
   addStructureLevel,
+  createStructureUnit,
+  getStoredNames,
+  listStructureLevels,
   listStructureUnits,
   moveStructureUnit,
   previewStructureUnitMove,
+  renameStructureLevel,
   reorderStructureUnit,
   structureLevelsLocked,
 } from './structure';
@@ -341,5 +346,111 @@ describe.skipIf(!configured)('structure completion against PostgreSQL', () => {
       }),
     );
     expect(updated.ok && updated.after).toMatchObject({ latitude: null, workingDays: null });
+  });
+
+  it('names a unit, a branch, a level and a cost centre in one language only (migration 20261113100000)', async () => {
+    // A unit and a branch with an English name only; readers get null for the Arabic one.
+    const unitOutcome = await attempt((tx) =>
+      createStructureUnit(tx, null, {
+        code: 'ENG',
+        nameEn: 'English only',
+        nameAr: null,
+        branchId: null,
+        headPersonId: null,
+        defaultCostCentreId: null,
+      }),
+    );
+    expect(unitOutcome.ok && unitOutcome.after).toMatchObject({
+      nameEn: 'English only',
+      nameAr: null,
+    });
+    const branchOutcome = await attempt((tx) =>
+      createBranch(tx, {
+        code: 'ENB',
+        nameAr: null,
+        nameEn: 'English branch',
+        parentBranchId: null,
+        countryCode: null,
+        cityAr: null,
+        cityEn: null,
+        timezone: 'Asia/Riyadh',
+        isHeadquarters: false,
+        addressEn: null,
+        addressAr: null,
+        latitude: null,
+        longitude: null,
+        workingDays: null,
+      }),
+    );
+    expect(branchOutcome.ok && branchOutcome.after).toMatchObject({
+      nameEn: 'English branch',
+      nameAr: null,
+    });
+    const options = await asHr((tx) => listOrgUnitOptions(tx));
+    expect(options.departments.find((d) => d.nameEn === 'English only')?.nameAr).toBeNull();
+    expect(options.branches.find((b) => b.nameEn === 'English branch')?.nameAr).toBeNull();
+    // An Arabic-only cost centre.
+    const cost = await attempt((tx) =>
+      createCostCentre(tx, { code: 'CC-AR', nameEn: null, nameAr: 'عربي', status: 'active' }),
+    );
+    expect(cost.ok).toBe(true);
+
+    // The stored names, as the default-language name rule reads them.
+    const unitId = unitOutcome.ok ? (unitOutcome.after?.id ?? '') : '';
+    const branchId = branchOutcome.ok ? (branchOutcome.after?.id ?? '') : '';
+    const costId = cost.ok ? (cost.after?.id ?? '') : '';
+    expect(await asHr((tx) => getStoredNames(tx, 'unit', unitId))).toMatchObject({
+      nameAr: null,
+      nameEn: 'English only',
+      version: unitOutcome.ok ? unitOutcome.after?.version : -1,
+    });
+    expect(await asHr((tx) => getStoredNames(tx, 'branch', branchId))).toMatchObject({
+      nameAr: null,
+      nameEn: 'English branch',
+      version: branchOutcome.ok ? branchOutcome.after?.version : -1,
+    });
+    expect(await asHr((tx) => getStoredNames(tx, 'cost_centre', costId))).toMatchObject({
+      nameAr: 'عربي',
+      nameEn: null,
+      version: cost.ok ? cost.after?.version : -1,
+    });
+    expect(await asHr((tx) => getStoredNames(tx, 'unit', randomUUID()))).toBeNull();
+
+    // A level renamed to its English name only (renaming stays possible once levels are locked).
+    const level = (await asHr((tx) => listStructureLevels(tx))).find((l) => l.ordinal === 3);
+    const renamed = await attempt((tx) =>
+      renameStructureLevel(tx, level?.id ?? '', level?.version ?? 0, {
+        nameEn: 'Section',
+        nameAr: null,
+      }),
+    );
+    expect(renamed.ok && renamed.after).toMatchObject({ nameEn: 'Section', nameAr: null });
+    expect(await asHr((tx) => getStoredNames(tx, 'level', level?.id ?? ''))).toMatchObject({
+      nameAr: null,
+      nameEn: 'Section',
+      version: renamed.ok ? renamed.after?.version : -1,
+    });
+
+    // The import never clears a name: a name left undefined keeps the unit's name in that language.
+    const b = (await asHr((tx) => listStructureUnits(tx))).find((u) => u.id === unit.b);
+    const imported = await asHr((tx) =>
+      applyUnitImport(tx, [
+        {
+          kind: 'update',
+          row: 2,
+          id: unit.b,
+          version: b?.version ?? 0,
+          nameEn: 'Sector B',
+          nameAr: undefined,
+          branchId: undefined,
+          defaultCostCentreId: undefined,
+          headPersonId: undefined,
+        },
+      ]),
+    );
+    expect(imported).toMatchObject({ ok: true, updated: 1 });
+    expect((await asHr((tx) => listStructureUnits(tx))).find((u) => u.id === unit.b)).toMatchObject(
+      { nameEn: 'Sector B', nameAr: 'ب' },
+    );
   });
 });

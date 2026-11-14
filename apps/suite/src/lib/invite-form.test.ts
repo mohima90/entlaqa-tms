@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canResend, createdName, inviteFieldError } from './invite-form';
+import { canResend, createdName, inviteFieldError, keptBehindMore } from './invite-form';
 
 describe('inviteFieldError', () => {
   it('maps field errors to the field and its text', () => {
@@ -65,5 +65,15 @@ describe('createdName (the success panel, review L4)', () => {
     expect(createdName('en', { ar: ['نورة', 'الدوسري'], en: ['Noura', ''] })).toBe('Noura');
     // English-only names (PO 17 Oct 2026): the Arabic page shows the English name.
     expect(createdName('ar', { ar: ['', ''], en: ['Noura', 'Aldossari'] })).toBe('Noura Aldossari');
+  });
+});
+
+describe('keptBehindMore («Invite another», review of WP-UX-01 b)', () => {
+  it('keeps «More options» open while a department, a branch or a manager is kept', () => {
+    const none = { departmentId: '', branchId: '', managerId: '' };
+    expect(keptBehindMore(none)).toBe(false);
+    expect(keptBehindMore({ ...none, departmentId: 'd1' })).toBe(true);
+    expect(keptBehindMore({ ...none, branchId: 'b1' })).toBe(true);
+    expect(keptBehindMore({ ...none, managerId: 'p1' })).toBe(true);
   });
 });

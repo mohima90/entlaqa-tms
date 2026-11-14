@@ -1,5 +1,6 @@
 import { ok } from '@jadarat/platform-core';
 import { brandVerifiedClaims } from '@jadarat/platform-core/internal/verified-claims';
+import type * as PlatformDb from '@jadarat/platform-db';
 import type { UserTx } from '@jadarat/platform-db';
 import {
   type ActionRuntime,
@@ -39,6 +40,14 @@ const db = vi.hoisted(() => {
   };
 });
 vi.mock('../db/needs-forms', () => db);
+const platform = vi.hoisted(() => ({
+  // The organization's default language (PO, 12 Nov 2026): English unless a test says otherwise.
+  getTenantDefaultLocale: vi.fn((): Promise<'ar' | 'en'> => Promise.resolve('en')),
+}));
+vi.mock('@jadarat/platform-db', async (importOriginal) => ({
+  ...(await importOriginal<typeof PlatformDb>()),
+  ...platform,
+}));
 
 const actions = await import('./actions');
 
@@ -117,6 +126,7 @@ beforeEach(() => {
   db.getNeedsForm.mockResolvedValue(uuidForm());
   db.createNeedsForm.mockResolvedValue(FORM);
   db.duplicateNeedsForm.mockResolvedValue(FORM);
+  platform.getTenantDefaultLocale.mockResolvedValue('en');
 });
 
 const names = { nameEn: 'Engineering needs', nameAr: 'احتياجات الهندسة' };
@@ -125,7 +135,7 @@ describe('who reads and designs needs forms (T-M3-10)', () => {
   it('the L&D Manager reads the library and designs; the Training Coordinator reads only', async () => {
     const lnd = runtime('training_manager');
     expect(await createDefineQuery(lnd.rt)(actions.needsFormsLibraryQueryDefinition())({})).toEqual(
-      ok({ forms: summaries, canManage: true }),
+      ok({ forms: summaries, canManage: true, nameLanguage: 'en' }),
     );
     const tc = runtime('training_coordinator');
     expect(
@@ -159,11 +169,115 @@ describe('who reads and designs needs forms (T-M3-10)', () => {
       nameAr: 'x'.repeat(121),
     });
     expect(!bad.ok && bad.error.code).toBe('VALIDATION_FAILED');
+    const invisible = await createDefineAction(rt)(actions.createNeedsFormActionDefinition())({
+      nameEn: 'Form',
+      nameAr: String.fromCharCode(0x200b),
+    });
+    expect(!invisible.ok && invisible.error.code).toBe('VALIDATION_FAILED');
+    expect(db.createNeedsForm).not.toHaveBeenCalled();
     const notUuid = await createDefineQuery(rt)(actions.needsFormQueryDefinition())({
       formId: "1' or '1'='1",
     });
     expect(!notUuid.ok && notUuid.error.code).toBe('VALIDATION_FAILED');
     expect(db.getNeedsForm).not.toHaveBeenCalled();
+  });
+});
+
+describe('a form’s name in the organization’s default language (PO, 12 Nov 2026)', () => {
+  it('create and duplicate: the default language’s name is required, the other one optional', async () => {
+    const run = createDefineAction(runtime('training_manager').rt);
+    // English is the default language: an English name alone is enough…
+    const englishOnly = await run(actions.createNeedsFormActionDefinition())({
+      nameEn: ' Engineering needs ',
+      nameAr: '',
+    });
+    expect(englishOnly.ok).toBe(true);
+    expect(db.createNeedsForm).toHaveBeenCalledWith(TX, {
+      nameEn: 'Engineering needs',
+      nameAr: null,
+    });
+    // …and an Arabic name alone is refused, on the English field.
+    const arabicOnly = await run(actions.duplicateNeedsFormActionDefinition())({
+      formId: FORM,
+      nameEn: '',
+      nameAr: 'احتياجات الهندسة',
+    });
+    expect(!arabicOnly.ok && arabicOnly.error).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      fieldErrors: [{ path: 'nameEn', code: 'REQUIRED' }],
+    });
+    expect(db.duplicateNeedsForm).not.toHaveBeenCalled();
+    // With Arabic as the default language it is the other way round.
+    platform.getTenantDefaultLocale.mockResolvedValue('ar');
+    const copy = await run(actions.duplicateNeedsFormActionDefinition())({
+      formId: FORM,
+      nameEn: '',
+      nameAr: 'احتياجات الهندسة',
+    });
+    expect(copy.ok).toBe(true);
+    const noArabic = await run(actions.createNeedsFormActionDefinition())({
+      nameEn: 'Engineering needs',
+      nameAr: '',
+    });
+    expect(!noArabic.ok && noArabic.error.fieldErrors).toEqual([
+      { path: 'nameAr', code: 'REQUIRED' },
+    ]);
+  });
+
+  it('rename: the rule applies to changed names; names left as stored pass', async () => {
+    const run = createDefineAction(runtime('training_manager').rt);
+    platform.getTenantDefaultLocale.mockResolvedValue('ar');
+    // Named in English only, before Arabic became the default language ('' is a missing name).
+    db.listNeedsForms.mockResolvedValue([{ ...summaries[0], name: { en: 'Form', ar: '' } }]);
+    const untouched = await run(actions.renameNeedsFormActionDefinition())({
+      formId: FORM,
+      version: 1,
+      nameEn: 'Form',
+      nameAr: '',
+    });
+    expect(untouched.ok).toBe(true);
+    db.renameNeedsForm.mockClear();
+    const renamed = await run(actions.renameNeedsFormActionDefinition())({
+      formId: FORM,
+      version: 1,
+      nameEn: 'Other form',
+      nameAr: '',
+    });
+    expect(!renamed.ok && renamed.error.fieldErrors).toEqual([
+      { path: 'nameAr', code: 'REQUIRED' },
+    ]);
+    expect(db.renameNeedsForm).not.toHaveBeenCalled();
+  });
+});
+
+describe('a name another form already shows (review finding 3)', () => {
+  it('refuses on create, duplicate and a changed name; never against the form itself', async () => {
+    const run = createDefineAction(runtime('training_manager').rt);
+    // The form is named in English only: it shows «Form» in Arabic too.
+    db.listNeedsForms.mockResolvedValue([{ ...summaries[0], name: { en: 'Form', ar: '' } }]);
+    const created = await run(actions.createNeedsFormActionDefinition())({
+      nameEn: 'Other form',
+      nameAr: 'FORM',
+    });
+    expect(!created.ok && created.error.fieldErrors).toEqual([
+      { path: 'nameAr', code: 'NAME_TAKEN' },
+    ]);
+    const copy = await run(actions.duplicateNeedsFormActionDefinition())({
+      formId: FORM,
+      nameEn: 'form',
+      nameAr: '',
+    });
+    expect(!copy.ok && copy.error.fieldErrors).toEqual([{ path: 'nameEn', code: 'NAME_TAKEN' }]);
+    expect(db.createNeedsForm).not.toHaveBeenCalled();
+    expect(db.duplicateNeedsForm).not.toHaveBeenCalled();
+    // Renaming the form itself (its English name kept, an Arabic one added): no clash with itself.
+    const renamed = await run(actions.renameNeedsFormActionDefinition())({
+      formId: FORM,
+      version: 1,
+      nameEn: 'Form',
+      nameAr: 'نموذج',
+    });
+    expect(renamed.ok).toBe(true);
   });
 });
 

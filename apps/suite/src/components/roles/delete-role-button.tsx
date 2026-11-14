@@ -10,7 +10,6 @@ import {
   Icon,
   toast,
 } from '@jadarat/ui';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { deleteCustomRoleAction } from '../../actions/roles';
@@ -18,6 +17,7 @@ import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { useLatestVersion } from '../latest-version';
 import { fieldErrorCodes } from '../profile/field-errors';
+import { useCreateRole } from './create-role';
 
 export interface DeleteRoleProps {
   readonly id: string;
@@ -136,28 +136,37 @@ export function DeleteRoleButton(props: DeleteRoleProps) {
 
 /**
  * The ⋯ menu of a role on Roles & permissions (redesign package 3 — OpenAI Platform, WorkOS): a standard
- * role offers «Create a role from it» (the Organization Admin); a custom role «Delete role» — shown
- * unavailable with the reason while someone holds it, instead of a button that fails.
+ * role offers «Create a role from it» (the Organization Admin) — the «Create role» popup, started from that
+ * role; a custom role «Delete role» — shown unavailable with the reason while someone holds it, instead of
+ * a button that fails.
  */
 export function RoleRowMenu({
   label,
+  code,
   createFrom,
   remove,
   inUse,
 }: {
   /** «إجراءات أخرى لـ{name}» / "More actions for {name}" (filled). */
   readonly label: string;
-  readonly createFrom: { readonly label: string; readonly href: string } | null;
+  /** The role's code: names the menu button, so focus returns to it after the popup. */
+  readonly code: string;
+  /** «Create a role from it»: its label and the start the popup opens on (`standard:<code>`). */
+  readonly createFrom: { readonly label: string; readonly start: string } | null;
   readonly remove: DeleteRoleProps | null;
   /** The role is held: «Delete role» is unavailable and says why. */
   readonly inUse: boolean;
 }) {
   const [deleting, setDeleting] = useState(false);
-  if (!createFrom && !remove) return null;
+  const create = useCreateRole();
+  const menuId = `role-menu-${code}`;
+  const copy = create ? createFrom : null;
+  if (!copy && !remove) return null;
   return (
     <>
       <DropdownMenu>
         <DropdownMenuTrigger
+          id={menuId}
           className="grid size-9 place-items-center rounded-full text-text-muted hover:bg-surface-hover hover:text-text pointer-coarse:size-11"
           aria-label={label}
           data-testid="role-menu"
@@ -165,12 +174,15 @@ export function RoleRowMenu({
           <Icon name="more" />
         </DropdownMenuTrigger>
         <DropdownMenuContent className="max-w-80">
-          {createFrom ? (
-            <DropdownMenuItem asChild>
-              <Link href={createFrom.href} data-testid="role-copy">
-                <Icon name="plus" />
-                {createFrom.label}
-              </Link>
+          {copy ? (
+            <DropdownMenuItem
+              onSelect={() => {
+                create?.open(copy.start, menuId);
+              }}
+              data-testid="role-copy"
+            >
+              <Icon name="plus" />
+              {copy.label}
             </DropdownMenuItem>
           ) : null}
           {remove ? (

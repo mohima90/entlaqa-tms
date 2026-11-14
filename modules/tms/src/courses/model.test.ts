@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
+  COURSE_CODE_RE,
+  COURSE_DEFAULTS,
   type CourseRow,
   CourseValuesInput,
+  CreateCourseInput,
   DELIVERY_TYPES,
   countCourses,
+  courseCategoryName,
   courseFieldProblems,
   courseMatches,
+  courseTitle,
+  generatedCourseCode,
+  requiredNameProblems,
 } from './model';
 
 const VALUES = {
@@ -88,11 +95,32 @@ describe('CourseValuesInput (FR-CAT-01; same rules as the tms.courses constraint
       { category: { kind: 'existing', id: "1' or 1=1" } },
     ],
     [
-      'a new category without an Arabic name',
-      { category: { kind: 'new', nameEn: 'Safety', nameAr: ' ' } },
+      'a new category with an invisible name',
+      { category: { kind: 'new', nameEn: 'Safety', nameAr: String.fromCharCode(0x200b) } },
     ],
+    ['a title too long', { titleEn: 'x'.repeat(201) }],
   ])('rejects %s', (_label, over) => {
     expect(CourseValuesInput.safeParse({ ...VALUES, ...over }).success).toBe(false);
+  });
+
+  it('takes a title and a category name in one language (which one is required is the service’s rule)', () => {
+    const parsed = CourseValuesInput.parse({
+      ...VALUES,
+      titleAr: '  ',
+      category: { kind: 'new', nameEn: 'Safety', nameAr: '' },
+    });
+    expect(parsed.titleAr).toBeNull();
+    expect(parsed.titleEn).toBe('Strategic management');
+    expect(parsed.category).toEqual({ kind: 'new', nameEn: 'Safety', nameAr: null });
+  });
+
+  it('a new course may come without a code; a changed one may not', () => {
+    const { code: _code, ...withoutCode } = VALUES;
+    expect(CreateCourseInput.parse(withoutCode).code).toBeNull();
+    expect(CreateCourseInput.parse({ ...VALUES, code: ' ' }).code).toBeNull();
+    expect(CreateCourseInput.parse(VALUES).code).toBe('LEAD-101');
+    expect(CreateCourseInput.safeParse({ ...VALUES, code: 'LEAD 101' }).success).toBe(false);
+    expect(CourseValuesInput.safeParse(withoutCode).success).toBe(false);
   });
 
   it('accepts a new category and optional costs left empty', () => {
@@ -103,6 +131,37 @@ describe('CourseValuesInput (FR-CAT-01; same rules as the tms.courses constraint
       durationDays: null,
     });
     expect(parsed.category).toEqual({ kind: 'new', nameEn: 'Safety', nameAr: 'السلامة' });
+  });
+});
+
+describe('the name rule and what «Add course» fills in', () => {
+  it('requires the default language’s text; texts left as stored pass', () => {
+    const paths = { ar: 'titleAr', en: 'titleEn' };
+    expect(requiredNameProblems('en', { ar: null, en: 'Title' }, paths)).toEqual([]);
+    expect(requiredNameProblems('en', { ar: 'عنوان', en: null }, paths)).toEqual([
+      { path: 'titleEn', code: 'REQUIRED' },
+    ]);
+    expect(requiredNameProblems('ar', { ar: null, en: 'Title' }, paths)).toEqual([
+      { path: 'titleAr', code: 'REQUIRED' },
+    ]);
+    const stored = { ar: null, en: 'Title' };
+    expect(requiredNameProblems('ar', { ar: null, en: 'Title' }, paths, stored)).toEqual([]);
+    expect(requiredNameProblems('ar', { ar: null, en: 'Other' }, paths, stored)).toHaveLength(1);
+  });
+
+  it('shows the title and the category name that exist', () => {
+    expect(courseTitle({ titleEn: 'Title', titleAr: null }, 'ar')).toBe('Title');
+    expect(courseTitle({ titleEn: null, titleAr: 'عنوان' }, 'en')).toBe('عنوان');
+    expect(courseTitle({ titleEn: 'Title', titleAr: 'عنوان' }, 'ar')).toBe('عنوان');
+    expect(courseCategoryName({ nameEn: null, nameAr: 'السلامة' }, 'en')).toBe('السلامة');
+    expect(courseCategoryName({ nameEn: 'Safety', nameAr: null }, 'ar')).toBe('Safety');
+  });
+
+  it('numbers the generated codes CRS-0001, CRS-0002… within the code’s rule', () => {
+    expect(generatedCourseCode(1)).toBe('CRS-0001');
+    expect(generatedCourseCode(12345)).toBe('CRS-12345');
+    expect(COURSE_CODE_RE.test(generatedCourseCode(42))).toBe(true);
+    expect(COURSE_DEFAULTS).toMatchObject({ minParticipants: 1, maxParticipants: 20 });
   });
 });
 

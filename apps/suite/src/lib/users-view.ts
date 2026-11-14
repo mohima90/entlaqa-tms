@@ -39,8 +39,8 @@ export function usersPaging(
 
 /**
  * A name in the page's language: the Arabic name in Arabic, the English name in English — each falling back
- * to the other when missing (a person may have an English name only, PO 17 Oct 2026; units have an Arabic
- * name always).
+ * to the other when missing (a person may have an English name only, PO 17 Oct 2026; a unit, a branch and a
+ * level may be named in the organization's default language only, PO 12 Nov 2026).
  */
 export function localizedName(
   locale: AppLocale,
@@ -48,6 +48,18 @@ export function localizedName(
   nameEn: string | null,
 ): string {
   return personDisplayName(locale, nameAr, nameEn);
+}
+
+/**
+ * The name of a person's unit or branch, or null when they have none — «none» is neither name, never just a
+ * missing Arabic one (a unit may be named in English only since migration 20261113100000).
+ */
+export function localizedNameOrNull(
+  locale: AppLocale,
+  nameAr: string | null,
+  nameEn: string | null,
+): string | null {
+  return nameAr === null && nameEn === null ? null : localizedName(locale, nameAr, nameEn);
 }
 
 /**

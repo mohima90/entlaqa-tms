@@ -7,6 +7,7 @@ import {
 import {
   type CustomRoleScope,
   customRoleIsPrivileged,
+  customRoleName,
   isCustomRoleCode,
   standardRoleScope,
 } from '../custom-roles';
@@ -50,7 +51,7 @@ function customChoice(row: CustomRoleRow): Omit<RoleChoice, 'assignable'> {
   return {
     code: row.code,
     kind: 'custom',
-    name: { ar: row.nameAr, en: row.nameEn },
+    name: customRoleName(row),
     description: row.description === null ? null : { ar: row.description, en: row.description },
     privileged: customRoleIsPrivileged(row.permissions),
     permissions: row.permissions,

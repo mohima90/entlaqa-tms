@@ -13,10 +13,19 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
+import {
+  CreateRoleButton,
+  CreateRoleProvider,
+  type CreateRoleSetup,
+} from '../../../../../components/roles/create-role';
 import { RoleRowMenu } from '../../../../../components/roles/delete-role-button';
 import { SuiteShell } from '../../../../../components/suite-shell';
 import { profileErrorTexts } from '../../../../../lib/profile-texts';
-import { roleBuilderTexts } from '../../../../../lib/role-builder-texts';
+import {
+  roleBuilderTexts,
+  roleCreateStarts,
+  roleCreateTexts,
+} from '../../../../../lib/role-builder-texts';
 import { getSuiteContext } from '../../../../../lib/suite-context';
 import { rolesPageQuery } from '../../../../../lib/users-queries';
 
@@ -34,14 +43,20 @@ const STANDARD_ONLY: RolesPageView = {
   })),
   memberCounts: null,
   canManage: false,
+  nameLanguage: 'en',
 };
+
+/** `standard:<code>` or `template:<key>`: the start «Create role» may open on (`?from=`, untrusted). */
+const START = /^(standard|template):[a-z][a-z0-9_]{1,39}$/;
 
 /**
  * Roles & permissions (T-M2-05, FR-IAM-07; EP-ROLES; redesign package 3 — OpenAI Platform, Airwallex,
  * WorkOS): two groups — the six standard roles (view only, «Create a role from it») and the organization's
  * custom roles (edit, delete when nobody holds them) — as rows with what each role does, its permissions
  * and how many people hold it (a link to them on Team members). Create, edit and delete for the
- * Organization Admin, as before.
+ * Organization Admin, as before. «Create role» is one centred popup (the Kawadir pattern — forms standard
+ * rule 9; WP-UX-01 c, T-M3-21): start from + the names, then the builder opens as the role's own page;
+ * `?new=1` (`&from=standard:<code>`) opens it with the page.
  */
 export default async function RolesPage({
   params,
@@ -65,7 +80,7 @@ export default async function RolesPage({
   const users = await getTranslations({ locale, namespace: 'users' });
 
   let content: ReactNode;
-  let canManage = false;
+  let setup: CreateRoleSetup | null = null;
   if (!context.live) {
     content = (
       <>
@@ -91,30 +106,33 @@ export default async function RolesPage({
         );
       }
     } else {
-      canManage = result.value.canManage;
+      if (result.value.canManage) {
+        setup = {
+          starts: await roleCreateStarts(locale),
+          nameLanguage: result.value.nameLanguage,
+          texts: await roleCreateTexts(locale),
+          errors: await profileErrorTexts(locale),
+          rolesHref: `/${locale}/suite/admin/roles`,
+          locale,
+        };
+      }
       content = <RolesList locale={locale} view={result.value} />;
     }
   }
+  // The popup opens with the page: «Create a role from it» on a standard role's page, an old bookmark.
+  const from = typeof query.from === 'string' && START.test(query.from) ? query.from : null;
+  const opened = query.new !== undefined || from !== null ? { start: from } : null;
 
   return (
     <SuiteShell locale={locale} context={context} current="roles" path="/suite/admin/roles">
-      <PageHeader
-        title={t('title')}
-        description={t('intro')}
-        actions={
-          canManage ? (
-            <Link
-              href={`/${locale}/suite/admin/roles/new`}
-              className={buttonClasses({ variant: 'primary', size: 'md' })}
-              data-testid="create-role-link"
-            >
-              <Icon name="plus" />
-              {t('createRole')}
-            </Link>
-          ) : null
-        }
-      />
-      <div className="flex flex-col gap-7">{content}</div>
+      <CreateRoleProvider setup={setup} initial={opened}>
+        <PageHeader
+          title={t('title')}
+          description={t('intro')}
+          actions={setup ? <CreateRoleButton label={t('createRole')} /> : null}
+        />
+        <div className="flex flex-col gap-7">{content}</div>
+      </CreateRoleProvider>
     </SuiteShell>
   );
 }
@@ -201,12 +219,10 @@ async function RolesList({ locale, view }: { locale: AppLocale; view: RolesPageV
           {view.canManage && builderTexts && errors ? (
             <RoleRowMenu
               label={t('moreFor', { name })}
+              code={role.code}
               createFrom={
                 role.kind === 'standard' && role.code !== 'tenant_admin'
-                  ? {
-                      label: t('customFrom'),
-                      href: `${rolesHref}/new?from=standard:${role.code}`,
-                    }
+                  ? { label: t('customFrom'), start: `standard:${role.code}` }
                   : null
               }
               remove={
@@ -273,13 +289,11 @@ async function RolesList({ locale, view }: { locale: AppLocale; view: RolesPageV
                 description={t('noCustomBody')}
                 action={
                   view.canManage ? (
-                    <Link
-                      href={`${rolesHref}/new`}
-                      className={buttonClasses({ variant: 'primary', size: 'md' })}
-                    >
-                      <Icon name="plus" />
-                      {t('createRole')}
-                    </Link>
+                    <CreateRoleButton
+                      id="create-role-first"
+                      testId="create-role-first"
+                      label={t('createRole')}
+                    />
                   ) : undefined
                 }
               />

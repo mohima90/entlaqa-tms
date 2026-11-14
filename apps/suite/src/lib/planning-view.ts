@@ -1,47 +1,101 @@
 import type { AppLocale } from '@jadarat/platform-i18n';
 import { personDisplayName } from '@jadarat/platform-i18n/names';
-import type { CycleListItem, CycleStatus, FormStatus } from '@jadarat/tms';
-import type { LaunchProblem } from '@jadarat/tms/planning-rules';
+import type { CycleStatus, FormStatus, ScopeUnitOption } from '@jadarat/tms';
+import { type ScopeSelection, departmentsInScope } from '@jadarat/tms/planning-rules';
 import type { BadgeTone } from '@jadarat/ui';
-
-/** Planning pages helpers (EP-PLN, T-M3-04): pure, unit-tested. */
+import { type LevelLabel, showsUnitLevels, unitNameWithLevel } from './structure-view';
 
 /**
- * The set-up steps of a draft cycle (business flow B4), in order; the `?step=` of the set-up page. The last,
- * «Review & launch» (redesign package 4), lists the launch problems and launches.
+ * Planning pages helpers (EP-PLN, T-M3-04; the Kawadir pattern, WP-UX-01 a / T-M3-20): pure, unit-tested.
+ * A cycle is created in one popup on the list, launched from its row menu and — optionally — completed on
+ * its own Settings page (forms standard rule 9).
  */
-export const SETUP_STEPS = [
-  'basics',
-  'scope',
-  'budget',
-  'approvals',
-  'reminders',
-  'review',
-] as const;
-export type SetupStep = (typeof SETUP_STEPS)[number];
 
-export function setupStep(value: unknown): SetupStep {
-  return (SETUP_STEPS as readonly unknown[]).includes(value) ? (value as SetupStep) : 'basics';
+/** The cycles list filtered by its summary cards: `?status=` of the list page (All by default). */
+export const LIST_FILTERS = ['all', 'draft', 'open', 'closed'] as const;
+export type ListFilter = (typeof LIST_FILTERS)[number];
+
+export function listFilter(value: unknown): ListFilter {
+  return (LIST_FILTERS as readonly unknown[]).includes(value) ? (value as ListFilter) : 'all';
 }
 
-export function nextStep(step: SetupStep): SetupStep | null {
-  return SETUP_STEPS[SETUP_STEPS.indexOf(step) + 1] ?? null;
+/** The cycles of a filter, in the list's order. «Closed» is everything that is neither a draft nor open. */
+export function filterCycles<T extends { readonly status: CycleStatus }>(
+  cycles: readonly T[],
+  filter: ListFilter,
+): readonly T[] {
+  switch (filter) {
+    case 'all':
+      return cycles;
+    case 'draft':
+    case 'open':
+      return cycles.filter((cycle) => cycle.status === filter);
+    case 'closed':
+      return cycles.filter((cycle) => cycle.status !== 'draft' && cycle.status !== 'open');
+  }
 }
 
-export function previousStep(step: SetupStep): SetupStep | null {
-  const index = SETUP_STEPS.indexOf(step);
-  return index > 0 ? (SETUP_STEPS[index - 1] ?? null) : null;
+/** The sections of a draft cycle's Settings page, in order: `?tab=` of the page (the first by default). */
+export const SETTINGS_TABS = ['departments', 'instructions', 'reminders', 'form'] as const;
+export type SettingsTab = (typeof SETTINGS_TABS)[number];
+
+export function settingsTab(value: unknown): SettingsTab {
+  return (SETTINGS_TABS as readonly unknown[]).includes(value)
+    ? (value as SettingsTab)
+    : 'departments';
 }
 
 export const PLANNING_PATHS = {
   cycles: '/suite/planning/cycles',
-  newCycle: '/suite/planning/cycles/new',
   settings: '/suite/planning/settings',
   needsForms: '/suite/planning/needs-forms',
+  /** Organization → Structure, where a unit's head is picked. */
+  structure: '/suite/admin/structure',
 } as const;
 
-export function cycleHref(locale: AppLocale, id: string, step?: SetupStep): string {
-  return `/${locale}${PLANNING_PATHS.cycles}/${id}${step ? `?step=${step}` : ''}`;
+/** A cycle's page: its progress once launched (a draft's own page is its Settings). */
+export function cycleHref(locale: AppLocale, id: string): string {
+  return `/${locale}${PLANNING_PATHS.cycles}/${id}`;
+}
+
+/** A draft cycle's Settings page, on one of its sections. */
+export function cycleSettingsHref(locale: AppLocale, id: string, tab?: SettingsTab): string {
+  return `${cycleHref(locale, id)}/settings${tab && tab !== 'departments' ? `?tab=${tab}` : ''}`;
+}
+
+/** The cycles list, filtered, or with one of its popups open (`new`, or a draft to edit or launch). */
+export function cyclesHref(
+  locale: AppLocale,
+  options: {
+    readonly filter?: ListFilter;
+    readonly open?:
+      { readonly kind: 'new' } | { readonly kind: 'edit' | 'launch'; readonly id: string };
+  } = {},
+): string {
+  const query = new URLSearchParams();
+  if (options.filter && options.filter !== 'all') query.set('status', options.filter);
+  if (options.open?.kind === 'new') query.set('new', '1');
+  else if (options.open) query.set(options.open.kind, options.open.id);
+  const text = query.toString();
+  return `/${locale}${PLANNING_PATHS.cycles}${text ? `?${text}` : ''}`;
+}
+
+/**
+ * Where an address of the old six-step set-up (`/cycles/{id}?step=…`) leads now (old links keep working):
+ * the names, period, deadline and departments are the popup on the list; the launch is its question on the
+ * list; the rest is a section of the cycle's Settings. The approval chain is gone (EP-PLN §13 e).
+ */
+export function legacyStepHref(locale: AppLocale, id: string, step: unknown): string {
+  switch (step) {
+    case 'basics':
+      return cyclesHref(locale, { open: { kind: 'edit', id } });
+    case 'review':
+      return cyclesHref(locale, { open: { kind: 'launch', id } });
+    case 'reminders':
+      return cycleSettingsHref(locale, id, 'reminders');
+    default:
+      return cycleSettingsHref(locale, id);
+  }
 }
 
 /** A name in the page's language, else the other one (a person may have an English name only). */
@@ -68,22 +122,6 @@ export const FORM_TONE: Readonly<Record<FormStatus, BadgeTone>> = {
   late: 'danger',
 };
 
-/**
- * The cycles list grouped by status (redesign package 4, PO rule «grouping lists by status»): the open
- * cycle first (a card with its progress), then the drafts, then everything closed — in the list's order.
- */
-export function groupCycles(cycles: readonly CycleListItem[]): {
-  readonly open: readonly CycleListItem[];
-  readonly drafts: readonly CycleListItem[];
-  readonly closed: readonly CycleListItem[];
-} {
-  return {
-    open: cycles.filter((cycle) => cycle.status === 'open'),
-    drafts: cycles.filter((cycle) => cycle.status === 'draft'),
-    closed: cycles.filter((cycle) => cycle.status !== 'open' && cycle.status !== 'draft'),
-  };
-}
-
 /** Days from the organization's today to a deadline (negative once passed); both calendar days. */
 export function daysLeft(today: string, deadline: string): number {
   return Math.round(
@@ -91,47 +129,126 @@ export function daysLeft(today: string, deadline: string): number {
   );
 }
 
-/** Optional set-up steps (marked «optional» in the step list; no launch problem belongs to them). */
-export const OPTIONAL_STEPS: readonly SetupStep[] = ['budget', 'reminders'];
+// ---------------------------------------------------------------------------------------------------
+// Departments of a cycle (the popup's and the Settings page's picker; the launch question)
+// ---------------------------------------------------------------------------------------------------
+
+/** A unit of the structure as the pickers need it (tree order; `head`: who receives its form, as text). */
+export interface PickerUnit {
+  readonly id: string;
+  readonly parentId: string | null;
+  readonly branchId: string | null;
+  readonly name: string;
+  readonly depth: number;
+  readonly active: boolean;
+  /** The head who receives the unit's needs form, as text; null: nobody («No head yet»). */
+  readonly head: string | null;
+}
 
 /**
- * The step that fixes a launch problem (Review & launch: «Go to {step}»). `another_open` is fixed outside
- * the cycle (the open cycle), so it has none.
+ * The structure for the pickers, in the page's language: each unit named with its level when levels mix
+ * (guided-test feedback #3) and the head who receives its form — «{name} (from {unit})» when the head
+ * comes from a unit above.
  */
-export const PROBLEM_STEP: Readonly<Record<LaunchProblem, SetupStep | null>> = {
-  deadline_past: 'basics',
-  no_needs_form: 'basics',
-  no_departments: 'scope',
-  no_approver_step: 'approvals',
-  approver_missing: 'approvals',
-  approver_inactive: 'approvals',
-  another_open: null,
-};
+export function pickerUnits(
+  locale: AppLocale,
+  units: readonly ScopeUnitOption[],
+  levels: readonly LevelLabel[],
+  headVia: (name: string, unit: string) => string,
+): PickerUnit[] {
+  const withLevels = showsUnitLevels(
+    levels,
+    units.map((unit) => unit.levelOrdinal),
+  );
+  return units.map((unit) => ({
+    id: unit.id,
+    parentId: unit.parentId,
+    branchId: unit.branchId,
+    name: unitNameWithLevel(
+      localName(locale, unit.name),
+      unit.levelOrdinal,
+      levels,
+      locale,
+      withLevels,
+    ),
+    depth: unit.depth,
+    active: unit.active,
+    head: unit.head
+      ? unit.head.via
+        ? headVia(localName(locale, unit.head.name), localName(locale, unit.head.via))
+        : localName(locale, unit.head.name)
+      : null,
+  }));
+}
 
-export type StepMark = 'done' | 'problem' | 'todo';
+/** The units as the scope rule reads them (the list is already in tree order). */
+function asStructure(units: readonly PickerUnit[]) {
+  return units.map((unit, index) => ({
+    id: unit.id,
+    parentId: unit.parentId,
+    branchId: unit.branchId,
+    active: unit.active,
+    sortOrder: index,
+    nameAr: unit.name,
+    headPersonId: unit.head === null ? null : unit.id,
+  }));
+}
 
 /**
- * The mark of each set-up step in the step list, from today's launch problems: «!» when a problem belongs
- * to it, ✓ for the required steps without one, a plain number for the optional steps and the review.
+ * The units a scope covers — one needs form each (BR-PLN-a): the picked units and everything under them,
+ * and every unit of a picked branch; inactive units get no form. The same rule the server applies.
  */
-export function stepMarks(
-  problems: readonly LaunchProblem[],
-): Readonly<Record<SetupStep, StepMark>> {
-  const flagged = new Set(problems.map((problem) => PROBLEM_STEP[problem]));
-  const mark = (step: SetupStep): StepMark =>
-    flagged.has(step)
-      ? 'problem'
-      : step === 'review' || OPTIONAL_STEPS.includes(step)
-        ? 'todo'
-        : 'done';
-  return {
-    basics: mark('basics'),
-    scope: mark('scope'),
-    budget: mark('budget'),
-    approvals: mark('approvals'),
-    reminders: mark('reminders'),
-    review: mark('review'),
+export function unitsInScope(
+  units: readonly PickerUnit[],
+  scope: ScopeSelection,
+): readonly PickerUnit[] {
+  const covered = new Set(departmentsInScope(asStructure(units), scope));
+  return units.filter((unit) => covered.has(unit.id));
+}
+
+/**
+ * «All departments»: the top-level units, each of which includes everything under it — so the units
+ * added under them later are in the cycle too.
+ */
+export function allUnitsScope(units: readonly PickerUnit[]): string[] {
+  const ids = new Set(units.map((unit) => unit.id));
+  return units
+    .filter((unit) => unit.parentId === null || !ids.has(unit.parentId))
+    .map((unit) => unit.id);
+}
+
+/** How a unit stands in a scope: picked itself, covered by a picked unit above or by its branch, or out. */
+export type UnitPick = 'picked' | 'covered' | 'out';
+
+export function unitPicks(
+  units: readonly PickerUnit[],
+  scope: ScopeSelection,
+): ReadonlyMap<string, UnitPick> {
+  const byId = new Map(units.map((unit) => [unit.id, unit]));
+  const picked = new Set(scope.departmentIds);
+  const branches = new Set(scope.branchIds);
+  const coveredFromAbove = (unit: PickerUnit): boolean => {
+    let current: PickerUnit | undefined = unit;
+    for (let depth = 0; current && depth <= 20; depth += 1) {
+      if (current.branchId !== null && branches.has(current.branchId)) return true;
+      if (current !== unit && picked.has(current.id)) return true;
+      current = current.parentId === null ? undefined : byId.get(current.parentId);
+    }
+    return false;
   };
+  return new Map(
+    units.map((unit) => [
+      unit.id,
+      coveredFromAbove(unit) ? 'covered' : picked.has(unit.id) ? 'picked' : 'out',
+    ]),
+  );
+}
+
+/** Two scopes pick the same units and branches (the order does not matter). */
+export function sameScope(a: ScopeSelection, b: ScopeSelection): boolean {
+  const same = (x: readonly string[], y: readonly string[]) =>
+    x.length === y.length && new Set([...x, ...y]).size === x.length;
+  return same(a.departmentIds, b.departmentIds) && same(a.branchIds, b.branchIds);
 }
 
 /** The progress table's status chips (cycle overview): All, then every form status. */
@@ -177,10 +294,6 @@ const FIELD_ERROR_KEYS: Readonly<Record<string, string>> = {
   TOO_LONG: 'tooLong',
   AFTER_PERIOD: 'afterPeriod',
   INVALID_AMOUNT: 'invalidAmount',
-  DUPLICATE_APPROVER: 'duplicateApprover',
-  SECOND_HEADS_STEP: 'secondHeadsStep',
-  HEADS_STEP_NAMED: 'headsStepNamed',
-  NOT_A_MEMBER: 'notAMember',
   NOT_LATER: 'notLater',
   IN_PAST: 'inPast',
   UNKNOWN: 'unknown',
@@ -204,4 +317,18 @@ export function progressCounts(statuses: readonly FormStatus[]): {
     submitted: statuses.filter((s) => s === 'submitted').length,
     late: statuses.filter((s) => s === 'late').length,
   };
+}
+
+/** Reminder days as typed → numbers, or the text key of what is wrong. */
+export function parseReminderDays(
+  days: readonly string[],
+): { readonly ok: true; readonly days: number[] } | { readonly ok: false; readonly key: string } {
+  const values = days.map((d) => Number(d.trim() === '' ? Number.NaN : d.trim()));
+  if (values.some((v) => !Number.isInteger(v) || v < 1 || v > 90)) {
+    return { ok: false, key: 'setup.fieldErrors.dayRange' };
+  }
+  if (new Set(values).size !== values.length) {
+    return { ok: false, key: 'setup.fieldErrors.duplicateDay' };
+  }
+  return { ok: true, days: values };
 }

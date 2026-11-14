@@ -1,11 +1,14 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
 import {
+  CUSTOM_ROLE_NAME_AR,
+  CUSTOM_ROLE_NAME_EN,
   departmentLevelsExist,
   roleScopeUnitsExist,
   structureCompletionExists,
   structureLevelsExist,
   structureLevelsExistCached,
+  storableStructureNames,
 } from './custom-roles-present';
 import { pgError } from './user-admin';
 import type { UserTx } from './with-user-tx';
@@ -26,8 +29,12 @@ export interface StructureLevelRow {
   readonly id: string;
   /** 1 = the top level. */
   readonly ordinal: number;
-  readonly nameEn: string;
-  readonly nameAr: string;
+  /**
+   * One of the two may be missing (migration 20261113100000): the name in the organization's default language
+   * is required, the other one optional — readers show the name that exists.
+   */
+  readonly nameEn: string | null;
+  readonly nameAr: string | null;
   readonly version: number;
   /** Live units at this level. */
   readonly unitCount: number;
@@ -38,7 +45,8 @@ export type UnitStatus = 'active' | 'inactive';
 export interface StructureUnitRow {
   readonly id: string;
   readonly code: string;
-  readonly nameAr: string;
+  /** One of the two names may be missing, never both (migration 20261113100000). */
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
   readonly parentId: string | null;
   /** The unit's level (= its depth; null only before the backfill of 20261020090300). */
@@ -64,7 +72,7 @@ export interface StructureUnitRow {
 export interface StructureUnitOption {
   readonly id: string;
   readonly code: string;
-  readonly nameAr: string;
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
   readonly parentId: string | null;
   readonly levelOrdinal: number | null;
@@ -74,8 +82,8 @@ export interface StructureUnitOption {
 /** A level as a label (Arabic, English names) by ordinal. */
 export interface StructureLevelLabel {
   readonly ordinal: number;
-  readonly nameEn: string;
-  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly nameAr: string | null;
 }
 
 /** An active person as a head choice (names and employee number only). */
@@ -107,8 +115,8 @@ export async function listStructureLevels(tx: UserTx): Promise<readonly Structur
   const rows = await tx.execute<{
     id: string;
     ordinal: number;
-    name_en: string;
-    name_ar: string;
+    name_en: string | null;
+    name_ar: string | null;
     version: number;
     unit_count: number | string;
   }>(sql`
@@ -133,7 +141,11 @@ export async function listStructureLevelLabels(
   tx: UserTx,
 ): Promise<readonly StructureLevelLabel[]> {
   if (!(await structureLevelsExistCached(tx))) return [];
-  const rows = await tx.execute<{ ordinal: number; name_en: string; name_ar: string }>(sql`
+  const rows = await tx.execute<{
+    ordinal: number;
+    name_en: string | null;
+    name_ar: string | null;
+  }>(sql`
     select l.ordinal, l.name_en, l.name_ar from platform.structure_levels l order by l.ordinal`);
   return rows.map((r) => ({ ordinal: r.ordinal, nameEn: r.name_en, nameAr: r.name_ar }));
 }
@@ -175,7 +187,7 @@ export async function listStructureUnits(tx: UserTx): Promise<readonly Structure
   const rows = await tx.execute<{
     id: string;
     code: string;
-    name_ar: string;
+    name_ar: string | null;
     name_en: string | null;
     parent_id: string | null;
     level_ordinal: number | null;
@@ -203,7 +215,7 @@ export async function listStructureUnits(tx: UserTx): Promise<readonly Structure
     from platform.departments d
     left join platform.persons h on h.tenant_id = d.tenant_id and h.id = d.head_person_id
     where d.deleted_at is null
-    order by d.parent_id nulls first, d.sort_order, d.name_ar, d.id`);
+    order by d.parent_id nulls first, d.sort_order, coalesce(d.name_ar, d.name_en), d.id`);
   return rows.map((r) => ({
     id: r.id,
     code: r.code,
@@ -233,7 +245,7 @@ export async function listStructureUnitOptions(
   const rows = await tx.execute<{
     id: string;
     code: string;
-    name_ar: string;
+    name_ar: string | null;
     name_en: string | null;
     parent_id: string | null;
     level_ordinal: number | null;
@@ -242,7 +254,7 @@ export async function listStructureUnitOptions(
     select d.id, d.code, d.name_ar, d.name_en, d.parent_id, ${level} as level_ordinal, d.status
     from platform.departments d
     where d.deleted_at is null
-    order by d.parent_id nulls first, d.sort_order, d.name_ar, d.id`);
+    order by d.parent_id nulls first, d.sort_order, coalesce(d.name_ar, d.name_en), d.id`);
   return rows.map((r) => ({
     id: r.id,
     code: r.code,
@@ -272,6 +284,39 @@ export async function listActivePersonOptions(tx: UserTx): Promise<readonly Pers
     nameEn: r.display_name_en,
     employeeNumber: r.employee_number,
   }));
+}
+
+/** What the organization names in two languages on the Organization pages (one of the two may be missing). */
+export type NamedOrgThing = 'unit' | 'branch' | 'level' | 'cost_centre';
+
+/**
+ * The two names of a unit, branch, level or cost centre as stored, with the row's version (null: not found,
+ * or deleted) — what the default-language name rule compares a save with (packages/platform-rbac
+ * iam/default-language-name.ts: a save that leaves the names as they are is not refused; one made from an
+ * older version is left to the write, which answers the conflict). Row-level security keeps it in the
+ * organization.
+ */
+export async function getStoredNames(
+  tx: UserTx,
+  thing: NamedOrgThing,
+  id: string,
+): Promise<{
+  readonly nameAr: string | null;
+  readonly nameEn: string | null;
+  readonly version: number;
+} | null> {
+  const from = {
+    unit: sql`platform.departments t where t.deleted_at is null and`,
+    branch: sql`platform.branches t where t.deleted_at is null and`,
+    level: sql`platform.structure_levels t where`,
+    cost_centre: sql`platform.cost_centres t where`,
+  }[thing];
+  const [row] = await tx.execute<{
+    name_ar: string | null;
+    name_en: string | null;
+    version: number;
+  }>(sql`select t.name_ar, t.name_en, t.version from ${from} t.id = ${id}::uuid`);
+  return row ? { nameAr: row.name_ar, nameEn: row.name_en, version: row.version } : null;
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -378,8 +423,8 @@ async function levelById(tx: UserTx, id: string): Promise<StructureLevelRow | nu
 }
 
 export interface LevelNames {
-  readonly nameEn: string;
-  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly nameAr: string | null;
 }
 
 /** Adds a level below the last one (BR-ORG-b). */
@@ -392,11 +437,13 @@ export async function addStructureLevel(
   const levels = await listStructureLevels(tx);
   const ordinal = (levels.at(-1)?.ordinal ?? 0) + 1;
   if (ordinal > MAX_STRUCTURE_LEVELS) return { ok: false, refusal: 'too_many_levels' };
+  // One name only once the database takes it (deploy window: storableStructureNames).
+  const stored = await storableStructureNames(tx, names, true);
   let id: string;
   try {
     const [row] = await tx.execute<{ id: string }>(sql`
       insert into platform.structure_levels (ordinal, name_en, name_ar)
-      values (${ordinal}, ${names.nameEn}, ${names.nameAr})
+      values (${ordinal}, ${stored.nameEn}, ${stored.nameAr})
       returning id`);
     if (!row) throw new Error('addStructureLevel: no row returned');
     id = row.id;
@@ -417,9 +464,10 @@ export async function renameStructureLevel(
   const before = await levelById(tx, id);
   if (!before) return { ok: false, refusal: 'not_found' };
   if (before.version !== version) return { ok: false, refusal: 'version_conflict' };
+  const stored = await storableStructureNames(tx, names, true);
   try {
     const rows = await tx.execute(sql`update platform.structure_levels
-      set name_en = ${names.nameEn}, name_ar = ${names.nameAr}
+      set name_en = ${stored.nameEn}, name_ar = ${stored.nameAr}
       where id = ${id}::uuid and version = ${version}
       returning id`);
     if (rows.length === 0) return { ok: false, refusal: 'version_conflict' };
@@ -464,8 +512,9 @@ export async function removeStructureLevel(
 
 export interface UnitInput {
   readonly code: string;
-  readonly nameEn: string;
-  readonly nameAr: string;
+  /** One of the two may be null (the calling action requires the organization's default language's name). */
+  readonly nameEn: string | null;
+  readonly nameAr: string | null;
   readonly branchId: string | null;
   readonly headPersonId: string | null;
   /** WP-HR-01: written only once the column exists (deploy window). */
@@ -493,12 +542,14 @@ export async function createStructureUnit(
   const completed = await structureCompletionExists(tx);
   const costCentreColumn = completed ? sql`, default_cost_centre_id` : sql``;
   const costCentreValue = completed ? sql`, ${input.defaultCostCentreId}::uuid` : sql``;
+  // One name only once the database takes it (deploy window: storableStructureNames).
+  const names = await storableStructureNames(tx, input);
   let id: string;
   try {
     const [row] = await tx.execute<{ id: string }>(sql`
       insert into platform.departments (code, name_ar, name_en, parent_id, branch_id, head_person_id, sort_order
                                         ${costCentreColumn})
-      values (${input.code}, ${input.nameAr}, ${input.nameEn}, ${parentId}::uuid, ${input.branchId}::uuid,
+      values (${input.code}, ${names.nameAr}, ${names.nameEn}, ${parentId}::uuid, ${input.branchId}::uuid,
               ${input.headPersonId}::uuid, ${sortOrder} ${costCentreValue})
       returning id`);
     if (!row) throw new Error('createStructureUnit: no row returned');
@@ -539,8 +590,9 @@ export function updateStructureUnit(
     const costCentre = (await structureCompletionExists(tx))
       ? sql`, default_cost_centre_id = ${input.defaultCostCentreId}::uuid`
       : sql``;
+    const names = await storableStructureNames(tx, input);
     return tx.execute(sql`update platform.departments
-      set code = ${input.code}, name_ar = ${input.nameAr}, name_en = ${input.nameEn},
+      set code = ${input.code}, name_ar = ${names.nameAr}, name_en = ${names.nameEn},
           branch_id = ${input.branchId}::uuid, head_person_id = ${input.headPersonId}::uuid ${costCentre}
       where id = ${id}::uuid and version = ${version} and deleted_at is null
       returning id`);
@@ -712,7 +764,8 @@ export async function previewStructureUnitMove(
           unit_id: string;
         }>(sql`
           select p.id as person_id, p.display_name_ar as name_ar, p.display_name_en as name_en,
-                 cr.name_en as role_name_en, cr.name_ar as role_name_ar, ra.scope_unit_id as unit_id
+                 ${CUSTOM_ROLE_NAME_EN} as role_name_en, ${CUSTOM_ROLE_NAME_AR} as role_name_ar,
+                 ra.scope_unit_id as unit_id
           from platform.role_assignments ra
           join platform.tenant_memberships m on m.tenant_id = ra.tenant_id and m.id = ra.membership_id
           join platform.persons p on p.tenant_id = m.tenant_id and p.id = m.person_id

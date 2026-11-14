@@ -1,10 +1,18 @@
 import 'server-only';
 import { type AppError, type Result, appError, err, ok } from '@jadarat/platform-core';
-import { type UserTx, pgError } from '@jadarat/platform-db';
+import {
+  type UserTx,
+  getTenantDefaultLocale,
+  pgError,
+  storableNamePair,
+} from '@jadarat/platform-db';
+import { shownNameClash } from '@jadarat/platform-rbac';
 import {
   getCourse,
   insertCourse,
   insertCourseCategory,
+  listCourseCategories,
+  insertCourseWithGeneratedCode,
   updateCourseRow,
   updateCourseStatus,
 } from './db';
@@ -13,7 +21,9 @@ import {
   type CourseRow,
   type CourseStatus,
   type CourseValues,
+  type CreateCourseValues,
   courseFieldProblems,
+  requiredNameProblems,
 } from './model';
 
 /**
@@ -29,6 +39,10 @@ export interface CourseSaved {
   /** A category created together with the course (category choice `new`). */
   readonly categoryCreated: CourseCategoryRow | null;
 }
+
+/** The name slots that lost NOT NULL in migration 20261113110000 (asked while it is not applied yet). */
+const TITLE_SLOT = { table: 'tms.courses', column: 'title_ar' } as const;
+const CATEGORY_NAME_SLOT = { table: 'tms.course_categories', column: 'name_ar' } as const;
 
 function validation(path: string, code: string): AppError {
   return appError('VALIDATION_FAILED', { fieldErrors: [{ path, code }] });
@@ -54,14 +68,51 @@ export function courseRefusalOf(error: unknown): AppError {
   throw error;
 }
 
-function crossFieldError(values: CourseValues): AppError | null {
-  const problems = courseFieldProblems(values);
+type AnyCourseValues = CourseValues | CreateCourseValues;
+
+/**
+ * The rules across fields, and the title — and a new category's name — in the organization's default
+ * language (PO, 12 Nov 2026: that one is required, the other language optional). `before`: the stored
+ * course — titles left as they are pass.
+ */
+async function valuesError(
+  tx: UserTx,
+  values: AnyCourseValues,
+  before: CourseRow | null = null,
+): Promise<AppError | null> {
+  const locale = await getTenantDefaultLocale(tx);
+  const problems = [
+    ...requiredNameProblems(
+      locale,
+      { ar: values.titleAr, en: values.titleEn },
+      { ar: 'titleAr', en: 'titleEn' },
+      before ? { ar: before.titleAr, en: before.titleEn } : null,
+    ),
+    ...(values.category.kind === 'new'
+      ? requiredNameProblems(
+          locale,
+          { ar: values.category.nameAr, en: values.category.nameEn },
+          { ar: 'category.nameAr', en: 'category.nameEn' },
+        )
+      : []),
+    ...courseFieldProblems(values),
+  ];
   return problems.length > 0 ? appError('VALIDATION_FAILED', { fieldErrors: problems }) : null;
+}
+
+/**
+ * A new category's name that another category already SHOWS in the same language (its own, or its other
+ * language's standing in for a missing one — review finding 3): NAME_TAKEN on the field, or null.
+ */
+async function categoryNameTaken(tx: UserTx, values: AnyCourseValues): Promise<AppError | null> {
+  if (values.category.kind !== 'new') return null;
+  const field = shownNameClash(values.category, await listCourseCategories(tx));
+  return field === null ? null : validation(`category.${field}`, 'NAME_TAKEN');
 }
 
 async function resolveCategory(
   tx: UserTx,
-  values: CourseValues,
+  values: AnyCourseValues,
 ): Promise<{ readonly id: string | null; readonly created: CourseCategoryRow | null }> {
   switch (values.category.kind) {
     case 'none':
@@ -69,37 +120,53 @@ async function resolveCategory(
     case 'existing':
       return { id: values.category.id, created: null };
     case 'new': {
-      const created = await insertCourseCategory(tx, values.category);
+      // One name only once the database takes it (deploy window of 20261113110000: storableNamePair).
+      const names = await storableNamePair(tx, CATEGORY_NAME_SLOT, values.category);
+      const created = await insertCourseCategory(tx, names);
       return { id: created.id, created };
     }
   }
 }
 
-function stored(values: CourseValues, categoryId: string | null) {
+/** The stored columns: the category resolved, and one title only once the database takes it. */
+async function stored<V extends AnyCourseValues>(tx: UserTx, values: V, categoryId: string | null) {
   const { category: _category, ...rest } = values;
-  return { ...rest, categoryId };
+  const titles = await storableNamePair(tx, TITLE_SLOT, {
+    nameAr: values.titleAr,
+    nameEn: values.titleEn,
+  });
+  return { ...rest, titleAr: titles.nameAr, titleEn: titles.nameEn, categoryId };
 }
 
 /**
  * Adds a course (and its new category, if one is asked for) to the organization's library. `withoutCosts`:
- * the author does not see the estimated costs (no tms.course_cost.read), so none are stored.
+ * the author does not see the estimated costs (no tms.course_cost.read), so none are stored. A course sent
+ * without a code gets the next free one (WP-UX-01 c).
  */
 export async function createCourse(
   tx: UserTx,
-  input: CourseValues,
+  input: AnyCourseValues,
   options: { readonly withoutCosts?: boolean } = {},
 ): Promise<Result<CourseSaved, AppError>> {
-  const values: CourseValues = options.withoutCosts
+  const values: AnyCourseValues = options.withoutCosts
     ? { ...input, estCostPerSession: null, estCostPerParticipant: null }
     : input;
-  const problem = crossFieldError(values);
+  const problem = (await valuesError(tx, values)) ?? (await categoryNameTaken(tx, values));
   if (problem) return err(problem);
   let id: string;
   let created: CourseCategoryRow | null;
   try {
     const category = await resolveCategory(tx, values);
     created = category.created;
-    id = await insertCourse(tx, stored(values, category.id));
+    const { code, ...rest } = await stored(tx, values, category.id);
+    if (code === null) {
+      const generated = await insertCourseWithGeneratedCode(tx, rest);
+      // Fifty codes in a row taken by hand: the author chooses one on the course's settings instead.
+      if (generated === null) return err(validation('code', 'CODE_TAKEN'));
+      id = generated;
+    } else {
+      id = await insertCourse(tx, { ...rest, code });
+    }
   } catch (error) {
     return err(courseRefusalOf(error));
   }
@@ -119,9 +186,9 @@ export async function updateCourse(
   input: CourseValues,
   options: { readonly keepCosts?: boolean } = {},
 ): Promise<Result<CourseSaved, AppError>> {
-  const problem = crossFieldError(input);
-  if (problem) return err(problem);
   const before = await getCourse(tx, id);
+  const problem = (await valuesError(tx, input, before)) ?? (await categoryNameTaken(tx, input));
+  if (problem) return err(problem);
   if (!before) return err(appError('NOT_FOUND'));
   if (before.version !== expectedVersion) return err(appError('CONFLICT_VERSION'));
   const values: CourseValues = options.keepCosts
@@ -135,7 +202,7 @@ export async function updateCourse(
   try {
     const category = await resolveCategory(tx, values);
     created = category.created;
-    if (!(await updateCourseRow(tx, id, expectedVersion, stored(values, category.id)))) {
+    if (!(await updateCourseRow(tx, id, expectedVersion, await stored(tx, values, category.id)))) {
       return err(appError('CONFLICT_VERSION'));
     }
   } catch (error) {

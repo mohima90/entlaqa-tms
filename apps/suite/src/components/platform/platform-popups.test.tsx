@@ -48,8 +48,11 @@ function mount(ui: ReactNode) {
   return container;
 }
 
-const byTestId = <T extends Element = HTMLElement>(id: string) =>
-  document.querySelector<T>(`[data-testid="${id}"]`);
+const byTestId = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+const inputById = (id: string) =>
+  document.querySelector<HTMLInputElement>(`input[data-testid="${id}"]`);
+const selectById = (id: string) =>
+  document.querySelector<HTMLSelectElement>(`select[data-testid="${id}"]`);
 const click = (element: Element | null) => {
   act(() => {
     (element as HTMLElement).click();
@@ -108,7 +111,7 @@ const nameFields = () =>
   [
     ...document.querySelectorAll<HTMLInputElement>('input[name="nameEn"], input[name="nameAr"]'),
   ].map((input) => [input.name, input.required] as const);
-const field = (name: string) => byTestId<HTMLInputElement>(`create-org-${name}`);
+const field = (name: string) => inputById(`create-org-${name}`);
 
 describe('Create organization', () => {
   for (const locale of ['en', 'ar'] as const) {
@@ -141,7 +144,7 @@ describe('Create organization', () => {
   it('the required name follows the language chosen; refused before sending, the focus on that name', async () => {
     mount(<CreateOrganization {...shared('en')} plans={[]} />);
     click(byTestId('create-organization'));
-    choose(byTestId('create-org-locale'), 'ar');
+    choose(selectById('create-org-locale'), 'ar');
     expect(nameFields()).toEqual([
       ['nameAr', true],
       ['nameEn', false],
@@ -265,9 +268,9 @@ describe('Plan popup', () => {
   it('Edit opens with the plan, says who it applies to; a refused limit takes the focus', async () => {
     mount(editor('en', plan));
     click(byTestId('plan-edit'));
-    expect(byTestId<HTMLInputElement>('plan-name')?.value).toBe('Basic');
+    expect(inputById('plan-name')?.value).toBe('Basic');
     expect(byTestId('plan-applies')?.textContent).toContain('3');
-    type(byTestId<HTMLInputElement>('plan-maxPeople'), '0');
+    type(inputById('plan-maxPeople'), '0');
     await submit('plan-save');
     expect(actions.savePlanAction).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(byTestId('plan-maxPeople'));
@@ -277,7 +280,7 @@ describe('Plan popup', () => {
     actions.savePlanAction.mockResolvedValue({ ok: true, value: { planId: 'p1' } });
     mount(editor('en', plan));
     click(byTestId('plan-edit'));
-    type(byTestId<HTMLInputElement>('plan-maxPeople'), '60');
+    type(inputById('plan-maxPeople'), '60');
     await submit('plan-save');
     expect(actions.savePlanAction).toHaveBeenCalledWith(
       expect.objectContaining({ planId: 'p1', name: 'Basic', maxPeople: 60, version: 2 }),

@@ -331,7 +331,8 @@ function CreateOrganizationForm(
       data-testid={`create-org-${name}`}
     />
   );
-  // A short natural pair: side by side from 600 px, one per row on a phone.
+  // A short natural pair: side by side from `md` (600 px, packages/config/tailwind/preset.css), one per row
+  // on a phone.
   const pair = 'grid grid-cols-1 items-start gap-4 md:grid-cols-2';
   // The organization's language first (English by default — PO 14 and 17 Oct 2026).
   const languages: readonly Language[] = language === 'ar' ? ['ar', 'en'] : ['en', 'ar'];

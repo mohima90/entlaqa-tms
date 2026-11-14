@@ -100,7 +100,8 @@ test.describe('plans: the Super Admin (configured deployment)', () => {
     // Plans → New plan: 50 people, 5 GB, every feature but own branding.
     await page.goto('/en/platform/plans');
     await page.getByTestId('plan-new').click();
-    const panel = page.getByTestId('plan-panel');
+    // Every «Edit» and «New plan» renders its own popup: the open one is the one in use.
+    const panel = page.locator('dialog[data-testid="plan-panel"][open]');
     await expect(panel).toBeVisible();
     await expectNoSeriousA11yViolations(page);
     await panel.getByTestId('plan-name').fill(name);

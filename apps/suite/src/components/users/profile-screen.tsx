@@ -429,7 +429,12 @@ async function profilePage(
       }
       actions={
         <ProfileActions
-          edit={canEdit ? { label: t('editDetails'), href: `${base}?tab=personal` } : null}
+          // «Edit details» leads to the settings tabs; on them it would lead where the person already is.
+          edit={
+            canEdit && !isPersonSettingsTab(tab)
+              ? { label: t('editDetails'), href: `${base}?tab=personal` }
+              : null
+          }
           menuLabel={t('actionsMenu')}
           items={actions}
         />
@@ -776,7 +781,9 @@ async function profilePage(
           variant="side"
           label={t('tabsLabel')}
           items={tabs}
-          current={tab}
+          // A section the member may not open (the old edit address without edit rights) is not in the
+          // list: the overview is marked instead, while the section says why it cannot be opened.
+          current={tabs.some((item) => item.key === tab) ? tab : 'overview'}
           className="xl:sticky xl:top-24"
           data-testid="profile-tabs"
         />

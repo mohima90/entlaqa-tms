@@ -387,6 +387,16 @@ test.describe('users pages', () => {
     await page.getByTestId('save-bar-save').click();
     await expect(toasts(page)).toContainText('Changes saved.');
     await expect(page.getByTestId('save-bar')).toHaveCount(0);
+    // Saving again on the same tab, without reloading: the save sends the version the first one returned —
+    // «Changes saved.», never «This changed while you had it open».
+    const closeToast = page.locator('li[data-tone] button');
+    while ((await closeToast.count()) > 0) await closeToast.first().click();
+    await form.getByRole('textbox', { name: /Job title in English/ }).fill('Accountant');
+    await page.getByTestId('save-bar-save').click();
+    await expect(toasts(page)).toContainText('Changes saved.');
+    await expect(page.getByTestId('save-bar')).toHaveCount(0);
+    await expect(page.getByTestId('edit-user-message')).toHaveCount(0);
+    await expect(page.getByTestId('load-latest-version')).toHaveCount(0);
     // «Discard changes» puts the saved values back.
     await form.getByRole('textbox', { name: /Employee number/ }).fill('EMP-9');
     await page.getByRole('button', { name: 'Discard changes' }).click();

@@ -108,6 +108,17 @@ function hasNames(names: PersonalDetailsFormState, script: 'Ar' | 'En'): boolean
   );
 }
 
+/** The stored values with the account details of a save that went through (the record fields as stored). */
+function accountSaved(stored: PersonFormState, sent: PersonFormState): PersonFormState {
+  return {
+    ...sent,
+    gradeId: stored.gradeId,
+    gender: stored.gender,
+    birthDate: stored.birthDate,
+    category: stored.category,
+  };
+}
+
 /** The fields as the page loaded them. */
 function stateFrom(props: EditUserFormProps): PersonFormState {
   const { names, values, record } = props;
@@ -163,6 +174,9 @@ export function EditUserForm(props: EditUserFormProps) {
   const [state, setState] = useState<PersonFormState>(() => stateFrom(props));
   // What the last save wrote counts as saved until the page has loaded the new version itself.
   const [saved, setSaved] = useState<PersonFormState | null>(null);
+  // The version the last save of the account details returned: sent with the next save until the page has
+  // loaded that copy itself (no conflict with the form's own save; WP-UX-01 e review).
+  const [savedToken, setSavedToken] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
   const [showAll, setShowAll] = useState(false);
@@ -177,6 +191,7 @@ export function EditUserForm(props: EditUserFormProps) {
     (initial) => changedKeys(saved ?? initial.state, state).length > 0,
     (latest) => {
       setSaved(null);
+      setSavedToken(null);
       setState(latest.state);
       setFieldErrors({});
     },
@@ -237,7 +252,7 @@ export function EditUserForm(props: EditUserFormProps) {
       changed.some((key) => key === 'gender' || key === 'birthDate' || key === 'category');
     const input = {
       personId: props.personId,
-      version: base.initial.token,
+      version: savedToken ?? base.initial.token,
       firstNameAr: state.firstNameAr,
       fatherNameAr: state.fatherNameAr,
       grandfatherNameAr: state.grandfatherNameAr,
@@ -291,6 +306,7 @@ export function EditUserForm(props: EditUserFormProps) {
         return;
       }
       const detailsChanged = result?.ok === true && result.value.changed.length > 0;
+      if (result?.ok === true && result.value.version !== null) setSavedToken(result.value.version);
       let recordChanged = false;
       if (gradeChanged || hrChanged) {
         const savedRecord = await updatePersonRecordAction({
@@ -307,8 +323,11 @@ export function EditUserForm(props: EditUserFormProps) {
             : {}),
         });
         if (!savedRecord.ok) {
+          // The account details are saved already: they count as saved (the next save sends only what is
+          // still unsaved — the grade or the HR fields — and, if the details change again, the version this
+          // save returned); the page shows them.
+          if (result?.ok === true) setSaved(accountSaved(stored, snapshot));
           if (sessionRefused(savedRecord.error)) return;
-          // The details are saved already: the page shows them, and a new save starts from them.
           if (detailsChanged) router.refresh();
           if (savedRecord.error.code === 'VALIDATION_FAILED') {
             const codes = fieldErrorCodes(savedRecord.error);

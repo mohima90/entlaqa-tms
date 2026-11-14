@@ -467,7 +467,7 @@ async function UsersList({
       // refuses it too).
       editHref:
         view.canEditDetails && row.mayManage && (!row.privileged || view.canAssignPrivileged)
-          ? `${base}/${row.personId}/edit`
+          ? `${base}/${row.personId}?tab=personal`
           : null,
       // «تعطيل المستخدم» (T-M2-09): an active member the member may manage, not themself; privileged
       // people by the Organization Admin only (the dialog checks again).

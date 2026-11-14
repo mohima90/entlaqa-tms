@@ -128,7 +128,7 @@ describe('EditUserForm (a person settings section)', () => {
   it('«Work details» saves the whole record with its version: typed work fields, stored names', async () => {
     actions.updateUserDetailsAction.mockResolvedValue({
       ok: true,
-      value: { personId: 'p', changed: ['employeeNumber'] },
+      value: { personId: 'p', changed: ['employeeNumber'], version: '5:2' },
     });
     const container = mount(<EditUserForm {...props('work')} />);
     expect(container.querySelector('#edit-firstNameEn')).toBeNull();
@@ -180,6 +180,72 @@ describe('EditUserForm (a person settings section)', () => {
       container.querySelector<HTMLFormElement>('form')?.reset();
     });
     expect(first.value).toBe('Khalid');
+    expect(container.querySelector('[data-testid="save-bar"]')).toBeNull();
+  });
+  it('a second save on the same tab sends the version the first one returned (no conflict)', async () => {
+    actions.updateUserDetailsAction.mockResolvedValue({
+      ok: true,
+      value: { personId: 'p', changed: ['employeeNumber'], version: '5:2' },
+    });
+    const container = mount(<EditUserForm {...props('work')} />);
+    const number = container.querySelector<HTMLInputElement>('#edit-employeeNumber')!;
+    type(number, 'EMP-2');
+    act(() => {
+      container.querySelector<HTMLFormElement>('form')?.requestSubmit();
+    });
+    await settle();
+    // Typed again before the page has loaded the new copy.
+    type(number, 'EMP-3');
+    act(() => {
+      container.querySelector<HTMLFormElement>('form')?.requestSubmit();
+    });
+    await settle();
+    expect(actions.updateUserDetailsAction).toHaveBeenCalledTimes(2);
+    expect(actions.updateUserDetailsAction.mock.calls[1]?.[0]).toMatchObject({
+      version: '5:2',
+      employeeNumber: 'EMP-3',
+    });
+  });
+
+  it('details saved, HR fields refused: the retry sends only the HR fields', async () => {
+    actions.updateUserDetailsAction.mockResolvedValue({
+      ok: true,
+      value: { personId: 'p', changed: ['mobile'], version: '5:2' },
+    });
+    actions.updatePersonRecordAction.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'VALIDATION_FAILED', fieldErrors: [{ path: 'birthDate', code: 'INVALID' }] },
+    });
+    actions.updatePersonRecordAction.mockResolvedValueOnce({
+      ok: true,
+      value: { grade: null, hrChanged: ['birthDate'] },
+    });
+    const base = props('personal');
+    const container = mount(
+      <EditUserForm {...base} record={{ ...base.record, canEditHr: true }} />,
+    );
+    type(container.querySelector<HTMLInputElement>('#edit-mobile')!, '+966551112233');
+    const birth = container.querySelector<HTMLInputElement>('#edit-birthDate')!;
+    type(birth, '2999-01-01');
+    act(() => {
+      container.querySelector<HTMLFormElement>('form')?.requestSubmit();
+    });
+    await settle();
+    expect(actions.updateUserDetailsAction).toHaveBeenCalledTimes(1);
+    expect(birth.getAttribute('aria-invalid')).toBe('true');
+    // Still unsaved: the date.
+    expect(container.querySelector('[data-testid="save-bar"]')).not.toBeNull();
+    type(birth, '1992-05-14');
+    act(() => {
+      container.querySelector<HTMLFormElement>('form')?.requestSubmit();
+    });
+    await settle();
+    // The mobile number is not sent again (no conflict with the version it already moved on).
+    expect(actions.updateUserDetailsAction).toHaveBeenCalledTimes(1);
+    expect(actions.updatePersonRecordAction).toHaveBeenLastCalledWith({
+      personId: '5eed1000-0000-4000-8000-000000000002',
+      hr: { gender: '', birthDate: '1992-05-14', employmentCategory: '' },
+    });
     expect(container.querySelector('[data-testid="save-bar"]')).toBeNull();
   });
 });

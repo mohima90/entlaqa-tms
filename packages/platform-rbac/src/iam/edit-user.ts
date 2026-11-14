@@ -192,6 +192,12 @@ export interface UserDetailsSaved {
   readonly personId: string;
   /** Changed field names (no values: personal data stays out of the audit log). */
   readonly changed: readonly string[];
+  /**
+   * The record's version after the save (WP-UX-01 e review): a settings tab that stays open sends it with its
+   * next save — no conflict with its own save while the page has not loaded the new copy yet. Null if the
+   * record could not be read back.
+   */
+  readonly version: string | null;
 }
 
 export function updateUserDetailsActionDefinition(): ActionDefinition<
@@ -256,7 +262,12 @@ export function updateUserDetailsActionDefinition(): ActionDefinition<
           outcome.refusal === 'name_required' ? await getTenantDefaultLocale(ctx.tx) : 'ar';
         return err(refusalError(outcome.refusal, nameLanguage));
       }
-      return ok({ personId: input.personId, changed: outcome.changed });
+      const after = await getEditableUser(ctx.tx, input.personId);
+      return ok({
+        personId: input.personId,
+        changed: outcome.changed,
+        version: after?.version ?? null,
+      });
     },
     audit: (_input, output) =>
       output.changed.length === 0

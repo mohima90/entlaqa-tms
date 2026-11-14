@@ -1,6 +1,7 @@
 import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { forgetSchemaPresenceForTests } from './custom-roles-present';
 import {
   PlatformConsoleError,
   createPlatformTenant,
@@ -157,8 +158,15 @@ describe('listPlatformTenants', () => {
 });
 
 describe('createPlatformTenant', () => {
+  beforeEach(() => {
+    forgetSchemaPresenceForTests();
+  });
+  /** The catalog's answer: platform.tenants.name_ar takes NULL (20261113120000 applied) or not yet. */
+  const oneName = (present: boolean) => [{ present }];
+  const createdRow = [{ tenant_id: TENANT, invitation_id: 'inv', invite_code: 'K7M2PQ9XHT4W' }];
+
   it('sends trimmed values (blank names as null) and returns the code', async () => {
-    const fake = fakeTx([{ tenant_id: TENANT, invitation_id: 'inv', invite_code: 'K7M2PQ9XHT4W' }]);
+    const fake = fakeTx(oneName(true), createdRow);
     const created = await createPlatformTenant(fake.tx, {
       slug: 'entlaqa',
       nameAr: ' إنطلاقة ',
@@ -170,8 +178,8 @@ describe('createPlatformTenant', () => {
       locale: 'en',
     });
     expect(created).toEqual({ tenantId: TENANT, invitationId: 'inv', inviteCode: 'K7M2PQ9XHT4W' });
-    expect(fake.executed[0]?.sql).toContain('private.platform_create_tenant(');
-    expect(fake.executed[0]?.params).toEqual([
+    expect(fake.executed[1]?.sql).toContain('private.platform_create_tenant(');
+    expect(fake.executed[1]?.params).toEqual([
       'entlaqa',
       'إنطلاقة',
       null,
@@ -184,8 +192,43 @@ describe('createPlatformTenant', () => {
     ]);
   });
 
+  it('an English name alone: sent alone once the database takes it, in both slots before (deploy window)', async () => {
+    const input = {
+      slug: 'acme',
+      nameEn: ' Acme ',
+      adminEmail: 'a@acme.test',
+      locale: 'en' as const,
+    };
+    const after = fakeTx(oneName(true), createdRow);
+    await createPlatformTenant(after.tx, input);
+    expect(after.executed[1]?.params.slice(0, 3)).toEqual(['acme', null, 'Acme']);
+    forgetSchemaPresenceForTests();
+    const before = fakeTx(oneName(false), createdRow);
+    await createPlatformTenant(before.tx, input);
+    expect(before.executed[1]?.params.slice(0, 3)).toEqual(['acme', 'Acme', 'Acme']);
+  });
+
+  it('two names ask nothing of the catalog', async () => {
+    const fake = fakeTx(createdRow);
+    await createPlatformTenant(fake.tx, {
+      slug: 'acme',
+      nameAr: 'أكمي',
+      nameEn: 'Acme',
+      adminEmail: 'a@acme.test',
+      locale: 'ar',
+    });
+    expect(fake.executed).toHaveLength(1);
+    expect(fake.executed[0]?.params.slice(0, 3)).toEqual(['acme', 'أكمي', 'Acme']);
+  });
+
   it('maps the refusals', async () => {
-    const input = { slug: 'tenant-a', nameAr: 'أ', adminEmail: 'a@b.test', locale: 'en' as const };
+    const input = {
+      slug: 'tenant-a',
+      nameAr: 'أ',
+      nameEn: 'A',
+      adminEmail: 'a@b.test',
+      locale: 'en' as const,
+    };
     await expect(createPlatformTenant(fakeTx(pgErr('JP002')).tx, input)).rejects.toMatchObject({
       code: 'SLUG_TAKEN',
     });

@@ -2239,9 +2239,9 @@
       "title": "Organization",
       "intro": "Shown in the sidebar, on e-mails and on certificates.",
       "nameEn": "Display name (English)",
-      "nameEnHint": "Up to 80 characters.",
+      "nameEnHint": "Up to 200 characters.",
       "nameAr": "Display name (Arabic)",
-      "nameArHint": "Shown when the interface is in Arabic. Up to 80 characters.",
+      "nameArHint": "Shown when the interface is in Arabic. Up to 200 characters.",
       "industry": "Industry",
       "industryChoose": "Choose an industry",
       "country": "Country",
@@ -2294,7 +2294,7 @@
     "noChanges": "There are no changes to save.",
     "fieldErrors": {
       "nameRequired": "Enter the display name.",
-      "nameTooLong": "Use at most 80 characters.",
+      "nameTooLong": "Use at most 200 characters.",
       "nameInvalid": "Remove the hidden text-direction characters from the name.",
       "industryRequired": "Choose an industry.",
       "countryRequired": "Choose a country.",
@@ -2398,7 +2398,7 @@
       "adminFirstNameEn": "First name in English",
       "adminFamilyNameEn": "Family name in English",
       "adminNamesHint": "Optional. The Organization Admin can set their name when they join.",
-      "locale": "Invitation language",
+      "locale": "Organization language",
       "localeEn": "English",
       "localeAr": "Arabic",
       "submit": "Create organization",
@@ -2408,18 +2408,21 @@
         "slug": "Use 3 to 40 lowercase letters, digits or hyphens, not starting or ending with a hyphen.",
         "slugTaken": "This short name is already used or reserved. Choose another.",
         "nameAr": "Enter the organization's name in Arabic (up to 200 characters).",
-        "nameEn": "Use up to 200 characters.",
+        "nameEn": "Enter the organization's name in English (up to 200 characters).",
         "adminEmail": "Enter an email address such as name@company.com.",
         "adminEmailOwn": "Use the Organization Admin's own email. You can't invite your own Super Admin account.",
         "adminName": "Use up to 100 characters.",
         "adminNamePair": "Enter the first name and the family name in this language, or leave both empty.",
         "locale": "Choose Arabic or English.",
-        "form": "Check the details and try again."
+        "form": "Check the details and try again.",
+        "nameOther": "Use up to 200 characters."
       },
-      "planSection": "Plan",
       "plan": "Plan",
       "trial": "Start with a 30-day trial",
-      "trialHint": "After 30 days the organization is suspended unless you make it active. You can change this later on its page."
+      "trialHint": "After 30 days the organization is suspended unless you make it active. You can change this later on its page.",
+      "localeHint": "Decides which name is required and the language of new people. The invitation is in it too.",
+      "more": "More options",
+      "moreSummary": "the Organization Admin's name"
     },
     "created": {
       "title": "Organization created",
@@ -2435,7 +2438,7 @@
       "newCode": "New code",
       "issuing": "Issuing…",
       "newCodeIssued": "A new code was issued. The previous code no longer works.",
-      "close": "Close",
+      "close": "Done",
       "needsNewCode": "The Super Admin who issued this invitation no longer has access, so its link no longer works. Issue a new code to send the Organization Admin a working one."
     },
     "errors": {
@@ -3564,7 +3567,7 @@
       "intro": "Shown in the menu, on the sign-in page and in e-mails.",
       "nameEn": "Name (English)",
       "nameAr": "Name (Arabic)",
-      "hint": "Up to 80 characters."
+      "hint": "Up to 200 characters."
     },
     "images": {
       "title": "Logo and browser icon",
@@ -3656,7 +3659,7 @@
     "lastChangedDefault": "Not changed yet: the Jadarat look.",
     "fieldErrors": {
       "nameRequired": "Enter the name.",
-      "nameTooLong": "Use 80 characters or fewer.",
+      "nameTooLong": "Use 200 characters or fewer.",
       "nameInvalid": "Remove special formatting characters from the name.",
       "invalid": "Check this value."
     }

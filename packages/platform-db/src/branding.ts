@@ -1,6 +1,7 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
 import { type ClaimsTx, runWithClaims } from './claims-tx';
+import { storableNamePair } from './custom-roles-present';
 import { type AppDatabase, getDatabase } from './client';
 import { DomainError } from './domain-error';
 import { pgError } from './pg-error';
@@ -36,7 +37,8 @@ export interface TenantBrand {
 
 /** The look as saved (the Branding page; audited before → after). */
 export interface BrandingSettings {
-  readonly nameAr: string;
+  /** Named in at least one language (tenants_name_present_check, 20261113120000): either may be missing. */
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
   readonly primaryColor: string | null;
   readonly secondaryColor: string | null;
@@ -144,7 +146,7 @@ const SETTINGS_COLUMNS = sql`t.name_ar, t.name_en, b.primary_color, b.secondary_
 
 function settingsOf(row: Row): BrandingSettings {
   return {
-    nameAr: String(row.name_ar),
+    nameAr: text(row.name_ar),
     nameEn: text(row.name_en),
     primaryColor: text(row.primary_color),
     secondaryColor: text(row.secondary_color),
@@ -349,8 +351,14 @@ export async function saveBranding(
             returning version`);
     if (!saved) return { outcome: 'refused' };
     if (after.nameAr !== before.nameAr || after.nameEn !== before.nameEn) {
+      // One name only once the database takes it (deploy window of 20261113120000: storableNamePair).
+      const stored = await storableNamePair(
+        tx,
+        { table: 'platform.tenants', column: 'name_ar' },
+        after,
+      );
       const [names] = await tx.execute(sql`
-        update platform.tenants set name_ar = ${after.nameAr}, name_en = ${after.nameEn}
+        update platform.tenants set name_ar = ${stored.nameAr}, name_en = ${stored.nameEn}
         where id = (select private.current_tenant_id())
         returning id`);
       if (!names) return { outcome: 'refused' };
@@ -439,7 +447,8 @@ export async function publishBrandImage(
 
 /** The sign-in page's look of an organization in service (null: unknown, not in service, or not yet built). */
 export interface PublicTenantBrand {
-  readonly nameAr: string;
+  /** Named in at least one language (tenants_name_present_check, 20261113120000): either may be missing. */
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
   readonly primaryColor: string | null;
   readonly secondaryColor: string | null;
@@ -495,7 +504,7 @@ export function createPublicBrandApi(getDb: () => AppDatabase): PublicBrandApi {
         );
         if (!row) return null;
         return {
-          nameAr: String(row.name_ar),
+          nameAr: text(row.name_ar),
           nameEn: text(row.name_en),
           primaryColor: text(row.primary_color),
           secondaryColor: text(row.secondary_color),

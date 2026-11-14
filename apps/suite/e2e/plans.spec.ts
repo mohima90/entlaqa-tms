@@ -100,7 +100,8 @@ test.describe('plans: the Super Admin (configured deployment)', () => {
     // Plans → New plan: 50 people, 5 GB, every feature but own branding.
     await page.goto('/en/platform/plans');
     await page.getByTestId('plan-new').click();
-    const panel = page.getByTestId('plan-panel');
+    // Every «Edit» and «New plan» renders its own popup: the open one is the one in use.
+    const panel = page.locator('dialog[data-testid="plan-panel"][open]');
     await expect(panel).toBeVisible();
     await expectNoSeriousA11yViolations(page);
     await panel.getByTestId('plan-name').fill(name);
@@ -133,7 +134,7 @@ test.describe('plans: the Super Admin (configured deployment)', () => {
     await page.getByTestId('create-organization').click();
     const create = page.getByTestId('create-organization-panel');
     await create.getByTestId('create-org-slug').fill(slug);
-    await create.getByTestId('create-org-nameAr').fill(`منظمة ${slug}`);
+    // English is the language chosen by default: its name alone is enough (WP-UX-01 d, PO 12 Nov 2026).
     await create.getByTestId('create-org-nameEn').fill(`Organization ${slug}`);
     await create.getByTestId('create-org-adminEmail').fill(`org-admin-${slug}@example.test`);
     await create.getByTestId('create-organization-submit').click();

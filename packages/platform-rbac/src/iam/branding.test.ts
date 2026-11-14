@@ -27,6 +27,8 @@ const db = vi.hoisted(() => ({
   isDomainError: (error: unknown) =>
     typeof error === 'object' && error !== null && 'code' in error && 'domain' in error,
   getBranding: vi.fn(),
+  // The organization's default language (its name in it is required): English unless a test says so.
+  getTenantDefaultLocale: vi.fn(() => Promise.resolve('en')),
   saveBranding: vi.fn(),
   publishBrandImage: vi.fn(),
   noteWorkQueued: vi.fn(),
@@ -310,6 +312,26 @@ describe('saving the branding (WP-ADM-02, BR-BRD-a)', () => {
     }
   });
 
+  it('the name in the organization’s default language is required; the other one may stay empty', async () => {
+    const save = createDefineAction(runtime(forRoles('tenant_admin')).rt)(saveDefinition());
+    const english = await save({ ...input, nameEn: '  ' });
+    expect(!english.ok && english.error.fieldErrors).toEqual([
+      { path: 'nameEn', code: 'REQUIRED' },
+    ]);
+    db.getTenantDefaultLocale.mockResolvedValueOnce('ar');
+    const arabic = await save({ ...input, nameAr: '' });
+    expect(!arabic.ok && arabic.error.fieldErrors).toEqual([{ path: 'nameAr', code: 'REQUIRED' }]);
+    expect(db.saveBranding).not.toHaveBeenCalled();
+    // English organization, no Arabic name: saved with the Arabic name empty (null, never the text «null»).
+    db.saveBranding.mockResolvedValueOnce({ outcome: 'unchanged', version: 1 });
+    await save({ ...input, nameAr: '' });
+    expect(db.saveBranding).toHaveBeenCalledWith(
+      TX,
+      expect.objectContaining({ nameAr: null, nameEn: input.nameEn }),
+      expect.anything(),
+    );
+  });
+
   it('one colour without the other is refused', async () => {
     const save = createDefineAction(runtime(forRoles('tenant_admin')).rt)(saveDefinition());
     const result = await save({ ...input, secondaryColor: null });
@@ -536,8 +558,11 @@ describe('BrandingInput (validation before anything runs)', () => {
     expect(isWebsiteUrl('https://www.raya.example/about?x=1')).toBe(true);
   });
 
-  it('names: required, no bidi overrides; unknown fields refused', () => {
-    expect(parse({ nameEn: '' }).success).toBe(false);
+  it('names: either may be empty (null), at most 200, no bidi overrides; unknown fields refused', () => {
+    const empty = parse({ nameEn: '  ' });
+    expect(empty.success && empty.data.nameEn).toBeNull();
+    expect(parse({ nameAr: 'ن'.repeat(201) }).success).toBe(false);
+    expect(parse({ nameAr: 'ن'.repeat(200) }).success).toBe(true);
     expect(parse({ nameAr: `شركة ${String.fromCodePoint(0x202e)}الراية` }).success).toBe(false);
     expect(parse({ tagline: 'x' }).success).toBe(false);
     expect(parse({ logoFileId: 'not-a-uuid' }).success).toBe(false);

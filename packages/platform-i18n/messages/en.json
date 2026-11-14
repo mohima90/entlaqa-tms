@@ -156,7 +156,12 @@
     "planNeedsSubmitted": "These needs are submitted. Recall the submission to change them.",
     "planNeedsEmpty": "Add at least one training need before you submit.",
     "planNeedsLimit": "The limit was reached: at most 200 needs per department and 500 named people per need.",
-    "planNeedsNotSubmitted": "These needs are not submitted right now. Refresh the page to see their current status."
+    "planNeedsNotSubmitted": "These needs are not submitted right now. Refresh the page to see their current status.",
+    "trainingPlanNotReady": "The plan is built once the needs close: after the deadline, or now if every department has submitted.",
+    "trainingPlanAlreadyOpen": "The plan of this cycle has already been built. Refresh the page to see it.",
+    "trainingPlanFrozen": "The plan can't change now: it is waiting for approval or already approved.",
+    "trainingPlanLineOutsideScope": "This line includes needs of departments you don't plan for. Ask the L&D Manager to change it.",
+    "trainingPlanNeedsNotSubmitted": "These needs aren't submitted right now, so they can't enter the plan. They can once the department resubmits."
   },
   "auth": {
     "signInTitle": "Sign in",

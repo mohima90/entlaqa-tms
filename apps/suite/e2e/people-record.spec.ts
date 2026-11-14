@@ -17,6 +17,10 @@ const hrEmail = process.env.PEOPLE_E2E_HR_EMAIL;
 const hrPassword = process.env.PEOPLE_E2E_HR_PASSWORD;
 const SARA = '5eed1000-0000-4000-8000-000000000001';
 
+// The browser uploads the photo straight to Storage: on the self-hosted stack that is the gateway with its
+// self-signed certificate (as in user-import.spec.ts).
+test.use({ ignoreHTTPSErrors: true });
+
 /** A PNG of a flat colour (valid header and checksums), made here so the spec needs no fixture file. */
 function png(side: number, [red, green, blue]: readonly [number, number, number]): Buffer {
   const crcTable = Array.from({ length: 256 }, (_, n) => {
@@ -206,7 +210,12 @@ test.describe('Grades, photo and HR-only fields as the Organization Admin', () =
     await expect(page.getByTestId('photo-problem')).toContainText(
       'This file can’t be used. Choose a PNG, JPG or WebP picture.',
     );
-    await expect(page.getByTestId('photo-problem')).toBeFocused();
+    // Focus moves to the message: the alert itself or the focusable frame that holds it.
+    await expect(
+      page.locator(
+        '[data-testid="photo-problem"]:focus, :focus:has([data-testid="photo-problem"])',
+      ),
+    ).toHaveCount(1);
 
     // A real picture opens the framing dialog (keyboard: arrow keys move the picture), then saves.
     await input.setInputFiles({
@@ -284,7 +293,7 @@ test.describe('HR details as the HR Manager', () => {
   test.skip(!hrEmail || !hrPassword, 'HR Manager E2E credentials not set');
   test.describe.configure({ mode: 'serial' });
 
-  test('the HR details card: filled in «Personal details», shown with the Hijri date, changes audited without values', async ({
+  test('the HR details card: filled in «Personal details», shown with the Hijri date; no audit log for the HR Manager', async ({
     page,
   }) => {
     await signInToSuite(page, hrEmail, hrPassword);
@@ -306,10 +315,23 @@ test.describe('HR details as the HR Manager', () => {
     await page.getByTestId('profile-tabs').getByRole('link', { name: 'Overview' }).click();
     const card = page.getByTestId('hr-details');
     await expect(card).toContainText('Female');
-    await expect(card).toContainText('14 May 1992');
+    // The Gregorian date in the page's long style (as elsewhere in English: «March 3, 2024»).
+    await expect(card).toContainText('May 14, 1992');
     await expect(card).toContainText('Hijri:');
     await expect(card).toContainText('Technical');
-    // The audit trail names the change and never the values.
+    await expectNoSeriousA11yViolations(page);
+    // The audit log is the Organization Admin's to read (platform.audit.read): the HR Manager has no
+    // «Recent activity» tab.
+    await expect(
+      page.getByTestId('profile-tabs').getByRole('link', { name: 'Recent activity' }),
+    ).toHaveCount(0);
+  });
+
+  test('the audit trail names the HR details change and never the values (read by the Organization Admin)', async ({
+    page,
+  }) => {
+    test.skip(!email || !password, 'signed-in E2E credentials not set');
+    await signInToSuite(page, email, password);
     await page.goto(`/en/suite/admin/users/${SARA}?tab=activity`);
     const activity = page.getByTestId('user-activity');
     await expect(activity).toContainText('HR details changed');

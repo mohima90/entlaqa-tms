@@ -154,6 +154,11 @@ test.describe('plans: the Super Admin (configured deployment)', () => {
     await form.getByTestId('organization-plan-people-special').check();
     await form.getByTestId('organization-plan-maxPeopleOverride').fill('75');
     await form.getByTestId('organization-plan-save').click();
+    // A new organization starts on a 30-day trial already (the create popup's ticked default), so the
+    // status alone does not prove the save: wait for its confirmation before reloading.
+    await expect(page.getByRole('region', { name: 'Status messages' })).toContainText(
+      'Plan and status saved',
+    );
     await expect(page.getByTestId('organization-status')).toContainText(/Trial · \d+ days left/);
     await page.reload();
     await expect(form.getByTestId('organization-plan-plan')).toHaveValue(/.+/);

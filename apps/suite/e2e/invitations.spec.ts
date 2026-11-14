@@ -106,6 +106,10 @@ test.describe('invitations (admin side)', () => {
   test('English: invite in the popup, see it on the Pending invites view, resend, revoke', async ({
     page,
   }) => {
+    // The longest admin journey (sign-in, four accessibility scans, invite, copy, discard, list, resend,
+    // revoke): 20–25 s on a developer machine, over the 30 s default on the CI runner (nightly, 14 Nov
+    // 2026). Each check keeps its own 5 s limit, so a check that never passes still fails at that check.
+    test.setTimeout(90_000);
     const invitee = `invitee-en-${run}@sovereign.example`;
     await signIn(page);
     await page.goto('/en/suite/admin/users');

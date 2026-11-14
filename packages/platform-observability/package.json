@@ -15,7 +15,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@sentry/core": "11.8.0"
+    "@sentry/core": "11.10.0"
   },
   "devDependencies": {
     "@jadarat/config": "workspace:*",

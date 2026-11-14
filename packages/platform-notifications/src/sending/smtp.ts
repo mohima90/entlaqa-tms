@@ -139,7 +139,7 @@ export function isPublicAddress(address: string): boolean {
 }
 
 export type HostLookup = (host: string) => Promise<readonly { readonly address: string }[]>;
-const systemLookup: HostLookup = (host) => dnsLookup(host, { all: true, verbatim: true });
+const systemLookup: HostLookup = (host) => dnsLookup(host, { all: true, order: 'verbatim' });
 
 function nodemailerTransport(
   settings: SmtpSettings,

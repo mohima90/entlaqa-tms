@@ -1,5 +1,6 @@
 'use client';
 import type { InvitationLinkView } from '@jadarat/platform-identity';
+import { personDisplayName } from '@jadarat/platform-i18n/names';
 import { Alert } from '@jadarat/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { lookupInvitationAction } from '../../auth/invitations';
@@ -205,10 +206,9 @@ export function SignUpView({
 
   const link = lookup.kind === 'link' ? lookup.link : null;
   const valid = link?.state === 'valid' ? link : null;
+  // The name in the page's language, else the one the organization has (one language is enough).
   const organization = valid
-    ? locale === 'en'
-      ? (valid.organizationName.en ?? valid.organizationName.ar)
-      : valid.organizationName.ar
+    ? personDisplayName(locale, valid.organizationName.ar, valid.organizationName.en)
     : null;
   const stateText = link && link.state !== 'valid' ? texts.codeStates[link.state] : null;
 

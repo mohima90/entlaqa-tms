@@ -96,11 +96,36 @@ describe('createOrganizationAction', () => {
     expect(result.ok && result.value.inviteLink).toBeNull();
   });
 
-  it('defaults the invitation language to English', async () => {
+  it('defaults the language to English', async () => {
     const { locale: _locale, ...withoutLocale } = valid;
     await createOrganizationAction(withoutLocale);
     expect(parsedBy(flow.createOrganizationFromConsoleForRequest)).toMatchObject({
       value: { locale: 'en' },
+    });
+  });
+
+  // The name in the language chosen for the organization is required; the other is optional (PO, 12 Nov 2026).
+  it('English chosen: the English name alone is enough', async () => {
+    const { nameAr: _nameAr, ...englishOnly } = valid;
+    await createOrganizationAction({ ...englishOnly, locale: 'en' });
+    expect(parsedBy(flow.createOrganizationFromConsoleForRequest)).toMatchObject({
+      ok: true,
+      value: { nameEn: 'ENTLAQA', locale: 'en' },
+    });
+    await createOrganizationAction({ ...valid, nameAr: '  ', locale: 'en' });
+    expect(
+      (flow.createOrganizationFromConsoleForRequest.mock.calls[1] as [unknown, Parse])[1](
+        flow.createOrganizationFromConsoleForRequest.mock.calls[1]?.[0],
+      ),
+    ).toMatchObject({ ok: true, value: { nameAr: '', nameEn: 'ENTLAQA' } });
+  });
+
+  it('Arabic chosen: the Arabic name alone is enough', async () => {
+    const { nameEn: _nameEn, ...arabicOnly } = valid;
+    await createOrganizationAction(arabicOnly);
+    expect(parsedBy(flow.createOrganizationFromConsoleForRequest)).toMatchObject({
+      ok: true,
+      value: { nameAr: 'إنطلاقة', locale: 'ar' },
     });
   });
 
@@ -112,7 +137,12 @@ describe('createOrganizationAction', () => {
     ['a hyphen at the end', { slug: 'entlaqa-' }, 'slug'],
     ['an underscore', { slug: 'ent_laqa' }, 'slug'],
     ['an Arabic short name', { slug: 'إنطلاقة' }, 'slug'],
-    ['no Arabic name', { nameAr: '   ' }, 'nameAr'],
+    ['Arabic chosen and no Arabic name', { nameAr: '   ' }, 'nameAr'],
+    ['Arabic chosen and the Arabic name left out', { nameAr: undefined }, 'nameAr'],
+    ['English chosen and no English name', { locale: 'en', nameEn: ' ' }, 'nameEn'],
+    ['English chosen and the English name left out', { locale: 'en', nameEn: undefined }, 'nameEn'],
+    ['no language sent (English) and only the Arabic name', { locale: undefined, nameEn: '' }, 'nameEn'],
+    ['an English name of invisible characters', { locale: 'en', nameEn: '\u200f\u200f' }, 'nameEn'],
     ['an Arabic name of invisible characters', { nameAr: '‏‏' }, 'nameAr'],
     ['a control character', { nameAr: 'منشأة\u0007' }, 'nameAr'],
     ['an Arabic name over 200', { nameAr: 'م'.repeat(201) }, 'nameAr'],

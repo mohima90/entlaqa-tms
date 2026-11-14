@@ -6,6 +6,7 @@ import { type AppDatabase, getDatabase } from './client';
 import { customRolesExist, storableArabicDisplayName } from './custom-roles-present';
 import { DomainError } from './domain-error';
 import { emitEvent } from './events';
+import { organizationNames } from './organization-names';
 import { pgError } from './user-admin';
 
 /**
@@ -507,9 +508,12 @@ export function createInvitationTokenApi(getDb: () => AppDatabase): InvitationTo
           locale: string | null;
         }>(sql`select * from private.invitation_by_token(${tokenHash}::bytea)`),
       );
+      // An organization is named in at least one language (20261113120000): the Arabic slot carries the
+      // name that exists.
+      const organizationName = organizationNames(row?.tenant_name_ar, row?.tenant_name_en);
       if (
         row?.state === 'valid' &&
-        row.tenant_name_ar &&
+        organizationName.ar !== '' &&
         row.email &&
         (row.display_name_ar ?? row.display_name_en)
       ) {
@@ -517,7 +521,7 @@ export function createInvitationTokenApi(getDb: () => AppDatabase): InvitationTo
           state: 'valid',
           email: row.email,
           locale: row.locale === 'en' ? 'en' : 'ar',
-          organizationName: { ar: row.tenant_name_ar, en: row.tenant_name_en },
+          organizationName,
           displayName: { ar: row.display_name_ar, en: row.display_name_en },
         };
       }

@@ -146,7 +146,8 @@ export async function switchActiveTenant(tx: UserTx, tenantId: string): Promise<
 /** An organization the signed-in user may act in (before a tenant is selected). */
 export interface SessionTenant {
   readonly tenantId: string;
-  readonly nameAr: string;
+  /** Named in at least one language (tenants_name_present_check, 20261113120000): either may be missing. */
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
 }
 
@@ -156,7 +157,7 @@ export interface SessionTenant {
  * invalid or expired session.
  */
 export async function listSessionTenants(tx: UserTx): Promise<readonly SessionTenant[]> {
-  const rows = await tx.execute<{ tenant_id: string; name_ar: string; name_en: string | null }>(
+  const rows = await tx.execute<{ tenant_id: string; name_ar: string | null; name_en: string | null }>(
     sql`select tenant_id, name_ar, name_en from private.session_tenants()`,
   );
   return rows.map((row) => ({ tenantId: row.tenant_id, nameAr: row.name_ar, nameEn: row.name_en }));

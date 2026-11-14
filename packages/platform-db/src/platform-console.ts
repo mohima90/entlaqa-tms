@@ -81,7 +81,8 @@ export type PlatformAdminState = 'active' | 'issuer_revoked' | 'pending' | 'expi
 export interface PlatformTenantRow {
   readonly tenantId: string;
   readonly slug: string;
-  readonly nameAr: string;
+  /** Named in at least one language (tenants_name_present_check, 20261113120000): either may be missing. */
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
   readonly status: 'trial' | 'active' | 'suspended' | 'cancelled';
   readonly createdAt: Date;
@@ -96,7 +97,11 @@ export interface PlatformTenantRow {
 export interface NewPlatformTenant {
   /** The short name (`^[a-z0-9-]{3,40}$`, no hyphen at either end): checked again by the database. */
   readonly slug: string;
-  readonly nameAr: string;
+  /**
+   * A name in at least one language (the database refuses none); WHICH one is required is the console's
+   * rule — the name in the language chosen for the organization (apps/suite lib/platform-console-input).
+   */
+  readonly nameAr?: string | null | undefined;
   readonly nameEn?: string | null | undefined;
   readonly adminEmail: string;
   readonly adminFirstNameAr?: string | null | undefined;
@@ -171,7 +176,7 @@ export async function listPlatformTenants(tx: ClaimsTx): Promise<PlatformTenantR
     tx.execute<{
       tenant_id: string;
       slug: string;
-      name_ar: string;
+      name_ar: string | null;
       name_en: string | null;
       status: string;
       created_at: Date | string;
@@ -212,7 +217,7 @@ export async function createPlatformTenant(
     tx.execute<{ tenant_id: string; invitation_id: string; invite_code: string }>(sql`
       select tenant_id, invitation_id, invite_code
       from private.platform_create_tenant(
-        ${input.slug}, ${input.nameAr.trim()}, ${blankToNull(input.nameEn)},
+        ${input.slug}, ${blankToNull(input.nameAr)}, ${blankToNull(input.nameEn)},
         ${input.adminEmail.trim().toLowerCase()},
         ${blankToNull(input.adminFirstNameAr)}, ${blankToNull(input.adminFamilyNameAr)},
         ${blankToNull(input.adminFirstNameEn)}, ${blankToNull(input.adminFamilyNameEn)},

@@ -22,23 +22,37 @@ const organizationName = (max: number) =>
 
 const personName = organizationName(100).optional();
 
+/** The organization's name that «Create organization» requires: the one in the language chosen for it. */
+export function organizationNameField(locale: 'ar' | 'en'): 'nameAr' | 'nameEn' {
+  return locale === 'ar' ? 'nameAr' : 'nameEn';
+}
+
 export const CreateOrganizationInput = z
   .strictObject({
     slug: z.string().refine(isOrganizationSlug, { message: 'slug' }),
-    nameAr: organizationName(200).pipe(z.string().min(1)),
+    // One name is enough — the one in the language chosen below (PO, 12 Nov 2026); see superRefine.
+    nameAr: organizationName(200).optional(),
     nameEn: organizationName(200).optional(),
     adminEmail: z.string().trim().toLowerCase().max(254).pipe(z.email()),
     adminFirstNameAr: personName,
     adminFamilyNameAr: personName,
     adminFirstNameEn: personName,
     adminFamilyNameEn: personName,
-    // English is the default language for now (PO, 14 Oct 2026).
+    // The organization's language as chosen in the popup: its name in this language is required and the
+    // Organization Admin's invitation is written in it. English is the default for now (PO, 14 Oct 2026).
     locale: z.enum(['ar', 'en']).default('en'),
     // The plan it starts on and a 30-day trial (WP-ADM-06, business flow B1).
     planId: z.uuid().nullable().default(null),
     trial: z.boolean().default(false),
   })
   .superRefine((value, ctx) => {
+    // The organization's name in the language chosen for it is required; the other language is optional
+    // (WP-UX-01 d, forms standard rule 9; PO 12 Nov 2026). The database refuses only an organization
+    // without any name (tenants_name_present_check, private.platform_create_tenant).
+    const requiredName = organizationNameField(value.locale);
+    if ((value[requiredName] ?? '') === '') {
+      ctx.addIssue({ code: 'custom', path: [requiredName], message: 'required' });
+    }
     // The admin's names are optional (they set their own on the sign-up page), but each language's are all
     // or nothing: a first name without the family name is half a name (WP-FIX-01 review; the database never
     // puts English text in the Arabic name, 20261021100100). The empty field gets the error.

@@ -166,8 +166,9 @@ export function updateOrganizationProfileActionDefinition(): ActionDefinition<
     input: OrganizationProfileInput,
     handler: async ({ ctx, input }) => {
       const { version, nameEn, nameAr, ...profile } = input;
-      let names: { nameAr: string; nameEn: string | null } = {
-        nameAr: nameAr ?? '',
+      // An organization is named in at least one language (20261113120000): a stored name may be missing.
+      let names: { nameAr: string | null; nameEn: string | null } = {
+        nameAr: nameAr ?? null,
         nameEn: nameEn ?? null,
       };
       if (nameAr === undefined || nameEn === undefined) {

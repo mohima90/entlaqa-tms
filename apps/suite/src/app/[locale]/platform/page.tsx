@@ -32,6 +32,7 @@ import { getConfigStatus } from '../../../lib/config-status';
 import { flattenTexts } from '../../../lib/flatten-texts';
 import { inviteCopyTexts } from '../../../lib/invite-copy-texts';
 import { platformErrorTexts } from '../../../lib/platform-texts';
+import { localizedName } from '../../../lib/users-view';
 
 const STATUS_TONE: Record<string, BadgeTone> = {
   active: 'success',
@@ -118,8 +119,8 @@ export default async function PlatformOrganizationsPage({
     active: rows.filter((r) => r.status === 'active').length,
     pending: rows.filter(isPending).length,
   };
-  const nameOf = (org: (typeof rows)[number]) =>
-    locale === 'en' ? (org.nameEn ?? org.nameAr) : org.nameAr;
+  // The name in the page's language, else the one the organization has (one language is enough).
+  const nameOf = (org: (typeof rows)[number]) => localizedName(locale, org.nameAr, org.nameEn);
 
   const needle = q.toLowerCase();
   const shown = rows
@@ -129,7 +130,9 @@ export default async function PlatformOrganizationsPage({
     .filter(
       (r) =>
         needle === '' ||
-        [r.nameAr, r.nameEn ?? '', r.slug].some((value) => value.toLowerCase().includes(needle)),
+        [r.nameAr ?? '', r.nameEn ?? '', r.slug].some((value) =>
+          value.toLowerCase().includes(needle),
+        ),
     );
 
   const path = `/${locale}/platform`;

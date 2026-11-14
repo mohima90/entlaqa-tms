@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { type ClaimsTx, runWithClaims } from './claims-tx';
 import { type AppDatabase, getDatabase } from './client';
+import { organizationNames } from './organization-names';
 
 /**
  * Account e-mails sent the moment the action commits (WP-ADM-05 follow-up, PO 23 Oct 2026; migration
@@ -201,7 +202,8 @@ export function createInlineAccountMailApi(getDb: () => AppDatabase): InlineAcco
         !row.tenant_id ||
         !row.person_id ||
         !row.email ||
-        row.organization_ar === null ||
+        // An organization is named in at least one language (20261113120000).
+        (row.organization_ar === null && row.organization_en === null) ||
         row.recipient_ar === null
       ) {
         throw new Error('inline account e-mail: incomplete claim');
@@ -225,7 +227,7 @@ export function createInlineAccountMailApi(getDb: () => AppDatabase): InlineAcco
         mfaReason: row.mfa_reason,
         detail: row.detail,
         lockMinutes: row.lock_minutes,
-        organizationName: { ar: row.organization_ar, en: row.organization_en },
+        organizationName: organizationNames(row.organization_ar, row.organization_en),
         recipientName: { ar: row.recipient_ar, en: row.recipient_en },
         recentCount: Number(row.recent_count ?? 0),
         quietCount: Number(row.quiet_count ?? 0),
@@ -331,7 +333,7 @@ export function createInlineRecoveryApi(getDb: () => AppDatabase): InlineRecover
           locale: string;
           platform_sender: boolean | null;
           has_app: boolean | null;
-          organization_ar: string;
+          organization_ar: string | null;
           organization_en: string | null;
           action_color: string | null;
           link_color: string | null;
@@ -351,7 +353,7 @@ export function createInlineRecoveryApi(getDb: () => AppDatabase): InlineRecover
         locale: row.locale === 'en' ? 'en' : 'ar',
         platformSender: row.platform_sender !== false,
         hasApp: row.has_app === true,
-        organizationName: { ar: row.organization_ar, en: row.organization_en },
+        organizationName: organizationNames(row.organization_ar, row.organization_en),
         brand:
           colors || row.logo_asset_id
             ? {

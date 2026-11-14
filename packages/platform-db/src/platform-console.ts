@@ -1,6 +1,7 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
 import type { ClaimsTx } from './claims-tx';
+import { storableNamePair } from './custom-roles-present';
 import { DomainError } from './domain-error';
 import { pgError } from './pg-error';
 
@@ -139,6 +140,9 @@ function blankToNull(value: string | null | undefined): string | null {
   return trimmed === undefined || trimmed === '' ? null : trimmed;
 }
 
+/** The organization's name slot that becomes optional with 20261113120000 (the English one always was). */
+const TENANT_NAME_SLOT = { table: 'platform.tenants', column: 'name_ar' } as const;
+
 async function run<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
@@ -213,11 +217,16 @@ export async function createPlatformTenant(
   tx: ClaimsTx,
   input: NewPlatformTenant,
 ): Promise<{ tenantId: string; invitationId: string; inviteCode: string }> {
+  // One name only once the database takes it (deploy window of 20261113120000: storableNamePair).
+  const names = await storableNamePair(tx, TENANT_NAME_SLOT, {
+    nameAr: blankToNull(input.nameAr),
+    nameEn: blankToNull(input.nameEn),
+  });
   const rows = await run(() =>
     tx.execute<{ tenant_id: string; invitation_id: string; invite_code: string }>(sql`
       select tenant_id, invitation_id, invite_code
       from private.platform_create_tenant(
-        ${input.slug}, ${blankToNull(input.nameAr)}, ${blankToNull(input.nameEn)},
+        ${input.slug}, ${names.nameAr}, ${names.nameEn},
         ${input.adminEmail.trim().toLowerCase()},
         ${blankToNull(input.adminFirstNameAr)}, ${blankToNull(input.adminFamilyNameAr)},
         ${blankToNull(input.adminFirstNameEn)}, ${blankToNull(input.adminFamilyNameEn)},

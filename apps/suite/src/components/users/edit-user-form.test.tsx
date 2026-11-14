@@ -248,4 +248,27 @@ describe('EditUserForm (a person settings section)', () => {
     });
     expect(container.querySelector('[data-testid="save-bar"]')).toBeNull();
   });
+
+  it('a date of birth refused by the input check («hr.birthDate») puts the message on the field', async () => {
+    actions.updatePersonRecordAction.mockResolvedValueOnce({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        fieldErrors: [{ path: 'hr.birthDate', code: 'custom' }],
+      },
+    });
+    const base = props('personal');
+    const container = mount(
+      <EditUserForm {...base} record={{ ...base.record, canEditHr: true }} />,
+    );
+    const birth = container.querySelector<HTMLInputElement>('#edit-birthDate')!;
+    type(birth, '2999-01-01');
+    act(() => {
+      container.querySelector<HTMLFormElement>('form')?.requestSubmit();
+    });
+    await settle();
+    expect(actions.updateUserDetailsAction).not.toHaveBeenCalled();
+    expect(birth.getAttribute('aria-invalid')).toBe('true');
+    expect(container.querySelector('[data-testid="save-bar"]')).not.toBeNull();
+  });
 });

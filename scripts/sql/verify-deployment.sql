@@ -26,14 +26,14 @@ begin
     from pg_roles where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
                                     'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard',
                                     'user_import_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard', 'plan_guard',
-                                    'structure_guard', 'training_plan_guard')
+                                    'structure_guard', 'training_plan_guard', 'plan_approval_guard')
   loop
     if r.rolname in ('app_server', 'app_worker', 'app_queue') and not r.rolcanlogin then
       failures := failures || format('%s must be LOGIN', r.rolname);
     end if;
     if r.rolname in ('tenant_guard', 'invitation_guard', 'account_mail_guard', 'membership_guard', 'rate_limit_guard',
                      'file_guard', 'user_import_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard', 'plan_guard',
-                     'structure_guard', 'training_plan_guard')
+                     'structure_guard', 'training_plan_guard', 'plan_approval_guard')
        and r.rolcanlogin then
       failures := failures || format('%s must be NOLOGIN', r.rolname);
     end if;
@@ -45,8 +45,8 @@ begin
       where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
                         'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard',
                         'user_import_guard', 'platform_admin_guard', 'email_guard', 'inline_mail_guard', 'plan_guard',
-                        'structure_guard', 'training_plan_guard')) <> 16 then
-    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard, invitation_guard, account_mail_guard, membership_guard, rate_limit_guard, file_guard, user_import_guard, platform_admin_guard, email_guard, inline_mail_guard, plan_guard, structure_guard and training_plan_guard must all exist'::text;
+                        'structure_guard', 'training_plan_guard', 'plan_approval_guard')) <> 17 then
+    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard, invitation_guard, account_mail_guard, membership_guard, rate_limit_guard, file_guard, user_import_guard, platform_admin_guard, email_guard, inline_mail_guard, plan_guard, structure_guard, training_plan_guard and plan_approval_guard must all exist'::text;
   end if;
   -- The job runner (ADR 0005 §2): member of nothing (never authenticated), owner of graphile_worker.
   if exists (select 1 from pg_auth_members m join pg_roles u on u.oid = m.member where u.rolname = 'app_queue') then
@@ -557,7 +557,10 @@ begin
       -- training_plan_guard: a plan line's departments, whether a cycle is consolidated, a plan's state (20261115100200, WP-LD-02).
       ('private.plan_line_departments(uuid)', 'training_plan_guard', array['training_plan_guard', 'authenticated'], true),
       ('private.plan_cycle_consolidating(uuid, uuid)', 'training_plan_guard', array['training_plan_guard', 'authenticated'], true),
-      ('private.training_plan_status(uuid, uuid)', 'training_plan_guard', array['training_plan_guard', 'authenticated'], true)
+      ('private.training_plan_status(uuid, uuid)', 'training_plan_guard', array['training_plan_guard', 'authenticated'], true),
+      -- plan_approval_guard: the plan's history, versions and departments' results (20261116100200, WP-LD-03).
+      ('private.training_plans_record()', 'plan_approval_guard', array['plan_approval_guard'], true),
+      ('private.training_plan_version_lines(uuid, uuid)', 'plan_approval_guard', array['plan_approval_guard'], false)
     ) as h(fn, owner, allowed, definer)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop
@@ -695,7 +698,9 @@ begin
         'private.units_in_open_plan_cycles(uuid[])',
         -- Training plan (WP-LD-02)
         'private.plan_line_departments(uuid)', 'private.plan_cycle_consolidating(uuid,uuid)',
-        'private.training_plan_status(uuid,uuid)')
+        'private.training_plan_status(uuid,uuid)',
+        -- Training plan approval (WP-LD-03)
+        'private.training_plans_record()')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;
@@ -869,6 +874,47 @@ begin
         and att.attrelid not in (to_regclass('tms.plan_line_needs'), to_regclass('tms.training_plans'))
     loop
       failures := failures || format('training_plan_guard must have no privilege on %s (WP-LD-02)', r.t);
+    end loop;
+  end if;
+
+  -- plan_approval_guard (WP-LD-03): the same rules; it owns no relation, reads what a version is made of (five tables
+  -- of tms, column by column) and writes the three insert-only approval tables — nothing else of any schema.
+  if exists (select 1 from pg_roles where rolname = 'plan_approval_guard') then
+    for r in select nspname from pg_namespace where nspname = any (module_schemas) loop
+      if has_schema_privilege('plan_approval_guard', r.nspname, 'create') then
+        failures := failures || format('plan_approval_guard must not have CREATE on schema %s', r.nspname);
+      end if;
+    end loop;
+    if exists (select 1 from pg_class c where c.relowner = (select oid from pg_roles where rolname = 'plan_approval_guard')) then
+      failures := failures || 'plan_approval_guard must own no relations'::text;
+    end if;
+    for r in
+      select distinct u.rolname from pg_auth_members m
+      join pg_roles g on g.oid = m.roleid join pg_roles u on u.oid = m.member
+      where g.rolname = 'plan_approval_guard' and (m.inherit_option or m.set_option)
+        and not u.rolsuper and u.rolname <> current_user
+    loop
+      failures := failures || format('%s must not be a member of plan_approval_guard', r.rolname);
+    end loop;
+    for r in
+      select distinct c.oid::regclass::text as t
+      from pg_class c join pg_namespace n on n.oid = c.relnamespace, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+      where n.nspname = any (module_schemas) and a.grantee = (select oid from pg_roles where rolname = 'plan_approval_guard')
+      union
+      select distinct att.attrelid::regclass::text || ' (' || a.privilege_type || ')'
+      from pg_attribute att join pg_class c on c.oid = att.attrelid join pg_namespace n on n.oid = c.relnamespace,
+           aclexplode(att.attacl) a
+      where n.nspname = any (module_schemas) and att.attacl is not null
+        and a.grantee = (select oid from pg_roles where rolname = 'plan_approval_guard')
+        and not (a.privilege_type = 'SELECT'
+                 and att.attrelid in (to_regclass('tms.plan_lines'), to_regclass('tms.plan_line_needs'),
+                                      to_regclass('tms.plan_budget_reasons'), to_regclass('tms.plan_cycle_departments'),
+                                      to_regclass('tms.plan_cycles')))
+        and not (a.privilege_type = 'INSERT'
+                 and att.attrelid in (to_regclass('tms.training_plan_events'), to_regclass('tms.training_plan_versions'),
+                                      to_regclass('tms.training_plan_department_results')))
+    loop
+      failures := failures || format('plan_approval_guard must have no privilege on %s (WP-LD-03)', r.t);
     end loop;
   end if;
 

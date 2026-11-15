@@ -386,6 +386,7 @@ begin
     and p.proowner <> 'plan_guard'::regrole           -- checked in 99_plans_1_owner.sql (WP-ADM-06)
     and p.proowner <> 'structure_guard'::regrole      -- checked in 99_structure_5_open_planning_owner.sql (WP-HR-01)
     and p.proowner <> 'training_plan_guard'::regrole  -- checked in 99_planning_f_plan_1_owner.sql (WP-LD-02)
+    and p.proowner <> 'plan_approval_guard'::regrole  -- checked in 99_planning_g_approval_1_owner.sql (WP-LD-03)
     and p.oid <> 'private.storage_request_tenant()'::regprocedure;  -- files block below (T-M2-18)
   perform tests.assert_eq(v_list,
     'private.accept_invitation_as_caller(bytea,text,text) (owner invitation_guard), '

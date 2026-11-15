@@ -161,7 +161,7 @@ beforeEach(() => {
 
 describe('input', () => {
   it('lists the privileged standard roles', () => {
-    expect(PRIVILEGED_ROLE_CODES).toEqual(['tenant_admin', 'hr_manager']);
+    expect(PRIVILEGED_ROLE_CODES).toEqual(['tenant_admin', 'hr_manager', 'finance']);
   });
 
   it('accepts one standard or custom role and a single version token', () => {
@@ -197,6 +197,8 @@ describe('edit role query', () => {
       'training_coordinator',
       'department_head',
       'learner',
+      // The ready-made Finance role (WP-LD-03): selectable like the standard roles, given by the Organization Admin.
+      'finance',
       READER.code,
       AUDITOR.code,
       PROFILE.code,
@@ -214,7 +216,7 @@ describe('edit role query', () => {
     const assignable = result.ok ? result.value.choices.filter((c) => c.assignable) : [];
     // The L&D Manager and the Training Coordinator (course, planning and needs-form permissions the HR
     // Manager does not hold) and an ordinary custom role with a permission HR does not hold (PROFILE); no
-    // privileged role (Organization Admin, HR Manager, AUDITOR).
+    // privileged role (Organization Admin, HR Manager, Finance — WP-LD-03 —, AUDITOR).
     expect(assignable.map((c) => c.code)).toEqual([
       'training_manager',
       'training_coordinator',

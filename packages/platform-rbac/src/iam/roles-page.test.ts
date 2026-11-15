@@ -69,7 +69,7 @@ beforeEach(() => {
 });
 
 describe('roles page query (EP-ROLES)', () => {
-  it('lists the six standard roles and the custom roles, with member counts', async () => {
+  it('lists the six standard roles, the ready-made Finance role and the custom roles, with member counts', async () => {
     const result = await createDefineQuery(forRoles(['training_coordinator']))(
       rolesPageQueryDefinition(),
     )({});
@@ -83,6 +83,7 @@ describe('roles page query (EP-ROLES)', () => {
       'training_coordinator:standard',
       'department_head:standard',
       'learner:standard',
+      'finance:standard',
       'custom_a00000000001:custom',
     ]);
     expect(roles.at(-1)).toEqual({

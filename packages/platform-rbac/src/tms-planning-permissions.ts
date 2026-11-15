@@ -53,6 +53,29 @@ export const tmsPlanningPermissions = definePermissions('tms', [
     risk: 'medium',
     requiresAal2: false,
   },
+  {
+    // WP-LD-03 (FR-PLN-08, FR-WFL-01/02 R1 part; migration 20261116100000): the HR Manager's step — approve the
+    // submitted plan or send it back with a comment. Approval goes by role (EP-PLN §13 a): never in a custom role.
+    code: 'tms.training_plan.approve',
+    label: { ar: 'اعتماد الخطة التدريبية', en: 'Approve the training plan' },
+    description: {
+      ar: 'اعتماد الخطة التدريبية المرسلة أو إعادتها إلى مدير التعلم والتطوير مع تعليق',
+      en: 'Approve the submitted training plan or send it back to the L&D Manager with a comment',
+    },
+    risk: 'medium',
+    requiresAal2: false,
+  },
+  {
+    // WP-LD-03: the Finance step, where Planning settings «Finance confirms the plan» is on (EP-PLN §13 b–d).
+    code: 'tms.training_plan.confirm',
+    label: { ar: 'تأكيد الخطة التدريبية ماليًا', en: 'Confirm the training plan for Finance' },
+    description: {
+      ar: 'تأكيد الخطة التدريبية بعد اعتماد مدير الموارد البشرية أو إعادتها مع تعليق',
+      en: 'Confirm the training plan after the HR Manager approved it, or send it back with a comment',
+    },
+    risk: 'medium',
+    requiresAal2: false,
+  },
 ]);
 
 export type TmsPlanningPermissionCode = keyof typeof tmsPlanningPermissions;

@@ -65,8 +65,10 @@ begin
     0::bigint, 'another organization''s units: nothing');
   perform tests.assert_eq((select count(*) from private.units_in_open_plan_cycles('{}'::uuid[])), 0::bigint,
     'no units: nothing');
-  perform tests.assert_eq((select count(*) from tms.plan_cycles), 0::bigint,
-    'the HR Manager still reads no planning cycle directly (S-L3)');
+  -- Since WP-LD-03 the HR Manager approves the training plan and reads the cycles (BRD Appendix B «V»); the
+  -- function above still answers only for the units given.
+  perform tests.assert_eq((select count(*) from tms.plan_cycles where tenant_id <> 'a0000000-0000-4000-8000-000000000001'),
+    0::bigint, 'the HR Manager reads no other organization''s cycle');
 end $$;
 select tests.set_claims('{"role": "system"}'::jsonb);
 do $$

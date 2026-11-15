@@ -6,6 +6,8 @@ import type { SuiteNavigationAccess } from './suite-context';
 export type SuitePage =
   | 'home'
   | 'courses'
+  // The training calendar (WP-LD-04): the draft sessions of the approved plans.
+  | 'calendar'
   | 'general'
   // Settings → Email integration (WP-ADM-01).
   | 'emailIntegration'
@@ -73,6 +75,7 @@ export interface NavGroupModel {
 export const SUITE_PATHS = {
   home: '/suite',
   courses: '/suite/courses',
+  calendar: '/suite/calendar',
   users: '/suite/admin/users',
   structure: '/suite/admin/structure',
   branches: '/suite/admin/branches',
@@ -122,8 +125,8 @@ const when = (allowed: boolean, ...entries: NavEntry[]): NavEntry[] => (allowed 
  * entries, then the built pages their grants open, in the same groups.
  */
 export function suiteNavigation(access: SuiteNavigationAccess): NavGroupModel[] {
-  // The course library is a page since T-M3-03 (holders of tms.course.read); the other training entries are
-  // still «Coming soon».
+  // The course library is a page since T-M3-03 (holders of tms.course.read), the training calendar since
+  // WP-LD-04 (holders of tms.session.manage); Sessions is still «Coming soon».
   const main: NavEntry[] = tmsNavigation
     .filter(
       (item) =>
@@ -132,6 +135,8 @@ export function suiteNavigation(access: SuiteNavigationAccess): NavGroupModel[] 
     .map((item) => {
       if (item.key === 'home') return page('home', 'home', 'home');
       if (item.key === 'courses' && access.courses) return page('courses', 'courses', 'courses');
+      if (item.key === 'calendar' && access.calendar)
+        return page('calendar', 'calendar', 'calendar');
       return soon(item.key, TMS_ICONS[item.key]);
     });
   // My team's needs (WP-LD-01): right after Home for a Department Head — their one planning task.

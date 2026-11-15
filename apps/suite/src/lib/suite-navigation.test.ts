@@ -13,6 +13,7 @@ const NONE: SuiteNavigationAccess = {
   organizationSetup: false,
   training: false,
   courses: false,
+  calendar: false,
   planning: false,
   needsForms: false,
   needsEntry: false,
@@ -45,6 +46,7 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
         organizationSetup: true,
         training: false,
         courses: false,
+        calendar: false,
         planning: false,
         needsForms: false,
         needsEntry: false,
@@ -59,6 +61,17 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
       'groupOrganization: teamMembers→/suite/admin/users roles→/suite/admin/roles',
       'groupSettings: general→/suite/admin/settings branding→/suite/admin/branding emailIntegration→/suite/admin/settings/email security→/suite/admin/security subscription→/suite/admin/subscription integrations(soon) auditLog(soon)',
     ]);
+  });
+
+  it('makes Calendar a page for members who plan draft sessions; «Coming soon» for the others (WP-LD-04)', () => {
+    const main = (calendar: boolean) =>
+      suiteNavigation({ ...NONE, training: true, calendar }).find((g) => g.key === 'main')
+        ?.entries ?? [];
+    expect(main(true).find((e) => e.key === 'calendar')?.link).toEqual({
+      href: '/suite/calendar',
+      page: 'calendar',
+    });
+    expect(main(false).find((e) => e.key === 'calendar')?.link).toBeUndefined();
   });
 
   it('gives whoever decides a training plan «Approvals» after Home, with the count waiting (WP-LD-03)', () => {
@@ -117,6 +130,7 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
         grades: false,
         training: true,
         courses: false,
+        calendar: false,
         planning: false,
         needsForms: false,
         needsEntry: false,
@@ -189,6 +203,7 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
       organizationSetup: true,
       training: true,
       courses: false,
+      calendar: false,
       planning: false,
       needsForms: false,
       needsEntry: false,
@@ -227,6 +242,7 @@ describe('suiteHome (T-M2-21)', () => {
       organizationSetup: true,
       training: false,
       courses: false,
+      calendar: false,
       planning: false,
       needsForms: false,
       needsEntry: false,
@@ -296,6 +312,7 @@ describe('commandPaletteItems (⌘K / Ctrl K, T-M2-43)', () => {
         organizationSetup: true,
         training: false,
         courses: false,
+        calendar: false,
         planning: false,
         needsForms: false,
         needsEntry: false,

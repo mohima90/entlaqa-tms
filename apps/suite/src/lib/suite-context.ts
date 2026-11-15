@@ -88,6 +88,11 @@ export interface SuiteNavigationAccess {
   readonly training: boolean;
   /** The course library (T-M3-03): members who read it organization-wide (tms.course.read). */
   readonly courses: boolean;
+  /**
+   * The training calendar (WP-LD-04): members who plan draft sessions — tms.session.manage in any scope (the
+   * L&D Manager, the Training Coordinator, a custom role limited to some departments). Others keep «Coming soon».
+   */
+  readonly calendar: boolean;
   /** Planning cycles and planning settings (EP-PLN, T-M3-04): organization-wide tms.plan_cycle.read. */
   readonly planning: boolean;
   /** Planning → Needs forms (T-M3-10): members who read the needs forms organization-wide. */
@@ -151,6 +156,7 @@ export function navigationFor(
       organizationSetup: true,
       training: true,
       courses: true,
+      calendar: true,
       planning: true,
       needsForms: true,
       needsEntry: true,
@@ -177,6 +183,9 @@ export function navigationFor(
     organizationSetup,
     training: !organizationSetup,
     courses: tenantWide(coursePermissions['tms.course.read'].code),
+    calendar:
+      !organizationSetup &&
+      grants.some((g) => g.permission === tmsPlanningPermissions['tms.session.manage'].code),
     planning: tenantWide(tmsPlanningPermissions['tms.plan_cycle.read'].code),
     needsForms: !organizationSetup && tenantWide(tmsPermissions['tms.needs_form.read'].code),
     needsEntry: grants.some((g) => g.permission === tmsPermissions['tms.plan_needs.submit'].code),

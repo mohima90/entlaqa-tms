@@ -63,10 +63,12 @@ import {
   monthInPeriod,
   monthOf,
   monthStart,
+  namedOnce,
   outsideQuarter,
   proposeSessions,
   quarterMonths,
   remainingProposal,
+  repeatedNames,
 } from './model';
 import * as repo from './repository';
 
@@ -872,12 +874,18 @@ export function draftProposalQueryDefinition(): QueryDefinition<
       const { line, plan, structure, figures, sessions, participants, named } = context;
       const branchOf = new Map(structure.departments.map((d) => [d.id, d.branchId]));
       const nameOf = new Map(structure.departments.map((d) => [d.id, structureName(d)]));
+      // Each person once (a person is planned at most once per line): with the first need that names them; a
+      // department whose name repeats another's keeps that seat as a seat («names later»).
+      const once = namedOnce(named);
       const departments: ProposalDepartment[] = context.departments.map((d) => ({
         departmentId: d.departmentId,
         branchId: branchOf.get(d.departmentId) ?? null,
         seats: d.seats,
-        people: uniquePeople(named.filter((n) => n.departmentId === d.departmentId)),
+        people: once
+          .filter((n) => n.departmentId === d.departmentId)
+          .map((n) => ({ personId: n.personId, needId: n.needId })),
       }));
+      const repeats = repeatedNames(named);
       const planned = figures.plan?.sessions ?? 0;
       const full = proposeSessions({
         count: planned,
@@ -932,7 +940,11 @@ export function draftProposalQueryDefinition(): QueryDefinition<
           costPerSession: line.costPerSession,
           costPerPerson: line.costPerPerson,
           people: figures.people,
-          named: figures.named,
+          // Unique people: a person named in two needs of the line counts once.
+          named: context.departments.reduce(
+            (n, d) => n + Math.min(uniqueNamed(d, repeats), d.seats),
+            0,
+          ),
           plannedSessions: figures.plan?.sessions ?? null,
           sizes: figures.plan?.sizes ?? [],
           cost: figures.cost,
@@ -954,10 +966,10 @@ export function draftProposalQueryDefinition(): QueryDefinition<
           named: d.people.length,
         })),
         branches: branchesOf(structure),
-        people: uniquePeople(named).map((n) => ({
+        people: once.map((n) => ({
           personId: n.personId,
           name: names.get(n.personId) ?? { ar: null, en: null },
-          departmentId: departmentOfNeed(named, n),
+          departmentId: n.departmentId,
           needId: n.needId,
           sessionId: sessionOf.get(n.personId) ?? null,
         })),
@@ -988,27 +1000,15 @@ export function draftProposalQueryDefinition(): QueryDefinition<
   };
 }
 
-function uniquePeople(
-  named: readonly repo.NamedPersonRecord[],
-): { personId: string; needId: string }[] {
-  const seen = new Set<string>();
-  const people: { personId: string; needId: string }[] = [];
-  for (const n of named) {
-    if (seen.has(n.personId)) continue;
-    seen.add(n.personId);
-    people.push({ personId: n.personId, needId: n.needId });
-  }
-  return people;
-}
-
-function departmentOfNeed(
-  named: readonly repo.NamedPersonRecord[],
-  person: { readonly personId: string; readonly needId: string },
-): string {
-  return (
-    named.find((n) => n.personId === person.personId && n.needId === person.needId)?.departmentId ??
-    ''
-  );
+/**
+ * A department's named people as submitted (the line's figures), less its names that repeat a person already named
+ * for the line (`repeatedNames`): each person counts once.
+ */
+function uniqueNamed(
+  department: { readonly departmentId: string; readonly named: number },
+  repeats: ReadonlyMap<string, number>,
+): number {
+  return Math.max(0, department.named - (repeats.get(department.departmentId) ?? 0));
 }
 
 function sumAmounts(amounts: readonly (string | null)[]): string | null {
@@ -1030,7 +1030,7 @@ function peopleProblems(
   taken: ReadonlySet<string>,
 ): { problems: FieldError[]; needOf: Map<string, string> } {
   const needOf = new Map<string, string>();
-  for (const n of uniquePeople(named)) needOf.set(n.personId, n.needId);
+  for (const n of namedOnce(named)) needOf.set(n.personId, n.needId);
   const problems: FieldError[] = [];
   const seen = new Set<string>();
   for (const group of groups) {
@@ -1275,6 +1275,7 @@ export function draftSessionQueryDefinition(): QueryDefinition<
       const own = participants.filter((p) => p.sessionId === session.id);
       const ownIds = new Set(own.map((p) => p.personId));
       const sessionOf = new Map(participants.map((p) => [p.personId, p.sessionId]));
+      const repeats = repeatedNames(named);
       const [course] = await repo.listCourseBriefs(ctx.tx, [session.courseId]);
       const month = draftMonth(session);
       return ok({
@@ -1322,12 +1323,13 @@ export function draftSessionQueryDefinition(): QueryDefinition<
             needId: p.needId,
           };
         }),
-        candidates: uniquePeople(named)
+        // Each person once (named in two needs of the line: with the first).
+        candidates: namedOnce(named)
           .filter((n) => !ownIds.has(n.personId))
           .map((n) => ({
             personId: n.personId,
             name: names.get(n.personId) ?? { ar: null, en: null },
-            departmentId: departmentOfNeed(named, n),
+            departmentId: n.departmentId,
             needId: n.needId,
             sessionId: sessionOf.get(n.personId) ?? null,
           })),
@@ -1345,9 +1347,13 @@ export function draftSessionQueryDefinition(): QueryDefinition<
               ],
         ),
         // From the line's figures (seats and named people per department, as submitted), never from the named people
-        // the viewer reads: a department-limited planner reads only its units' people (review L5).
+        // the viewer reads: a department-limited planner reads only its units' people (review L5). Only a name that
+        // repeats a person already named for the line (seen in what the viewer reads) does not count again.
         unnamedSeats: context.departments
-          .map((d) => ({ departmentId: d.departmentId, seats: Math.max(0, d.seats - d.named) }))
+          .map((d) => ({
+            departmentId: d.departmentId,
+            seats: Math.max(0, d.seats - uniqueNamed(d, repeats)),
+          }))
           .filter((d) => d.seats > 0),
         branches: branchesOf(structure),
         canEdit: draftsLine(context.scope, context.departmentIds),

@@ -279,6 +279,88 @@ describe('the «Create draft sessions» proposal (design screen 3)', () => {
     expect(view.value).toMatchObject({ remaining: 3, problem: null, canCreate: true });
   });
 
+  it('places a person named in two departments’ needs once, counts unique people, and creates (smoke bug)', async () => {
+    example();
+    // One manager heads Finance and HR: named in both departments' needs of the line.
+    plans.listLinks.mockResolvedValue([
+      {
+        needId: 'n-fin',
+        lineId: LINE,
+        departmentId: FINANCE,
+        seats: 20,
+        named: 2,
+        topic: 'x',
+        courseId: null,
+      },
+      {
+        needId: 'n-sal',
+        lineId: LINE,
+        departmentId: SALES,
+        seats: 15,
+        named: 0,
+        topic: 'x',
+        courseId: null,
+      },
+      {
+        needId: 'n-hr',
+        lineId: LINE,
+        departmentId: HR,
+        seats: 12,
+        named: 2,
+        topic: 'x',
+        courseId: null,
+      },
+    ]);
+    repo.listNamedPeople.mockResolvedValue([
+      { lineId: LINE, needId: 'n-fin', departmentId: FINANCE, personId: personId(1) },
+      { lineId: LINE, needId: 'n-fin', departmentId: FINANCE, personId: personId(2) },
+      { lineId: LINE, needId: 'n-hr', departmentId: HR, personId: personId(1) },
+      { lineId: LINE, needId: 'n-hr', departmentId: HR, personId: personId(3) },
+    ]);
+    const { query, action } = runtime('training_coordinator');
+    const view = await query(defs.draftProposalQueryDefinition())({ lineId: LINE });
+    if (!view.ok) throw new Error(view.error.code);
+    const placed = view.value.proposal.sessions.flatMap((s) => s.personIds);
+    expect(placed).toEqual([personId(1), personId(2), personId(3)]);
+    expect(view.value.proposal.sessions[1]?.departments).toEqual([
+      { departmentId: FINANCE, seats: 4, named: 0 },
+      { departmentId: HR, seats: 12, named: 1 },
+    ]);
+    // HR names one person of its own; its other seats wait for names («names later»).
+    expect(view.value.departments.map((d) => [d.departmentId, d.named])).toEqual([
+      [FINANCE, 2],
+      [SALES, 0],
+      [HR, 1],
+    ]);
+    expect(view.value.line.named).toBe(3);
+    expect(view.value.people.map((p) => [p.personId, p.departmentId, p.needId])).toEqual([
+      [personId(1), FINANCE, 'n-fin'],
+      [personId(2), FINANCE, 'n-fin'],
+      [personId(3), HR, 'n-hr'],
+    ]);
+    repo.insertSessions.mockResolvedValue({ ok: true, value: [S1, S2, S3] });
+    const created = await action(defs.createDraftSessionsActionDefinition())({
+      lineId: LINE,
+      sessions: view.value.proposal.sessions.map((s) => ({
+        month: s.month,
+        branchId: s.branchId,
+        seats: s.seats,
+        personIds: [...s.personIds],
+      })),
+    });
+    if (!created.ok) throw new Error(JSON.stringify(created.error));
+    expect(repo.insertSessions).toHaveBeenCalledWith({}, [
+      expect.objectContaining({
+        people: [
+          { personId: personId(1), needId: 'n-fin' },
+          { personId: personId(2), needId: 'n-fin' },
+        ],
+      }),
+      expect.objectContaining({ people: [{ personId: personId(3), needId: 'n-hr' }] }),
+      expect.objectContaining({ people: [] }),
+    ]);
+  });
+
   it('says why nothing can be drafted yet', async () => {
     example({ line: { courseId: null } });
     const view = await runtime('training_manager').query(defs.draftProposalQueryDefinition())({
@@ -793,6 +875,59 @@ describe('a draft opened, changed and deleted (design screen 5)', () => {
     });
     if (!view.ok) throw new Error(view.error.code);
     expect(view.value.canEdit).toBe(false);
+    expect(view.value.unnamedSeats).toEqual([
+      { departmentId: FINANCE, seats: 18 },
+      { departmentId: SALES, seats: 15 },
+      { departmentId: HR, seats: 11 },
+    ]);
+  });
+
+  it('offers a person named in two departments’ needs once, and keeps the repeated seat unnamed (smoke bug)', async () => {
+    drafted();
+    plans.listLinks.mockResolvedValue([
+      {
+        needId: 'n-fin',
+        lineId: LINE,
+        departmentId: FINANCE,
+        seats: 20,
+        named: 2,
+        topic: 'x',
+        courseId: null,
+      },
+      {
+        needId: 'n-sal',
+        lineId: LINE,
+        departmentId: SALES,
+        seats: 15,
+        named: 0,
+        topic: 'x',
+        courseId: null,
+      },
+      {
+        needId: 'n-hr',
+        lineId: LINE,
+        departmentId: HR,
+        seats: 12,
+        named: 2,
+        topic: 'x',
+        courseId: null,
+      },
+    ]);
+    repo.listNamedPeople.mockResolvedValue([
+      { lineId: LINE, needId: 'n-fin', departmentId: FINANCE, personId: personId(1) },
+      { lineId: LINE, needId: 'n-fin', departmentId: FINANCE, personId: personId(2) },
+      { lineId: LINE, needId: 'n-hr', departmentId: HR, personId: personId(1) },
+      { lineId: LINE, needId: 'n-hr', departmentId: HR, personId: personId(3) },
+    ]);
+    const view = await runtime('training_coordinator').query(defs.draftSessionQueryDefinition())({
+      sessionId: S3,
+    });
+    if (!view.ok) throw new Error(view.error.code);
+    expect(view.value.candidates.map((c) => [c.personId, c.departmentId, c.needId])).toEqual([
+      [personId(1), FINANCE, 'n-fin'],
+      [personId(2), FINANCE, 'n-fin'],
+      [personId(3), HR, 'n-hr'],
+    ]);
     expect(view.value.unnamedSeats).toEqual([
       { departmentId: FINANCE, seats: 18 },
       { departmentId: SALES, seats: 15 },

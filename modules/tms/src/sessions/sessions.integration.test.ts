@@ -84,6 +84,9 @@ describe.skipIf(!configured)('draft sessions from the approved plan against Post
     salesPlanner: member(customCode),
     planBuilder: member(builderCode),
     otherLnd: member('training_manager', other),
+    // Heads Quality and its sub-department Audit (smoke bug: one person named in both departments' needs).
+    qualityHead: member('department_head'),
+    auditor: member('learner'),
   };
 
   const unexpected: unknown[] = [];
@@ -823,6 +826,202 @@ describe.skipIf(!configured)('draft sessions from the approved plan against Post
       drafts: number;
     }[];
     expect(stillThere).toEqual([{ status: 'in_plan', drafts: 2 }]);
+  });
+
+  it('plans a person named in two departments’ needs of a line once (smoke bug)', async () => {
+    const lnd = as(people.lnd);
+    const coordinator = as(people.coordinator);
+    const head = as(people.qualityHead);
+    // Quality and its sub-department Audit, both headed by the same manager, who works in Audit: the manager is in
+    // both teams and names themself in both departments' «Data literacy» needs.
+    const quality = id();
+    const auditUnit = id();
+    // A second level of structure (a new organization starts with one; no unit below the last level).
+    await ownerDb.execute(sql`insert into platform.structure_levels (tenant_id, ordinal, name_en, name_ar)
+      values (${tenant}, 2, 'Section', 'قسم')`);
+    await ownerDb.execute(sql`insert into platform.departments (id, tenant_id, code, name_ar, name_en, branch_id,
+                                                              head_person_id) values
+      (${quality}, ${tenant}, 'QLT', 'الجودة', 'Quality', ${branch.riyadh}, ${people.qualityHead.person})`);
+    await ownerDb.execute(sql`insert into platform.departments (id, tenant_id, code, name_ar, name_en, branch_id,
+                                                              parent_id, head_person_id) values
+      (${auditUnit}, ${tenant}, 'AUD', 'التدقيق', 'Audit', ${branch.riyadh}, ${quality},
+       ${people.qualityHead.person})`);
+    for (const m of [people.qualityHead, people.auditor]) {
+      await ownerDb.execute(sql`insert into platform.person_employment (tenant_id, person_id, branch_id, department_id)
+        values (${tenant}, ${m.person}, ${branch.riyadh}, ${auditUnit})`);
+    }
+
+    const list = await lnd.query(cycles.planCyclesListQueryDefinition())({});
+    if (!list.ok || !list.value.setup) throw new Error('set-up choices');
+    const created = await lnd.action(cycles.createPlanCycleActionDefinition())({
+      nameAr: null,
+      nameEn: 'Quality plan',
+      ...list.value.setup.defaults,
+      departmentIds: [quality, auditUnit],
+    });
+    if (!created.ok) throw new Error(JSON.stringify(created.error));
+    const cycleId = created.value.id;
+    const launched = await lnd.action(cycles.launchPlanCycleActionDefinition())({
+      id: cycleId,
+      version: created.value.version,
+    });
+    if (!launched.ok) throw new Error(launched.error.code);
+    for (const [departmentId, named] of [
+      [quality, [people.qualityHead.person]],
+      [auditUnit, [people.qualityHead.person, people.auditor.person]],
+    ] as const) {
+      const added = await head.action(needs.addNeedActionDefinition())({
+        cycleId,
+        departmentId,
+        topic: 'Data literacy',
+        courseId: null,
+        peopleCount: 3,
+        personIds: [...named],
+        estimatedCost: '',
+        answers: {},
+      });
+      if (!added.ok) throw new Error(JSON.stringify(added.error));
+      const view = await head.query(needs.departmentNeedsQueryDefinition())({
+        cycleId,
+        departmentId,
+      });
+      if (!view.ok) throw new Error(view.error.code);
+      const submitted = await head.action(needs.submitNeedsActionDefinition())({
+        cycleId,
+        departmentId,
+        version: view.value.department.version,
+      });
+      if (!submitted.ok) throw new Error(submitted.error.code);
+    }
+    const opened = await lnd.action(plan.openConsolidationActionDefinition())({ cycleId });
+    if (!opened.ok) throw new Error(opened.error.code);
+    const planId = opened.value.planId;
+    const lines = await lnd.query(plan.planQueryDefinition())({ cycleId });
+    if (!lines.ok) throw new Error(lines.error.code);
+    const line = lines.value.lines.find((l) => l.title === 'Data literacy');
+    if (!line) throw new Error('one line');
+    const costed = await lnd.action(plan.updatePlanLineActionDefinition())({
+      lineId: line.id,
+      version: line.version,
+      quarter: 1,
+      minPerSession: 1,
+      maxPerSession: 3,
+      costPerSession: '1000',
+      deliveryType: 'classroom',
+      durationHours: 6,
+    });
+    if (!costed.ok) throw new Error(costed.error.code);
+    const state = await lnd.query(approval.planApprovalQueryDefinition())({ cycleId });
+    if (!state.ok || !state.value) throw new Error('approval view');
+    const submitted = await lnd.action(approval.submitPlanActionDefinition())({
+      planId,
+      version: state.value.plan.version,
+    });
+    if (!submitted.ok) throw new Error(submitted.error.code);
+    const review = await as(people.hrManager).query(approval.planApprovalQueryDefinition())({
+      cycleId,
+    });
+    if (!review.ok || !review.value) throw new Error('review');
+    const approved = await as(people.hrManager).action(approval.decidePlanActionDefinition())({
+      planId,
+      version: review.value.plan.version,
+      step: 'hr',
+      decision: 'approve',
+    });
+    if (!approved.ok) throw new Error(approved.error.code);
+    const delivery = await lnd.query(defs.planDeliveryQueryDefinition())({ cycleId });
+    if (!delivery.ok) throw new Error(delivery.error.code);
+    const row = delivery.value.lines.find((l) => l.lineId === line.id);
+    if (!row?.courseDraft) throw new Error('course draft');
+    const course = await lnd.action(defs.createCourseFromLineActionDefinition())({
+      lineId: row.lineId,
+      lineVersion: row.version,
+      course: {
+        titleEn: row.courseDraft.titleEn,
+        titleAr: row.courseDraft.titleAr,
+        descriptionEn: '',
+        descriptionAr: '',
+        category: { kind: 'none' as const },
+        deliveryType: row.courseDraft.deliveryType ?? 'classroom',
+        durationHours: row.courseDraft.durationHours ?? 6,
+        durationDays: null,
+        minParticipants: row.courseDraft.minParticipants,
+        maxParticipants: row.courseDraft.maxParticipants,
+        estCostPerSession: row.courseDraft.estCostPerSession,
+        estCostPerParticipant: row.courseDraft.estCostPerParticipant,
+      },
+    });
+    if (!course.ok) throw new Error(JSON.stringify(course.error));
+
+    // The proposal places the manager once — with Quality, whose need named them first; Audit counts its auditor
+    // only and keeps the manager's seat for a name to come.
+    const proposal = await coordinator.query(defs.draftProposalQueryDefinition())({
+      lineId: line.id,
+    });
+    if (!proposal.ok) throw new Error(proposal.error.code);
+    // One session a department (3 seats each, in the order of the plan's links).
+    const byDepartment = Object.fromEntries(
+      proposal.value.proposal.sessions.map((s) => [
+        s.departments.map((d) => `${d.departmentId}:${String(d.named)}`).join(','),
+        [...s.personIds],
+      ]),
+    );
+    expect(byDepartment).toEqual({
+      [`${quality}:1`]: [people.qualityHead.person],
+      [`${auditUnit}:1`]: [people.auditor.person],
+    });
+    expect(
+      proposal.value.departments.map((d) => [d.departmentId, d.seats, d.named]).sort(),
+    ).toEqual(
+      [
+        [quality, 3, 1],
+        [auditUnit, 3, 1],
+      ].sort(),
+    );
+    expect(proposal.value.line.named).toBe(2);
+    expect(proposal.value.people.map((p) => [p.personId, p.departmentId])).toEqual([
+      [people.qualityHead.person, quality],
+      [people.auditor.person, auditUnit],
+    ]);
+    const drafts = await coordinator.action(defs.createDraftSessionsActionDefinition())({
+      lineId: line.id,
+      sessions: proposal.value.proposal.sessions.map((s) => ({
+        month: s.month,
+        branchId: s.branchId,
+        seats: s.seats,
+        personIds: [...s.personIds],
+      })),
+    });
+    if (!drafts.ok) throw new Error(JSON.stringify(drafts.error));
+    expect(drafts.value.sessions.map((s) => s.participants)).toEqual([1, 1]);
+    const planned = (await ownerDb.execute(sql`
+      select person_id::text as person, department_id::text as department from tms.session_participants
+      where plan_line_id = ${line.id}::uuid order by person_id`)) as unknown as {
+      person: string;
+      department: string;
+    }[];
+    expect(planned).toEqual(
+      [
+        { person: people.qualityHead.person, department: quality },
+        { person: people.auditor.person, department: auditUnit },
+      ].sort((a, b) => a.person.localeCompare(b.person)),
+    );
+
+    // A draft offers the line's people once each.
+    const [first] = drafts.value.sessions;
+    if (!first) throw new Error('a draft');
+    const detail = await coordinator.query(defs.draftSessionQueryDefinition())({
+      sessionId: first.id,
+    });
+    if (!detail.ok) throw new Error(detail.error.code);
+    expect(detail.value.candidates).toHaveLength(1);
+    expect(detail.value.unnamedSeats).toEqual(
+      expect.arrayContaining([
+        { departmentId: quality, seats: 2 },
+        { departmentId: auditUnit, seats: 2 },
+      ]),
+    );
+    expect(detail.value.unnamedSeats).toHaveLength(2);
   });
 });
 

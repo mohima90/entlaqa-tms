@@ -167,6 +167,18 @@ describe('«Create draft sessions»: the rows and their live check', () => {
     expect(two).toMatchObject({ seats: 32, cost: '18000', matchesPlan: false, unplaced: 15 });
   });
 
+  it('counts each planned participant once', () => {
+    const [firstRow, secondRow] = rows;
+    if (!firstRow || !secondRow) throw new Error('no row');
+    const check = checkSessions(
+      [firstRow, { ...secondRow, personIds: ['P1', 'p3'] }],
+      line,
+      none,
+      period,
+    );
+    expect(check.named).toBe(3);
+  });
+
   it('adds the drafts that exist already', () => {
     const check = checkSessions(
       rows.slice(2),

@@ -234,6 +234,7 @@ export interface SessionsCheck {
   readonly matchesPlan: boolean;
   readonly outsideQuarter: readonly boolean[];
   readonly problems: Readonly<Record<number, RowProblem>>;
+  /** The planned participants of the rows, each person once. */
   readonly named: number;
 }
 
@@ -292,6 +293,7 @@ export function checkSessions(
     matchesPlan: cost !== null && line.cost !== null && milli(cost) === milli(line.cost),
     outsideQuarter: rows.map((r) => outsideQuarter(r.month, period.start, line.quarter)),
     problems,
-    named: rows.reduce((n, r) => n + r.personIds.length, 0),
+    // Unique people: a person is planned at most once per line (the server refuses a repeat).
+    named: new Set(rows.flatMap((r) => r.personIds.map((id) => id.toLowerCase()))).size,
   };
 }

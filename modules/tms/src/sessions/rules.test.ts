@@ -5,12 +5,14 @@ import {
   evenSizes,
   lineSessionState,
   monthInPeriod,
+  namedOnce,
   outsideQuarter,
   periodQuarterOf,
   proposeSessions,
   proposedMonths,
   quarterMonths,
   remainingProposal,
+  repeatedNames,
 } from './rules';
 
 const RUH = 'branch-riyadh';
@@ -133,6 +135,41 @@ describe('proposeSessions (design screen 3)', () => {
       needId: 'h-need',
       departmentId: 'hr',
     });
+  });
+
+  it('places a person named by two departments once, with the first; the other keeps the seat (smoke bug)', () => {
+    // One manager heads Finance and HR and is named in both departments' needs of the line.
+    const proposal = proposeSessions({
+      count: 2,
+      maxPerSession: 3,
+      deliveryType: 'classroom',
+      quarterMonths: q1,
+      departments: [
+        {
+          departmentId: 'finance',
+          branchId: RUH,
+          seats: 3,
+          people: [person('manager', 'n-fin'), person('f1', 'n-fin')],
+        },
+        {
+          departmentId: 'hr',
+          branchId: RUH,
+          seats: 3,
+          people: [person('manager', 'n-hr'), person('h1', 'n-hr')],
+        },
+      ],
+    });
+    const placed = proposal.sessions.flatMap((s) => s.people.map((p) => p.personId));
+    expect(placed).toEqual(['manager', 'f1', 'h1']);
+    expect(new Set(placed).size).toBe(placed.length);
+    expect(
+      proposal.sessions.flatMap((s) => s.people).find((p) => p.personId === 'manager'),
+    ).toEqual({ personId: 'manager', needId: 'n-fin', departmentId: 'finance' });
+    // HR counts its one other name; the seat of the repeated one waits («names later»).
+    expect(proposal.sessions.map((s) => s.departments)).toEqual([
+      [{ departmentId: 'finance', seats: 3, named: 2 }],
+      [{ departmentId: 'hr', seats: 3, named: 1 }],
+    ]);
   });
 
   it('keeps one branch and the plan’s sizes when everyone is in the same branch', () => {
@@ -281,6 +318,26 @@ describe('proposeSessions (design screen 3)', () => {
       { departmentId: 'finance', seats: 4, named: 3 },
       { departmentId: 'hr', seats: 12, named: 11 },
     ]);
+  });
+});
+
+describe('each person once per line', () => {
+  const named = [
+    { personId: 'manager', needId: 'n-fin', departmentId: 'finance' },
+    { personId: 'f1', needId: 'n-fin', departmentId: 'finance' },
+    { personId: 'MANAGER', needId: 'n-hr', departmentId: 'hr' },
+    { personId: 'h1', needId: 'n-hr', departmentId: 'hr' },
+    { personId: 'h1', needId: 'n-hr2', departmentId: 'hr' },
+  ];
+
+  it('keeps the first need that names a person, in the order named', () => {
+    expect(namedOnce(named)).toEqual([named[0], named[1], named[3]]);
+    expect(namedOnce([])).toEqual([]);
+  });
+
+  it('counts per department the names that repeat a person already named', () => {
+    expect(repeatedNames(named)).toEqual(new Map([['hr', 2]]));
+    expect(repeatedNames(named.slice(0, 2))).toEqual(new Map());
   });
 });
 

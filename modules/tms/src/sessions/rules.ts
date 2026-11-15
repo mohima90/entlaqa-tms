@@ -98,6 +98,39 @@ export function evenSizes(total: number, count: number): number[] {
   return Array.from({ length: count }, (_, i) => (i < larger ? base + 1 : base));
 }
 
+/**
+ * Each person once, as the line plans them (a person is planned at most once per line — the database's unique key):
+ * the same person named in two needs of the line (a manager who heads two departments, named in both departments'
+ * needs) keeps the FIRST entry, in the order given (the order named); later entries are dropped. Stable.
+ */
+export function namedOnce<T extends { readonly personId: string }>(named: readonly T[]): T[] {
+  const seen = new Set<string>();
+  return named.filter((n) => {
+    const key = n.personId.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Per department: its names that repeat a person already named for the line (by an earlier need of any department,
+ * or twice in its own needs). Those names do not count again — the department's seat stays a seat («names later»).
+ * In the order named; departments without repeats are absent.
+ */
+export function repeatedNames(
+  named: readonly { readonly personId: string; readonly departmentId: string }[],
+): Map<string, number> {
+  const seen = new Set<string>();
+  const repeats = new Map<string, number>();
+  for (const n of named) {
+    const key = n.personId.toLowerCase();
+    if (seen.has(key)) repeats.set(n.departmentId, (repeats.get(n.departmentId) ?? 0) + 1);
+    else seen.add(key);
+  }
+  return repeats;
+}
+
 /** A department of the line as the proposal places it. */
 export interface ProposalDepartment {
   readonly departmentId: string;
@@ -105,7 +138,10 @@ export interface ProposalDepartment {
   readonly branchId: string | null;
   /** Its seats in the line (what it asked for). */
   readonly seats: number;
-  /** The people it named, in the order they were named (candidates for its seats). */
+  /**
+   * The people it named, in the order they were named (candidates for its seats). A person also named by an earlier
+   * department of `departments` is placed there only (`namedOnce`).
+   */
   readonly people: readonly { readonly personId: string; readonly needId: string }[];
 }
 
@@ -249,7 +285,8 @@ function fill(slots: Slot[], departments: readonly ProposalDepartment[]): void {
  *     `branchToCheck` says L&D should check them;
  *   * people: each department's seats fill the sessions in order, the larger departments first («Finance 16 ·
  *     Finance 4 + Human Resources 12 · Sales 15»), and the people it named take its seats in the order named; seats
- *     of a department that named nobody stay seats («names later»).
+ *     of a department that named nobody stay seats («names later»); a person named by two departments is placed
+ *     once, with the first of them (the other's seat stays a seat, `namedOnce`).
  * Deterministic: the same line gives the same proposal.
  */
 export function proposeSessions(input: {
@@ -259,7 +296,19 @@ export function proposeSessions(input: {
   readonly quarterMonths: readonly [string, string, string];
   readonly departments: readonly ProposalDepartment[];
 }): SessionProposal {
-  const departments = input.departments.filter((d) => d.seats > 0);
+  // Each person once (a person is planned at most once per line): in the first department that names them.
+  const seen = new Set<string>();
+  const departments = input.departments
+    .filter((d) => d.seats > 0)
+    .map((d) => ({
+      ...d,
+      people: d.people.filter((p) => {
+        const key = p.personId.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }),
+    }));
   const total = departments.reduce((n, d) => n + d.seats, 0);
   const online = input.deliveryType !== null && ONLINE_DELIVERY_TYPES.includes(input.deliveryType);
   const groups = groupsOf(departments, online);

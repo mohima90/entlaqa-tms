@@ -58,7 +58,13 @@ export default async function TrainingCalendarPage({
   const approvalT = await getTranslations({ locale, namespace: 'planApproval' });
   const plans = await getTranslations({ locale, namespace: 'trainingPlan' });
   const preview = !context.live;
-  const query = calendarParams(raw, preview ? PREVIEW_YEAR : new Date().getUTCFullYear());
+  // No year in the address: the year of the latest approved plan with drafts (the query decides; review L7).
+  const parsed = calendarParams(raw, 0);
+  const yearAsked = parsed.year !== 0;
+  let query = {
+    ...parsed,
+    year: yearAsked ? parsed.year : preview ? PREVIEW_YEAR : new Date().getUTCFullYear(),
+  };
   const popup = deliveryPopup(raw);
   const display = context.regional.dateDisplay;
 
@@ -73,13 +79,15 @@ export default async function TrainingCalendarPage({
     });
   } else {
     const result = await trainingCalendarQuery({
-      year: query.year,
+      ...(yearAsked ? { year: query.year } : {}),
       ...(query.quarter ? { quarter: query.quarter } : {}),
       ...(query.branch ? { branchId: query.branch } : {}),
       ...(query.course ? { courseId: query.course } : {}),
     });
-    if (result.ok) view = result.value;
-    else {
+    if (result.ok) {
+      view = result.value;
+      query = { ...query, year: result.value.year };
+    } else {
       const error = toClientError(result.error);
       if (error.code === 'UNAUTHENTICATED') redirect(`/${locale}/sign-in`);
       failure =

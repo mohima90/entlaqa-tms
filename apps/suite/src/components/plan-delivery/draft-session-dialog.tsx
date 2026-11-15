@@ -1,6 +1,10 @@
 'use client';
 import type { DraftSessionDetailView } from '@jadarat/tms';
-import { deleteDraftSessionAction, updateDraftSessionAction } from '@jadarat/tms/actions/sessions';
+import {
+  deleteDraftSessionAction,
+  moveDraftParticipantAction,
+  updateDraftSessionAction,
+} from '@jadarat/tms/actions/sessions';
 import { Alert, Avatar, Badge, Button, Dialog, Icon, TextField, cn, toast } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { type SyntheticEvent, useMemo, useState, useTransition } from 'react';
@@ -37,8 +41,10 @@ type Field = 'month' | 'branchId' | 'seats' | 'personIds';
  * «Only the L&D team sees it. Nobody is invited yet.»; the course, where it comes from and its estimated cost;
  * Month* (another month is allowed and marked «outside the planned quarter»), Branch, Seats*; the planned
  * participants with «Add or move people» (people named for the line: in no session, or moved here from another
- * one) and the seats that wait for names; «Delete draft» at the start of the footer (with a confirmation), then
- * Cancel · Save. Read only for a planner whose departments do not cover the line.
+ * one), each with a ⋯ menu — «Move to another session» (a small popup: the line's other drafts; the move is saved at
+ * once, review L6) and «Remove from this session» — and the seats that wait for names; «Delete draft» at the start of
+ * the footer (with a confirmation), then Cancel · Save. Read only for a planner whose departments do not cover the
+ * line.
  */
 export function DraftSessionDialog(props: DraftSessionDialogProps) {
   const { locale, view } = props;
@@ -57,6 +63,10 @@ export function DraftSessionDialog(props: DraftSessionDialogProps) {
   const [seats, setSeats] = useState(String(view.session.seats));
   const [people, setPeople] = useState<readonly string[]>(initialPeople);
   const [adding, setAdding] = useState(false);
+  // The person whose ⋯ menu is open, and the one being moved (the «Move to another session» popup).
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [moving, setMoving] = useState<string | null>(null);
+  const [moveTo, setMoveTo] = useState<string>('');
   const [errors, setErrors] = useState<Partial<Record<Field, string | undefined>>>({});
   const [message, setMessage] = useState<{ tone: 'info' | 'danger'; text: string } | null>(null);
   const editable = view.canEdit;
@@ -154,6 +164,43 @@ export function DraftSessionDialog(props: DraftSessionDialogProps) {
       }
       toast.success(t('draftDialog.saved'));
       go(props.closeHref);
+    });
+  }
+
+  const monthLabel = (value: string | null) =>
+    value === null ? '—' : (props.months.find((m) => m.value === value)?.label ?? value);
+  const dirty =
+    month !== (view.session.month ?? '') ||
+    branchId !== (view.session.branchId ?? '') ||
+    seats !== String(view.session.seats) ||
+    people.length !== initialPeople.length ||
+    people.some((id) => !initialPeople.includes(id));
+
+  function onMove() {
+    const target = view.otherSessions.find((s) => s.id === moveTo);
+    if (moving === null || !target) return;
+    if (props.preview) {
+      setMoving(null);
+      setMessage({ tone: 'info', text: t('preview') });
+      return;
+    }
+    const personId = moving;
+    const name = person.get(personId)?.name ?? '';
+    startTransition(async () => {
+      const result = await moveDraftParticipantAction({
+        sessionId: view.session.id,
+        version: view.session.version,
+        personId,
+        toSessionId: target.id,
+      });
+      setMoving(null);
+      if (!result.ok) {
+        refused(result.error);
+        return;
+      }
+      toast.success(t('draftDialog.moved', { name, number: target.ordinal }));
+      // Both drafts have new versions: read them again (the popup opens anew with them).
+      router.refresh();
     });
   }
 
@@ -426,17 +473,66 @@ export function DraftSessionDialog(props: DraftSessionDialogProps) {
                       <span className="text-sm text-text-muted">{info?.detail}</span>
                     </span>
                     {removable(id) ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPeople((current) => current.filter((p) => p !== id));
-                        }}
-                        aria-label={t('draftDialog.remove', { name: info?.name ?? '' })}
-                        className="grid size-10 place-items-center rounded-full text-text-muted hover:bg-surface-hover hover:text-danger pointer-coarse:size-11"
-                        data-testid="draft-session-remove-person"
-                      >
-                        <Icon name="close" className="size-4" />
-                      </button>
+                      <span className="relative">
+                        <button
+                          type="button"
+                          aria-expanded={menuFor === id}
+                          aria-controls={`draft-session-person-menu-${id}`}
+                          onClick={() => {
+                            setMenuFor((current) => (current === id ? null : id));
+                          }}
+                          aria-label={t('draftDialog.personMenu', { name: info?.name ?? '' })}
+                          className="grid size-10 place-items-center rounded-full text-text-muted hover:bg-surface-hover hover:text-text pointer-coarse:size-11"
+                          data-testid="draft-session-person-menu"
+                        >
+                          <Icon name="more" className="size-4" />
+                        </button>
+                        <span
+                          id={`draft-session-person-menu-${id}`}
+                          hidden={menuFor !== id}
+                          className="absolute end-0 top-full z-10 mt-1 flex min-w-[15rem] flex-col rounded-lg border border-border bg-surface-raised p-1.5 shadow-4"
+                        >
+                          {view.otherSessions.length > 0 && initialPeople.includes(id) ? (
+                            <button
+                              type="button"
+                              disabled={dirty}
+                              onClick={() => {
+                                setMenuFor(null);
+                                setMoveTo(
+                                  view.otherSessions.find((o) => o.participants < o.seats)?.id ??
+                                    '',
+                                );
+                                setMoving(id);
+                              }}
+                              className="flex min-h-10.5 items-center gap-2.5 rounded-sm px-3 py-2 text-start text-[14.5px] hover:bg-surface-hover disabled:text-text-disabled pointer-coarse:min-h-11"
+                              data-testid="draft-session-move-person"
+                            >
+                              <Icon name="arrow-end" className="size-4 shrink-0" />
+                              <span className="flex flex-col">
+                                <span>{t('draftDialog.moveTo')}</span>
+                                {dirty ? (
+                                  <span className="text-[13px] text-text-muted">
+                                    {t('draftDialog.moveUnsaved')}
+                                  </span>
+                                ) : null}
+                              </span>
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMenuFor(null);
+                              setPeople((current) => current.filter((p) => p !== id));
+                            }}
+                            aria-label={t('draftDialog.remove', { name: info?.name ?? '' })}
+                            className="flex min-h-10.5 items-center gap-2.5 rounded-sm px-3 py-2 text-start text-[14.5px] text-danger hover:bg-surface-hover pointer-coarse:min-h-11"
+                            data-testid="draft-session-remove-person"
+                          >
+                            <Icon name="close" className="size-4 shrink-0" />
+                            {t('draftDialog.removeFrom')}
+                          </button>
+                        </span>
+                      </span>
                     ) : null}
                   </li>
                 );
@@ -504,6 +600,84 @@ export function DraftSessionDialog(props: DraftSessionDialogProps) {
           <Icon name="clock" className="mt-0.5 size-4 shrink-0" />
           <p className="m-0 text-[14.5px]">{t('draftDialog.notScheduled')}</p>
         </div>
+      </Dialog>
+      <Dialog
+        open={moving !== null}
+        onClose={() => {
+          if (!pending) setMoving(null);
+        }}
+        canClose={() => !pending}
+        size="sm"
+        title={t('draftDialog.moveTitle', {
+          name: moving === null ? '' : (person.get(moving)?.name ?? ''),
+        })}
+        description={t('draftDialog.moveHint', {
+          name: moving === null ? '' : (person.get(moving)?.name ?? ''),
+        })}
+        closeLabel={t('close')}
+        data-testid="draft-session-move-dialog"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setMoving(null);
+              }}
+              disabled={pending}
+            >
+              {t('draftDialog.cancel')}
+            </Button>
+            <Button
+              onClick={onMove}
+              disabled={pending || moveTo === ''}
+              busy={pending}
+              data-testid="draft-session-move-confirm"
+            >
+              {pending ? t('draftDialog.moving') : t('draftDialog.moveConfirm')}
+            </Button>
+          </>
+        }
+      >
+        {view.otherSessions.length === 0 ? (
+          <p className="m-0">{t('draftDialog.noOtherSessions')}</p>
+        ) : (
+          <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">
+            <legend className="sr-only">{t('draftDialog.moveTo')}</legend>
+            {view.otherSessions.map((o) => {
+              const full = o.participants >= o.seats;
+              return (
+                <label
+                  key={o.id}
+                  className={cn(
+                    'flex min-h-11 items-center gap-3 rounded-lg px-3',
+                    full ? 'text-text-muted' : 'cursor-pointer hover:bg-surface-hover',
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="draft-session-move-to"
+                    value={o.id}
+                    checked={moveTo === o.id}
+                    disabled={full || pending}
+                    onChange={() => {
+                      setMoveTo(o.id);
+                    }}
+                    data-testid="draft-session-move-option"
+                  />
+                  <span className="flex-1">
+                    {t('draftDialog.moveOption', {
+                      number: o.ordinal,
+                      month: monthLabel(o.month),
+                      count: o.participants,
+                      seats: o.seats,
+                    })}
+                  </span>
+                  {full ? <Badge tone="neutral">{t('draftDialog.moveFull')}</Badge> : null}
+                </label>
+              );
+            })}
+          </fieldset>
+        )}
       </Dialog>
       <Dialog
         open={confirming}

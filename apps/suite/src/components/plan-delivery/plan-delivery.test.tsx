@@ -14,6 +14,7 @@ const actions = vi.hoisted(() => ({
   createDraftSessionsAction: vi.fn(),
   updateDraftSessionAction: vi.fn(),
   deleteDraftSessionAction: vi.fn(),
+  moveDraftParticipantAction: vi.fn(),
 }));
 const router = vi.hoisted(() => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }));
 vi.mock('next/navigation', () => ({ useRouter: () => router }));
@@ -305,6 +306,54 @@ describe('a draft session (design screen 5)', () => {
     await flush();
     const call = actions.updateDraftSessionAction.mock.calls[0]?.[0] as { personIds: string[] };
     expect(call.personIds).toHaveLength(before + 1);
+  });
+
+  it('moves a planned participant to another session of the line from its ⋯ menu (review L6)', async () => {
+    actions.moveDraftParticipantAction.mockResolvedValue({ ok: true, value: {} });
+    mount(draftDialog());
+    const view = previewDraft(DRAFT);
+    const first = view?.participants[0];
+    const target = view?.otherSessions.find((o) => o.participants < o.seats);
+    if (!first || !target) throw new Error('fixture');
+    const person = allByTest('draft-session-person')[0];
+    const menu = byTest('draft-session-person-menu', person);
+    expect(menu?.getAttribute('aria-expanded')).toBe('false');
+    click(menu);
+    expect(menu?.getAttribute('aria-expanded')).toBe('true');
+    expect(byTest('draft-session-move-person', person)?.textContent).toContain(
+      'Move to another session',
+    );
+    expect(byTest('draft-session-remove-person', person)?.textContent).toContain(
+      'Remove from this session',
+    );
+    click(byTest('draft-session-move-person', person));
+    const dialog = byTest('draft-session-move-dialog');
+    expect(dialog?.textContent).toContain(`Session ${String(target.ordinal)} ·`);
+    expect(allByTest('draft-session-move-option')).toHaveLength(view.otherSessions.length);
+    click(byTest('draft-session-move-confirm'));
+    await flush();
+    expect(actions.moveDraftParticipantAction).toHaveBeenCalledWith({
+      sessionId: DRAFT,
+      version: 1,
+      personId: first.personId,
+      toSessionId: target.id,
+    });
+    expect(router.refresh).toHaveBeenCalled();
+    expect(actions.updateDraftSessionAction).not.toHaveBeenCalled();
+  });
+
+  it('asks to save first before a move, and removes a person from the menu', () => {
+    mount(draftDialog());
+    const before = allByTest('draft-session-person').length;
+    change(byTest('draft-session-seats') as HTMLInputElement, '40');
+    const person = allByTest('draft-session-person')[0];
+    click(byTest('draft-session-person-menu', person));
+    const move = byTest('draft-session-move-person', person) as HTMLButtonElement | null;
+    expect(move?.disabled).toBe(true);
+    expect(move?.textContent).toContain('Save your changes first');
+    click(byTest('draft-session-remove-person', person));
+    expect(allByTest('draft-session-person')).toHaveLength(before - 1);
+    expect(actions.moveDraftParticipantAction).not.toHaveBeenCalled();
   });
 
   it('deletes the draft after a confirmation', async () => {

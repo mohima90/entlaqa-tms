@@ -515,6 +515,19 @@ export function previewDraft(sessionId: string): DraftSessionDetailView | null {
         needId: p.needId,
         sessionId: found.drafts.find((d) => d.branchId === BRANCH_OF[p.departmentId])?.id ?? null,
       })),
+    otherSessions: found.drafts.flatMap((d, i) =>
+      d.id === draft.id
+        ? []
+        : [
+            {
+              id: d.id,
+              ordinal: i + 1,
+              month: d.month,
+              seats: d.seats,
+              participants: named.filter((p) => BRANCH_OF[p.departmentId] === d.branchId).length,
+            },
+          ],
+    ),
     unnamedSeats: line.departments
       .filter((d) => d.seats > d.named)
       .map((d) => ({ departmentId: d.departmentId, seats: d.seats - d.named })),

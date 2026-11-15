@@ -23,6 +23,7 @@ import { PlanTab } from '../../../../../../components/training-plan/plan-tab';
 import { cycleDepartmentHref } from '../../../../../../lib/needs-view';
 import { approvalMoments } from '../../../../../../lib/plan-approval-view';
 import { planDeliveryQuery } from '../../../../../../lib/plan-delivery-queries';
+import { asksPlanDelivery } from '../../../../../../lib/plan-delivery-shown';
 import { calendarPath, deliveryPath, periodYear } from '../../../../../../lib/plan-delivery-view';
 import { dayFormatter, formatAmount } from '../../../../../../lib/planning-format';
 import {
@@ -115,11 +116,11 @@ export default async function PlanCyclePage({
     const planView = planResult.ok ? planResult.value : null;
     const tab: CycleTab = requestedTab === 'plan' && planView ? 'plan' : 'progress';
     // From the approved plan to courses and draft sessions (WP-LD-04): the «Courses and sessions» view and the
-    // Plan tab's card, for holders of tms.session.manage once the plan is approved (or has drafts).
-    const deliveryResult =
-      planView?.plan && planView.plan.status !== 'draft'
-        ? await planDeliveryQuery({ cycleId })
-        : null;
+    // Plan tab's card, for holders of tms.session.manage once the plan is approved (or has drafts). A revised plan
+    // (a draft again, version 2 or more) is asked too: its drafts stay, so the tab and the card stay (review L1).
+    const deliveryResult = asksPlanDelivery(planView?.plan)
+      ? await planDeliveryQuery({ cycleId })
+      : null;
     const delivery =
       deliveryResult?.ok &&
       (deliveryResult.value.plan.status === 'approved' ||

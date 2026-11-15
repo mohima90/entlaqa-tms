@@ -293,6 +293,8 @@ export async function DraftPopup({
   for (const p of view.participants) names[p.departmentId] ??= localName(locale, p.departmentName);
   return (
     <DraftSessionDialog
+      // A new version (a person moved to another draft, review L6) opens the popup anew with it.
+      key={`${view.session.id}:${String(view.session.version)}`}
       locale={locale}
       view={view}
       months={monthsBetween(view.plan.periodStart, view.plan.periodEnd).map((value) => ({

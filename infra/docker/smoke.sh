@@ -1011,7 +1011,11 @@ SESSION_COUNTS="$(q "select count(*) || ':' || count(*) filter (where s.status =
         from tms.plan_lines l join tms.training_plans p on p.id = l.plan_id
         where p.cycle_id = '$PLAN_CYCLE_ID' and l.title like 'Excel%'")" == "t" ]] ||
   { echo "smoke: expected the plan's session count for the Excel line" >&2; exit 1; }
-# Planned participants are people named for the line's needs, each in one session (the seeded needs name nobody).
+# Planned participants: at least one (seed-plan-needs.sql names each department's head for the Excel need; the
+# proposal places them), and only people named for the line's needs, each in one session.
+[[ "$(q "select count(*) from tms.session_participants sp join tms.sessions s on s.id = sp.session_id
+        where s.cycle_id = '$PLAN_CYCLE_ID'")" =~ ^[1-9][0-9]*$ ]] ||
+  { echo "smoke: expected planned participants in the Excel line's drafts" >&2; exit 1; }
 [[ "$(q "select count(*) from tms.session_participants sp join tms.sessions s on s.id = sp.session_id
         where s.cycle_id = '$PLAN_CYCLE_ID' and not exists (
           select 1 from tms.plan_line_needs n join tms.plan_need_people np on np.need_id = n.need_id

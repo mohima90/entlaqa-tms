@@ -8,7 +8,12 @@
 -- department is in its unit; reads its unit's people), and NOBODY else — an Employee, the Department Head, the HR
 -- Manager and another organization see no draft. The guards: an approved plan's line in the plan with its course
 -- (JK013), at most the plan's session count (JK014), a month in the planning period (JK015), never fewer seats than
--- planned participants (JK016), a person named for the line, once per line; a revised plan keeps its drafts.
+-- planned participants (JK016), a person named for the line, once per line; a revised plan keeps its drafts — and
+-- while it is edited a line with drafts keeps its course and its place, a need with planned people its line (JK017).
+-- Review fixes (15 Nov 2026): M1 whether a line has drafts is asked of a SECURITY DEFINER helper (an org-wide planner
+-- without tms.session.manage reads none, and is still refused); M3 the revised plan's rules; M4 the Training
+-- Coordinator (tms.course.manage) links a course, a department-limited planner never; an archived course is refused;
+-- L2 the sessions' key is the lines' own; L3 a draft's delivery type is its course's; L4 an active branch only.
 -- Fixtures: 00_helpers_and_fixtures.sql (uA heads TD; uAB: HR Manager of A; cycle ae…01; courses LEAD-101 a71…01,
 -- OLD-001 a71…02 archived, B's b71…01), 99_planning_a_fixtures (uL, uT, uE), 99_planning_d_needs_0 (uH heads SAL
 -- a3…04; uE works in SAL), 99_people_0 (uM1 …c04). Users act through session_user app_server, as withUserTx does.
@@ -43,10 +48,44 @@ begin
   where p.oid in ('private.may_manage_sessions(uuid)'::regprocedure, 'private.session_units(uuid)'::regprocedure,
                   'private.training_plan_locked_status(uuid, uuid)'::regprocedure,
                   'private.plan_line_sessions_lock(uuid)'::regprocedure, 'private.sessions_guard()'::regprocedure,
-                  'private.session_participants_guard()'::regprocedure, 'private.plan_lines_guard()'::regprocedure);
+                  'private.session_participants_guard()'::regprocedure, 'private.plan_lines_guard()'::regprocedure,
+                  'private.plan_line_needs_guard()'::regprocedure, 'private.may_manage_courses(uuid)'::regprocedure,
+                  'private.plan_line_sessions_exist(uuid, uuid)'::regprocedure,
+                  'private.plan_need_participants_exist(uuid, uuid, uuid)'::regprocedure);
   perform tests.assert_eq(v_list,
-    'private.may_manage_sessions(uuid), private.plan_line_sessions_lock(uuid), private.plan_lines_guard(), private.session_participants_guard(), private.session_units(uuid), private.sessions_guard(), private.training_plan_locked_status(uuid,uuid)',
+    'private.may_manage_courses(uuid), private.may_manage_sessions(uuid), private.plan_line_needs_guard(), private.plan_line_sessions_exist(uuid,uuid), private.plan_line_sessions_lock(uuid), private.plan_lines_guard(), private.plan_need_participants_exist(uuid,uuid,uuid), private.session_participants_guard(), private.session_units(uuid), private.sessions_guard(), private.training_plan_locked_status(uuid,uuid)',
     'every new helper and guard runs as its caller (no SECURITY DEFINER)');
+  -- Review M1: whether a line has drafts (a need planned people) is answered for callers who read no draft.
+  select string_agg(format('%s:%s:%s', p.oid::regprocedure, pg_get_userbyid(p.proowner), p.prosecdef::text), ', '
+                    order by p.oid::regprocedure::text collate "C")
+    into v_list
+  from pg_proc p
+  where p.oid in ('private.plan_line_has_sessions(uuid)'::regprocedure,
+                  'private.plan_need_has_participants(uuid, uuid)'::regprocedure);
+  perform tests.assert_eq(v_list,
+    'private.plan_line_has_sessions(uuid):training_plan_guard:true, private.plan_need_has_participants(uuid,uuid):training_plan_guard:true',
+    'the two questions are SECURITY DEFINER, owned by training_plan_guard');
+  perform tests.assert(not has_function_privilege('anon', 'private.plan_line_has_sessions(uuid)', 'EXECUTE')
+                       and not has_function_privilege('anon', 'private.plan_need_has_participants(uuid, uuid)', 'EXECUTE')
+                       and not has_function_privilege('anon', 'private.may_manage_courses(uuid)', 'EXECUTE')
+                       and private.plan_line_has_sessions(gen_random_uuid()) is false
+                       and private.plan_need_has_participants(gen_random_uuid(), gen_random_uuid()) is false
+                       and private.may_manage_courses('a0000000-0000-4000-8000-000000000001') is false,
+    'anonymous callers cannot ask; without claims: a plain «no»');
+  perform tests.assert(has_column_privilege('training_plan_guard', 'tms.sessions', 'plan_line_id', 'SELECT')
+                       and not has_column_privilege('training_plan_guard', 'tms.sessions', 'seats', 'SELECT')
+                       and not has_column_privilege('training_plan_guard', 'tms.session_participants', 'person_id', 'SELECT')
+                       and not has_table_privilege('training_plan_guard', 'tms.sessions', 'UPDATE'),
+    'training_plan_guard reads the drafts'' line and need ids only — never who is planned');
+  -- Review L2: the sessions point at the lines' own key (no second, identical unique index).
+  perform tests.assert(not exists (select 1 from pg_constraint where conname = 'plan_lines_line_key_uq')
+                       and (select c.conindid::regclass::text from pg_constraint c
+                            where c.conrelid = 'tms.sessions'::regclass and c.contype = 'f'
+                              and c.confrelid = 'tms.plan_lines'::regclass) = 'tms.plan_lines_plan_key_uq',
+    'the sessions'' foreign key uses plan_lines_plan_key_uq');
+  perform tests.assert((select count(*) from pg_policy where polrelid = 'tms.plan_lines'::regclass
+                          and polname = 'plan_lines_course_update' and polcmd = 'w') = 1,
+    'the course of an approved line: an update policy of its own for course managers');
   perform tests.assert(not has_function_privilege('anon', 'private.may_manage_sessions(uuid)', 'EXECUTE')
                        and not has_function_privilege('anon', 'private.session_units(uuid)', 'EXECUTE')
                        and not has_function_privilege('authenticated', 'private.sessions_guard()', 'EXECUTE')
@@ -100,6 +139,36 @@ from platform.tenant_memberships m
 where m.id = ra.membership_id and m.tenant_id = 'a0000000-0000-4000-8000-000000000001'
   and m.user_id = '00000000-0000-4000-8000-000000000c04';
 
+-- uS3 (…c03): an organization-wide custom role that builds the plan (tms.training_plan.manage) but holds neither
+-- tms.session.manage nor tms.course.manage (review M1). uM2 (…c05): a custom role limited to SAL that builds the plan
+-- of its unit (review M4: a department-limited planner gives no approved line a course).
+insert into platform.custom_roles (id, tenant_id, code, name_en, name_ar, description, data_scope) values
+  ('a6000000-0000-4000-8000-0000000000f3', 'a0000000-0000-4000-8000-000000000001', 'custom_a000000f0003',
+   'Plan builder', 'معد الخطة', null, 'organization'),
+  ('a6000000-0000-4000-8000-0000000000f4', 'a0000000-0000-4000-8000-000000000001', 'custom_a000000f0004',
+   'Plan builder – Sales', 'معد الخطة – المبيعات', null, 'departments');
+insert into platform.custom_role_permissions (tenant_id, custom_role_id, permission_code) values
+  ('a0000000-0000-4000-8000-000000000001', 'a6000000-0000-4000-8000-0000000000f3', 'tms.training_plan.read'),
+  ('a0000000-0000-4000-8000-000000000001', 'a6000000-0000-4000-8000-0000000000f3', 'tms.training_plan.manage'),
+  ('a0000000-0000-4000-8000-000000000001', 'a6000000-0000-4000-8000-0000000000f4', 'tms.training_plan.read'),
+  ('a0000000-0000-4000-8000-000000000001', 'a6000000-0000-4000-8000-0000000000f4', 'tms.training_plan.manage');
+update platform.role_assignments ra set role_code = 'custom_a000000f0003', scope_unit_id = null
+from platform.tenant_memberships m
+where m.id = ra.membership_id and m.tenant_id = 'a0000000-0000-4000-8000-000000000001'
+  and m.user_id = '00000000-0000-4000-8000-000000000c03';
+update platform.role_assignments ra set role_code = 'custom_a000000f0004', scope_unit_id = 'a3000000-0000-4000-8000-000000000004'
+from platform.tenant_memberships m
+where m.id = ra.membership_id and m.tenant_id = 'a0000000-0000-4000-8000-000000000001'
+  and m.user_id = '00000000-0000-4000-8000-000000000c05';
+-- A second active course (a workshop: review L3) and a branch that is no longer used (review L4).
+insert into tms.courses (id, tenant_id, code, title_en, title_ar, category_id, delivery_type, duration_hours,
+    duration_days, min_participants, max_participants, est_cost_per_session, est_cost_per_participant) values
+  ('a7100000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'NEG-201', 'Negotiation lab',
+   'مختبر التفاوض', null, 'workshop', 6, null, 2, 12, null, null);
+insert into platform.branches (id, tenant_id, code, name_ar, name_en, is_headquarters, status) values
+  ('a2000000-0000-4000-8000-000000000009', 'a0000000-0000-4000-8000-000000000001', 'OLD', 'فرع مغلق', 'Closed', false,
+   'inactive');
+
 create function tests.hs_claims(p_who text) returns jsonb language sql immutable as $f$
   select case p_who
     when 'uL' then tests.user_claims('00000000-0000-4000-8000-00000000e0a1', '10000000-0000-4000-8000-00000000e0a1',
@@ -112,6 +181,10 @@ create function tests.hs_claims(p_who text) returns jsonb language sql immutable
                                      'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-00000000e0a4')
     when 'uM1' then tests.user_claims('00000000-0000-4000-8000-000000000c04', '10000000-0000-4000-8000-000000000c41',
                                       'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000c04')
+    when 'uS3' then tests.user_claims('00000000-0000-4000-8000-000000000c03', '10000000-0000-4000-8000-000000000c31',
+                                      'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000c03')
+    when 'uM2' then tests.user_claims('00000000-0000-4000-8000-000000000c05', '10000000-0000-4000-8000-000000000c51',
+                                      'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000c05')
     when 'uA' then tests.ua_claims()
     when 'uAB' then tests.uab_claims()
     -- uAB acting in tenant B (its L&D Manager there).
@@ -238,12 +311,8 @@ begin
                                and edited_at is not distinct from v_before.edited_at and version = v_before.version + 1
                         from tms.plan_lines where id = tests.hs_line('Excel')),
     'stamped by the database; the line is not «edited» (the approved plan did not change)');
-  perform tests.assert_eq(tests.rows_affected(format(
-    $q$update tms.plan_lines set course_id = %L where id = %L$q$,
-    'a7100000-0000-4000-8000-000000000001', tests.hs_line('Negotiation'))), 1::bigint,
-    'Negotiation is linked to a course of the library');
-  perform tests.assert((select course_origin = 'linked' from tms.plan_lines where id = tests.hs_line('Negotiation')),
-    'linked, by default');
+  perform tests.assert_fails_state_like($q$update tms.plan_lines set course_id = 'a7100000-0000-4000-8000-000000000002' where id = tests.hs_line('Negotiation')$q$,
+    'JK001', '%active course%', 'never an archived course');
   perform tests.assert_fails($q$update tms.plan_lines set course_id = 'a7100000-0000-4000-8000-000000000002', quarter = 4 where id = tests.hs_line('Excel')$q$,
     array['JK008'], 'nothing else of an approved line moves with its course');
   perform tests.assert_fails($q$update tms.plan_lines set quarter = 4 where id = tests.hs_line('Excel')$q$,
@@ -253,15 +322,32 @@ begin
   perform tests.assert_fails($q$update tms.plan_lines set course_id = 'a7100000-0000-4000-8000-000000000001' where id = tests.hs_line('Public speaking')$q$,
     array['JK001'], 'a line left out gets no course');
   perform tests.assert_fails($q$update tms.plan_lines set course_id = 'b7100000-0000-4000-8000-000000000001' where id = tests.hs_line('Negotiation')$q$,
-    array['23503'], 'never another organization''s course');
+    array['JK001', '23503'], 'never another organization''s course');
   perform tests.assert_fails($q$delete from tms.plan_lines where id = tests.hs_line('Excel')$q$,
     array['JK008', '23503'], 'an approved line is not deleted');
 end $$;
+-- Review M4: the Training Coordinator (tms.course.manage) links a course of the library to an approved line — that
+-- only.
 select tests.set_claims(tests.hs_claims('uT'));
 do $$
 begin
-  perform tests.assert_eq(tests.rows_affected($q$update tms.plan_lines set course_id = 'a7100000-0000-4000-8000-000000000002'$q$),
-    0::bigint, 'the Training Coordinator gives no approved line a course (it reads the plan)');
+  perform tests.assert_eq(tests.rows_affected(format(
+    $q$update tms.plan_lines set course_id = %L where id = %L$q$,
+    'a7100000-0000-4000-8000-000000000003', tests.hs_line('Negotiation'))), 1::bigint,
+    'the Training Coordinator links Negotiation to a course of the library');
+  perform tests.assert((select course_origin = 'linked' and course_set_by = 'a1000000-0000-4000-8000-00000000e0a2'::uuid
+                        from tms.plan_lines where id = tests.hs_line('Negotiation')),
+    'linked, by default, stamped with its hand');
+  perform tests.assert_fails($q$update tms.plan_lines set quarter = 4 where id = tests.hs_line('Negotiation')$q$,
+    array['JK008'], 'nothing else of the approved line');
+  perform tests.assert_fails_state_like($q$update tms.plan_lines set course_id = 'a7100000-0000-4000-8000-000000000002' where id = tests.hs_line('Negotiation')$q$,
+    'JK001', '%active course%', 'nor an archived course');
+end $$;
+select tests.set_claims(tests.hs_claims('uM2'));
+do $$
+begin
+  perform tests.assert_fails($q$update tms.plan_lines set course_id = 'a7100000-0000-4000-8000-000000000001' where id = tests.hs_line('Negotiation')$q$,
+    array['42501'], 'a department-limited planner (tms.training_plan.manage for Sales) gives no approved line a course');
 end $$;
 select tests.set_claims(tests.hs_claims('uM1'));
 do $$
@@ -316,6 +402,7 @@ begin
   -- A month outside the line's quarter (Q1) but in the period is allowed (Q3 = A: the application marks it).
   s2 := tests.hs_draft('Excel', 'a7100000-0000-4000-8000-000000000001', tests.hs_month(4), 15);
   perform set_config('tests.hs_s1', s1::text, true);
+  perform set_config('tests.hs_excel', tests.hs_line('Excel')::text, true);
   perform set_config('tests.hs_s2', s2::text, true);
   perform tests.assert((select status = 'draft' and plan_version = 1 and estimated_cost = 4500 and cost_currency is not null
                                and cost_currency = (select currency from tms.plan_cycles where id = 'ae000000-0000-4000-8000-000000000001')
@@ -327,8 +414,25 @@ begin
   perform tests.assert_fails($q$update tms.sessions set course_id = 'a7100000-0000-4000-8000-000000000002'$q$,
     array['42501'], 'a draft keeps its course (not granted)');
   perform tests.assert_fails($q$update tms.sessions set status = 'draft'$q$, array['42501'], 'and its state');
-  perform tests.assert_fails(format($q$update tms.plan_lines set course_id = 'a7100000-0000-4000-8000-000000000002' where id = %L$q$, tests.hs_line('Excel')),
-    array['JK001'], 'a line with drafts keeps its course');
+  perform tests.assert_fails_state_like(format($q$update tms.plan_lines set course_id = 'a7100000-0000-4000-8000-000000000003' where id = %L$q$, tests.hs_line('Excel')),
+    'JK017', '%delete its draft sessions first%', 'a line with drafts keeps its course');
+end $$;
+-- Review M1: an organization-wide planner without tms.session.manage reads no draft — and is still refused.
+select tests.set_claims(tests.hs_claims('uS3'));
+do $$
+begin
+  perform tests.assert_eq((select count(*) from tms.sessions), 0::bigint, 'uS3 reads no draft');
+  perform tests.assert(private.plan_line_has_sessions(tests.hs_line('Excel'))
+                       and not private.plan_line_has_sessions(tests.hs_line('Negotiation')),
+    'but is told the line has some');
+  perform tests.assert_fails_state_like(format($q$update tms.plan_lines set course_id = 'a7100000-0000-4000-8000-000000000003' where id = %L$q$, tests.hs_line('Excel')),
+    'JK017', '%delete its draft sessions first%', 'and cannot change the course of a line with drafts');
+end $$;
+select tests.set_claims(tests.hs_claims('B'));
+do $$
+begin
+  perform tests.assert(not private.plan_line_has_sessions(current_setting('tests.hs_excel')::uuid),
+    'another organization is never told about A''s drafts');
 end $$;
 
 -- The Training Coordinator: reads, changes and fills the drafts.
@@ -345,7 +449,9 @@ begin
   perform tests.assert((select estimated_cost = 4400 and branch_id = 'a2000000-0000-4000-8000-000000000002'::uuid
                         from tms.sessions where id = s1), 'the estimate follows the seats');
   perform tests.assert_fails(format($q$update tms.sessions set branch_id = 'b2000000-0000-4000-8000-000000000001' where id = %L$q$, s1),
-    array['23503'], 'never another organization''s branch');
+    array['JK001', '23503'], 'never another organization''s branch');
+  perform tests.assert_fails_state_like(format($q$update tms.sessions set branch_id = 'a2000000-0000-4000-8000-000000000009' where id = %L$q$, s1),
+    'JK001', '%active branch%', 'nor a branch no longer used');
   insert into tms.session_participants (session_id, plan_line_id, need_id, person_id) values
     (s1, tests.hs_line('Excel'), excel_sal, 'a1000000-0000-4000-8000-00000000e0a3'),
     (s1, tests.hs_line('Excel'), excel_sal, 'a1000000-0000-4000-8000-00000000e0a4');
@@ -433,7 +539,11 @@ begin
   perform tests.assert_eq(tests.rows_affected($q$delete from tms.session_participants$q$), 0::bigint, 'nor its people');
   perform tests.assert_fails($q$select tests.hs_draft('Excel', 'a7100000-0000-4000-8000-000000000001', tests.hs_month(2), 2)$q$,
     array['42501', 'JK014'], 'nor drafts one more');
-  n := tests.hs_draft('Negotiation', 'a7100000-0000-4000-8000-000000000001', tests.hs_month(3), 6);
+  perform tests.assert_fails_state_like($q$select tests.hs_draft('Negotiation', 'a7100000-0000-4000-8000-000000000001', tests.hs_month(3), 6)$q$,
+    'JK013', '%course%', 'a draft is of the line''s course');
+  n := tests.hs_draft('Negotiation', 'a7100000-0000-4000-8000-000000000003', tests.hs_month(3), 6);
+  perform tests.assert_eq((select delivery_type from tms.sessions where id = n), 'workshop',
+    'its delivery type is the course''s, whatever the statement says (review L3)');
   perform tests.assert_eq(tests.rows_affected(format($q$update tms.sessions set seats = 7 where id = %L$q$, n)), 1::bigint,
     'it drafts and changes the sessions of a Sales-only line');
   insert into tms.session_participants (session_id, plan_line_id, need_id, person_id) values
@@ -458,13 +568,37 @@ begin
   perform tests.assert_eq(tests.rows_affected(format($q$update tms.sessions set month = %L where id = %L$q$, tests.hs_month(2), s1)),
     1::bigint, 'and still change');
   update tms.plan_lines set max_per_session = 30 where id = tests.hs_line('Excel');
-  perform tests.assert_fails_state_like($q$select tests.hs_draft('Negotiation', 'a7100000-0000-4000-8000-000000000001', tests.hs_month(3), 6)$q$,
+  perform tests.assert_fails_state_like($q$select tests.hs_draft('Negotiation', 'a7100000-0000-4000-8000-000000000003', tests.hs_month(3), 6)$q$,
     'JK013', '%approved training plan%', 'no new draft while the plan is revised');
-  -- Leaving a line out while it has drafts is the plan's business: the drafts stay (the application flags the line).
-  perform tests.assert_eq(tests.rows_affected(format($q$update tms.plan_lines set status = 'left_out', left_out_reason = 'Merged into another programme' where id = %L$q$, tests.hs_line('Excel'))),
-    1::bigint, 'the revised plan leaves Excel out');
+  -- Review M3 (decided 15 Nov 2026): while the revised plan is edited, a line with drafts keeps its course and its
+  -- place, and a need whose people are planned stays in its line — delete the drafts first. Sizes may change.
+  perform tests.assert_fails_state_like(format($q$update tms.plan_lines set status = 'left_out', left_out_reason = 'Merged into another programme' where id = %L$q$, tests.hs_line('Excel')),
+    'JK017', '%delete its draft sessions first%', 'the revised plan does not leave out a line with drafts');
+  perform tests.assert_fails_state_like(format($q$update tms.plan_lines set course_id = 'a7100000-0000-4000-8000-000000000003' where id = %L$q$, tests.hs_line('Excel')),
+    'JK017', '%delete its draft sessions first%', 'nor changes its course');
+  perform tests.assert_fails_state_like($q$delete from tms.plan_lines where id = tests.hs_line('Excel')$q$,
+    'JK017', '%delete its draft sessions first%', 'nor deletes it');
+  perform tests.assert_fails_state_like(format($q$update tms.plan_line_needs set line_id = %L where need_id = %L$q$,
+                                               tests.hs_line('Negotiation'), tests.hs_need('a3000000-0000-4000-8000-000000000004', 'Excel')),
+    'JK017', '%delete those draft sessions first%', 'a need whose people are planned does not move to another line');
+  perform tests.assert_fails_state_like(format($q$delete from tms.plan_line_needs where need_id = %L$q$,
+                                               tests.hs_need('a3000000-0000-4000-8000-000000000004', 'Excel')),
+    'JK017', '%delete those draft sessions first%', 'nor leaves its line');
+  perform tests.assert_eq(tests.rows_affected(format($q$update tms.plan_line_needs set line_id = %L where need_id = %L$q$,
+                                                     tests.hs_line('Negotiation'), tests.hs_need('a3000000-0000-4000-8000-000000000001', 'Excel'))),
+    1::bigint, 'a need nobody of which is planned moves');
+  perform tests.assert_eq(tests.rows_affected(format($q$update tms.plan_line_needs set line_id = %L where need_id = %L$q$,
+                                                     tests.hs_line('Excel'), tests.hs_need('a3000000-0000-4000-8000-000000000001', 'Excel'))),
+    1::bigint, 'and back');
   perform tests.assert_eq((select count(*) from tms.sessions where plan_line_id = tests.hs_line('Excel')), 2::bigint,
-    'its drafts stay (nothing is deleted automatically)');
+    'Excel keeps its drafts (nothing is deleted automatically)');
+end $$;
+select tests.set_claims(tests.hs_claims('uT'));
+do $$
+begin
+  perform tests.assert_eq(tests.rows_affected($q$update tms.plan_lines set quarter = 4$q$)
+                          + tests.rows_affected($q$update tms.plan_lines set course_id = 'a7100000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'the Training Coordinator changes no line of a plan being revised');
 end $$;
 select tests.set_claims(tests.hs_claims('uL'));
 do $$
@@ -472,11 +606,11 @@ declare
   s1 constant uuid := current_setting('tests.hs_s1')::uuid;
   s2 constant uuid := current_setting('tests.hs_s2')::uuid;
 begin
-  perform tests.assert_fails($q$delete from tms.plan_lines where id = tests.hs_line('Excel')$q$,
-    array['23503'], 'a line with drafts (and needs) is not deleted');
   perform tests.assert_eq(tests.rows_affected(format($q$delete from tms.sessions where id in (%L, %L)$q$, s1, s2)), 2::bigint,
     'a draft is deleted freely');
   perform tests.assert_eq((select count(*) from tms.session_participants), 0::bigint, 'with its planned participants');
+  perform tests.assert_eq(tests.rows_affected(format($q$update tms.plan_lines set status = 'left_out', left_out_reason = 'Merged into another programme' where id = %L$q$, tests.hs_line('Excel'))),
+    1::bigint, 'once its drafts are deleted, the revised plan leaves Excel out');
 end $$;
 rollback;
 

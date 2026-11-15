@@ -45,12 +45,13 @@ begin
                        and not exists (select 1 from pg_class c where c.relowner = 'training_plan_guard'::regrole),
     'training_plan_guard creates and owns no relations');
   select string_agg(format('%s%s', p.oid::regprocedure, case when p.prosecdef then ' (definer)' else '' end), ', '
-                    order by p.oid::regprocedure::text)
+                    order by p.oid::regprocedure::text collate "C")
     into v_list
   from pg_proc p where p.proowner = 'training_plan_guard'::regrole;
+  -- … and, since WP-LD-04 (migration 20261117100200), whether a line has drafts or a need planned participants.
   perform tests.assert_eq(v_list,
-    'private.plan_cycle_consolidating(uuid,uuid) (definer), private.plan_line_departments(uuid) (definer), private.training_plan_status(uuid,uuid) (definer)',
-    'training_plan_guard owns three functions');
+    'private.plan_cycle_consolidating(uuid,uuid) (definer), private.plan_line_departments(uuid) (definer), private.plan_line_has_sessions(uuid) (definer), private.plan_need_has_participants(uuid,uuid) (definer), private.training_plan_status(uuid,uuid) (definer)',
+    'training_plan_guard owns five functions');
   perform tests.assert(not has_table_privilege('training_plan_guard', 'tms.plan_line_needs', 'SELECT')
                        and has_column_privilege('training_plan_guard', 'tms.plan_line_needs', 'department_id', 'SELECT')
                        and not has_column_privilege('training_plan_guard', 'tms.plan_line_needs', 'need_id', 'SELECT')

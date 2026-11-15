@@ -23,28 +23,39 @@
 --   need of its units (read) or only of its units (write), the participants of its units
 --   (private.session_units, migration 20261117100100). Nobody else — employees, department heads, the HR Manager,
 --   Finance — reads a draft (proposal §3: a draft promises nothing).
---   an approved line's course: the organization-wide L&D Manager (tms.training_plan.manage organization-wide) changes
---   EXACTLY that on an approved plan (course_id and course_origin; the guard stamps the rest) — nothing else of a
---   locked plan moves (JK008 as before).
+--   an approved line's course: the organization-wide L&D Manager (tms.training_plan.manage organization-wide) or a
+--   holder of tms.course.manage (organization-only: the L&D Manager, the Training Coordinator — approved design
+--   README «Create course» / «Link course»; policy plan_lines_course_update, approved plans only) changes EXACTLY
+--   that on an approved plan (course_id and course_origin; the guard stamps the rest), an ACTIVE course of the
+--   library, while the line has no draft — nothing else of a locked plan moves (JK008 as before), and on a plan that
+--   is being built only its planners change its lines (the guard repeats the planning policy).
 -- Rules (guards)
 --   * a draft is made from a line IN THE PLAN of an APPROVED plan that has its course, and carries that course (JK013);
 --     a line gets at most the sessions the plan works out for it — people ÷ maximum per session, rounded up (JK014);
 --     the month lies in the cycle's planning period (JK015) — outside the line's quarter is allowed (Q3 = A: the
 --     application marks it); a session never has fewer seats than planned participants (JK016)
---   * a draft keeps its line, plan, course and version; month, branch and seats change freely, whatever the plan's
---     state (a revised plan leaves its drafts as they are, Q «plan revised»: nothing is deleted automatically); a
---     draft can be deleted freely
+--   * a draft keeps its line, plan, course and version; its delivery type is always its course's; month, branch (an
+--     active branch of the organization) and seats change freely, whatever the plan's state (a revised plan leaves
+--     its drafts as they are, Q «plan revised»: nothing is deleted automatically); a draft can be deleted freely
 --   * a planned participant is a person named for a need of the session's line; it may move to another session of
 --     the same line
---   * a plan line with draft sessions is never deleted (the foreign key; the application keeps such a line)
+--   * while a revised plan is edited, a line with draft sessions keeps its course, stays in the plan and is not
+--     deleted, and a need with planned participants stays in its line (JK017: delete the drafts first, decided
+--     15 Nov 2026); its seats and session size may change (the line then shows over / under drafted)
+--   * a plan line with draft sessions is never deleted (JK017; the foreign key agrees)
+-- Whether a line has drafts, or a need planned participants, is asked of private.plan_line_has_sessions /
+-- private.plan_need_has_participants (SECURITY DEFINER, owner training_plan_guard): the L&D Manager who changes the
+-- plan may hold no tms.session.manage and then reads no draft.
 -- Locks: a draft's creation takes the organization's plan lock SHARED (private.training_plan_lock, migration
 -- 20261116100200) before it reads the plan's state, as every change of what a plan is made of; every change of a
--- line's drafts or participants takes the line's own transaction lock first, so the session count and the seats are
--- checked against what is committed.
+-- line's drafts or participants — and the course of an approved line — takes the line's own transaction lock
+-- (after the plan lock) BEFORE it reads the line, so the course, the session count and the seats are checked against
+-- what is committed.
 -- Custom SQLSTATEs: JK013 not ready for draft sessions · JK014 the line's sessions are all drafted · JK015 the month is
--- outside the planning period · JK016 more planned participants than seats.
--- Expand-first: new tables, nullable columns and a replaced guard that keeps every earlier rule; the previous release
--- writes none of the new columns.
+-- outside the planning period · JK016 more planned participants than seats · JK017 the line has draft sessions (or the
+-- need planned participants): delete them first.
+-- Expand-first: new tables, nullable columns, new helpers and replaced guards that keep every earlier rule; the
+-- previous release writes none of the new columns.
 
 -- ---------------------------------------------------------------------------------------------------
 -- tms.plan_lines: the course an approved line gets
@@ -56,9 +67,6 @@ alter table tms.plan_lines
 
 comment on column tms.plan_lines.course_origin is
   'How an approved line got its course (WP-LD-04): created from the line, or linked from the library; null: named in the needs, or set while the plan was built.';
-
--- The key the sessions point at.
-alter table tms.plan_lines add constraint plan_lines_line_key_uq unique (tenant_id, id, plan_id, cycle_id);
 
 -- ---------------------------------------------------------------------------------------------------
 -- tms.sessions
@@ -97,6 +105,7 @@ create table tms.sessions (
   constraint sessions_from_plan_check check (
     plan_id is not null and cycle_id is not null and plan_line_id is not null and plan_version is not null),
   constraint sessions_draft_month_check check (status <> 'draft' or month is not null),
+  -- plan_lines_plan_key_uq (migration 20261115100200).
   foreign key (tenant_id, plan_line_id, plan_id, cycle_id) references tms.plan_lines (tenant_id, id, plan_id, cycle_id),
   foreign key (tenant_id, course_id) references tms.courses (tenant_id, id),
   foreign key (tenant_id, branch_id) references platform.branches (tenant_id, id)
@@ -194,8 +203,116 @@ $$;
 revoke all on function private.plan_line_sessions_lock(uuid) from public;
 grant execute on function private.plan_line_sessions_lock(uuid) to authenticated;
 
+-- The signed-in member holds tms.course.manage (organization-only: the L&D Manager, the Training Coordinator, or a
+-- custom role with it) — who may also give an approved line its course (approved design README). Never null.
+create or replace function private.may_manage_courses(p_tenant_id uuid)
+returns boolean
+language sql stable
+set search_path = ''
+as $$
+  select coalesce(private.request_claims() ->> 'role' = 'authenticated'
+                  and private.member_has_permission(p_tenant_id, private.request_user_id(), 'tms.course.manage'),
+                  false);
+$$;
+
+comment on function private.may_manage_courses(uuid) is
+  'SECURITY-RELEVANT (WP-LD-04). The signed-in member holds tms.course.manage (organization-wide by definition): may give an approved plan line its course.';
+
+revoke all on function private.may_manage_courses(uuid) from public;
+grant execute on function private.may_manage_courses(uuid) to authenticated;
+
+-- training_plan_guard (migration 20261115100200) also answers whether a line has drafts and a need planned
+-- participants — for the plan's guards and the application, also when the caller reads no draft (it may hold
+-- tms.training_plan.manage without tms.session.manage). It reads the ids only, never who is planned.
+grant select (tenant_id, plan_line_id) on tms.sessions to training_plan_guard;
+grant select (tenant_id, plan_line_id, need_id) on tms.session_participants to training_plan_guard;
+create policy sessions_training_plan_guard_read on tms.sessions for select
+  to training_plan_guard using (true);
+create policy session_participants_training_plan_guard_read on tms.session_participants for select
+  to training_plan_guard using (true);
+
+-- Does a line of the caller's organization have draft sessions (signed-in members only; false otherwise)?
+create or replace function private.plan_line_has_sessions(p_line_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(private.request_claims() ->> 'role' = 'authenticated'
+                  and exists (select 1 from tms.sessions s
+                              where s.tenant_id = private.current_tenant_id() and s.plan_line_id = p_line_id),
+                  false);
+$$;
+
+comment on function private.plan_line_has_sessions(uuid) is
+  'SECURITY-RELEVANT (WP-LD-04). A plan line of the caller''s organization has draft sessions (signed-in members only), whether or not the caller reads them — for the plan''s guards and the application. Owner training_plan_guard.';
+
+-- Are people of a need planned in the drafts of a line of the caller's organization (signed-in members only)?
+create or replace function private.plan_need_has_participants(p_need_id uuid, p_line_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(private.request_claims() ->> 'role' = 'authenticated'
+                  and exists (select 1 from tms.session_participants p
+                              where p.tenant_id = private.current_tenant_id() and p.need_id = p_need_id
+                                and p.plan_line_id = p_line_id),
+                  false);
+$$;
+
+comment on function private.plan_need_has_participants(uuid, uuid) is
+  'SECURITY-RELEVANT (WP-LD-04). People named for a need are planned participants of the drafts of a line of the caller''s organization (signed-in members only), whether or not the caller reads them. Owner training_plan_guard.';
+
+grant create on schema private to training_plan_guard;
+alter function private.plan_line_has_sessions(uuid) owner to training_plan_guard;
+alter function private.plan_need_has_participants(uuid, uuid) owner to training_plan_guard;
+revoke create on schema private from training_plan_guard;
+revoke all on function private.plan_line_has_sessions(uuid) from public;
+revoke all on function private.plan_need_has_participants(uuid, uuid) from public;
+grant execute on function private.plan_line_has_sessions(uuid) to authenticated;
+grant execute on function private.plan_need_has_participants(uuid, uuid) to authenticated;
+
+-- The same questions inside a guard: through the helpers for a signed-in member (who may read no draft), directly
+-- for the database's own roles (migrations, tests as owner). SECURITY INVOKER.
+create or replace function private.plan_line_sessions_exist(p_tenant_id uuid, p_line_id uuid)
+returns boolean
+language plpgsql
+volatile
+set search_path = ''
+as $$
+begin
+  if current_user = 'authenticated' then
+    return private.plan_line_has_sessions(p_line_id);
+  end if;
+  return exists (select 1 from tms.sessions s where s.tenant_id = p_tenant_id and s.plan_line_id = p_line_id);
+end
+$$;
+
+create or replace function private.plan_need_participants_exist(p_tenant_id uuid, p_need_id uuid, p_line_id uuid)
+returns boolean
+language plpgsql
+volatile
+set search_path = ''
+as $$
+begin
+  if current_user = 'authenticated' then
+    return private.plan_need_has_participants(p_need_id, p_line_id);
+  end if;
+  return exists (select 1 from tms.session_participants p
+                 where p.tenant_id = p_tenant_id and p.need_id = p_need_id and p.plan_line_id = p_line_id);
+end
+$$;
+
+revoke all on function private.plan_line_sessions_exist(uuid, uuid) from public;
+revoke all on function private.plan_need_participants_exist(uuid, uuid, uuid) from public;
+grant execute on function private.plan_line_sessions_exist(uuid, uuid) to authenticated;
+grant execute on function private.plan_need_participants_exist(uuid, uuid, uuid) to authenticated;
+
 -- ---------------------------------------------------------------------------------------------------
--- The plan's lines: as 20261115100200, and the course of an approved line (WP-LD-04)
+-- The plan's lines: as 20261115100200, the course of an approved line, and the drafts a revised plan keeps (WP-LD-04)
 -- ---------------------------------------------------------------------------------------------------
 create or replace function private.plan_lines_guard()
 returns trigger
@@ -207,15 +324,21 @@ declare
   v_fixed constant text[] := array['course_id', 'course_origin', 'course_set_at', 'course_set_by',
                                    'updated_at', 'updated_by', 'version'];
   v_status text;
+  v_signed_in boolean := coalesce(private.request_claims() ->> 'role' = 'authenticated', false);
+  v_departments uuid[];
+  v_units uuid[];
 begin
   -- An approved plan is locked — except the course of a line in the plan, which the organization-wide L&D Manager
-  -- creates or links once the plan is approved (WP-LD-04). Nothing else of the line may move with it.
+  -- or a holder of tms.course.manage (the Training Coordinator) creates or links once the plan is approved
+  -- (WP-LD-04). Nothing else of the line may move with it.
   if tg_op = 'UPDATE' then
     v_status := private.training_plan_locked_status(new.tenant_id, new.plan_id);
   end if;
   if v_status = 'approved' then
-    if private.request_claims() ->> 'role' = 'authenticated' and not private.may_manage_training_plan(new.tenant_id) then
-      raise insufficient_privilege using message = 'the organization-wide L&D Manager gives an approved line its course';
+    if v_signed_in and not private.may_manage_training_plan(new.tenant_id)
+       and not private.may_manage_courses(new.tenant_id) then
+      raise insufficient_privilege
+        using message = 'the organization-wide L&D Manager or a course manager gives an approved line its course';
     end if;
     if (to_jsonb(new) - v_fixed) is distinct from (to_jsonb(old) - v_fixed) then
       raise exception 'the training plan is frozen while it waits for approval and locked once approved'
@@ -230,8 +353,15 @@ begin
     if new.course_id is null or old.status <> 'in_plan' then
       raise exception 'a line in the approved plan gets a course; it is never taken away' using errcode = 'JK001';
     end if;
-    if exists (select 1 from tms.sessions s where s.tenant_id = new.tenant_id and s.plan_line_id = new.id) then
-      raise exception 'a line with draft sessions keeps its course' using errcode = 'JK001';
+    if not exists (select 1 from tms.courses c
+                   where c.tenant_id = new.tenant_id and c.id = new.course_id and c.status = 'active') then
+      raise exception 'an approved line gets an active course of the library' using errcode = 'JK001';
+    end if;
+    -- The line's drafts are counted after the line's lock: a draft being added waits, or is seen (review M2).
+    perform private.plan_line_sessions_lock(new.id);
+    if private.plan_line_sessions_exist(new.tenant_id, new.id) then
+      raise exception 'a line with draft sessions keeps its course: delete its draft sessions first'
+        using errcode = 'JK017';
     end if;
     new.course_origin := coalesce(new.course_origin, 'linked');
     new.course_set_at := now();
@@ -242,11 +372,33 @@ begin
 
   perform private.training_plan_editable(v_row.tenant_id, v_row.plan_id);
   if tg_op = 'DELETE' then
+    -- A revised plan keeps its drafts (decided 15 Nov 2026): their line stays until they are deleted.
+    if private.plan_line_sessions_exist(old.tenant_id, old.id) then
+      raise exception 'a line with draft sessions stays in the plan: delete its draft sessions first'
+        using errcode = 'JK017';
+    end if;
     return old;
   end if;
   if tg_op = 'UPDATE' then
+    -- Only the plan's planners change a line of a plan being built: the course policy (tms.course.manage) reaches
+    -- approved plans only — repeated here should the plan have been revised in the meantime (plan_lines_update).
+    if v_signed_in and not private.may_manage_training_plan(new.tenant_id) then
+      v_departments := private.plan_line_departments(old.id);
+      v_units := private.training_plan_units(new.tenant_id, true);
+      if not (v_departments <@ v_units and cardinality(v_units) > 0
+              and (cardinality(v_departments) > 0 or old.created_by = private.request_person_id())) then
+        raise insufficient_privilege using message = 'only the training plan''s planners change its lines';
+      end if;
+    end if;
     if (new.plan_id, new.cycle_id, new.group_key) is distinct from (old.plan_id, old.cycle_id, old.group_key) then
       raise exception 'a plan line stays in its plan and keeps what it was built from' using errcode = 'JK001';
+    end if;
+    -- A revised plan keeps its drafts (decided 15 Nov 2026): a line with drafts keeps its course and stays in the
+    -- plan; its seats and session size may change (the line shows over / under drafted).
+    if (new.course_id is distinct from old.course_id or (old.status = 'in_plan' and new.status <> 'in_plan'))
+       and private.plan_line_sessions_exist(new.tenant_id, new.id) then
+      raise exception 'a line with draft sessions keeps its course and stays in the plan: delete its draft sessions first'
+        using errcode = 'JK017';
     end if;
     -- Every change of a line is L&D's hand.
     new.edited_at := now();
@@ -274,7 +426,77 @@ end
 $$;
 
 comment on function private.plan_lines_guard() is
-  'SECURITY-RELEVANT (WP-LD-02, WP-LD-04). Plan lines change only while the plan is a draft (or sent back), every change stamped as L&D''s edit; on an approved plan the organization-wide L&D Manager only gives a line in the plan its course.';
+  'SECURITY-RELEVANT (WP-LD-02, WP-LD-04). Plan lines change only while the plan is a draft (or sent back), by its planners, every change stamped as L&D''s edit, and a line with draft sessions keeps its course and its place; on an approved plan the organization-wide L&D Manager or a course manager only gives a line in the plan an active course, while it has no draft.';
+
+-- The course of an approved line: also for a holder of tms.course.manage (the Training Coordinator) — the guard lets
+-- only the course through.
+create policy plan_lines_course_update on tms.plan_lines for update to authenticated
+  using ((select private.may_manage_courses((select private.current_tenant_id())))
+         and private.training_plan_status(tenant_id, plan_id) = 'approved')
+  with check ((select private.may_manage_courses((select private.current_tenant_id())))
+              and private.training_plan_status(tenant_id, plan_id) = 'approved');
+
+-- ---------------------------------------------------------------------------------------------------
+-- The plan's needs in lines: as 20261115100200, and a need with planned participants stays in its line (WP-LD-04)
+-- ---------------------------------------------------------------------------------------------------
+create or replace function private.plan_line_needs_guard()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+declare
+  v_row record := case when tg_op = 'DELETE' then old else new end;
+  v_status text;
+begin
+  perform private.training_plan_editable(v_row.tenant_id, v_row.plan_id);
+  if tg_op = 'DELETE' then
+    -- Taken out of its line by a statement (to be placed elsewhere): not while its people are planned in the line's
+    -- drafts. A need deleted with its department's needs goes with its named people (and their places: cascade).
+    if pg_catalog.pg_trigger_depth() = 1
+       and private.plan_need_participants_exist(old.tenant_id, old.need_id, old.line_id) then
+      raise exception 'people of this need are planned in the line''s draft sessions: delete those draft sessions first'
+        using errcode = 'JK017';
+    end if;
+    return old;
+  end if;
+  if tg_op = 'UPDATE'
+     and (new.plan_id, new.cycle_id, new.need_id, new.department_id)
+         is distinct from (old.plan_id, old.cycle_id, old.need_id, old.department_id) then
+    raise exception 'a need''s place in the plan moves from line to line only' using errcode = 'JK001';
+  end if;
+  if tg_op = 'UPDATE' and new.line_id is distinct from old.line_id
+     and private.plan_need_participants_exist(old.tenant_id, old.need_id, old.line_id) then
+    raise exception 'people of this need are planned in the line''s draft sessions: delete those draft sessions first'
+      using errcode = 'JK017';
+  end if;
+  select d.status into v_status from tms.plan_cycle_departments d
+  where d.tenant_id = new.tenant_id and d.cycle_id = new.cycle_id and d.department_id = new.department_id;
+  if tg_op = 'INSERT' and v_status is distinct from 'submitted' then
+    raise exception 'only the submitted needs of a department enter the training plan' using errcode = 'JK009';
+  end if;
+  if tg_op = 'UPDATE' and v_status is distinct from 'submitted' then
+    -- A department returned for changes: its figures stay as submitted until it resubmits.
+    new.seats := old.seats;
+    new.named := old.named;
+    new.topic := old.topic;
+    new.course_id := old.course_id;
+    return new;
+  end if;
+  -- The snapshot of what the department submitted (never taken from the statement).
+  select n.people_count,
+         (select count(*) from tms.plan_need_people p where p.tenant_id = n.tenant_id and p.need_id = n.id),
+         n.topic, n.course_id
+    into new.seats, new.named, new.topic, new.course_id
+  from tms.plan_needs n where n.tenant_id = new.tenant_id and n.id = new.need_id;
+  if new.seats is null then
+    raise insufficient_privilege using message = 'the need is not readable';
+  end if;
+  return new;
+end
+$$;
+
+comment on function private.plan_line_needs_guard() is
+  'SECURITY-RELEVANT (WP-LD-02, WP-LD-04). Only submitted needs enter the plan, while it is a draft; seats, named people, topic and course are taken from the need; a need whose people are planned in the line''s drafts stays in its line.';
 
 grant update (course_origin) on tms.plan_lines to authenticated;
 
@@ -300,6 +522,7 @@ declare
   v_planned integer;
   v_drafted integer;
   v_people integer;
+  v_plan_status text;
 begin
   if tg_op = 'DELETE' then
     -- A draft promises nothing: it is deleted freely (its participants go with it).
@@ -320,9 +543,14 @@ begin
     perform private.plan_line_sessions_lock(new.plan_line_id);
   else
     new.status := 'draft';
+    -- The plan's state after the organization's plan lock (shared), then the line's own lock — in that order, as
+    -- every writer of a line's drafts and of an approved line's course.
+    v_plan_status := private.training_plan_locked_status(new.tenant_id, new.plan_id);
+    perform private.plan_line_sessions_lock(new.plan_line_id);
   end if;
 
-  -- The line as the caller reads it (row-level security: a line outside the caller's reach is not known).
+  -- The line as the caller reads it (row-level security: a line outside the caller's reach is not known), read
+  -- after the line's lock: a course being linked at the same moment is waited for, then seen (review M2).
   select l.plan_id, l.cycle_id, l.status, l.course_id, l.max_per_session, l.cost_per_session,
          coalesce(l.cost_per_person, 0)
     into v_line_plan, v_line_cycle, v_line_status, v_line_course, v_line_max, v_line_cost_per_session,
@@ -338,7 +566,7 @@ begin
   end if;
 
   if tg_op = 'INSERT' then
-    if private.training_plan_locked_status(new.tenant_id, new.plan_id) <> 'approved' then
+    if v_plan_status <> 'approved' then
       raise exception 'draft sessions are made from the lines of an approved training plan' using errcode = 'JK013';
     end if;
     if v_line_status <> 'in_plan' then
@@ -352,7 +580,6 @@ begin
     if new.plan_version is null then
       raise insufficient_privilege using message = 'the training plan is not known';
     end if;
-    perform private.plan_line_sessions_lock(new.plan_line_id);
     -- At most the sessions the plan works out for the line (D12: people ÷ maximum per session, rounded up).
     select coalesce(sum(x.seats), 0) into v_people
     from tms.plan_line_needs x where x.tenant_id = new.tenant_id and x.line_id = new.plan_line_id;
@@ -363,10 +590,22 @@ begin
     if v_drafted >= v_planned then
       raise exception 'the line''s sessions are all drafted (% of %)', v_drafted, v_planned using errcode = 'JK014';
     end if;
-    new.delivery_type := coalesce(new.delivery_type,
-                                  (select c.delivery_type from tms.courses c
-                                   where c.tenant_id = new.tenant_id and c.id = new.course_id));
+    -- Always the course's delivery type (never taken from the statement).
+    new.delivery_type := (select c.delivery_type from tms.courses c
+                          where c.tenant_id = new.tenant_id and c.id = new.course_id);
+    if new.delivery_type is null then
+      raise insufficient_privilege using message = 'the course is not known';
+    end if;
     new.cost_currency := v_currency;
+  end if;
+
+  if new.branch_id is not null and (tg_op = 'INSERT' or new.branch_id is distinct from old.branch_id) then
+    -- An active branch of the organization.
+    if not exists (select 1 from platform.branches b
+                   where b.tenant_id = new.tenant_id and b.id = new.branch_id and b.status = 'active'
+                     and b.deleted_at is null) then
+      raise exception 'a draft session''s branch is an active branch of the organization' using errcode = 'JK001';
+    end if;
   end if;
 
   if tg_op = 'INSERT' or new.month is distinct from old.month then
@@ -393,7 +632,7 @@ end
 $$;
 
 comment on function private.sessions_guard() is
-  'SECURITY-RELEVANT (WP-LD-04). A draft is made from a line in the plan of an approved plan, with its course, up to the sessions the plan works out for the line, in the planning period; it keeps its line, plan and course; month, branch and seats change; it is deleted freely. The estimated cost is the database''s.';
+  'SECURITY-RELEVANT (WP-LD-04). A draft is made from a line in the plan of an approved plan, with its course (and its delivery type), up to the sessions the plan works out for the line, in the planning period, at an active branch; it keeps its line, plan and course; month, branch and seats change; it is deleted freely. The estimated cost is the database''s.';
 
 revoke all on function private.sessions_guard() from public;
 

@@ -558,6 +558,9 @@ begin
       ('private.plan_line_departments(uuid)', 'training_plan_guard', array['training_plan_guard', 'authenticated'], true),
       ('private.plan_cycle_consolidating(uuid, uuid)', 'training_plan_guard', array['training_plan_guard', 'authenticated'], true),
       ('private.training_plan_status(uuid, uuid)', 'training_plan_guard', array['training_plan_guard', 'authenticated'], true),
+      -- training_plan_guard: whether a line has draft sessions, a need planned participants (20261117100200, WP-LD-04).
+      ('private.plan_line_has_sessions(uuid)', 'training_plan_guard', array['training_plan_guard', 'authenticated'], true),
+      ('private.plan_need_has_participants(uuid, uuid)', 'training_plan_guard', array['training_plan_guard', 'authenticated'], true),
       -- plan_approval_guard: the plan's history, versions and departments' results (20261116100200, WP-LD-03).
       ('private.training_plans_record()', 'plan_approval_guard', array['plan_approval_guard'], true),
       ('private.training_plan_version_lines(uuid, uuid)', 'plan_approval_guard', array['plan_approval_guard'], false)
@@ -700,7 +703,9 @@ begin
         'private.plan_line_departments(uuid)', 'private.plan_cycle_consolidating(uuid,uuid)',
         'private.training_plan_status(uuid,uuid)',
         -- Training plan approval (WP-LD-03)
-        'private.training_plans_record()')
+        'private.training_plans_record()',
+        -- Draft sessions (WP-LD-04): whether a line has drafts, a need planned participants
+        'private.plan_line_has_sessions(uuid)', 'private.plan_need_has_participants(uuid,uuid)')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;
@@ -843,7 +848,8 @@ begin
   end if;
 
   -- training_plan_guard (WP-LD-02): the same rules; it owns no relation and reads three columns of
-  -- tms.plan_line_needs and four of tms.training_plans, nothing else of any schema.
+  -- tms.plan_line_needs and four of tms.training_plans — and, since WP-LD-04, the line (and need) ids of
+  -- tms.sessions and tms.session_participants — nothing else of any schema.
   if exists (select 1 from pg_roles where rolname = 'training_plan_guard') then
     for r in select nspname from pg_namespace where nspname = any (module_schemas) loop
       if has_schema_privilege('training_plan_guard', r.nspname, 'create') then
@@ -871,7 +877,8 @@ begin
            aclexplode(att.attacl) a
       where n.nspname = any (module_schemas) and att.attacl is not null
         and a.grantee = (select oid from pg_roles where rolname = 'training_plan_guard')
-        and att.attrelid not in (to_regclass('tms.plan_line_needs'), to_regclass('tms.training_plans'))
+        and att.attrelid not in (to_regclass('tms.plan_line_needs'), to_regclass('tms.training_plans'),
+                                 to_regclass('tms.sessions'), to_regclass('tms.session_participants'))
     loop
       failures := failures || format('training_plan_guard must have no privilege on %s (WP-LD-02)', r.t);
     end loop;

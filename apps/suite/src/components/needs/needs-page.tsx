@@ -18,6 +18,7 @@ import {
   Card,
   Dialog,
   EmptyState,
+  FieldMarker,
   Icon,
   ListCard,
   ListCards,
@@ -702,6 +703,10 @@ export function NeedsPage(props: NeedsPageProps) {
           }}
           departmentLabel={props.departmentLabel}
           departmentRef={ref}
+          consolidating={closedByCycle}
+          today={view.today}
+          periodEnd={view.cycle.periodEnd}
+          day={day}
           t={t}
           message={messageOrOffer}
           fieldErrors={fieldErrors}
@@ -897,11 +902,28 @@ function DepartmentAnswers({
   );
 }
 
+/** A day `days` after `day` (YYYY-MM-DD), not later than `last`. */
+function dayAfter(day: string, days: number, last: string): string {
+  const next = new Date(`${day}T00:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + days);
+  const value = next.toISOString().slice(0, 10);
+  return value > last ? last : value;
+}
+
 function ReturnDialog(props: {
   open: boolean;
   onClose: () => void;
   departmentLabel: string;
   departmentRef: { cycleId: string; departmentId: string; version: number };
+  /**
+   * The needs are closed and the training plan is being built (WP-LD-02): returning reopens the department
+   * until a day of its own, which is then required. (The page offers «Return» once the cycle is closed only
+   * while the plan is consolidated.)
+   */
+  consolidating: boolean;
+  today: string;
+  periodEnd: string;
+  day: (d: string) => string;
   t: T;
   message: (error: Parameters<ReturnType<typeof useNeedsTexts>['message']>[0]) => string;
   fieldErrors: ReturnType<typeof useNeedsTexts>['fieldErrors'];
@@ -911,6 +933,8 @@ function ReturnDialog(props: {
   const router = useRouter();
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | undefined>(undefined);
+  const [deadline, setDeadline] = useState(() => dayAfter(props.today, 7, props.periodEnd));
+  const [deadlineError, setDeadlineError] = useState<string | undefined>(undefined);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   return (
@@ -920,7 +944,7 @@ function ReturnDialog(props: {
         if (!pending) props.onClose();
       }}
       title={t('manager.returnTitle', { department: props.departmentLabel })}
-      description={t('manager.returnBody')}
+      description={t(props.consolidating ? 'manager.returnBodyPlan' : 'manager.returnBody')}
       closeLabel={t('panel.close')}
       size="sm"
       tone="warning"
@@ -933,15 +957,25 @@ function ReturnDialog(props: {
           <Button
             disabled={pending}
             onClick={() => {
-              if (note.trim() === '') {
-                setError(t('fieldErrors.required'));
-                return;
-              }
+              const noteMissing = note.trim() === '';
+              const deadlineProblem = !props.consolidating
+                ? null
+                : !/^\d{4}-\d{2}-\d{2}$/.test(deadline)
+                  ? 'required'
+                  : deadline < props.today
+                    ? 'inPast'
+                    : deadline > props.periodEnd
+                      ? 'afterPeriod'
+                      : null;
+              if (noteMissing) setError(t('fieldErrors.required'));
+              if (deadlineProblem) setDeadlineError(t(`fieldErrors.${deadlineProblem}`));
+              if (noteMissing || deadlineProblem) return;
               setNotice(null);
               startTransition(async () => {
                 const result = await returnNeedsAction({
                   ...props.departmentRef,
                   note: note.trim(),
+                  ...(props.consolidating ? { deadline } : {}),
                 });
                 if (result.ok) {
                   props.onClose();
@@ -950,7 +984,9 @@ function ReturnDialog(props: {
                   return;
                 }
                 if (props.sessionRefused(result.error)) return;
-                setError(props.fieldErrors(result.error).note);
+                const fields = props.fieldErrors(result.error);
+                setError(fields.note);
+                setDeadlineError(fields.deadline);
                 setNotice(props.message(result.error));
               });
             }}
@@ -971,9 +1007,11 @@ function ReturnDialog(props: {
         <div className="flex flex-col gap-1.5">
           <label htmlFor="needs-return-note" className="text-sm font-semibold">
             {t('manager.returnLabel')}
+            <FieldMarker required marker={t('required')} />
           </label>
           <textarea
             id="needs-return-note"
+            aria-required="true"
             rows={4}
             maxLength={500}
             value={note}
@@ -996,6 +1034,25 @@ function ReturnDialog(props: {
             </p>
           ) : null}
         </div>
+        {props.consolidating ? (
+          <TextField
+            id="needs-return-deadline"
+            type="date"
+            required
+            label={t('manager.returnDeadlineLabel')}
+            hint={t('manager.returnDeadlineHint', { end: props.day(props.periodEnd) })}
+            value={deadline}
+            min={props.today}
+            max={props.periodEnd}
+            onChange={(event) => {
+              setDeadline(event.target.value);
+              setDeadlineError(undefined);
+            }}
+            error={deadlineError}
+            disabled={pending}
+            data-testid="needs-return-deadline"
+          />
+        ) : null}
       </div>
     </Dialog>
   );

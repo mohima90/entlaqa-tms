@@ -4,7 +4,7 @@ import { formatDisplayDate } from '@jadarat/platform-i18n/dates';
 import { routing } from '@jadarat/platform-i18n/routing';
 import type { CycleView } from '@jadarat/tms';
 import { earliestExtension } from '@jadarat/tms/planning-rules';
-import { Alert, Badge, Card, Icon, ProgressBar } from '@jadarat/ui';
+import { Alert, Badge, type BadgeTone, Card, Icon, ProgressBar, TabNav } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
@@ -15,6 +15,8 @@ import { PlanningHeader } from '../../../../../../components/planning/planning-h
 import { ProgressTable } from '../../../../../../components/planning/progress-table';
 import { RefreshOnReturn } from '../../../../../../components/latest-version';
 import { SuiteShell } from '../../../../../../components/suite-shell';
+import { PlanNotOpen } from '../../../../../../components/training-plan/plan-not-open';
+import { PlanTab } from '../../../../../../components/training-plan/plan-tab';
 import { cycleDepartmentHref } from '../../../../../../lib/needs-view';
 import { dayFormatter, formatAmount } from '../../../../../../lib/planning-format';
 import {
@@ -38,12 +40,32 @@ import {
   unitsLabel,
 } from '../../../../../../lib/structure-view';
 import { getSuiteContext } from '../../../../../../lib/suite-context';
+import {
+  trainingPlanErrorTexts,
+  trainingPlanQuery,
+  trainingPlanTexts,
+} from '../../../../../../lib/training-plan-queries';
+import {
+  type CycleTab,
+  cycleTab,
+  planGrouping,
+  planSubview,
+} from '../../../../../../lib/training-plan-view';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const PLAN_TONE: Record<string, BadgeTone> = {
+  draft: 'neutral',
+  sent_back: 'warning',
+  in_approval: 'info',
+  approved: 'success',
+};
+
 /**
- * One planning cycle (EP-PLN screen 5): its progress with status chips that filter the departments, and
- * the deadline extension while it is open. A draft has no page of its own any more (the Kawadir pattern,
+ * One planning cycle (EP-PLN screen 5) in two tabs: **Progress** — the departments' needs with status chips
+ * that filter them, and the deadline extension while it is open — and **Plan** (WP-LD-02, T-M3-06; FR-PLN-05,
+ * FR-PLN-06; `?tab=plan`, for whoever may read the training plan): before the plan exists, when it is built
+ * and «Close needs now»; then the plan lines and the budget by department. A draft has no page of its own any more (the Kawadir pattern,
  * WP-UX-01 a / T-M3-20): the member who may change it is sent to its Settings — or, from an address of the
  * old six-step set-up, to the place that replaced that step; readers see the departments it will cover.
  */
@@ -61,10 +83,13 @@ export default async function PlanCyclePage({
   const t = await getTranslations({ locale, namespace: 'planning' });
   const path = `${PLANNING_PATHS.cycles}/${cycleId}`;
 
+  const plans = await getTranslations({ locale, namespace: 'trainingPlan' });
   let title = t('list.title');
   let description: ReactNode;
   let content: ReactNode;
   let actions: ReactNode = null;
+  let tabs: ReactNode = null;
+  const requestedTab: CycleTab = cycleTab(query.tab);
   if (!context.live) {
     content = (
       <Alert tone="info" data-testid="planning-not-configured">
@@ -72,8 +97,82 @@ export default async function PlanCyclePage({
       </Alert>
     );
   } else {
-    const result = await planCycleQuery({ id: cycleId });
-    if (!result.ok) {
+    const [result, planResult] = await Promise.all([
+      planCycleQuery({ id: cycleId }),
+      trainingPlanQuery({ cycleId }),
+    ]);
+    // The Plan tab is for whoever may read the training plan (organization-wide or for their departments).
+    const planView = planResult.ok ? planResult.value : null;
+    const tab: CycleTab = requestedTab === 'plan' && planView ? 'plan' : 'progress';
+    const day = dayFormatter(locale, context.regional.dateDisplay);
+    const planContent = async () => {
+      if (!planView) return null;
+      if (planView.plan === null) {
+        return (
+          <PlanNotOpen
+            locale={locale}
+            cycleId={cycleId}
+            readiness={planView.readiness ?? { ready: false, reason: 'not_launched', waiting: 0 }}
+            deadline={day(planView.cycle.latestDeadline)}
+            canOpen={planView.can.open}
+            texts={trainingPlanTexts(locale)}
+            errors={await trainingPlanErrorTexts(locale)}
+          />
+        );
+      }
+      return (
+        <PlanTab
+          locale={locale}
+          view={planView}
+          texts={trainingPlanTexts(locale)}
+          errors={await trainingPlanErrorTexts(locale)}
+          initialSubview={planSubview(query.view)}
+          initialGrouping={planGrouping(query.group)}
+        />
+      );
+    };
+    if (planView) {
+      tabs = (
+        <TabNav
+          variant="underline"
+          label={plans('tabs.label')}
+          current={tab}
+          data-testid="cycle-tabs"
+          items={[
+            { key: 'progress', href: `/${locale}${path}`, label: plans('tabs.progress') },
+            {
+              key: 'plan',
+              href: `/${locale}${path}?tab=plan`,
+              label: plans('tabs.plan'),
+              count: planView.plan ? planView.lines.length : undefined,
+            },
+          ]}
+        />
+      );
+    }
+    const planBadge = planView?.plan ? (
+      <Badge tone={PLAN_TONE[planView.plan.status] ?? 'neutral'} dot data-testid="plan-status">
+        {plans(`planStatus.${planView.plan.status}`)}
+      </Badge>
+    ) : null;
+    if (!result.ok && planView && toClientError(result.error).code === 'FORBIDDEN') {
+      // A planner limited to some departments may read the plan without the cycle's progress.
+      title = localName(locale, planView.cycle.name);
+      description = (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[14.5px]">
+          {planBadge}
+          <span className="inline-flex items-center gap-1.5">
+            <Icon name="calendar" className="size-4" />
+            {plans('period', {
+              start: day(planView.cycle.periodStart),
+              end: day(planView.cycle.periodEnd),
+            })}
+          </span>
+        </div>
+      );
+      tabs = null;
+      content = await planContent();
+    } else if (!result.ok) {
       const error = toClientError(result.error);
       if (error.code === 'UNAUTHENTICATED') redirect(`/${locale}/sign-in`);
       if (error.code === 'NOT_FOUND') notFound();
@@ -90,7 +189,6 @@ export default async function PlanCyclePage({
         );
     } else {
       const view = result.value;
-      const day = dayFormatter(locale, context.regional.dateDisplay);
       title = localName(locale, { ar: view.cycle.nameAr, en: view.cycle.nameEn });
       // A draft the member may change: its Settings (old set-up addresses go where their step went).
       if (view.editable) redirect(legacyStepHref(locale, cycleId, query.step));
@@ -100,6 +198,7 @@ export default async function PlanCyclePage({
           <Badge tone={CYCLE_TONE[view.status]} dot data-testid="cycle-status">
             {t(`status.${view.status}`)}
           </Badge>
+          {planBadge}
           <span className="inline-flex items-center gap-1.5">
             <Icon name="calendar" className="size-4" />
             {t('cycle.deadline')}:{' '}
@@ -142,19 +241,25 @@ export default async function PlanCyclePage({
           />
         );
       }
-      content = await Overview({
-        locale,
-        view,
-        launched: query.launched === '1',
-        display: context.regional.dateDisplay,
-      });
+      content =
+        tab === 'plan'
+          ? await planContent()
+          : await Overview({
+              locale,
+              view,
+              launched: query.launched === '1',
+              display: context.regional.dateDisplay,
+            });
     }
   }
 
   return (
     <SuiteShell locale={locale} context={context} current="planningCycles" path={path}>
       <PlanningHeader locale={locale} title={title} description={description} actions={actions} />
-      <div className="flex flex-col gap-6">{content}</div>
+      <div className="flex flex-col gap-6">
+        {tabs}
+        {content}
+      </div>
       <RefreshOnReturn />
     </SuiteShell>
   );

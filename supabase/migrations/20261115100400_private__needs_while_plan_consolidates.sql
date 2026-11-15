@@ -5,14 +5,16 @@
 --
 --   private.plan_cycles_guard            an open cycle also closes BEFORE its deadline when the L&D Manager
 --                                        (tms.plan_cycle.manage) closes it and every department in scope has
---                                        submitted («Close needs now»). Otherwise as 20261112110000.
+--                                        submitted («Close needs now»; the departments' rows are locked first, so a
+--                                        head's recall in flight is not missed). Otherwise as 20261112110000.
 --   private.plan_cycle_department_guard  while a draft training plan is open for the closed cycle
 --                                        (private.plan_cycle_consolidating, migration 20261115100200) the L&D Manager
 --                                        may return a submitted department for changes — with a note AND a deadline
 --                                        of its own, today or later — or reopen a department with such a deadline;
 --                                        its head changes and resubmits until that deadline; a recall is no longer
 --                                        possible. Otherwise as 20261105100100.
---   private.plan_needs_entry_open        needs entry is also open for such a department until its own deadline.
+--   private.plan_needs_entry_open        needs entry is also open for such a department until its own deadline
+--                                        (never for a submitted one).
 -- What a resubmitted department changed reaches the plan when L&D adds it (the application; nothing moves on its own).
 -- Expand-first: the previous release never opens a plan, so nothing it does changes.
 
@@ -109,13 +111,18 @@ begin
         return new;
       end if;
       -- «Close needs now» (WP-LD-02, PO decision Q1 = A, 14 Nov 2026): the L&D Manager closes the needs before the
-      -- deadline once every department in scope has submitted.
-      if private.may_manage_plan_cycles(new.tenant_id)
-         and exists (select 1 from tms.plan_cycle_departments d where d.tenant_id = new.tenant_id and d.cycle_id = new.id)
-         and not exists (select 1 from tms.plan_cycle_departments d
-                         where d.tenant_id = new.tenant_id and d.cycle_id = new.id and d.status <> 'submitted') then
-        new.closed_at := now();
-        return new;
+      -- deadline once every department in scope has submitted. The departments' rows are locked first, so a head's
+      -- recall still in flight is waited for and then seen (each statement below reads anew) — and a recall that
+      -- comes later waits for this close and then finds the needs closed.
+      if private.may_manage_plan_cycles(new.tenant_id) then
+        perform 1 from tms.plan_cycle_departments d where d.tenant_id = new.tenant_id and d.cycle_id = new.id
+          for update;
+        if exists (select 1 from tms.plan_cycle_departments d where d.tenant_id = new.tenant_id and d.cycle_id = new.id)
+           and not exists (select 1 from tms.plan_cycle_departments d
+                           where d.tenant_id = new.tenant_id and d.cycle_id = new.id and d.status <> 'submitted') then
+          new.closed_at := now();
+          return new;
+        end if;
       end if;
       raise exception 'an open planning cycle closes once every deadline has passed, or earlier once every department has submitted'
         using errcode = 'JK001';
@@ -299,9 +306,12 @@ as $$
       and private.plan_cycle_today(p_tenant_id) <= private.plan_department_deadline(p_tenant_id, p_cycle_id, p_department_id))
   or exists (
     -- WP-LD-02: a department returned for changes, or reopened, while the plan is consolidated — until its own deadline.
+    -- A submitted department is not open (no recall once the needs are closed), whatever its deadline: an extension
+    -- given before «Close needs now» does not reopen it.
     select 1 from tms.plan_cycles c
     join tms.plan_cycle_departments d on d.tenant_id = c.tenant_id and d.cycle_id = c.id
     where c.tenant_id = p_tenant_id and c.id = p_cycle_id and c.status = 'closed'
-      and d.department_id = p_department_id and d.deadline_on >= private.plan_cycle_today(p_tenant_id)
+      and d.department_id = p_department_id and d.status <> 'submitted'
+      and d.deadline_on >= private.plan_cycle_today(p_tenant_id)
       and private.plan_cycle_consolidating(p_tenant_id, p_cycle_id));
 $$;

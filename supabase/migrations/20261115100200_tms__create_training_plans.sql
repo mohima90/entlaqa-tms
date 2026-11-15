@@ -16,9 +16,10 @@
 --                             `topic:<normalized topic>`); edited_at says L&D changed the line by hand, so a
 --                             resubmitted need never joins it silently
 --   tms.plan_line_needs       which line holds a submitted need — at most one (the application puts every submitted
---                             need in exactly one line). seats / named are what the department submitted (a
---                             snapshot taken here, so the plan's figures do not move while a department is
---                             returned for changes; refreshed once it resubmits and L&D adds its needs)
+--                             need in exactly one line). seats / named / topic / course_id are what the department
+--                             submitted (a snapshot taken here, so the plan's figures do not move while a department
+--                             is returned for changes; refreshed once it resubmits and L&D adds its needs — a need
+--                             whose topic or course changed then moves to the line built from its new one)
 --   tms.plan_budget_reasons   the one-line reason for a department over its envelope (BR-PLN-f: warns, never blocks)
 -- Who (policies; the server actions check the same first)
 --   read    tms.training_plan.read / .manage organization-wide (L&D Manager, Training Coordinator), or a
@@ -27,8 +28,10 @@
 --   write   tms.training_plan.manage organization-wide (L&D Manager), or department-limited: a line only when every
 --           need in it belongs to its units, a reason only for its units. Opening the plan also needs
 --           tms.plan_cycle.manage organization-wide (cycles stay the organization-wide L&D Manager's)
+-- A department-limited planner reads the plans, and adds lines, only of cycles in which one of its units takes part.
 -- Rules (guards): a plan is opened for a CLOSED cycle only and starts as a draft; its lines, needs and reasons change
--- only while it is a draft (or sent back, WP-LD-03): frozen in approval, locked once approved (JK008); only needs of a
+-- only while it is a draft (or sent back, WP-LD-03): frozen in approval, locked once approved (JK008) — and never
+-- when the plan cannot be found for the caller's organization (fail closed); only needs of a
 -- department whose needs are submitted enter the plan (JK009); a line holding needs cannot be deleted (move or merge
 -- them first: the foreign key refuses it).
 -- Which line a need is in is decided by the application; a line's departments are read through
@@ -37,7 +40,9 @@
 -- departments of a line without reading tms.plan_line_needs under its own policies (that would recurse). It returns
 -- the department ids of one line of the caller's organization, for signed-in members only. The same role answers
 -- private.plan_cycle_consolidating (is a draft plan open for a cycle?), which the needs guards ask for a department
--- head who cannot read the plan (migration 20261115100400).
+-- head who cannot read the plan (migration 20261115100400), and private.training_plan_status (the state of a plan of
+-- the caller's organization), which the guards ask so a change through a foreign key (a need a head removes while
+-- returned) is checked against the plan as well.
 -- Custom SQLSTATEs: JK008 the plan cannot change in its state · JK009 not ready (needs not closed / not submitted).
 -- Expand-first: new tables, a new unique constraint on tms.plan_needs, new functions and a new role.
 
@@ -147,9 +152,11 @@ create table tms.plan_line_needs (
   line_id uuid not null,
   need_id uuid not null,
   department_id uuid not null,
-  -- What the department submitted (set by the guard from the need: seats and named people).
+  -- What the department submitted (set by the guard from the need: seats, named people, topic and course).
   seats integer not null default 1 constraint plan_line_needs_seats_check check (seats between 1 and 100000),
   named integer not null default 0 constraint plan_line_needs_named_check check (named between 0 and 100000),
+  topic text,
+  course_id uuid,
   -- [std]
   created_at timestamptz not null default now(),
   created_by uuid,
@@ -233,7 +240,7 @@ $$;
 grant training_plan_guard to current_user;
 grant usage on schema private, tms to training_plan_guard;
 grant select (tenant_id, line_id, department_id) on tms.plan_line_needs to training_plan_guard;
-grant select (tenant_id, cycle_id, status) on tms.training_plans to training_plan_guard;
+grant select (id, tenant_id, cycle_id, status) on tms.training_plans to training_plan_guard;
 create policy plan_line_needs_training_plan_guard_read on tms.plan_line_needs for select
   to training_plan_guard using (true);
 create policy training_plans_training_plan_guard_read on tms.training_plans for select
@@ -275,16 +282,37 @@ $$;
 comment on function private.plan_cycle_consolidating(uuid, uuid) is
   'SECURITY-RELEVANT (WP-LD-02). A training plan of the cycle is open for consolidation (draft or sent back) — asked by the needs guards for a department head who cannot read the plan. Owner training_plan_guard.';
 
+-- The state of a plan of the caller's organization (signed-in members only); null when there is none.
+create or replace function private.training_plan_status(p_tenant_id uuid, p_plan_id uuid)
+returns text
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select p.status
+  from tms.training_plans p
+  where private.request_claims() ->> 'role' = 'authenticated'
+    and p_tenant_id = private.current_tenant_id()
+    and p.tenant_id = p_tenant_id and p.id = p_plan_id;
+$$;
+
+comment on function private.training_plan_status(uuid, uuid) is
+  'SECURITY-RELEVANT (WP-LD-02). The state of one training plan of the caller''s organization (signed-in members only) — for the plan''s guards, also when the caller cannot read the plan. Owner training_plan_guard.';
+
 -- The new owner needs CREATE on the schema for the change of owner (hosted: a non-superuser migration role), only
 -- for these statements.
 grant create on schema private to training_plan_guard;
 alter function private.plan_line_departments(uuid) owner to training_plan_guard;
 alter function private.plan_cycle_consolidating(uuid, uuid) owner to training_plan_guard;
+alter function private.training_plan_status(uuid, uuid) owner to training_plan_guard;
 revoke create on schema private from training_plan_guard;
 revoke all on function private.plan_line_departments(uuid) from public;
 revoke all on function private.plan_cycle_consolidating(uuid, uuid) from public;
+revoke all on function private.training_plan_status(uuid, uuid) from public;
 grant execute on function private.plan_line_departments(uuid) to authenticated;
 grant execute on function private.plan_cycle_consolidating(uuid, uuid) to authenticated;
+grant execute on function private.training_plan_status(uuid, uuid) to authenticated;
 
 -- ---------------------------------------------------------------------------------------------------
 -- Guards
@@ -342,7 +370,10 @@ create trigger training_plans_guard before insert or update or delete on tms.tra
 create trigger training_plans_stamp_row before insert or update on tms.training_plans
   for each row execute function private.stamp_row();
 
--- The plan of a line, a link or a reason must be open for consolidation (draft or sent back).
+-- The plan of a line, a link or a reason must be open for consolidation (draft or sent back). Fails closed: a plan
+-- the guard cannot find (another organization's, or none) changes nothing. Members ask through
+-- private.training_plan_status (a head removing a need while returned cannot read the plan); platform operations
+-- (the owner) read the table.
 create or replace function private.training_plan_editable(p_tenant_id uuid, p_plan_id uuid)
 returns void
 language plpgsql
@@ -352,8 +383,15 @@ as $$
 declare
   v_status text;
 begin
-  select p.status into v_status from tms.training_plans p where p.tenant_id = p_tenant_id and p.id = p_plan_id;
-  if v_status is not null and v_status not in ('draft', 'sent_back') then
+  if current_user = 'authenticated' then
+    v_status := private.training_plan_status(p_tenant_id, p_plan_id);
+  else
+    select p.status into v_status from tms.training_plans p where p.tenant_id = p_tenant_id and p.id = p_plan_id;
+  end if;
+  if v_status is null then
+    raise insufficient_privilege using message = 'the training plan is not known';
+  end if;
+  if v_status not in ('draft', 'sent_back') then
     raise exception 'the training plan is frozen while it waits for approval and locked once approved'
       using errcode = 'JK008';
   end if;
@@ -428,12 +466,15 @@ begin
     -- A department returned for changes: its figures stay as submitted until it resubmits.
     new.seats := old.seats;
     new.named := old.named;
+    new.topic := old.topic;
+    new.course_id := old.course_id;
     return new;
   end if;
   -- The snapshot of what the department submitted (never taken from the statement).
   select n.people_count,
-         (select count(*) from tms.plan_need_people p where p.tenant_id = n.tenant_id and p.need_id = n.id)
-    into new.seats, new.named
+         (select count(*) from tms.plan_need_people p where p.tenant_id = n.tenant_id and p.need_id = n.id),
+         n.topic, n.course_id
+    into new.seats, new.named, new.topic, new.course_id
   from tms.plan_needs n where n.tenant_id = new.tenant_id and n.id = new.need_id;
   if new.seats is null then
     raise insufficient_privilege using message = 'the need is not readable';
@@ -443,7 +484,7 @@ end
 $$;
 
 comment on function private.plan_line_needs_guard() is
-  'SECURITY-RELEVANT (WP-LD-02). Only submitted needs enter the plan, while it is a draft; seats and named people are taken from the need.';
+  'SECURITY-RELEVANT (WP-LD-02). Only submitted needs enter the plan, while it is a draft; seats, named people, topic and course are taken from the need.';
 
 revoke all on function private.plan_line_needs_guard() from public;
 
@@ -487,9 +528,12 @@ create policy tenant_isolation on tms.training_plans
   as restrictive for all to authenticated
   using (tenant_id = (select private.current_tenant_id()))
   with check (tenant_id = (select private.current_tenant_id()));
+-- A department-limited planner: the plans of the cycles in which one of its units takes part.
 create policy training_plans_read on tms.training_plans for select to authenticated
   using ((select private.may_read_training_plan((select private.current_tenant_id())))
-         or cardinality((select private.training_plan_units((select private.current_tenant_id()), false))) > 0);
+         or exists (select 1 from tms.plan_cycle_departments d
+                    where d.tenant_id = tms.training_plans.tenant_id and d.cycle_id = tms.training_plans.cycle_id
+                      and d.department_id = any ((select private.training_plan_units((select private.current_tenant_id()), false))::uuid[])));
 create policy training_plans_insert on tms.training_plans for insert to authenticated
   with check (private.may_manage_training_plan(tenant_id) and private.may_manage_plan_cycles(tenant_id));
 grant select on tms.training_plans to authenticated;
@@ -511,10 +555,13 @@ create policy plan_lines_read on tms.plan_lines for select to authenticated
          or (created_by = (select private.request_person_id())
              and cardinality((select private.training_plan_units((select private.current_tenant_id()), false))) > 0
              and cardinality(private.plan_line_departments(id)) = 0));
--- … and creates a line for needs of its units (the needs are checked one by one when they move in).
+-- … and creates a line for needs of its units, in the plan of a cycle in which one of its units takes part (the
+-- needs are checked one by one when they move in; the application adds the line and its need together).
 create policy plan_lines_insert on tms.plan_lines for insert to authenticated
   with check ((select private.may_manage_training_plan((select private.current_tenant_id())))
-              or cardinality((select private.training_plan_units((select private.current_tenant_id()), true))) > 0);
+              or exists (select 1 from tms.plan_cycle_departments d
+                         where d.tenant_id = tms.plan_lines.tenant_id and d.cycle_id = tms.plan_lines.cycle_id
+                           and d.department_id = any ((select private.training_plan_units((select private.current_tenant_id()), true))::uuid[])));
 -- … and changes or removes a line only when every need in it is of its units (an empty line: its own).
 create policy plan_lines_update on tms.plan_lines for update to authenticated
   using ((select private.may_manage_training_plan((select private.current_tenant_id())))

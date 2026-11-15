@@ -321,8 +321,12 @@ async function departmentState(
     department,
     today,
     deadline,
+    // While consolidated, only a department returned or reopened (not submitted) is open: a submitted one stays
+    // closed whatever its deadline (an extension given before «Close needs now» reopens nothing; no recall).
     open: consolidating
-      ? department.deadline !== null && today <= department.deadline
+      ? department.status !== 'submitted' &&
+        department.deadline !== null &&
+        today <= department.deadline
       : entryOpen(cycle.status, deadline, today),
     consolidating,
   });
@@ -503,6 +507,9 @@ export function myNeedsQueryDefinition(): QueryDefinition<
         const department = byId.get(row.departmentId);
         // The database already limited the rows to the effective head; the rule is repeated here.
         if (!department || effectiveHead(tree, row.departmentId)?.personId !== personId) return [];
+        // Once the needs are closed a submitted department has nothing left to do (the database already leaves it
+        // out; repeated here).
+        if (row.consolidating && row.status === 'submitted') return [];
         // A department returned or reopened while the plan is consolidated: its own deadline (WP-LD-02).
         const deadline =
           row.consolidating && row.deadline !== null

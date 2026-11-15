@@ -12,6 +12,7 @@ drop function private.plan_line_needs_guard();
 drop function private.plan_lines_guard();
 drop function private.training_plan_editable(uuid, uuid);
 drop function private.training_plans_guard();
+drop function private.training_plan_status(uuid, uuid);
 drop function private.plan_cycle_consolidating(uuid, uuid);
 drop function private.plan_line_departments(uuid);
 

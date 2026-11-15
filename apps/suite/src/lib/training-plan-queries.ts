@@ -11,7 +11,20 @@ import { flattenTexts } from './flatten-texts';
  * FR-PLN-06). The definition and its tests live in modules/tms (consolidation-definitions.ts); the actions are
  * `@jadarat/tms/actions/consolidation`.
  */
-export const trainingPlanQuery = defineQuery(planQueryDefinition());
+const planThroughRead = defineQuery(planQueryDefinition('read'));
+const planThroughManage = defineQuery(planQueryDefinition('manage'));
+
+/**
+ * Reading the plan needs tms.training_plan.read OR .manage (a custom role may hold manage alone): asked through
+ * read first and, refused for a missing permission, through manage.
+ */
+export async function trainingPlanQuery(
+  input: Parameters<typeof planThroughRead>[0],
+): ReturnType<typeof planThroughRead> {
+  const read = await planThroughRead(input);
+  if (read.ok || read.error.code !== 'FORBIDDEN') return read;
+  return planThroughManage(input);
+}
 
 /** Message keys the training plan's actions can return (platform + planning + training plan registries). */
 export const TRAINING_PLAN_ERROR_KEYS: readonly string[] = [

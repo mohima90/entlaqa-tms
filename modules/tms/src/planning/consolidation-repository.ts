@@ -47,6 +47,13 @@ export function planRefusalOf(error: unknown): PlanRefusal | null {
   }
 }
 
+/** Thrown inside `guarded` to undo its savepoint with an outcome (e.g. fewer rows changed than asked). */
+class Refused extends Error {
+  constructor(readonly refusal: PlanRefusal) {
+    super(refusal);
+  }
+}
+
 /** Runs `fn` in a savepoint so a refused statement leaves the transaction usable; refusals become outcomes. */
 async function guarded<T>(
   tx: UserTx,
@@ -55,6 +62,7 @@ async function guarded<T>(
   try {
     return { ok: true, value: await tx.transaction(async () => fn()) };
   } catch (error) {
+    if (error instanceof Refused) return { ok: false, refusal: error.refusal };
     const refusal = planRefusalOf(error);
     if (refusal) return { ok: false, refusal };
     throw error;
@@ -216,8 +224,7 @@ export interface NewLine {
   readonly durationHours: number | null;
 }
 
-/** A new line at the end of the plan; `edited`: L&D made it (a need moved out), not the needs. */
-export async function insertLine(
+async function insertLineRow(
   tx: UserTx,
   plan: { readonly id: string; readonly cycleId: string },
   line: NewLine,
@@ -233,7 +240,41 @@ export async function insertLine(
             coalesce((select max(sort_order) + 1 from tms.plan_lines where plan_id = ${plan.id}::uuid), 0),
             ${edited ? sql`now()` : sql`null`})
     returning id`);
-  return String(row?.id);
+  if (!row) throw new Refused('not_allowed');
+  return String(row.id);
+}
+
+/**
+ * A new line at the end of the plan (its needs follow in the same transaction); `edited`: L&D made it, not the
+ * needs. A refusal (the plan frozen, a cycle outside a department-limited planner's units, a check) is an outcome.
+ */
+export async function insertLine(
+  tx: UserTx,
+  plan: { readonly id: string; readonly cycleId: string },
+  line: NewLine,
+  edited: boolean,
+): Promise<{ ok: true; value: string } | { ok: false; refusal: PlanRefusal }> {
+  return guarded(tx, () => insertLineRow(tx, plan, line, edited));
+}
+
+/**
+ * A new line L&D made, holding needs already in the plan (moved out of their line), in ONE step: the line and the
+ * move are kept together or not at all — never an empty line left behind.
+ */
+export async function insertLineWithNeeds(
+  tx: UserTx,
+  plan: { readonly id: string; readonly cycleId: string },
+  line: NewLine,
+  needIds: readonly string[],
+): Promise<{ ok: true; value: string } | { ok: false; refusal: PlanRefusal }> {
+  return guarded(tx, async () => {
+    const lineId = await insertLineRow(tx, plan, line, true);
+    const rows = await tx.execute(sql`
+      update tms.plan_line_needs set line_id = ${lineId}::uuid
+      where need_id = any (${pgArray(needIds)}::uuid[]) returning id`);
+    if (rows.length !== needIds.length) throw new Refused('not_allowed');
+    return lineId;
+  });
 }
 
 export type LineWriteOutcome =
@@ -323,12 +364,15 @@ export interface LinkRecord {
   /** What the department submitted (snapshot). */
   readonly seats: number;
   readonly named: number;
+  /** The need's topic and course when it was added (snapshot; null: not taken). */
+  readonly topic: string | null;
+  readonly courseId: string | null;
 }
 
 /** Which line holds which need — the rows the caller may read. */
 export async function listLinks(tx: UserTx, planId: string): Promise<LinkRecord[]> {
   const rows = await tx.execute(sql`
-    select need_id, line_id, department_id, seats, named from tms.plan_line_needs
+    select need_id, line_id, department_id, seats, named, topic, course_id from tms.plan_line_needs
     where plan_id = ${planId}::uuid order by created_at, id`);
   return rows.map((r: Row) => ({
     needId: String(r.need_id),
@@ -336,6 +380,8 @@ export async function listLinks(tx: UserTx, planId: string): Promise<LinkRecord[
     departmentId: String(r.department_id),
     seats: Number(r.seats),
     named: Number(r.named),
+    topic: text(r.topic),
+    courseId: text(r.course_id),
   }));
 }
 
@@ -376,7 +422,21 @@ export async function moveLinks(
   });
 }
 
-/** Takes the seats and named people again from the needs (a department that resubmitted). */
+/** Takes needs out of their lines (their topic or course changed: they are placed again). All or none. */
+export async function removeLinks(
+  tx: UserTx,
+  needIds: readonly string[],
+): Promise<{ ok: true; value: number } | { ok: false; refusal: PlanRefusal }> {
+  if (needIds.length === 0) return { ok: true, value: 0 };
+  return guarded(tx, async () => {
+    const rows = await tx.execute(sql`
+      delete from tms.plan_line_needs where need_id = any (${pgArray(needIds)}::uuid[]) returning id`);
+    if (rows.length !== needIds.length) throw new Refused('not_allowed');
+    return rows.length;
+  });
+}
+
+/** Takes the seats, named people, topic and course again from the needs (a department that resubmitted). */
 export async function refreshLinks(
   tx: UserTx,
   needIds: readonly string[],

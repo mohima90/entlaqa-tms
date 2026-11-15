@@ -52,6 +52,7 @@ import {
   SetBudgetReasonInput,
   SetLinesQuarterInput,
   UpdatePlanLineInput,
+  amountMilli,
   attachNeeds,
   budgetCheck,
   budgetState,
@@ -65,12 +66,12 @@ import {
   lookAlikePairs,
   needAnswers,
   planFormFields,
-  toMilli,
   topicKey,
 } from './consolidation-model';
 import * as plans from './consolidation-repository';
 import { amountText, effectiveCycleStatus, structureName } from './model';
 import * as repo from './repository';
+import { canonicalAmount } from './rules';
 
 /**
  * The training plan: consolidation and the budget check (WP-LD-02, T-M3-06; FR-PLN-05, FR-PLN-06, FR-IAM-08 R1
@@ -363,6 +364,63 @@ function lineOutcomeError(outcome: Exclude<plans.LineWriteOutcome['outcome'], 'o
 
 const editable = (status: PlanStatus) => status === 'draft' || status === 'sent_back';
 
+const TITLE_MAX = 500;
+
+/**
+ * A line's title from a need's topic: at most 500 characters as the database counts them (code points — never half
+ * of a surrogate pair), without the spaces a cut may leave at its end (the title check wants it trimmed).
+ */
+export function lineTitle(text: string): string {
+  return Array.from(text.trim()).slice(0, TITLE_MAX).join('').trim();
+}
+
+/** The departments with a need in each line (of the links the caller reads). */
+function departmentsByLine(links: readonly plans.LinkRecord[]): Map<string, Set<string>> {
+  const result = new Map<string, Set<string>>();
+  for (const link of links) {
+    result.set(link.lineId, (result.get(link.lineId) ?? new Set()).add(link.departmentId));
+  }
+  return result;
+}
+
+/** What a resubmitted department changed, as a planner may act on it (D14). */
+interface ResubmittedChanges {
+  /** Submitted needs in no line yet. */
+  readonly pending: readonly plans.PlanNeedRecord[];
+  /** Needs whose topic or course changed since they were added: they leave their line and are placed again. */
+  readonly regrouped: readonly plans.PlanNeedRecord[];
+  /** Needs whose seats or named people changed: taken again. */
+  readonly stale: readonly plans.PlanNeedRecord[];
+}
+
+/**
+ * Compares the submitted needs with what their lines hold (the snapshot taken when they were added). A need in a
+ * line the planner may not change (a department-limited planner and a line shared with another department) is
+ * left to the organization-wide L&D Manager: the planner could not move or refresh it.
+ */
+function resubmittedChanges(
+  submitted: readonly plans.PlanNeedRecord[],
+  linked: ReadonlyMap<string, plans.LinkRecord>,
+  changeable: (lineId: string) => boolean,
+): ResubmittedChanges {
+  const pending: plans.PlanNeedRecord[] = [];
+  const regrouped: plans.PlanNeedRecord[] = [];
+  const stale: plans.PlanNeedRecord[] = [];
+  for (const need of submitted) {
+    const link = linked.get(need.id);
+    if (link === undefined) {
+      pending.push(need);
+      continue;
+    }
+    if (!changeable(link.lineId)) continue;
+    const before =
+      link.topic === null ? null : groupKeyOf({ courseId: link.courseId, topic: link.topic });
+    if (before !== null && before !== groupKeyOf(need)) regrouped.push(need);
+    else if (link.seats !== need.peopleCount || link.named !== need.named) stale.push(need);
+  }
+  return { pending, regrouped, stale };
+}
+
 /** The needs form's fields consolidation reads (quarter, priority, delivery type, category) and its categories. */
 async function formFieldsOf(
   tx: UserTx,
@@ -419,7 +477,7 @@ async function newLineValues(
     sameCurrency && value !== null && value !== undefined ? amountText(value) : null;
   return {
     groupKey: draft.groupKey,
-    title: draft.title.slice(0, 500),
+    title: lineTitle(draft.title),
     courseId: draft.courseId,
     deliveryType: draft.deliveryType ?? course?.deliveryType ?? null,
     category: draft.category,
@@ -443,12 +501,9 @@ async function insertDraftLines(
   const links: { lineId: string; needId: string; departmentId: string }[] = [];
   const lineIds: string[] = [];
   for (const draft of drafts) {
-    const lineId = await plans.insertLine(
-      tx,
-      plan,
-      await newLineValues(tx, draft, currency),
-      false,
-    );
+    const line = await plans.insertLine(tx, plan, await newLineValues(tx, draft, currency), false);
+    if (!line.ok) return err(refusalError(line.refusal));
+    const lineId = line.value;
     lineIds.push(lineId);
     for (const needId of draft.needIds) {
       const need = needs.get(needId);
@@ -473,10 +528,16 @@ const audit = (action: string, planId: string, data: Record<string, unknown>): A
 
 const priorityKeys = ['critical', 'high', 'medium', 'low', 'none'] as const;
 
-/** The Plan tab and the budget view of a cycle (design screens 1–3), for the viewer's scope. */
-export function planQueryDefinition(): QueryDefinition<typeof CyclePlanRef, PlanView, UserTx> {
+/**
+ * The Plan tab and the budget view of a cycle (design screens 1–3), for the viewer's scope. Reading the plan needs
+ * tms.training_plan.read OR .manage (a custom role may hold manage alone): the app asks `through` read and, refused,
+ * through manage — the view is the same (its scope is the union of both permissions' grants).
+ */
+export function planQueryDefinition(
+  through: 'read' | 'manage' = 'read',
+): QueryDefinition<typeof CyclePlanRef, PlanView, UserTx> {
   return {
-    permission: PLAN_READ,
+    permission: through === 'read' ? PLAN_READ : PLAN_MANAGE,
     input: CyclePlanRef,
     scoped: true,
     handler: async ({ ctx, input }) => {
@@ -520,7 +581,6 @@ export function planQueryDefinition(): QueryDefinition<typeof CyclePlanRef, Plan
       const links = plan ? await plans.listLinks(ctx.tx, plan.id) : [];
       const needs = await plans.listCycleNeeds(ctx.tx, cycle.id);
       const needById = new Map(needs.map((n) => [n.id, consolidationNeed(n, form.fields)]));
-      const needRecord = new Map(needs.map((n) => [n.id, n]));
 
       const linksByLine = new Map<string, plans.LinkRecord[]>();
       for (const link of links) {
@@ -636,28 +696,28 @@ export function planQueryDefinition(): QueryDefinition<typeof CyclePlanRef, Plan
 
       const inPlan = lineViews.filter((l) => l.status === 'in_plan');
       const sum = (values: readonly (string | null)[]) =>
-        fromMilli(values.reduce((n, v) => n + (toMilli(v) ?? 0n), 0n));
+        fromMilli(values.reduce((n, v) => n + (amountMilli(v) ?? 0n), 0n));
       const summaryCost = scope.organization
         ? sum(inPlan.map((l) => l.cost))
         : sum(budgetRows.map((r) => r.cost));
 
-      // Needs of departments that resubmitted: not in a line yet, or changed since they were added.
+      // Needs of departments that resubmitted: not in a line yet, or changed since they were added (their seats,
+      // or their topic or course). A department-limited viewer is told only of what it can add itself: a need in
+      // a line shared with another department is the organization-wide L&D Manager's to refresh.
       const linked = new Map(links.map((l) => [l.needId, l]));
-      const pendingNeeds = needs.filter(
-        (n) =>
-          plan !== null &&
-          n.departmentStatus === 'submitted' &&
-          inScope(scope, n.departmentId) &&
-          !linked.has(n.id),
+      const lineDepartments = departmentsByLine(links);
+      const changes = resubmittedChanges(
+        plan === null
+          ? []
+          : needs.filter(
+              (n) => n.departmentStatus === 'submitted' && inScope(scope, n.departmentId),
+            ),
+        linked,
+        (lineId) =>
+          scope.organization || lineInScope(writeScope, [...(lineDepartments.get(lineId) ?? [])]),
       );
-      const changedLinks = links.filter((l) => {
-        const n = needRecord.get(l.needId);
-        return (
-          n?.departmentStatus === 'submitted' &&
-          inScope(scope, l.departmentId) &&
-          (n.peopleCount !== l.seats || n.named !== l.named)
-        );
-      });
+      const pendingNeeds = changes.pending;
+      const changedLinks = [...changes.regrouped, ...changes.stale];
       const pendingDepartments = [
         ...new Set([...pendingNeeds, ...changedLinks].map((x) => x.departmentId)),
       ];
@@ -777,12 +837,12 @@ function headOf(
 }
 
 function scopedTotal(rows: readonly PlanBudgetRow[]): PlanView['budget']['total'] {
-  const cost = fromMilli(rows.reduce((n, r) => n + (toMilli(r.cost) ?? 0n), 0n));
+  const cost = fromMilli(rows.reduce((n, r) => n + (amountMilli(r.cost) ?? 0n), 0n));
   const withEnvelope = rows.filter((r) => r.envelope !== null);
   const envelope =
     withEnvelope.length === 0
       ? null
-      : fromMilli(withEnvelope.reduce((n, r) => n + (toMilli(r.envelope) ?? 0n), 0n));
+      : fromMilli(withEnvelope.reduce((n, r) => n + (amountMilli(r.envelope) ?? 0n), 0n));
   return {
     people: rows.reduce((n, r) => n + r.people, 0),
     cost,
@@ -893,6 +953,8 @@ export interface PlanNeedsSynced {
   readonly planId: string;
   /** Needs put into a line (an existing one or a new one). */
   readonly added: number;
+  /** Needs whose topic or course changed, moved to the line of their new one (an existing one or a new one). */
+  readonly regrouped: number;
   readonly newLines: number;
   /** Needs whose seats or named people were taken again. */
   readonly refreshed: number;
@@ -920,9 +982,10 @@ async function planForChange(ctx: Ctx, planId: string): Promise<Result<PlanConte
 
 /**
  * Adds the needs of departments that resubmitted after a return (or a reopening) during consolidation: each joins
- * the line built from the same course or topic when L&D has not changed that line by hand, else a new line; the
- * changed seats of their needs are taken again; lines left without a need are removed. A department-limited
- * planner does this for its units only.
+ * the line built from the same course or topic when L&D has not changed that line by hand, else a new line; a need
+ * whose topic or course changed leaves its line and is placed the same way; the changed seats of their needs are
+ * taken again; lines left without a need are removed. A department-limited planner does this for its units only,
+ * and never in a line shared with another department (the organization-wide L&D Manager's).
  */
 export function syncPlanNeedsActionDefinition(): ActionDefinition<
   typeof PlanRef,
@@ -942,30 +1005,34 @@ export function syncPlanNeedsActionDefinition(): ActionDefinition<
       const links = await plans.listLinks(ctx.tx, plan.id);
       const lines = await plans.listLines(ctx.tx, plan.id);
       const linked = new Map(links.map((l) => [l.needId, l]));
-      const submitted = needs.filter(
-        (n) => n.departmentStatus === 'submitted' && inScope(scope, n.departmentId),
+      const departmentsBefore = departmentsByLine(links);
+      const changeable = lines.filter((l) =>
+        lineInScope(scope, [...(departmentsBefore.get(l.id) ?? [])]),
       );
-      const pending = submitted.filter((n) => !linked.has(n.id));
-      const stale = submitted.filter((n) => {
-        const link = linked.get(n.id);
-        return link !== undefined && (link.seats !== n.peopleCount || link.named !== n.named);
-      });
+      const changeableIds = new Set(changeable.map((l) => l.id));
+      const { pending, regrouped, stale } = resubmittedChanges(
+        needs.filter((n) => n.departmentStatus === 'submitted' && inScope(scope, n.departmentId)),
+        linked,
+        (lineId) => changeableIds.has(lineId),
+      );
 
-      const departmentsOf = new Map<string, Set<string>>();
+      // A need whose topic or course changed leaves its line first, then is placed as a new need is.
+      const released = await plans.removeLinks(
+        ctx.tx,
+        regrouped.map((n) => n.id),
+      );
+      if (!released.ok) return err(refusalError(released.refusal));
+      const leaving = new Set(regrouped.map((n) => n.id));
+      const remaining = links.filter((l) => !leaving.has(l.needId));
+      const departmentsOf = departmentsByLine(remaining);
       const topicsOf = new Map<string, Set<string>>();
       const needTopic = new Map(needs.map((n) => [n.id, n.topic]));
-      for (const link of links) {
-        departmentsOf.set(
-          link.lineId,
-          (departmentsOf.get(link.lineId) ?? new Set()).add(link.departmentId),
-        );
+      for (const link of remaining) {
         const topic = needTopic.get(link.needId);
         if (topic !== undefined)
           topicsOf.set(link.lineId, (topicsOf.get(link.lineId) ?? new Set()).add(topicKey(topic)));
       }
-      const changeable = lines.filter((l) =>
-        lineInScope(scope, [...(departmentsOf.get(l.id) ?? [])]),
-      );
+      const placing = [...pending, ...regrouped];
       const result = attachNeeds(
         changeable.map((l) => ({
           id: l.id,
@@ -974,15 +1041,16 @@ export function syncPlanNeedsActionDefinition(): ActionDefinition<
           status: l.status,
           topicKeys: [...(topicsOf.get(l.id) ?? [])],
         })),
-        pending.map((n) => consolidationNeed(n, form.fields)),
+        placing.map((n) => consolidationNeed(n, form.fields)),
       );
+      const departmentOf = new Map(placing.map((n) => [n.id, n.departmentId]));
       const joined = await plans.insertLinks(
         ctx.tx,
         plan,
         result.joins.map((j) => ({
           lineId: j.lineId,
           needId: j.needId,
-          departmentId: pending.find((n) => n.id === j.needId)?.departmentId ?? '',
+          departmentId: departmentOf.get(j.needId) ?? '',
         })),
       );
       if (!joined.ok) return err(refusalError(joined.refusal));
@@ -990,7 +1058,7 @@ export function syncPlanNeedsActionDefinition(): ActionDefinition<
         ctx.tx,
         plan,
         result.newLines,
-        new Map(pending.map((n) => [n.id, n])),
+        new Map(placing.map((n) => [n.id, n])),
         cycle.currency,
       );
       if (!created.ok) return created;
@@ -999,22 +1067,25 @@ export function syncPlanNeedsActionDefinition(): ActionDefinition<
         stale.map((n) => n.id),
       );
       if (!refreshed.ok) return err(refusalError(refreshed.refusal));
-      // Lines left without a need (a need removed while its department was returned) go.
+      // Lines left without a need (a need removed while its department was returned, or moved to the line of its
+      // new topic) go; the database keeps any that a need has just joined.
       const empty = changeable.filter((l) => !departmentsOf.has(l.id)).map((l) => l.id);
       const removed = await plans.deleteEmptyLines(ctx.tx, empty);
       return ok({
         planId: plan.id,
-        added: joined.value + created.value.needs,
+        added: joined.value + created.value.needs - regrouped.length,
+        regrouped: regrouped.length,
         newLines: created.value.lineIds.length,
         refreshed: refreshed.value,
         removedLines: removed.length,
       });
     },
     audit: (_input, output) =>
-      output.added + output.refreshed + output.removedLines === 0
+      output.added + output.regrouped + output.refreshed + output.removedLines === 0
         ? null
         : audit('needs_added', output.planId, {
             added: output.added,
+            regrouped: output.regrouped,
             newLines: output.newLines,
             refreshed: output.refreshed,
             removedLines: output.removedLines,
@@ -1113,12 +1184,21 @@ export function updatePlanLineActionDefinition(): ActionDefinition<
         if (course?.status !== 'active') issues.push({ path: 'courseId', code: 'UNKNOWN' });
       }
       if (issues.length > 0) return validation(issues);
-      const patch: plans.LinePatch = Object.fromEntries(
-        LINE_KEYS.flatMap((key) => (input[key] === undefined ? [] : [[key, input[key]]])),
-      );
+      // As stored: amounts canonical («5,500.50» → 5500.5), ids lower-case — so a save that changes nothing is
+      // neither written, stamped as L&D's edit nor audited.
+      const wanted: Partial<Record<(typeof LINE_KEYS)[number], unknown>> = {
+        ...input,
+        courseId:
+          typeof input.courseId === 'string' ? input.courseId.toLowerCase() : input.courseId,
+        costPerSession:
+          input.costPerSession === undefined ? undefined : canonicalAmount(input.costPerSession),
+        costPerPerson:
+          input.costPerPerson === undefined ? undefined : canonicalAmount(input.costPerPerson),
+      };
       const changed = LINE_KEYS.filter(
-        (key) => input[key] !== undefined && input[key] !== line[key],
+        (key) => wanted[key] !== undefined && wanted[key] !== line[key],
       );
+      const patch: plans.LinePatch = Object.fromEntries(changed.map((key) => [key, wanted[key]]));
       if (changed.length === 0) {
         return ok({
           planId: line.planId,
@@ -1139,7 +1219,7 @@ export function updatePlanLineActionDefinition(): ActionDefinition<
         version: written.version,
         changed,
         before: shown(line as unknown as Record<string, unknown>),
-        after: shown(input as unknown as Record<string, unknown>),
+        after: shown(wanted),
       });
     },
     audit: (_input, output) =>
@@ -1249,12 +1329,13 @@ export function moveNeedOutActionDefinition(): ActionDefinition<
       const need = consolidationNeed(record, form.fields);
       const touched = await plans.updateLine(ctx.tx, line.id, input.version, {});
       if (touched.outcome !== 'ok') return err(lineOutcomeError(touched.outcome));
-      const newLineId = await plans.insertLine(
+      // The new line and the move together (never an empty line left behind).
+      const inserted = await plans.insertLineWithNeeds(
         ctx.tx,
         context.value.plan,
         {
           groupKey: groupKeyOf(need),
-          title: input.title ?? need.topic.slice(0, 500),
+          title: input.title ?? lineTitle(need.topic),
           courseId: need.courseId,
           deliveryType: need.deliveryType ?? line.deliveryType,
           category: need.category ?? line.category,
@@ -1265,10 +1346,10 @@ export function moveNeedOutActionDefinition(): ActionDefinition<
           costPerPerson: line.costPerPerson,
           durationHours: line.durationHours,
         },
-        true,
+        [link.needId],
       );
-      const moved = await plans.moveLinks(ctx.tx, [link.needId], newLineId);
-      if (!moved.ok) return err(refusalError(moved.refusal));
+      if (!inserted.ok) return err(refusalError(inserted.refusal));
+      const newLineId = inserted.value;
       return ok({
         planId: line.planId,
         fromLineId: line.id,

@@ -1039,4 +1039,45 @@ describe('the head while the plan is consolidated (WP-LD-02)', () => {
     });
     expect(notReopened.ok && notReopened.value.entryOpen).toBe(false);
   });
+
+  it('keeps a submitted department closed after «Close needs now», even with an extension still to come (L7)', async () => {
+    const { query } = runtime('department_head', [SALES]);
+    repo.getCycle.mockResolvedValue(cycle({ status: 'closed' }));
+    repo.cycleConsolidating.mockResolvedValue(true);
+    // An extension given while the cycle was open, then every department submitted and the needs closed early.
+    repo.getDepartment.mockResolvedValue(
+      department({ status: 'submitted', deadline: '2026-10-30' }),
+    );
+    const view = await query(defs.departmentNeedsQueryDefinition())({
+      cycleId: CYCLE,
+      departmentId: SALES,
+    });
+    expect(view.ok && view.value).toMatchObject({
+      entryOpen: false,
+      can: { edit: false, recall: false },
+    });
+    // Nor is it a task on the head's Home card.
+    repo.listMyDepartments.mockResolvedValue([
+      {
+        cycleId: CYCLE,
+        cycleNameAr: 'خطة',
+        cycleNameEn: 'Plan',
+        cycleDeadline: '2026-10-20',
+        periodStart: '2027-01-01',
+        periodEnd: '2027-12-31',
+        currency: 'SAR',
+        departmentId: SALES,
+        status: 'submitted',
+        deadline: '2026-10-30',
+        budgetAmount: null,
+        needsCount: 2,
+        seats: 8,
+        cost: null,
+        returnNote: null,
+        consolidating: true,
+      },
+    ]);
+    const tasks = await query(defs.myNeedsQueryDefinition())({});
+    expect(tasks.ok && tasks.value.tasks).toEqual([]);
+  });
 });

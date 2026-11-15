@@ -46,11 +46,13 @@ const plans = vi.hoisted(() => ({
   listLines: vi.fn(),
   getLines: vi.fn(),
   insertLine: vi.fn(),
+  insertLineWithNeeds: vi.fn(),
   updateLine: vi.fn(),
   deleteEmptyLines: vi.fn(),
   listLinks: vi.fn(),
   insertLinks: vi.fn(),
   moveLinks: vi.fn(),
+  removeLinks: vi.fn(),
   refreshLinks: vi.fn(),
   listCycleNeeds: vi.fn(),
   listBudgetReasons: vi.fn(),
@@ -99,7 +101,10 @@ const claims = brandVerifiedClaims({
 });
 
 /** A standard role, or the department-limited L&D Manager for Sales (a custom role limited to «A department»). */
-function runtime(role: string) {
+function runtime(
+  role: string,
+  customPermissions: readonly string[] = ['tms.training_plan.read', 'tms.training_plan.manage'],
+) {
   if (!claims.ok) throw new Error('fixture');
   const audits: unknown[] = [];
   const custom = role === CUSTOM;
@@ -115,7 +120,7 @@ function runtime(role: string) {
             {
               code: CUSTOM,
               dataScope: 'departments',
-              permissions: ['tms.training_plan.read', 'tms.training_plan.manage'],
+              permissions: [...customPermissions],
             },
           ],
         }),
@@ -228,10 +233,42 @@ const lineRecord = (id: string, over: Record<string, unknown> = {}) => ({
 
 /** Excel: Sales 20 + HR 15 + East 12 = 47 (shared); Leadership: Sales 5 (Sales only). */
 const links = [
-  { needId: N1, lineId: EXCEL, departmentId: SALES, seats: 20, named: 2 },
-  { needId: N2, lineId: EXCEL, departmentId: HR, seats: 15, named: 0 },
-  { needId: N3, lineId: EXCEL, departmentId: EAST, seats: 12, named: 0 },
-  { needId: N4, lineId: LEAD, departmentId: SALES, seats: 5, named: 0 },
+  {
+    needId: N1,
+    lineId: EXCEL,
+    departmentId: SALES,
+    seats: 20,
+    named: 2,
+    topic: 'Excel',
+    courseId: null,
+  },
+  {
+    needId: N2,
+    lineId: EXCEL,
+    departmentId: HR,
+    seats: 15,
+    named: 0,
+    topic: 'Excel',
+    courseId: null,
+  },
+  {
+    needId: N3,
+    lineId: EXCEL,
+    departmentId: EAST,
+    seats: 12,
+    named: 0,
+    topic: 'excel',
+    courseId: null,
+  },
+  {
+    needId: N4,
+    lineId: LEAD,
+    departmentId: SALES,
+    seats: 5,
+    named: 0,
+    topic: 'Leadership',
+    courseId: null,
+  },
 ];
 
 const needRecord = (id: string, departmentId: string, topic: string, peopleCount: number) => ({
@@ -314,13 +351,18 @@ beforeEach(() => {
   plans.refreshLinks.mockImplementation((_tx: unknown, ids: unknown[]) =>
     Promise.resolve({ ok: true, value: ids.length }),
   );
+  plans.removeLinks.mockImplementation((_tx: unknown, ids: unknown[]) =>
+    Promise.resolve({ ok: true, value: ids.length }),
+  );
   plans.deleteEmptyLines.mockImplementation((_tx: unknown, ids: string[]) => Promise.resolve(ids));
   plans.saveBudgetReason.mockResolvedValue({ ok: true, value: null });
   let next = 0;
-  plans.insertLine.mockImplementation(() => {
+  const newId = () => {
     next += 1;
-    return Promise.resolve(`eeeeeeee-eeee-4eee-8eee-${String(next).padStart(12, '0')}`);
-  });
+    return `eeeeeeee-eeee-4eee-8eee-${String(next).padStart(12, '0')}`;
+  };
+  plans.insertLine.mockImplementation(() => Promise.resolve({ ok: true, value: newId() }));
+  plans.insertLineWithNeeds.mockImplementation(() => Promise.resolve({ ok: true, value: newId() }));
   courses.getCourse.mockResolvedValue(null);
 });
 
@@ -337,6 +379,20 @@ describe('who reaches the plan (deny by default)', () => {
       });
       expect(!changed.ok && changed.error.code, role).toBe('FORBIDDEN');
     }
+  });
+
+  it('shows the plan to a role holding tms.training_plan.manage alone, through manage (L3)', async () => {
+    const { query } = runtime(CUSTOM, ['tms.training_plan.manage']);
+    const throughRead = await query(defs.planQueryDefinition())({ cycleId: CYCLE });
+    expect(!throughRead.ok && throughRead.error.code).toBe('FORBIDDEN');
+    const view = await query(defs.planQueryDefinition('manage'))({ cycleId: CYCLE });
+    expect(view.ok && view.value.scope).toBe('departments');
+    expect(view.ok && view.value.can.manage).toBe(true);
+    expect(view.ok && view.value.lines.find((l) => l.id === LEAD)?.canEdit).toBe(true);
+    // A role without either permission is refused both ways.
+    const learner = runtime('learner');
+    const refused = await learner.query(defs.planQueryDefinition('manage'))({ cycleId: CYCLE });
+    expect(!refused.ok && refused.error.code).toBe('FORBIDDEN');
   });
 
   it('lets the Training Coordinator read but change nothing', async () => {
@@ -627,10 +683,10 @@ describe('changing lines', () => {
       version: 4,
       changed: ['maxPerSession', 'costPerSession'],
     });
+    // Only what changes is written, amounts as stored (canonical).
     expect(plans.updateLine).toHaveBeenCalledWith({}, EXCEL, 3, {
       maxPerSession: 25,
-      costPerSession: '5500.50',
-      quarter: 2,
+      costPerSession: '5500.5',
     });
     expect(audits).toEqual([
       {
@@ -641,10 +697,26 @@ describe('changing lines', () => {
           lineId: EXCEL,
           changed: ['maxPerSession', 'costPerSession'],
           before: { maxPerSession: 20, costPerSession: '5000' },
-          after: { maxPerSession: 25, costPerSession: '5500.50' },
+          after: { maxPerSession: 25, costPerSession: '5500.5' },
         },
       },
     ]);
+  });
+
+  it('neither writes, stamps nor audits a save that changes nothing (L5)', async () => {
+    const { action, audits } = runtime('training_manager');
+    // Stored: 5000 per session, max 20, quarter 2 — typed again with grouping and trailing zeros.
+    const saved = await action(defs.updatePlanLineActionDefinition())({
+      lineId: EXCEL,
+      version: 3,
+      costPerSession: '5,000.000',
+      maxPerSession: 20,
+      quarter: 2,
+      title: 'Excel',
+    });
+    expect(saved.ok && saved.value).toMatchObject({ version: 3, changed: [] });
+    expect(plans.updateLine).not.toHaveBeenCalled();
+    expect(audits).toEqual([]);
   });
 
   it('refuses a minimum above the maximum, an unknown course, a stale version and a frozen plan', async () => {
@@ -757,7 +829,8 @@ describe('changing lines', () => {
       title: 'Excel for East',
     });
     expect(moved.ok && moved.value).toMatchObject({ fromLineId: EXCEL, needId: N3 });
-    expect(plans.insertLine).toHaveBeenCalledWith(
+    // The new line and the move in one step: never an empty line left behind.
+    expect(plans.insertLineWithNeeds).toHaveBeenCalledWith(
       {},
       expect.objectContaining({ id: PLAN }),
       expect.objectContaining({
@@ -767,9 +840,37 @@ describe('changing lines', () => {
         maxPerSession: 20,
         costPerSession: '5000',
       }),
-      true,
+      [N3],
     );
+    expect(plans.insertLine).not.toHaveBeenCalled();
+    expect(plans.moveLinks).not.toHaveBeenCalled();
     expect(audits).toHaveLength(1);
+    // Refused (e.g. outside a department-limited planner's cycles): an outcome, nothing half done.
+    plans.insertLineWithNeeds.mockResolvedValueOnce({ ok: false, refusal: 'not_allowed' });
+    const refused = await action(defs.moveNeedOutActionDefinition())({
+      lineId: EXCEL,
+      version: 3,
+      needId: N3,
+    });
+    expect(!refused.ok && refused.error.code).toBe('TRAINING_PLAN_LINE_OUTSIDE_SCOPE');
+  });
+
+  it('names a moved-out line after its need: at most 500 characters, trimmed, never half a character (L6)', async () => {
+    const { action } = runtime('training_manager');
+    // 499 letters, a space, then an emoji (two UTF-16 units): cut at 500 code points it ends with the space.
+    const topic = `${'a'.repeat(499)} 😀 more`;
+    plans.listCycleNeeds.mockResolvedValue([
+      needRecord(N1, SALES, 'Excel', 20),
+      needRecord(N2, HR, 'Excel', 15),
+      needRecord(N3, EAST, topic, 12),
+      needRecord(N4, SALES, 'Leadership', 5),
+    ]);
+    await action(defs.moveNeedOutActionDefinition())({ lineId: EXCEL, version: 3, needId: N3 });
+    const title = (plans.insertLineWithNeeds.mock.calls[0]?.[2] as { title: string }).title;
+    expect(title).toBe('a'.repeat(499));
+    expect(defs.lineTitle(`${'b'.repeat(499)}😀`)).toBe(`${'b'.repeat(499)}😀`);
+    expect(Array.from(defs.lineTitle(`${'b'.repeat(499)}😀😀`))).toHaveLength(500);
+    expect(defs.lineTitle(`  ${'c'.repeat(600)}`)).toBe('c'.repeat(500));
   });
 
   it('changes the quarter of several lines, all or none', async () => {
@@ -881,6 +982,7 @@ describe('adding what resubmitted departments changed (D14)', () => {
     expect(synced.ok && synced.value).toEqual({
       planId: PLAN,
       added: 2,
+      regrouped: 0,
       newLines: 1,
       refreshed: 1,
       removedLines: 0,
@@ -890,6 +992,106 @@ describe('adding what resubmitted departments changed (D14)', () => {
     ]);
     expect(plans.refreshLinks).toHaveBeenCalledWith({}, [N1]);
     expect(audits).toHaveLength(1);
+  });
+
+  it('moves a need whose topic changed to the line of its new topic, never a merged line’s other needs (M2)', async () => {
+    const COACHING = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3';
+    // Excel was merged with Leadership by L&D (an edited line holding two topics); HR then changed its Excel need
+    // to «Coaching» and resubmitted; a Coaching line built from the needs exists.
+    plans.listLines.mockResolvedValue([
+      lineRecord(EXCEL, { editedAt: new Date(), title: 'Excel and leadership' }),
+      lineRecord(COACHING, { title: 'Coaching', groupKey: 'topic:coaching' }),
+    ]);
+    plans.listLinks.mockResolvedValue([
+      ...links.slice(0, 3),
+      { ...links[3], lineId: EXCEL },
+      {
+        needId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb7',
+        lineId: COACHING,
+        departmentId: SALES,
+        seats: 3,
+        named: 0,
+        topic: 'Coaching',
+        courseId: null,
+      },
+    ]);
+    plans.listCycleNeeds.mockResolvedValue([
+      needRecord(N1, SALES, 'Excel', 20),
+      needRecord(N2, HR, 'Coaching!', 15),
+      needRecord(N3, EAST, 'excel', 12),
+      needRecord(N4, SALES, 'Leadership', 5),
+      needRecord('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb7', SALES, 'Coaching', 3),
+    ]);
+    const { action, audits } = runtime('training_manager');
+    const synced = await action(defs.syncPlanNeedsActionDefinition())({ planId: PLAN });
+    expect(synced.ok && synced.value).toEqual({
+      planId: PLAN,
+      added: 0,
+      regrouped: 1,
+      newLines: 0,
+      refreshed: 0,
+      removedLines: 0,
+    });
+    // Only HR's need leaves the merged line (Leadership stays: its topic did not change).
+    expect(plans.removeLinks).toHaveBeenCalledWith({}, [N2]);
+    expect(plans.insertLinks.mock.calls[0]?.[2]).toEqual([
+      { lineId: COACHING, needId: N2, departmentId: HR },
+    ]);
+    expect(audits).toEqual([
+      expect.objectContaining({
+        action: 'tms.training_plan.needs_added',
+        data: { added: 0, regrouped: 1, newLines: 0, refreshed: 0, removedLines: 0 },
+      }),
+    ]);
+  });
+
+  it('gives a changed need of an edited line a new line, and removes the line it leaves empty (M2)', async () => {
+    plans.listLines.mockResolvedValue([
+      lineRecord(EXCEL),
+      lineRecord(LEAD, { title: 'Leadership', groupKey: 'topic:leadership', editedAt: new Date() }),
+    ]);
+    plans.listCycleNeeds.mockResolvedValue([
+      needRecord(N1, SALES, 'Excel', 20),
+      needRecord(N2, HR, 'Excel', 15),
+      needRecord(N3, EAST, 'excel', 12),
+      { ...needRecord(N4, SALES, 'Leading teams', 5), courseId: 'course-9' },
+    ]);
+    const { action } = runtime('training_manager');
+    const synced = await action(defs.syncPlanNeedsActionDefinition())({ planId: PLAN });
+    expect(synced.ok && synced.value).toMatchObject({ added: 0, regrouped: 1, newLines: 1 });
+    expect(plans.insertLine.mock.calls[0]?.[2]).toMatchObject({
+      groupKey: 'course:course-9',
+      title: 'Leading teams',
+    });
+    expect(plans.deleteEmptyLines).toHaveBeenCalledWith({}, [LEAD]);
+  });
+
+  it('leaves a shared line’s changes to the organization-wide L&D Manager; a department-limited planner is not told of them (L4)', async () => {
+    plans.listCycleNeeds.mockResolvedValue([
+      needRecord(N1, SALES, 'Excel', 25),
+      needRecord(N2, HR, 'Excel', 15),
+      needRecord(N3, EAST, 'Negotiation', 12),
+      needRecord(N4, SALES, 'Leadership', 7),
+    ]);
+    const limited = runtime(CUSTOM);
+    const view = await limited.query(defs.planQueryDefinition())({ cycleId: CYCLE });
+    // Sales' changed seats in the shared Excel line and East's changed topic there: not its to add.
+    expect(view.ok && view.value.attention.pending).toEqual({
+      needs: 0,
+      changed: 1,
+      departmentIds: [SALES],
+    });
+    const synced = await limited.action(defs.syncPlanNeedsActionDefinition())({ planId: PLAN });
+    expect(synced.ok && synced.value).toMatchObject({ regrouped: 0, refreshed: 1 });
+    expect(plans.refreshLinks).toHaveBeenCalledWith({}, [N4]);
+    expect(plans.removeLinks).toHaveBeenCalledWith({}, []);
+    const lnd = runtime('training_manager');
+    const all = await lnd.query(defs.planQueryDefinition())({ cycleId: CYCLE });
+    expect(all.ok && all.value.attention.pending).toEqual({
+      needs: 0,
+      changed: 3,
+      departmentIds: [EAST, SALES],
+    });
   });
 
   it('never joins a line L&D edited', async () => {

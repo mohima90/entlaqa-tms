@@ -334,6 +334,11 @@ describe('input rules', () => {
     expect(BudgetAmount.safeParse('1e5').success).toBe(false);
     expect(canonicalAmount('0012.500')).toBe('12.5');
     expect(canonicalAmount('50000.0000')).toBe('50000');
+    expect(canonicalAmount('000')).toBe('0');
+    expect(canonicalAmount('0.000')).toBe('0');
+    // Linear on long inputs (no regular-expression backtracking).
+    expect(canonicalAmount(`1.${'0'.repeat(100_000)}1`)).toBe(`1.${'0'.repeat(100_000)}1`);
+    expect(canonicalAmount(`${'0'.repeat(100_000)}7.${'0'.repeat(100_000)}`)).toBe('7');
     expect(canonicalAmount('0')).toBe('0');
     expect(canonicalAmount(null)).toBeNull();
   });

@@ -30,6 +30,29 @@ export const tmsPlanningPermissions = definePermissions('tms', [
     risk: 'medium',
     requiresAal2: false,
   },
+  {
+    // WP-LD-02 (FR-PLN-05, FR-PLN-06; migration 20261115100000): the consolidated training plan — lines,
+    // sessions, costs and the budget check per department. Scoped in a custom role (FR-IAM-08 R1 note): a role
+    // limited to «A department» reads the plan of that unit and everything under it (feedback #4).
+    code: 'tms.training_plan.read',
+    label: { ar: 'عرض الخطة التدريبية', en: 'View the training plan' },
+    description: {
+      ar: 'عرض بنود الخطة التدريبية وجلساتها وتكلفتها ومقارنة كل إدارة بميزانيتها ضمن النطاق',
+      en: 'View the training plan’s lines, sessions and cost, and each department against its budget, within scope',
+    },
+    risk: 'low',
+    requiresAal2: false,
+  },
+  {
+    code: 'tms.training_plan.manage',
+    label: { ar: 'إعداد الخطة التدريبية', en: 'Build the training plan' },
+    description: {
+      ar: 'دمج البنود وتحديد حجم الجلسات وتكلفتها وربعها واستبعاد البنود مع ذكر السبب وتبرير تجاوز الميزانية ضمن النطاق',
+      en: 'Merge lines, set session sizes, costs and quarters, leave lines out with a reason and explain an over-budget department, within scope',
+    },
+    risk: 'medium',
+    requiresAal2: false,
+  },
 ]);
 
 export type TmsPlanningPermissionCode = keyof typeof tmsPlanningPermissions;

@@ -156,7 +156,12 @@
     "planNeedsSubmitted": "These needs are submitted. Recall the submission to change them.",
     "planNeedsEmpty": "Add at least one training need before you submit.",
     "planNeedsLimit": "The limit was reached: at most 200 needs per department and 500 named people per need.",
-    "planNeedsNotSubmitted": "These needs are not submitted right now. Refresh the page to see their current status."
+    "planNeedsNotSubmitted": "These needs are not submitted right now. Refresh the page to see their current status.",
+    "trainingPlanNotReady": "The plan is built once the needs close: after the deadline, or now if every department has submitted.",
+    "trainingPlanAlreadyOpen": "The plan of this cycle has already been built. Refresh the page to see it.",
+    "trainingPlanFrozen": "The plan can't change now: it is waiting for approval or already approved.",
+    "trainingPlanLineOutsideScope": "This line includes needs of departments you don't plan for. Ask the L&D Manager to change it.",
+    "trainingPlanNeedsNotSubmitted": "These needs aren't submitted right now, so they can't enter the plan. They can once the department resubmits."
   },
   "auth": {
     "signInTitle": "Sign in",
@@ -4023,7 +4028,10 @@
       "extendConfirm": "Extend",
       "extended": "The deadline was extended for this department.",
       "headLine": "Head: {name}",
-      "noHead": "No head: nobody can enter these needs."
+      "noHead": "No head: nobody can enter these needs.",
+      "returnBodyPlan": "The plan is being built: the department can change its needs until the day you pick, then submits them again. Its changes join the plan when you add them.",
+      "returnDeadlineLabel": "Open for changes until",
+      "returnDeadlineHint": "Today or later, within the planning period ({end})."
     },
     "fieldErrors": {
       "required": "Fill in this field.",
@@ -4036,6 +4044,272 @@
       "notLater": "Pick a later date.",
       "inPast": "Pick today or a later day.",
       "afterPeriod": "Pick a day within the planning period."
+    }
+  },
+  "trainingPlan": {
+    "tabs": {
+      "label": "Cycle views",
+      "progress": "Progress",
+      "plan": "Plan"
+    },
+    "planStatus": {
+      "draft": "Plan: draft",
+      "in_approval": "Plan: waiting for approval",
+      "approved": "Plan: approved",
+      "sent_back": "Plan: sent back"
+    },
+    "period": "Plan period: {start} – {end}",
+    "close": "Close",
+    "cancel": "Cancel",
+    "save": "Save",
+    "listSeparator": ", ",
+    "quarter": {
+      "q1": "Q1",
+      "q2": "Q2",
+      "q3": "Q3",
+      "q4": "Q4"
+    },
+    "lineStatus": {
+      "inPlan": "In the plan",
+      "needsCost": "Needs a cost",
+      "leftOut": "Left out"
+    },
+    "priority": {
+      "critical": "Critical",
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
+    },
+    "fieldErrors": {
+      "required": "Fill in this field.",
+      "invalid": "Check this field.",
+      "tooBig": "This number is too large.",
+      "invalidAmount": "Enter an amount in numbers, with up to 3 decimals.",
+      "count": "Enter a whole number from 1.",
+      "hours": "Enter the hours in numbers, with up to 2 decimals.",
+      "minAboveMax": "The fewest people can't be more than the most.",
+      "onlyNeed": "This is the only need in the line, so it can't move out."
+    },
+    "notOpen": {
+      "title": "The plan is built once the needs close",
+      "waiting": "The needs close on {date}. {count, plural, one {# department hasn't} other {# departments haven't}} submitted yet. Once every department has submitted, you can close the needs early and build the plan.",
+      "allSubmitted": "Every department has submitted its needs. You can close the needs now and build the plan, or wait for the deadline on {date}.",
+      "closed": "The needs are closed. Build the plan from the needs the departments submitted.",
+      "notLaunched": "The plan is built from the departments' needs once the cycle is launched and its needs close.",
+      "closeNow": "Close needs now",
+      "build": "Build the plan",
+      "confirmTitle": "Close the needs now?",
+      "confirmBody": "Department heads can no longer change their needs, and the plan is built from what they submitted. While you work on the plan you can still return a department for changes.",
+      "confirm": "Close needs and build the plan",
+      "opened": "The plan is ready: {lines, plural, one {# line} other {# lines}} from {needs, plural, one {# need} other {# needs}}."
+    },
+    "summary": {
+      "label": "The plan in numbers",
+      "lines": "Plan lines",
+      "linesHint": "{inPlan} in the plan · {leftOut} left out",
+      "people": "People",
+      "peopleHint": "from {count, plural, one {# department} other {# departments}}",
+      "sessions": "Sessions",
+      "sessionsHint": "worked out from the session sizes",
+      "sessionsUncosted": "{count, plural, one {# line still needs a cost} other {# lines still need a cost}}",
+      "cost": "Estimated cost vs budget",
+      "ofBudget": "of {amount} budget",
+      "noBudget": "No budget set for this cycle",
+      "overCount": "{count, plural, one {# department over its budget} other {# departments over their budget}}"
+    },
+    "attention": {
+      "title": "Needs your attention",
+      "uncostedOne": "«{title}» has no cost per session yet, so its sessions and cost aren't counted.",
+      "uncosted": "{count} lines have no cost per session yet, so their cost isn't counted.",
+      "addCost": "Add the cost",
+      "lookAlike": "«{one}» and «{two}» look alike.",
+      "lookAlikeSessions": "Today they need {count, plural, one {# session} other {# sessions}} between them; merged, they may need fewer.",
+      "morePairs": "{count, plural, one {# more pair looks alike.} other {# more pairs look alike.}}",
+      "reviewMerge": "Review and merge",
+      "overBudget": "{count, plural, one {# department is} other {# departments are}} over budget; {without, plural, one {# still needs} other {# still need}} a one-line reason before you submit.",
+      "openBudget": "Open the budget",
+      "belowMinimumOne": "«{title}» has fewer people than the smallest session allows.",
+      "belowMinimum": "{count} lines have fewer people than their smallest session allows.",
+      "open": "Open",
+      "pending": "{count, plural, one {# change} other {# changes}} from departments that submitted again ({departments}) {count, plural, one {isn't} other {aren't}} in the plan yet.",
+      "addThem": "Add them",
+      "added": "The departments' changes are in the plan."
+    },
+    "views": {
+      "label": "Show",
+      "lines": "Plan lines",
+      "budget": "Budget by department"
+    },
+    "groups": {
+      "label": "Group by",
+      "pill": "Group by: {grouping}",
+      "by": {
+        "topic": "Topic",
+        "branch": "Branch",
+        "delivery_type": "Delivery type",
+        "quarter": "Quarter"
+      },
+      "none": {
+        "topic": "No topic",
+        "branch": "No branch",
+        "delivery_type": "Delivery type not set",
+        "quarter": "No quarter"
+      },
+      "lines": "{count, plural, one {# line} other {# lines}}"
+    },
+    "bulk": {
+      "label": "Selected lines",
+      "selected": "{count, plural, one {# line selected} other {# lines selected}}",
+      "people": "{count, plural, one {# person} other {# people}}",
+      "merge": "Merge",
+      "changeQuarter": "Change quarter",
+      "clear": "Clear"
+    },
+    "lines": {
+      "sectionLabel": "Plan lines and budget",
+      "search": "Search lines",
+      "caption": "Plan lines",
+      "captionGrouped": "Plan lines grouped by {grouping}",
+      "columns": {
+        "select": "Select",
+        "training": "Training",
+        "departments": "Departments",
+        "people": "People",
+        "sessions": "Sessions",
+        "cost": "Est. cost",
+        "when": "When",
+        "status": "Status",
+        "actions": "Actions"
+      },
+      "select": "Select {title}",
+      "selectAll": "Select all lines shown",
+      "menu": "Actions for {title}",
+      "open": "Open",
+      "moveQuarter": "Move to another quarter",
+      "fromLibrary": "from the course library",
+      "needs": "{count, plural, one {# need} other {# needs}}",
+      "named": "{count} named",
+      "namesLater": "names later",
+      "perSession": "{amount}/session",
+      "noSize": "no session size yet",
+      "moreDepartments": "+{count}",
+      "otherDepartment": "Another department",
+      "emptyTitle": "No lines in the plan",
+      "emptyBody": "The departments submitted no needs for this cycle.",
+      "noMatchTitle": "No lines match",
+      "noMatchBody": "Try another word, or clear the search.",
+      "footnote": "Lines are built from the departments' needs: the same course or the same topic becomes one line. Every line is in the plan unless you leave it out with a reason."
+    },
+    "line": {
+      "needsTitle": "Needs in this line",
+      "needsCaption": "Needs in {title}, by department",
+      "columns": {
+        "department": "Department",
+        "people": "People",
+        "priority": "Priority",
+        "askedFor": "Asked for",
+        "share": "Share of cost",
+        "actions": "Actions"
+      },
+      "total": "Total",
+      "needMenu": "Actions for the need of {department}",
+      "moveOut": "Move out of this line",
+      "moveOutNamed": "Move «{topic}» out of this line",
+      "movedOut": "The need has a line of its own now.",
+      "peoplePerSession": "People per session",
+      "from": "From",
+      "to": "to",
+      "people": "people",
+      "sizeHint": "The most per session is needed to work out the sessions; the fewest is optional.",
+      "costPerSession": "Cost per session ({currency})",
+      "costHint": "What one session costs: trainer, venue and materials.",
+      "costFromCourse": "Filled in from the course in the library. You can change it.",
+      "preview": "{count, plural, one {# session} other {# sessions}} of {sizes} people · {cost}",
+      "previewNoCost": "{count, plural, one {# session} other {# sessions}} of {sizes} people · needs a cost per session",
+      "previewNoSize": "Enter the most people per session to work out the sessions and the cost.",
+      "sizeSeparator": ", ",
+      "split": "Split by people: {shares}",
+      "belowMinimum": "A session would have fewer people than the fewest you set.",
+      "when": "When",
+      "quarterHint": "{asked} of {count} departments asked for {quarter}. You pick the month later, when you schedule the sessions.",
+      "quarterHintNone": "No department asked for a quarter. You pick the month later, when you schedule the sessions.",
+      "more": "More",
+      "moreHint": "cost per person, duration, delivery type, course",
+      "costPerPerson": "Cost per person ({currency})",
+      "costPerPersonHint": "Added for every person, on top of the cost per session (for example, a certificate).",
+      "duration": "Duration (hours)",
+      "deliveryType": "Delivery type",
+      "notSet": "Not set",
+      "course": "Course",
+      "courseLinked": "From the course library",
+      "courseNone": "Not linked to a course",
+      "leaveOut": "Leave out of the plan",
+      "bringBack": "Bring back into the plan",
+      "leftOutReason": "Left out of the plan: «{reason}»",
+      "saved": "«{title}» is saved.",
+      "broughtBack": "«{title}» is back in the plan."
+    },
+    "merge": {
+      "title": "{count, plural, one {Merge # line into one?} other {Merge # lines into one?}}",
+      "body": "The needs of these lines move into one line. Each department keeps its own people and its share of the cost.",
+      "people": "{count, plural, one {# person} other {# people}}",
+      "sessions": "{count, plural, one {# session} other {# sessions}}",
+      "departments": "{count, plural, one {# department} other {# departments}}",
+      "sessionsInstead": "{count, plural, one {# session} other {# sessions}} instead of {before}",
+      "name": "Name of the merged line",
+      "nameHint": "Pick one of the names below or type a new one.",
+      "useName": "Use one of the names",
+      "keeps": "Uses the session size ({min}–{max}) and cost per session ({cost}) of «{title}»:",
+      "keepsUncosted": "Uses the session size and cost of «{title}», which has no cost per session yet.",
+      "costInstead": "{cost} instead of {before}.",
+      "costAfter": "{cost}.",
+      "confirm": "Merge lines",
+      "done": "The lines are merged into «{title}»."
+    },
+    "leaveOut": {
+      "title": "Leave «{title}» out of the plan?",
+      "oneDepartment": "{department} asked for {count, plural, one {# person} other {# people}}.",
+      "departments": "{departments} departments asked for {count, plural, one {# person} other {# people}}.",
+      "body": "Their heads see this reason when the plan is approved.",
+      "reason": "Reason",
+      "hint": "One line is enough. You can bring the line back until you submit the plan.",
+      "confirm": "Leave out",
+      "done": "«{title}» is left out of the plan."
+    },
+    "quarterDialog": {
+      "title": "{count, plural, one {Move # line to another quarter} other {Move # lines to another quarter}}",
+      "titleOne": "Move «{title}» to another quarter",
+      "body": "You pick the month later, when you schedule the sessions.",
+      "done": "{count, plural, one {# line moved} other {# lines moved}} to {quarter}."
+    },
+    "budget": {
+      "caption": "Budget by department",
+      "columns": {
+        "department": "Department",
+        "lines": "Lines",
+        "people": "People",
+        "cost": "Est. cost",
+        "budget": "Budget",
+        "state": "Within / over",
+        "reason": "Reason when over"
+      },
+      "within": "Within",
+      "left": "{amount} left",
+      "overBy": "Over by {amount}",
+      "percentOver": "{percent}% over",
+      "noEnvelope": "No budget set",
+      "ofBudget": "of {amount}",
+      "meterLabel": "Estimated cost of {department} against its budget",
+      "uncosted": "{count, plural, one {# line without a cost isn't counted} other {# lines without a cost aren't counted}}",
+      "reasonLabel": "Why {department} is over its budget",
+      "reasonPlaceholder": "Why is it over? One line is enough",
+      "reasonNeeded": "Needed before you submit",
+      "reasonSaved": "The reason for {department} is saved.",
+      "reasonRemoved": "The reason for {department} is removed.",
+      "cardLine": "{lines, plural, one {# line} other {# lines}} · {people, plural, one {# person} other {# people}}",
+      "total": "Organization total",
+      "totalScoped": "Total of your departments",
+      "footnote": "Being over a budget never blocks the plan. A department that is over needs a one-line reason; the HR Manager sees it next to the figures. Amber means less than 10% over, red 10% or more."
     }
   }
 }

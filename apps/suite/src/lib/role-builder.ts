@@ -22,6 +22,11 @@ export interface BuilderPermission {
   readonly makesPrivileged: boolean;
   /** Administrative: only for a role that sees the whole organization. */
   readonly organizationOnly: boolean;
+  /**
+   * Said under the permission when the role does not see the whole organization (WP-LD-02): what stays
+   * organization-wide although the permission itself is scoped.
+   */
+  readonly scopedNote?: string | undefined;
 }
 
 export interface BuilderGroup {

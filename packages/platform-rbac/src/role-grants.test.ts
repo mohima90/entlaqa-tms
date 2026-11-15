@@ -36,6 +36,8 @@ describe('grantsForAssignments', () => {
       { permission: 'tms.course.manage', scope: { type: 'tenant' }, validUntil: until },
       // Planning cycles (EP-PLN, T-M3-04): read organization-wide.
       { permission: 'tms.plan_cycle.read', scope: { type: 'tenant' }, validUntil: until },
+      // The training plan (WP-LD-02): read organization-wide (BRD Appendix B «V»).
+      { permission: 'tms.training_plan.read', scope: { type: 'tenant' }, validUntil: until },
       // Needs forms (T-M3-10): read organization-wide.
       { permission: 'tms.needs_form.read', scope: { type: 'tenant' }, validUntil: until },
     ]);

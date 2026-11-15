@@ -12,7 +12,12 @@ export type PlanFeatureCode =
 
 export function permissionFeature(permission: string): PlanFeatureCode | null {
   // Needs entry (WP-LD-01) belongs to planning: no planning in the plan, no needs to enter.
-  if (permission.startsWith('tms.plan_cycle.') || permission.startsWith('tms.plan_needs.')) {
+  // The training plan (WP-LD-02) too.
+  if (
+    permission.startsWith('tms.plan_cycle.') ||
+    permission.startsWith('tms.plan_needs.') ||
+    permission.startsWith('tms.training_plan.')
+  ) {
     return 'planning';
   }
   if (permission.startsWith('tms.needs_form.')) return 'needs_forms';

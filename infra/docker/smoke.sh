@@ -945,6 +945,25 @@ plan_member "$PLAN_COORD_EMAIL" "$(create_user "$PLAN_COORD_EMAIL" "$PLAN_COORD_
 [[ "$(q "select count(*) from tms.plan_cycles c join platform.tenants t on t.id = c.tenant_id
         where t.slug = 'sovereign-smoke' and c.status = 'open'")" == "1" ]] ||
   { echo "smoke: the planning journey did not leave exactly one open cycle" >&2; exit 1; }
+echo "smoke: training plan (WP-LD-02, T-M3-06) — every department of the open cycle has submitted; the L&D Manager closes the needs early, builds the plan, costs a line, leaves one out and brings it back, changes a quarter, reads the budget by department; in English and Arabic"
+PLAN_CYCLE_ID="$(PGPASSWORD="$POSTGRES_PASSWORD" PGSSLMODE=verify-full PGSSLROOTCERT=.secrets/ca.crt \
+  psql -h localhost -p 55432 -U postgres -d postgres -X -q -At -v ON_ERROR_STOP=1 -f seed-plan-needs.sql)"
+[[ "$PLAN_CYCLE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] ||
+  { echo "smoke: the plan needs were not seeded" >&2; exit 1; }
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 PLAN_E2E_EMAIL="$PLAN_EMAIL" \
+  PLAN_E2E_PASSWORD="$PLAN_PASSWORD" PLAN_E2E_CYCLE_ID="$PLAN_CYCLE_ID" \
+  pnpm exec playwright test e2e/plan-consolidation.spec.ts --project=desktop-chromium --grep 'data journey')
+# The plan is built once, closed early, with its lines and every seeded need in a line; each change audited.
+[[ "$(q "select count(*) from tms.training_plans where cycle_id = '$PLAN_CYCLE_ID' and status = 'draft' and needs_closed_early")" == "1" ]] ||
+  { echo "smoke: expected one draft training plan built with the needs closed early" >&2; exit 1; }
+[[ "$(q "select count(*) from tms.plan_needs n where n.cycle_id = '$PLAN_CYCLE_ID'
+        and not exists (select 1 from tms.plan_line_needs l where l.tenant_id = n.tenant_id and l.need_id = n.id)")" == "0" ]] ||
+  { echo "smoke: a submitted need is missing from the plan" >&2; exit 1; }
+[[ "$(q "select count(distinct action) from platform.audit_events where action in
+        ('tms.training_plan.opened', 'tms.training_plan.line_changed', 'tms.training_plan.line_left_out',
+         'tms.training_plan.line_brought_back', 'tms.training_plan.lines_quarter_changed')")" == "5" ]] ||
+  { echo "smoke: expected the plan's changes in the audit trail" >&2; exit 1; }
+unset PLAN_CYCLE_ID
 unset PLAN_PASSWORD PLAN_COORD_PASSWORD
 
 echo "smoke: security policy (T-M2-10) — apps turned on with the e-mailed code, the password-only attack, policy without a code (PO decision 14 Oct 2026), MFA required, sessions, lost-app reset"

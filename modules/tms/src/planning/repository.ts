@@ -791,7 +791,10 @@ async function departmentUpdate(
   }
 }
 
-/** Submit (→ submitted), recall (submitted → draft) or return (submitted → returned, with the note). */
+/**
+ * Submit (→ submitted), recall (submitted → draft) or return (submitted → returned, with the note — and, while the
+ * training plan is consolidated, the department's own deadline for its changes; WP-LD-02).
+ */
 export async function setDepartmentStatus(
   tx: UserTx,
   cycleId: string,
@@ -799,6 +802,7 @@ export async function setDepartmentStatus(
   version: number,
   status: 'submitted' | 'draft' | 'returned',
   note: string | null = null,
+  deadline: string | null = null,
 ): Promise<DepartmentOutcome> {
   return departmentUpdate(
     tx,
@@ -806,9 +810,21 @@ export async function setDepartmentStatus(
     departmentId,
     version,
     status === 'returned'
-      ? sql`status = ${status}, return_note = ${note}`
+      ? deadline === null
+        ? sql`status = ${status}, return_note = ${note}`
+        : sql`status = ${status}, return_note = ${note}, deadline_on = ${deadline}::date`
       : sql`status = ${status}`,
   );
+}
+
+/**
+ * Is the cycle's training plan being consolidated (a draft or sent-back plan exists — WP-LD-02)? Asked through
+ * private.plan_cycle_consolidating, so a department head, who cannot read the plan, gets the answer too.
+ */
+export async function cycleConsolidating(tx: UserTx, cycleId: string): Promise<boolean> {
+  const [row] = await tx.execute<{ consolidating: boolean }>(sql`
+    select private.plan_cycle_consolidating((select private.current_tenant_id()), ${cycleId}::uuid) as consolidating`);
+  return row?.consolidating === true;
 }
 
 /** Department-level answers of the cycle's form (the head; the guard moves Not started to Draft). */
@@ -904,10 +920,13 @@ export interface MyDepartmentRow {
   readonly seats: number;
   readonly cost: string | null;
   readonly returnNote: string | null;
+  /** The needs are closed and the plan is consolidated: the department was returned or reopened (WP-LD-02). */
+  readonly consolidating: boolean;
 }
 
 /**
- * The departments whose needs the signed-in head enters in the OPEN cycle (the database's
+ * The departments whose needs the signed-in head enters in the OPEN cycle — or, once the needs are closed and the
+ * training plan is consolidated, a department returned for changes or reopened until its own deadline (WP-LD-02) (the database's
  * private.may_submit_plan_needs — the effective head, Department Head role): the Home task card and the
  * «My team's needs» list.
  */
@@ -915,6 +934,7 @@ export async function listMyDepartments(tx: UserTx): Promise<MyDepartmentRow[]> 
   const rows = await tx.execute(sql`
     select c.id as cycle_id, c.name_ar, c.name_en, c.deadline_on as cycle_deadline, c.period_start_on, c.period_end_on,
            c.currency, d.department_id, d.status, d.deadline_on, d.budget_amount::text as budget_amount, d.return_note,
+           (c.status = 'closed') as consolidating,
            (select count(*) from tms.plan_needs n where n.tenant_id = d.tenant_id and n.cycle_id = d.cycle_id
              and n.department_id = d.department_id) as needs_count,
            (select coalesce(sum(n.people_count), 0) from tms.plan_needs n where n.tenant_id = d.tenant_id
@@ -923,7 +943,11 @@ export async function listMyDepartments(tx: UserTx): Promise<MyDepartmentRow[]> 
              and n.cycle_id = d.cycle_id and n.department_id = d.department_id)::text as cost
     from tms.plan_cycle_departments d
     join tms.plan_cycles c on c.tenant_id = d.tenant_id and c.id = d.cycle_id
-    where c.status = 'open' and private.may_submit_plan_needs(d.tenant_id, d.department_id)
+    where private.may_submit_plan_needs(d.tenant_id, d.department_id)
+      and (c.status = 'open'
+           or (c.status = 'closed' and d.status <> 'submitted'
+               and d.deadline_on >= private.plan_cycle_today(c.tenant_id)
+               and private.plan_cycle_consolidating(c.tenant_id, c.id)))
     order by c.deadline_on, c.id, d.created_at, d.id
     limit 100`);
   return rows.map((r: Row) => ({
@@ -942,5 +966,6 @@ export async function listMyDepartments(tx: UserTx): Promise<MyDepartmentRow[]> 
     seats: Number(r.seats),
     cost: normalizeAmount(text(r.cost)),
     returnNote: text(r.return_note),
+    consolidating: r.consolidating === true,
   }));
 }

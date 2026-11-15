@@ -119,6 +119,11 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
       // WP-LD-01 (reviewed): a Department Head entering the training needs of the departments they head is
       // training work — it changes no person, structure, organization setting or audit record.
       'tms.plan_needs.submit',
+      // WP-LD-02 (reviewed): consolidating the needs into the training plan and checking it against the
+      // budget envelopes is training work — it changes no person, structure, organization setting or audit
+      // record, so the L&D Manager and the Training Coordinator stay ordinary roles.
+      'tms.training_plan.read',
+      'tms.training_plan.manage',
     ];
     for (const role of SYSTEM_ROLES.filter((r) => !r.privileged)) {
       for (const grant of role.grants) {

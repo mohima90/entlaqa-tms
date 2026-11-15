@@ -194,6 +194,11 @@ export type SaveDepartmentAnswersInput = z.output<typeof SaveDepartmentAnswersIn
 /** «Return for changes» (business flow D14): the note tells the head what to change. */
 export const ReturnNeedsInput = DepartmentVersionRef.extend({
   note: name(NEEDS_LIMITS.returnNoteMax),
+  /**
+   * The department's own deadline for its changes: required once the needs are closed and the training plan is
+   * consolidated (WP-LD-02; the department reopens until that day); in an open cycle, an optional extension.
+   */
+  deadline: CalendarDay.optional(),
 });
 export type ReturnNeedsInput = z.output<typeof ReturnNeedsInput>;
 

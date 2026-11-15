@@ -5,7 +5,9 @@ import {
   type Quarter,
   type SessionPlan,
   amountMilli,
+  budgetCheck,
   budgetState,
+  currencyFractionDigits,
   fromMilli,
   lineFigures,
 } from './consolidation-rules';
@@ -207,5 +209,95 @@ export function departmentResult(
     cost,
     envelope,
     state: budgetState(cost, envelope),
+  };
+}
+
+// ---------------------------------------------------------------------------------------------------
+// A plan's figures on the Approvals list (review L7: worked out for every plan from three queries)
+// ---------------------------------------------------------------------------------------------------
+
+export interface PlanFiguresLine {
+  readonly id: string;
+  readonly status: LineStatus;
+  readonly minPerSession: number | null;
+  readonly maxPerSession: number | null;
+  readonly costPerSession: string | null;
+  readonly costPerPerson: string | null;
+}
+
+export interface PlanFiguresLink {
+  readonly lineId: string;
+  readonly departmentId: string;
+  readonly seats: number;
+  readonly named: number;
+}
+
+export interface PlanFigures {
+  readonly lines: number;
+  readonly leftOut: number;
+  readonly people: number;
+  readonly sessions: number;
+  readonly cost: string;
+  readonly envelope: string | null;
+  readonly overBudget: number;
+  readonly currency: string;
+  readonly fractionDigits: number;
+}
+
+/**
+ * The organization-wide figures of a plan as its Plan tab works them out (planQueryDefinition, organization
+ * scope): the lines in the plan and left out, the people, sessions and cost of the lines in the plan, the
+ * envelopes' total and how many departments are over theirs. `links` in the order the plan reads them (a shared
+ * line's cost is split in that order, to the currency's smallest unit).
+ */
+export function planFigures(
+  lines: readonly PlanFiguresLine[],
+  links: readonly PlanFiguresLink[],
+  envelopes: readonly { readonly departmentId: string; readonly envelope: string | null }[],
+  currency: string,
+): PlanFigures {
+  const fractionDigits = currencyFractionDigits(currency);
+  const byLine = new Map<string, PlanFiguresLink[]>();
+  for (const link of links) byLine.set(link.lineId, [...(byLine.get(link.lineId) ?? []), link]);
+  let people = 0;
+  let sessions = 0;
+  let cost = 0n;
+  let inPlan = 0;
+  const budgetLines = lines.map((line) => {
+    const own = byLine.get(line.id) ?? [];
+    const departments = [...new Set(own.map((l) => l.departmentId))].map((departmentId) => {
+      const mine = own.filter((l) => l.departmentId === departmentId);
+      return {
+        departmentId,
+        seats: mine.reduce((n, l) => n + l.seats, 0),
+        named: mine.reduce((n, l) => n + l.named, 0),
+      };
+    });
+    const figures = lineFigures({ ...line, departments }, fractionDigits);
+    if (line.status === 'in_plan') {
+      inPlan += 1;
+      people += figures.people;
+      sessions += figures.plan?.sessions ?? 0;
+      cost += amountMilli(figures.cost) ?? 0n;
+    }
+    return {
+      lineId: line.id,
+      status: line.status,
+      cost: figures.cost,
+      shares: figures.shares,
+      departments,
+    };
+  });
+  const check = budgetCheck(envelopes, budgetLines);
+  return {
+    lines: inPlan,
+    leftOut: lines.length - inPlan,
+    people,
+    sessions,
+    cost: fromMilli(cost),
+    envelope: check.total.envelope,
+    overBudget: check.departments.filter((d) => d.state.kind === 'over').length,
+    currency,
+    fractionDigits,
   };
 }

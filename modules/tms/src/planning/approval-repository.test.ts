@@ -71,11 +71,29 @@ describe('reads', () => {
     expect(await repo.getApprovalByCycle(fakeTx([]).tx, CYCLE)).toBeNull();
   });
 
-  it('lists the plans with their cycle names', async () => {
-    const { tx } = fakeTx([row({ cycle_name_ar: 'خطة', cycle_name_en: 'Plan 2027' })]);
-    expect(await repo.listPlans(tx)).toMatchObject([
-      { id: PLAN, cycleNameAr: 'خطة', cycleNameEn: 'Plan 2027' },
+  it('lists the plans with their cycle names and currency', async () => {
+    const { tx } = fakeTx([
+      row({ cycle_name_ar: 'خطة', cycle_name_en: 'Plan 2027', currency: 'SAR' }),
     ]);
+    expect(await repo.listPlans(tx)).toMatchObject([
+      { id: PLAN, cycleNameAr: 'خطة', cycleNameEn: 'Plan 2027', currency: 'SAR' },
+    ]);
+  });
+
+  it('reads the envelopes of every listed cycle in one query, through the approvers view too (review M1, L7)', async () => {
+    const { tx, executed } = fakeTx([
+      { cycle_id: CYCLE, department_id: ME, budget_amount: '7000.0000' },
+      { cycle_id: CYCLE, department_id: PLAN, budget_amount: null },
+    ]);
+    expect(await repo.listEnvelopes(tx, [CYCLE])).toEqual([
+      { cycleId: CYCLE, departmentId: ME, envelope: '7000' },
+      { cycleId: CYCLE, departmentId: PLAN, envelope: null },
+    ]);
+    expect(executed).toHaveLength(1);
+    expect(executed[0]?.sql).toContain('private.training_plan_departments');
+    expect(executed[0]?.sql).toContain('tms.plan_cycle_departments');
+    expect(executed[0]?.sql).not.toContain('answers');
+    expect(await repo.listEnvelopes(fakeTx().tx, [])).toEqual([]);
   });
 
   it('maps the history, the versions and a version as approved', async () => {

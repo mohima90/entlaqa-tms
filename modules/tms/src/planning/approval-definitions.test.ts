@@ -44,11 +44,15 @@ const approvals = vi.hoisted(() => ({
   listDepartmentResults: vi.fn(),
   financeConfirms: vi.fn(),
   submitProblem: vi.fn(),
+  listEnvelopes: vi.fn(),
 }));
 vi.mock('./approval-repository', () => approvals);
 
-const consolidation = vi.hoisted(() => ({ planQueryDefinition: vi.fn() }));
-vi.mock('./consolidation-definitions', () => consolidation);
+const consolidation = vi.hoisted(() => ({
+  listLinesOfPlans: vi.fn(),
+  listLinksOfPlans: vi.fn(),
+}));
+vi.mock('./consolidation-repository', () => consolidation);
 
 const { createDefineAction, createDefineQuery, grantsForAssignments } =
   await import('@jadarat/platform-rbac');
@@ -216,24 +220,32 @@ beforeEach(() => {
   approvals.listVersions.mockResolvedValue([]);
   approvals.financeConfirms.mockResolvedValue(false);
   approvals.submitProblem.mockResolvedValue(null);
-  consolidation.planQueryDefinition.mockReturnValue({
-    handler: () =>
-      Promise.resolve(
-        ok({
-          currency: 'SAR',
-          fractionDigits: 2,
-          summary: {
-            lines: 10,
-            leftOut: 2,
-            people: 313,
-            sessions: 16,
-            cost: '119900',
-            envelope: '122000',
-          },
-          budget: { departments: [{ state: { kind: 'over' } }, { state: { kind: 'within' } }] },
-        }),
-      ),
+  // Two lines of PLAN (review L7: the list's figures from three queries for every plan): Excel in the plan, shared
+  // by Sales (20) and HR (10) — 30 people, max 15 a session, SAR 3,000 a session: 2 sessions, SAR 6,000, Sales'
+  // share 4,000 over its envelope of 3,000 — and Speaking left out.
+  const line = (id: string, status: string, over: Record<string, unknown> = {}) => ({
+    id,
+    planId: PLAN,
+    status,
+    minPerSession: null,
+    maxPerSession: 15,
+    costPerSession: '3000',
+    costPerPerson: null,
+    ...over,
   });
+  consolidation.listLinesOfPlans.mockResolvedValue([
+    line('l1', 'in_plan'),
+    line('l2', 'left_out', { maxPerSession: null, costPerSession: null }),
+  ]);
+  consolidation.listLinksOfPlans.mockResolvedValue([
+    { planId: PLAN, lineId: 'l1', departmentId: SALES, seats: 20, named: 0 },
+    { planId: PLAN, lineId: 'l1', departmentId: HR, seats: 10, named: 0 },
+    { planId: PLAN, lineId: 'l2', departmentId: SALES, seats: 8, named: 0 },
+  ]);
+  approvals.listEnvelopes.mockResolvedValue([
+    { cycleId: CYCLE, departmentId: SALES, envelope: '3000' },
+    { cycleId: CYCLE, departmentId: HR, envelope: '5000' },
+  ]);
 });
 
 describe('the approval as each one sees it', () => {
@@ -322,27 +334,42 @@ describe('the Approvals page', () => {
         ...approval({ id: 'p2', status: 'approved', approvalStep: null }),
         cycleNameAr: null,
         cycleNameEn: '2026',
+        currency: 'SAR',
       },
-      { ...approval(), cycleNameAr: 'خطة', cycleNameEn: 'Plan 2027' },
+      { ...approval(), cycleNameAr: 'خطة', cycleNameEn: 'Plan 2027', currency: 'SAR' },
       {
         ...approval({ id: 'p3', status: 'draft', submittedAt: null, approvalStep: null }),
         cycleNameAr: null,
         cycleNameEn: 'x',
+        currency: 'SAR',
       },
     ]);
     const result = await runtime('hr_manager', HR_ONE).query(defs.approvalsQueryDefinition())({});
     if (!result.ok) throw new Error(result.error.code);
     expect(result.value.items.map((i) => i.planId)).toEqual([PLAN, 'p2']);
     expect(result.value.waiting).toBe(1);
-    expect(result.value.items[0]?.summary).toMatchObject({
-      lines: 10,
-      cost: '119900',
+    expect(result.value.items[0]?.summary).toEqual({
+      lines: 1,
+      leftOut: 1,
+      people: 30,
+      sessions: 2,
+      cost: '6000',
+      envelope: '8000',
       overBudget: 1,
+      currency: 'SAR',
+      fractionDigits: 2,
     });
+    // p2 has no line of its own: zero figures, not another plan's.
+    expect(result.value.items[1]?.summary).toMatchObject({ lines: 0, people: 0, cost: '0' });
+    // One query each for every plan listed (review L7), never one per plan.
+    expect(consolidation.listLinesOfPlans).toHaveBeenCalledTimes(1);
+    expect(consolidation.listLinesOfPlans.mock.calls[0]?.[1]).toEqual(['p2', PLAN]);
+    expect(approvals.listEnvelopes).toHaveBeenCalledTimes(1);
     const count = await runtime('hr_manager', HR_ONE).query(
       defs.approvalsQueryDefinition({ figures: false }),
     )({});
     expect(count.ok && count.value.items[0]?.summary).toBeNull();
+    expect(consolidation.listLinesOfPlans).toHaveBeenCalledTimes(1);
     const employee = await runtime('learner').query(defs.approvalsQueryDefinition())({});
     expect(!employee.ok && employee.error.code).toBe('FORBIDDEN');
   });

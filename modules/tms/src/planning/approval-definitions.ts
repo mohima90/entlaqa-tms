@@ -1,11 +1,4 @@
-import {
-  type AppError,
-  type Result,
-  appError,
-  defineErrorCodes,
-  err,
-  ok,
-} from '@jadarat/platform-core';
+import { type AppError, appError, defineErrorCodes, err, ok } from '@jadarat/platform-core';
 import {
   type OrgStructure,
   type UserTx,
@@ -33,11 +26,12 @@ import {
   type VersionLineView,
   decidableStep,
   departmentResult,
+  planFigures,
   stepStates,
   versionLineView,
 } from './approval-model';
 import * as approvals from './approval-repository';
-import { type PlanView, planQueryDefinition } from './consolidation-definitions';
+import * as consolidation from './consolidation-repository';
 import {
   type BudgetState,
   CyclePlanRef,
@@ -330,25 +324,34 @@ export interface ApprovalsView {
   readonly can: { readonly approve: boolean; readonly confirm: boolean };
 }
 
-/** The figures of a plan, as the Plan tab works them out. */
-async function summaryOf(ctx: Ctx, cycleId: string): Promise<ApprovalItem['summary']> {
-  const view: Result<PlanView, AppError> = await planQueryDefinition('read').handler({
-    ctx,
-    input: { cycleId },
-  });
-  if (!view.ok) return null;
-  const v = view.value;
-  return {
-    lines: v.summary.lines,
-    leftOut: v.summary.leftOut,
-    people: v.summary.people,
-    sessions: v.summary.sessions,
-    cost: v.summary.cost,
-    envelope: v.summary.envelope,
-    overBudget: v.budget.departments.filter((d) => d.state.kind === 'over').length,
-    currency: v.currency,
-    fractionDigits: v.fractionDigits,
-  };
+/**
+ * The figures of every listed plan, as the Plan tab works them out (approval-rules planFigures), from three
+ * queries for all of them — the lines, their links and the envelopes (review L7: no query per plan).
+ */
+async function figuresOf(
+  ctx: Ctx,
+  plans: readonly approvals.PlanListRecord[],
+): Promise<ReadonlyMap<string, NonNullable<ApprovalItem['summary']>>> {
+  const ids = plans.map((plan) => plan.id);
+  const [lines, links, envelopes] = await Promise.all([
+    consolidation.listLinesOfPlans(ctx.tx, ids),
+    consolidation.listLinksOfPlans(ctx.tx, ids),
+    approvals.listEnvelopes(
+      ctx.tx,
+      plans.map((plan) => plan.cycleId),
+    ),
+  ]);
+  return new Map(
+    plans.map((plan) => [
+      plan.id,
+      planFigures(
+        lines.filter((l) => l.planId === plan.id),
+        links.filter((l) => l.planId === plan.id),
+        envelopes.filter((e) => e.cycleId === plan.cycleId),
+        plan.currency,
+      ),
+    ]),
+  );
 }
 
 /**
@@ -375,6 +378,7 @@ export function approvalsQueryDefinition(
         ctx.tx,
         plans.map((plan) => plan.submittedBy),
       );
+      const figures = options.figures === false ? null : await figuresOf(ctx, plans);
       const items: ApprovalItem[] = [];
       for (const plan of plans) {
         items.push({
@@ -388,7 +392,7 @@ export function approvalsQueryDefinition(
           submittedBy: person(plan.submittedBy),
           decidedAt: iso(plan.decidedAt),
           waitingForMe: decidableStep(plan, viewer) !== null,
-          summary: options.figures === false ? null : await summaryOf(ctx, plan.cycleId),
+          summary: figures?.get(plan.id) ?? null,
         });
       }
       items.sort((a, b) => Number(b.waitingForMe) - Number(a.waitingForMe));

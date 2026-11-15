@@ -5,6 +5,7 @@ import {
   type VersionLine,
   decidableStep,
   departmentResult,
+  planFigures,
   stepStates,
   submitProblemOf,
 } from './approval-model';
@@ -160,5 +161,55 @@ describe('the decision input', () => {
     expect(DecidePlanInput.safeParse({ ...base, step: 'ceo', decision: 'approve' }).success).toBe(
       false,
     );
+  });
+});
+
+describe('a plan’s figures on the Approvals list (review L7)', () => {
+  const line = (id: string, over: Record<string, unknown> = {}) => ({
+    id,
+    status: 'in_plan' as const,
+    minPerSession: null,
+    maxPerSession: 10,
+    costPerSession: '1000',
+    costPerPerson: null,
+    ...over,
+  });
+
+  it('works out the lines, people, sessions, cost and departments over their envelope as the Plan tab does', () => {
+    const figures = planFigures(
+      [line('a'), line('b', { status: 'left_out' }), line('c', { costPerSession: null })],
+      [
+        { lineId: 'a', departmentId: 'd1', seats: 7, named: 0 },
+        { lineId: 'a', departmentId: 'd2', seats: 5, named: 2 },
+        { lineId: 'b', departmentId: 'd1', seats: 3, named: 0 },
+        { lineId: 'c', departmentId: 'd2', seats: 4, named: 0 },
+      ],
+      [
+        { departmentId: 'd1', envelope: '1000' },
+        { departmentId: 'd2', envelope: null },
+      ],
+      'KWD',
+    );
+    // a: 12 people, 2 sessions, 2,000 (d1 7/12 → 1,166.667 > 1,000); c: 4 people, 1 session, no cost.
+    expect(figures).toEqual({
+      lines: 2,
+      leftOut: 1,
+      people: 16,
+      sessions: 3,
+      cost: '2000',
+      envelope: '1000',
+      overBudget: 1,
+      currency: 'KWD',
+      fractionDigits: 3,
+    });
+  });
+
+  it('an empty plan has nothing to count', () => {
+    expect(planFigures([], [], [], 'SAR')).toMatchObject({
+      lines: 0,
+      people: 0,
+      cost: '0',
+      envelope: null,
+    });
   });
 });

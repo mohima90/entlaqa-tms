@@ -8,6 +8,7 @@ import {
 } from './approval-rules';
 import type { PlanStatus } from './consolidation-rules';
 import { dbError } from './repository';
+import { canonicalAmount } from './rules';
 
 /**
  * Data access for the training plan's approval (WP-LD-03, T-M3-07; migration 20261116100200). Runs inside the
@@ -87,13 +88,16 @@ export async function getApprovalByCycle(
 export interface PlanListRecord extends ApprovalRecord {
   readonly cycleNameAr: string | null;
   readonly cycleNameEn: string | null;
+  /** The cycle's currency (its plan's amounts). */
+  readonly currency: string;
 }
 
 export async function listPlans(tx: UserTx): Promise<PlanListRecord[]> {
   const rows = await tx.execute(sql`
     select p.id, p.cycle_id, p.status, p.plan_version, p.approval_step, p.finance_step, p.submitted_at,
            p.submitted_by, p.hr_decided_at, p.hr_decided_by, p.decided_at, p.decided_by, p.send_back_comment,
-           p.approved_at, p.approved_by, p.version, c.name_ar as cycle_name_ar, c.name_en as cycle_name_en
+           p.approved_at, p.approved_by, p.version, c.name_ar as cycle_name_ar, c.name_en as cycle_name_en,
+           c.currency
     from tms.training_plans p
     join tms.plan_cycles c on c.tenant_id = p.tenant_id and c.id = p.cycle_id
     order by coalesce(p.submitted_at, p.opened_at) desc, p.id
@@ -102,6 +106,40 @@ export async function listPlans(tx: UserTx): Promise<PlanListRecord[]> {
     ...approvalRecord(r),
     cycleNameAr: text(r.cycle_name_ar),
     cycleNameEn: text(r.cycle_name_en),
+    currency: String(r.currency),
+  }));
+}
+
+/** A department's envelope in a cycle. */
+export interface EnvelopeRecord {
+  readonly cycleId: string;
+  readonly departmentId: string;
+  readonly envelope: string | null;
+}
+
+/**
+ * The envelopes of several cycles' departments, in one query (the Approvals list's figures): the rows the caller
+ * reads, and — for the plan's approvers, who do not read the departments' rows (review M1) — the same columns
+ * through private.training_plan_departments.
+ */
+export async function listEnvelopes(
+  tx: UserTx,
+  cycleIds: readonly string[],
+): Promise<EnvelopeRecord[]> {
+  if (cycleIds.length === 0) return [];
+  const ids = `{${cycleIds.join(',')}}`;
+  const rows = await tx.execute(sql`
+    select cycle_id, department_id, budget_amount from (
+      select cycle_id, department_id, budget_amount::text as budget_amount, created_at, id
+      from tms.plan_cycle_departments where cycle_id = any (${ids}::uuid[])
+      union
+      select cycle_id, department_id, budget_amount::text, created_at, id
+      from private.training_plan_departments where cycle_id = any (${ids}::uuid[])) d
+    order by cycle_id, created_at, id`);
+  return rows.map((r: Row) => ({
+    cycleId: String(r.cycle_id),
+    departmentId: String(r.department_id),
+    envelope: canonicalAmount(text(r.budget_amount)),
   }));
 }
 

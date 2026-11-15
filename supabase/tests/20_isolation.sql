@@ -40,6 +40,9 @@ begin
     -- Training plan (WP-LD-02): read and written by the plan's roles only (organization-wide or limited to a
     -- department); cross-tenant, FK and permission tests in 99_planning_f_plan_*.sql.
     'tms.training_plans', 'tms.plan_lines', 'tms.plan_line_needs', 'tms.plan_budget_reasons',
+    -- Plan approval (WP-LD-03): insert-only, written by the database (private.training_plans_record); cross-tenant,
+    -- read and write tests in 99_planning_g_approval_1_owner.sql.
+    'tms.training_plan_events', 'tms.training_plan_versions', 'tms.training_plan_department_results',
     -- Needs forms (T-M3-10): insert/FK tests below; rules in 99_needs_forms_1_app_server.sql.
     'tms.needs_forms', 'tms.needs_form_sections', 'tms.needs_form_fields',
     -- Branding (WP-ADM-02): insert/FK tests below; images, publishing and the public path in 99_branding_*.sql.
@@ -86,7 +89,8 @@ begin
     if r.table_name::text in ('tms.planning_settings', 'tms.planning_default_steps', 'tms.plan_cycles',
                               'tms.plan_cycle_scope', 'tms.plan_cycle_departments', 'tms.plan_cycle_steps',
                               'tms.plan_needs', 'tms.plan_need_people', 'tms.training_plans', 'tms.plan_lines',
-                              'tms.plan_line_needs', 'tms.plan_budget_reasons') then
+                              'tms.plan_line_needs', 'tms.plan_budget_reasons', 'tms.training_plan_events',
+                              'tms.training_plan_versions', 'tms.training_plan_department_results') then
       -- Read only with tms.plan_cycle.read / .manage (S-L3), which the Organization Admin does not hold: the
       -- same generic check as an L&D Manager of tenant A is in 99_planning_b_app_server.sql.
       perform tests.assert_eq(v_total, 0::bigint, format('%s: read with the planning permissions only', r.table_name));

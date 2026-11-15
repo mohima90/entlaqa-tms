@@ -16,7 +16,11 @@ vi.mock('@jadarat/platform-rbac', () => ({
     'platform.tenant.manage': { code: 'platform.tenant.manage' },
     'platform.org.manage': { code: 'platform.org.manage' },
   },
-  tmsPlanningPermissions: { 'tms.plan_cycle.read': { code: 'tms.plan_cycle.read' } },
+  tmsPlanningPermissions: {
+    'tms.plan_cycle.read': { code: 'tms.plan_cycle.read' },
+    'tms.training_plan.approve': { code: 'tms.training_plan.approve' },
+    'tms.training_plan.confirm': { code: 'tms.training_plan.confirm' },
+  },
   tmsRolePermissions: {
     'tms.needs_form.read': { code: 'tms.needs_form.read' },
     'tms.plan_needs.submit': { code: 'tms.plan_needs.submit' },
@@ -25,6 +29,9 @@ vi.mock('@jadarat/platform-rbac', () => ({
 vi.mock('./session-state', () => ({ getSessionState: vi.fn(), redirectFor: vi.fn(() => null) }));
 vi.mock('./config-status', () => ({ getConfigStatus: vi.fn() }));
 vi.mock('./users-queries', () => ({ myIdentityQuery: vi.fn() }));
+vi.mock('./training-plan-queries', () => ({
+  approvalsCountQuery: vi.fn(() => Promise.resolve({ ok: true, value: { waiting: 2 } })),
+}));
 
 describe('navigationFor', () => {
   it('shows Users to members who see more than themselves', () => {
@@ -46,6 +53,8 @@ describe('navigationFor', () => {
       branding: true,
       emailIntegration: true,
       bulkImport: true,
+      approvals: false,
+      approvalsWaiting: 0,
     });
     expect(
       navigationFor([{ permission: 'platform.user.read', scope: { type: 'tenant' } }]),
@@ -65,6 +74,8 @@ describe('navigationFor', () => {
       branding: true,
       emailIntegration: true,
       bulkImport: true,
+      approvals: false,
+      approvalsWaiting: 0,
     });
   });
 
@@ -98,6 +109,8 @@ describe('navigationFor', () => {
       branding: true,
       emailIntegration: true,
       bulkImport: true,
+      approvals: false,
+      approvalsWaiting: 0,
     });
     expect(navigationFor([{ permission: 'platform.org.read', scope: { type: 'tenant' } }])).toEqual(
       {
@@ -116,6 +129,8 @@ describe('navigationFor', () => {
         branding: true,
         emailIntegration: true,
         bulkImport: true,
+        approvals: false,
+        approvalsWaiting: 0,
       },
     );
     expect(navigationFor([])).toEqual({
@@ -134,6 +149,8 @@ describe('navigationFor', () => {
       branding: true,
       emailIntegration: true,
       bulkImport: true,
+      approvals: false,
+      approvalsWaiting: 0,
     });
   });
 
@@ -159,6 +176,8 @@ describe('navigationFor', () => {
       branding: true,
       emailIntegration: true,
       bulkImport: true,
+      approvals: false,
+      approvalsWaiting: 0,
     });
     expect(
       navigationFor([{ permission: 'platform.role.read', scope: { type: 'direct_reports' } }]),
@@ -178,6 +197,8 @@ describe('navigationFor', () => {
       branding: true,
       emailIntegration: true,
       bulkImport: true,
+      approvals: false,
+      approvalsWaiting: 0,
     });
   });
 
@@ -200,6 +221,8 @@ describe('navigationFor', () => {
       branding: true,
       emailIntegration: true,
       bulkImport: true,
+      approvals: false,
+      approvalsWaiting: 0,
     });
     expect(navigationFor([{ permission: 'platform.tenant.read', scope: { type: 'own' } }])).toEqual(
       {
@@ -218,6 +241,8 @@ describe('navigationFor', () => {
         branding: true,
         emailIntegration: true,
         bulkImport: true,
+        approvals: false,
+        approvalsWaiting: 0,
       },
     );
   });
@@ -258,6 +283,19 @@ describe('navigationFor', () => {
     ).toMatchObject({ planning: false });
   });
 
+  it('shows Approvals to whoever decides a step of the training plan (WP-LD-03)', () => {
+    for (const code of ['tms.training_plan.approve', 'tms.training_plan.confirm']) {
+      expect(navigationFor([{ permission: code, scope: { type: 'tenant' } }])).toMatchObject({
+        approvals: true,
+        approvalsWaiting: 0,
+      });
+    }
+    expect(
+      navigationFor([{ permission: 'tms.training_plan.read', scope: { type: 'tenant' } }])
+        .approvals,
+    ).toBe(false);
+  });
+
   it('shows every entry in the data-less preview', () => {
     expect(navigationFor(null)).toEqual({
       users: true,
@@ -275,6 +313,8 @@ describe('navigationFor', () => {
       branding: true,
       emailIntegration: true,
       bulkImport: true,
+      approvals: true,
+      approvalsWaiting: 0,
     });
   });
 
@@ -318,6 +358,8 @@ describe('navigationFor', () => {
       branding: true,
       emailIntegration: true,
       bulkImport: true,
+      approvals: false,
+      approvalsWaiting: 0,
     });
     // Any narrower scope is not enough (deny by default).
     const narrower: Grant['scope'][] = [
@@ -335,6 +377,8 @@ describe('navigationFor', () => {
         branding: true,
         emailIntegration: true,
         bulkImport: true,
+        approvals: false,
+        approvalsWaiting: 0,
       });
     }
   });

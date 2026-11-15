@@ -5,6 +5,7 @@ import { routing } from '@jadarat/platform-i18n/routing';
 import type { CycleView } from '@jadarat/tms';
 import { earliestExtension } from '@jadarat/tms/planning-rules';
 import { Alert, Badge, type BadgeTone, Card, Icon, ProgressBar, TabNav } from '@jadarat/ui';
+import { displayDateFormatter } from '@jadarat/platform-i18n';
 import { hasLocale } from 'next-intl';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
@@ -15,9 +16,11 @@ import { PlanningHeader } from '../../../../../../components/planning/planning-h
 import { ProgressTable } from '../../../../../../components/planning/progress-table';
 import { RefreshOnReturn } from '../../../../../../components/latest-version';
 import { SuiteShell } from '../../../../../../components/suite-shell';
+import { PlanApprovalBar } from '../../../../../../components/plan-approval/plan-approval-bar';
 import { PlanNotOpen } from '../../../../../../components/training-plan/plan-not-open';
 import { PlanTab } from '../../../../../../components/training-plan/plan-tab';
 import { cycleDepartmentHref } from '../../../../../../lib/needs-view';
+import { approvalMoments } from '../../../../../../lib/plan-approval-view';
 import { dayFormatter, formatAmount } from '../../../../../../lib/planning-format';
 import {
   planCycleQuery,
@@ -41,6 +44,8 @@ import {
 } from '../../../../../../lib/structure-view';
 import { getSuiteContext } from '../../../../../../lib/suite-context';
 import {
+  planApprovalQuery,
+  planApprovalTexts,
   trainingPlanErrorTexts,
   trainingPlanQuery,
   trainingPlanTexts,
@@ -84,6 +89,7 @@ export default async function PlanCyclePage({
   const path = `${PLANNING_PATHS.cycles}/${cycleId}`;
 
   const plans = await getTranslations({ locale, namespace: 'trainingPlan' });
+  const approvalT = await getTranslations({ locale, namespace: 'planApproval' });
   let title = t('list.title');
   let description: ReactNode;
   let content: ReactNode;
@@ -120,15 +126,39 @@ export default async function PlanCyclePage({
           />
         );
       }
+      // Where the plan's approval stands (WP-LD-03): the banner, «Submit for approval», «Versions», «Revise plan».
+      const approval = await planApprovalQuery({ cycleId });
+      const approvalView = approval.ok ? approval.value : null;
+      const errors = await trainingPlanErrorTexts(locale);
       return (
-        <PlanTab
-          locale={locale}
-          view={planView}
-          texts={trainingPlanTexts(locale)}
-          errors={await trainingPlanErrorTexts(locale)}
-          initialSubview={planSubview(query.view)}
-          initialGrouping={planGrouping(query.group)}
-        />
+        <>
+          {approvalView ? (
+            <PlanApprovalBar
+              locale={locale}
+              view={planView}
+              approval={approvalView}
+              planName={localName(locale, planView.cycle.name)}
+              moments={approvalMoments(
+                approvalView,
+                displayDateFormatter(
+                  locale,
+                  context.regional.dateDisplay,
+                  context.regional.timeZone,
+                ),
+              )}
+              texts={planApprovalTexts(locale)}
+              errors={errors}
+            />
+          ) : null}
+          <PlanTab
+            locale={locale}
+            view={planView}
+            texts={trainingPlanTexts(locale)}
+            errors={errors}
+            initialSubview={planSubview(query.view)}
+            initialGrouping={planGrouping(query.group)}
+          />
+        </>
       );
     };
     if (planView) {
@@ -152,7 +182,10 @@ export default async function PlanCyclePage({
     }
     const planBadge = planView?.plan ? (
       <Badge tone={PLAN_TONE[planView.plan.status] ?? 'neutral'} dot data-testid="plan-status">
-        {plans(`planStatus.${planView.plan.status}`)}
+        {planView.plan.status === 'approved' ? <Icon name="lock" className="size-3.5" /> : null}
+        {planView.plan.status === 'approved'
+          ? approvalT('approvedBadge', { version: planView.plan.planVersion })
+          : plans(`planStatus.${planView.plan.status}`)}
       </Badge>
     ) : null;
     if (!result.ok && planView && toClientError(result.error).code === 'FORBIDDEN') {

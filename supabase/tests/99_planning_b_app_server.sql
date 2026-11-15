@@ -365,11 +365,17 @@ begin
   perform tests.assert_fails($q$select private.lock_needs_form((select id from tms.needs_forms where is_default))$q$,
     array['42501'], 'an Employee does not lock a needs form');
   perform tests.set_claims(tests.uab_claims());
-  foreach v_table in array array['tms.planning_settings', 'tms.planning_default_steps', 'tms.plan_cycles',
-                                 'tms.plan_cycle_scope', 'tms.plan_cycle_departments', 'tms.plan_cycle_steps'] loop
+  -- WP-LD-03: the HR Manager approves the training plan (tms.training_plan.read, BRD Appendix B «V»), so it reads
+  -- the cycles and their departments' envelopes the plan is checked against — still no set-up.
+  foreach v_table in array array['tms.planning_settings', 'tms.planning_default_steps',
+                                 'tms.plan_cycle_scope', 'tms.plan_cycle_steps'] loop
     execute format('select count(*) from %s', v_table) into v_count;
     perform tests.assert_eq(v_count, 0::bigint, format('%s: the HR Manager reads nothing', v_table));
   end loop;
+  perform tests.assert((select count(*) from tms.plan_cycles) > 0,
+    'the HR Manager reads the cycles whose plan it approves (WP-LD-03)');
+  perform tests.assert_eq(tests.rows_affected($q$update tms.plan_cycles set reminder_days = '{3}'$q$), 0::bigint,
+    'and changes none');
 end $$;
 rollback;
 

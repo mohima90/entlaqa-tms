@@ -17,6 +17,7 @@ import {
 import { redirect } from 'next/navigation';
 import { getConfigStatus } from './config-status';
 import { personPhotoHref } from './person-photo';
+import { approvalsCountQuery } from './training-plan-queries';
 import { myIdentityQuery } from './users-queries';
 import { requestSessionState } from './request-session';
 import { redirectFor } from './session-state';
@@ -109,6 +110,12 @@ export interface SuiteNavigationAccess {
   readonly branding: boolean;
   readonly emailIntegration: boolean;
   readonly bulkImport: boolean;
+  /**
+   * Approvals (WP-LD-03): members who decide a step of the training plan — tms.training_plan.approve (HR Manager)
+   * or .confirm (Finance) organization-wide — and how many plans wait for them (0 in the preview).
+   */
+  readonly approvals: boolean;
+  readonly approvalsWaiting: number;
 }
 
 /** Every feature (no plan, the preview). */
@@ -151,6 +158,8 @@ export function navigationFor(
       branding: true,
       emailIntegration: true,
       bulkImport: true,
+      approvals: true,
+      approvalsWaiting: 0,
     };
   }
   const tenantWide = (code: string) =>
@@ -175,6 +184,11 @@ export function navigationFor(
     branding: features.includes('branding'),
     emailIntegration: features.includes('email_integration'),
     bulkImport: features.includes('bulk_import'),
+    approvals:
+      !organizationSetup &&
+      (tenantWide(tmsPlanningPermissions['tms.training_plan.approve'].code) ||
+        tenantWide(tmsPlanningPermissions['tms.training_plan.confirm'].code)),
+    approvalsWaiting: 0,
   };
 }
 
@@ -214,10 +228,13 @@ export async function getSuiteContext(locale: AppLocale): Promise<SuiteContext> 
   }
   const grants = await loadMemberGrants();
   const identity = await myIdentityQuery({});
+  const navigation = navigationFor(grants.ok ? grants.value : [], session.features ?? ALL_FEATURES);
+  // The plans waiting for an approver's decision (WP-LD-03): the menu's count; one read, for approvers only.
+  const waiting = navigation.approvals ? await approvalsCountQuery({}) : null;
   return {
     live: true,
     organizationName,
-    navigation: navigationFor(grants.ok ? grants.value : [], session.features ?? ALL_FEATURES),
+    navigation: { ...navigation, approvalsWaiting: waiting?.ok ? waiting.value.waiting : 0 },
     me: identity.ok
       ? {
           nameAr: identity.value.displayNameAr,

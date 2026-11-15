@@ -148,7 +148,11 @@ export const ExtendDeadlineInput = z.strictObject({
 export type ExtendDeadlineInput = z.output<typeof ExtendDeadlineInput>;
 
 /** Planning settings: the default reminders (the default approval chain left the screens — EP-PLN §13). */
-export const SaveSettingsInput = z.strictObject({ reminderDays: ReminderDays });
+export const SaveSettingsInput = z.strictObject({
+  reminderDays: ReminderDays,
+  /** «Finance confirms the plan» (WP-LD-03, EP-PLN §13 c, d); left as it is when not sent. */
+  financeConfirms: z.boolean().optional(),
+});
 export type SaveSettingsInput = z.output<typeof SaveSettingsInput>;
 
 export const CyclesListInput = z.strictObject({});

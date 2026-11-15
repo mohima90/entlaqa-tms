@@ -1037,7 +1037,11 @@ describe('L&D Manager: launch, extend, delete, settings', () => {
   });
 
   it('saves the planning settings (the default reminders), audited; the stored chain is left alone', async () => {
-    repo.getSettings.mockResolvedValue({ version: null, reminderDays: [7, 2] });
+    repo.getSettings.mockResolvedValue({
+      version: null,
+      reminderDays: [7, 2],
+      financeConfirms: false,
+    });
     repo.saveSettings.mockResolvedValue(1);
     const { action, audits } = runtime('training_manager');
     const result = await action(defs.savePlanningSettingsActionDefinition())({
@@ -1058,5 +1062,31 @@ describe('L&D Manager: launch, extend, delete, settings', () => {
       steps: [{ kind: 'person', nameAr: 'مالية', nameEn: 'Finance', approverPersonId: CFO }],
     } as never);
     expect(!withChain.ok && withChain.error.code).toBe('VALIDATION_FAILED');
+  });
+
+  it('switches «Finance confirms the plan» (WP-LD-03), audited with its before and after', async () => {
+    repo.getSettings.mockResolvedValue({ version: 2, reminderDays: [7], financeConfirms: false });
+    repo.saveSettings.mockResolvedValue(3);
+    const { action, audits } = runtime('training_manager');
+    const result = await action(defs.savePlanningSettingsActionDefinition())({
+      reminderDays: [7],
+      financeConfirms: true,
+    });
+    expect(result.ok && result.value.version).toBe(3);
+    expect(repo.saveSettings).toHaveBeenCalledWith({}, [7], true);
+    expect(audits).toEqual([
+      {
+        action: 'tms.planning_settings.changed',
+        entityType: 'planning_settings',
+        data: {
+          before: { reminderDays: [7], financeConfirms: false },
+          after: { reminderDays: [7], financeConfirms: true },
+        },
+      },
+    ]);
+    const coordinator = await runtime('training_coordinator').action(
+      defs.savePlanningSettingsActionDefinition(),
+    )({ reminderDays: [7], financeConfirms: true });
+    expect(!coordinator.ok && coordinator.error.code).toBe('FORBIDDEN');
   });
 });

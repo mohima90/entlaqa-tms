@@ -137,8 +137,10 @@ begin
                        or not ('tms.course.read' = any (v_before)),
     'another organization is not affected');
   update platform.tenants set plan_id = 'e1000000-0000-4000-8000-000000000002' where id = 'a0000000-0000-4000-8000-000000000001';
+  -- (The HR Manager also approves the training plan since WP-LD-03: that is the planning feature, not in this plan.)
   perform tests.assert_eq(private.member_permissions('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000ab'),
-    v_before, 'a plan with courses: everything again');
+    array(select c from unnest(v_before) c where private.permission_feature(c) is distinct from 'planning' order by c),
+    'a plan with courses: everything again but planning');
   perform tests.assert(private.tenant_has_feature('a0000000-0000-4000-8000-000000000001', 'courses')
                        and not private.tenant_has_feature('a0000000-0000-4000-8000-000000000001', 'planning')
                        and private.tenant_has_feature('b0000000-0000-4000-8000-000000000001', 'planning'),

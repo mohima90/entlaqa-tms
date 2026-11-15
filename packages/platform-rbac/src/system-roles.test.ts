@@ -28,6 +28,19 @@ function seededRoles(): { code: string; privileged: boolean }[] {
   }));
 }
 
+/** The ready-made Finance role (WP-LD-03, migration 20261116100000). */
+function financeRole(): { code: string; privileged: boolean }[] {
+  const file = readdirSync(migrationsDir).find((f) =>
+    f.endsWith('_platform__finance_role_and_plan_decisions.sql'),
+  );
+  if (!file) throw new Error('Finance role migration not found');
+  const text = readFileSync(join(migrationsDir, file), 'utf8');
+  return [...text.matchAll(/\('([a-z_]+)', (true|false), \d+\)/g)].map((m) => ({
+    code: m[1] ?? '',
+    privileged: m[2] === 'true',
+  }));
+}
+
 /** The former roles the EP-ROLES backfill removes from ref_roles (migration 20261019090300). */
 function removedRoles(): string[] {
   const file = readdirSync(migrationsDir).find((f) =>
@@ -40,7 +53,7 @@ function removedRoles(): string[] {
 }
 
 describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)', () => {
-  it('has the six standard roles, without the ENTLAQA-only Platform Super Admin', () => {
+  it('has the six standard roles and the ready-made Finance role, without the ENTLAQA-only Platform Super Admin', () => {
     expect(SYSTEM_ROLES.map((r) => r.code)).toEqual([...SYSTEM_ROLE_CODES]);
     expect([...SYSTEM_ROLE_CODES]).toEqual([
       'tenant_admin',
@@ -49,6 +62,7 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
       'training_coordinator',
       'department_head',
       'learner',
+      'finance',
     ]);
     expect(isSystemRoleCode('platform_super_admin')).toBe(false);
     expect(isSystemRoleCode('line_manager')).toBe(false);
@@ -58,7 +72,7 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
     const removed = removedRoles();
     expect(removed.sort()).toEqual(Object.keys(FORMER_ROLE_NAMES).sort());
     expect(
-      seededRoles()
+      [...seededRoles(), ...financeRole()]
         .filter((r) => !removed.includes(r.code))
         .sort((a, b) => a.code.localeCompare(b.code)),
     ).toEqual(
@@ -75,6 +89,7 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
     expect(writers).toEqual([
       '20261005100000_platform__create_ref_roles.sql',
       '20261019090300_platform__backfill_standard_roles.sql',
+      '20261116100000_platform__finance_role_and_plan_decisions.sql',
     ]);
   });
 
@@ -82,6 +97,8 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
     expect(SYSTEM_ROLES.filter((r) => r.privileged).map((r) => r.code)).toEqual([
       'tenant_admin',
       'hr_manager',
+      // WP-LD-03: the Finance step checks what the HR Manager approved — the HR Manager does not choose who.
+      'finance',
     ]);
   });
 
@@ -165,6 +182,24 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
       r.grants.find((g) => g.permission.code === 'platform.person.hr_details')?.scope,
     ]);
     expect(holders).toEqual([['hr_manager', 'tenant']]);
+  });
+
+  it('approves the training plan by role: the HR Manager approves, Finance confirms (WP-LD-03, EP-PLN §13)', () => {
+    const holders = (code: string) =>
+      SYSTEM_ROLES.filter((r) => r.grants.some((g) => g.permission.code === code)).map(
+        (r) => r.code,
+      );
+    expect(holders('tms.training_plan.approve')).toEqual(['hr_manager']);
+    expect(holders('tms.training_plan.confirm')).toEqual(['finance']);
+    expect(holders('tms.training_plan.manage')).toEqual(['training_manager']);
+    // Finance reads the plan and its budgets (BRD §4.2), the departments' names and its own record — nothing else.
+    expect(getSystemRole('finance').grants.map((g) => `${g.permission.code}:${g.scope}`)).toEqual([
+      'platform.user.read:own',
+      'platform.org.read:tenant',
+      'tms.training_plan.read:tenant',
+      'tms.training_plan.confirm:tenant',
+    ]);
+    expect(getSystemRole('finance').name).toEqual({ ar: 'المالية', en: 'Finance' });
   });
 
   it('lets only the HR Manager maintain the organization structure (PO, 11 Oct 2026; T-M2-19)', () => {

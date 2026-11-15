@@ -1,7 +1,7 @@
 'use client';
 import { savePlanningSettingsAction } from '@jadarat/tms/actions/planning';
 import { PLAN_LIMITS } from '@jadarat/tms/planning-rules';
-import { Alert, Card, SaveBar, toast } from '@jadarat/ui';
+import { Alert, Card, SaveBar, cn, toast } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { type SyntheticEvent, useEffect, useState, useTransition } from 'react';
 import { parseReminderDays } from '../../lib/planning-view';
@@ -18,6 +18,16 @@ export interface PlanningSettingsFormProps {
   readonly texts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
   readonly initialDays: readonly number[];
+  /** «Finance confirms the plan» (WP-LD-03; off by default) and its texts (namespace planApproval.settings). */
+  readonly initialFinance: boolean;
+  readonly financeTexts: {
+    readonly title: string;
+    readonly intro: string;
+    readonly label: string;
+    readonly hint: string;
+    readonly on: string;
+    readonly off: string;
+  };
 }
 
 const SETTINGS_FORM = 'planning-settings';
@@ -36,9 +46,11 @@ export function PlanningSettingsForm(props: PlanningSettingsFormProps) {
   const [pending, startTransition] = useTransition();
   const [saved, setSaved] = useState(props.initialDays.map(String));
   const [days, setDays] = useState<string[]>(saved);
+  const [savedFinance, setSavedFinance] = useState(props.initialFinance);
+  const [finance, setFinance] = useState(props.initialFinance);
   const [daysError, setDaysError] = useState<string | undefined>(undefined);
   const [notice, setNotice] = useState<string | null>(null);
-  const dirty = days.join(',') !== saved.join(',');
+  const dirty = days.join(',') !== saved.join(',') || finance !== savedFinance;
   const { form, focusInvalid } = useFocusInvalid(pending);
 
   // Said to the page: it does not reload itself over unsaved entries (RefreshOnReturn, WP-FIX-03).
@@ -60,9 +72,13 @@ export function PlanningSettingsForm(props: PlanningSettingsFormProps) {
       return;
     }
     startTransition(async () => {
-      const result = await savePlanningSettingsAction({ reminderDays: parsed.days });
+      const result = await savePlanningSettingsAction({
+        reminderDays: parsed.days,
+        financeConfirms: finance,
+      });
       if (result.ok) {
         setSaved(days);
+        setSavedFinance(finance);
         toast.success(t('settings.saved'));
         router.refresh();
         return;
@@ -81,6 +97,7 @@ export function PlanningSettingsForm(props: PlanningSettingsFormProps) {
       onReset={(event) => {
         event.preventDefault();
         setDays(saved);
+        setFinance(savedFinance);
         setDaysError(undefined);
         setNotice(null);
       }}
@@ -107,6 +124,45 @@ export function PlanningSettingsForm(props: PlanningSettingsFormProps) {
             maxReminders={PLAN_LIMITS.maxReminders}
           />
           <Alert tone="info">{t('setup.reminders.notificationsNote')}</Alert>
+        </div>
+      </Card>
+      <Card title={props.financeTexts.title} description={props.financeTexts.intro}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex min-w-0 flex-col gap-1">
+            <span id="finance-confirms-label" className="font-semibold">
+              {props.financeTexts.label}
+            </span>
+            <span id="finance-confirms-hint" className="text-sm text-text-muted">
+              {props.financeTexts.hint}
+            </span>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={finance}
+            aria-labelledby="finance-confirms-label"
+            aria-describedby="finance-confirms-hint"
+            disabled={pending}
+            onClick={() => {
+              setFinance((value) => !value);
+            }}
+            className={cn(
+              'relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors disabled:cursor-not-allowed disabled:opacity-60',
+              finance ? 'bg-primary' : 'bg-border-strong',
+            )}
+            data-testid="finance-confirms"
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                'inline-block size-6 rounded-full bg-surface shadow-1 transition-transform',
+                finance ? 'translate-x-5 rtl:-translate-x-5' : 'translate-x-0',
+              )}
+            />
+            <span className="sr-only">
+              {finance ? props.financeTexts.on : props.financeTexts.off}
+            </span>
+          </button>
         </div>
       </Card>
       {dirty || pending ? (

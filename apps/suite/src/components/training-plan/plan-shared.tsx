@@ -45,10 +45,15 @@ export function planModel(locale: 'ar' | 'en', view: PlanView, texts: PlanTexts)
   };
 }
 
-export type LineState = 'inPlan' | 'needsCost' | 'leftOut';
+export type LineState = 'inPlan' | 'needsCost' | 'leftOut' | 'approved';
 
-export function lineState(line: Pick<PlanLine, 'status' | 'cost'>): LineState {
+/** A line's state; in an approved plan (WP-LD-03, design 6a) the lines in the plan read «Approved». */
+export function lineState(
+  line: Pick<PlanLine, 'status' | 'cost'>,
+  planStatus: string | null = null,
+): LineState {
   if (line.status === 'left_out') return 'leftOut';
+  if (planStatus === 'approved') return 'approved';
   return line.cost === null ? 'needsCost' : 'inPlan';
 }
 
@@ -56,6 +61,7 @@ const STATE_TONE: Record<LineState, BadgeTone> = {
   inPlan: 'brand',
   needsCost: 'warning',
   leftOut: 'neutral',
+  approved: 'success',
 };
 
 /** «In the plan» · «Needs a cost» · «Left out» (screen 1). */
@@ -66,7 +72,7 @@ export function LineStatusBadge({
   readonly line: Pick<PlanLine, 'status' | 'cost'>;
   readonly model: PlanModel;
 }) {
-  const state = lineState(line);
+  const state = lineState(line, model.view.plan?.status ?? null);
   return (
     <Badge
       tone={STATE_TONE[state]}

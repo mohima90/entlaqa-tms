@@ -11,13 +11,15 @@
     "./actions/planning": "./src/actions/planning.ts",
     "./actions/needs": "./src/actions/needs.ts",
     "./actions/consolidation": "./src/actions/consolidation.ts",
+    "./actions/approval": "./src/actions/approval.ts",
     "./courses": "./src/courses/shared.ts",
     "./courses/server": "./src/courses/server.ts",
     "./needs-forms": "./src/needs-forms/index.ts",
     "./needs-forms/server": "./src/needs-forms/server.ts",
     "./planning-model": "./src/planning/model.ts",
     "./planning-rules": "./src/planning/rules.ts",
-    "./consolidation-rules": "./src/planning/consolidation-rules.ts"
+    "./consolidation-rules": "./src/planning/consolidation-rules.ts",
+    "./approval-rules": "./src/planning/approval-rules.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

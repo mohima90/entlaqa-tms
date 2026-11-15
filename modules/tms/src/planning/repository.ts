@@ -253,16 +253,19 @@ export interface PlanningSettingsRecord {
   /** null: never saved (the built-in defaults apply). */
   readonly version: number | null;
   readonly reminderDays: readonly number[];
+  /** «Finance confirms the plan» (WP-LD-03; off by default). */
+  readonly financeConfirms: boolean;
 }
 
 /** The default reminders. A default approval chain stored before 12 Nov 2026 is not read (EP-PLN §13). */
 export async function getSettings(tx: UserTx): Promise<PlanningSettingsRecord> {
   const [row] = await tx.execute(
-    sql`select reminder_days, version from tms.planning_settings limit 1`,
+    sql`select reminder_days, finance_confirms, version from tms.planning_settings limit 1`,
   );
   return {
     version: row ? Number(row.version) : null,
     reminderDays: row ? smallints(row.reminder_days) : DEFAULT_REMINDER_DAYS,
+    financeConfirms: row?.finance_confirms === true,
   };
 }
 
@@ -488,11 +491,25 @@ export async function deleteDraft(tx: UserTx, id: string): Promise<boolean> {
  * Saves the default reminders. The stored default approval chain (tms.planning_default_steps) is left as it
  * is: no screen edits it any more (EP-PLN §13; PO, 12 Nov 2026) and nothing is deleted.
  */
-export async function saveSettings(tx: UserTx, reminderDays: readonly number[]): Promise<number> {
-  const [row] = await tx.execute(sql`
+export async function saveSettings(
+  tx: UserTx,
+  reminderDays: readonly number[],
+  financeConfirms?: boolean,
+): Promise<number> {
+  // «Finance confirms the plan» (WP-LD-03) changes only when it is sent.
+  const [row] = await tx.execute(
+    financeConfirms === undefined
+      ? sql`
     insert into tms.planning_settings (reminder_days) values (${pgArray(reminderDays)}::smallint[])
     on conflict (tenant_id) do update set reminder_days = excluded.reminder_days
-    returning version`);
+    returning version`
+      : sql`
+    insert into tms.planning_settings (reminder_days, finance_confirms)
+    values (${pgArray(reminderDays)}::smallint[], ${financeConfirms})
+    on conflict (tenant_id) do update
+      set reminder_days = excluded.reminder_days, finance_confirms = excluded.finance_confirms
+    returning version`,
+  );
   return Number(row?.version);
 }
 

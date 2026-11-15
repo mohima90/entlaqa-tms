@@ -51,7 +51,8 @@ type QualifierKey = keyof typeof QUALIFIERS;
 
 /**
  * One area: cells in SYSTEM_ROLE_CODES order (Organization Admin, HR Manager, L&D Manager, Training
- * Coordinator, Department Head, Employee), `LEVEL` or `LEVEL:qualifier`. Rows are copied from BRD
+ * Coordinator, Department Head, Employee, Finance — the ready-made role of WP-LD-03: it approves the training plan
+ * at its step and will see budgets when they ship), `LEVEL` or `LEVEL:qualifier`. Rows are copied from BRD
  * Appendix B (Arabic wording of the approved screen 5; the six standard roles since EP-ROLES, PO 17 Oct
  * 2026). The Organization Admin is a setup role (BRD v2.4, PO 7 Oct 2026): no access to the training areas.
  */
@@ -63,61 +64,61 @@ const ROWS: readonly [string, LocalizedText, boolean, string][] = [
       en: 'Organization settings, branding, domains',
     },
     true,
-    'F N N N N N',
+    'F N N N N N N',
   ],
-  ['users', { ar: 'المستخدمون والأدوار', en: 'Users & roles' }, true, 'F E V V V:dept O'],
+  ['users', { ar: 'المستخدمون والأدوار', en: 'Users & roles' }, true, 'F E V V V:dept O O'],
   [
     'requests',
     { ar: 'طلبات التدريب وحصر الاحتياجات', en: 'Training requests & needs analysis' },
     false,
-    'N E F E AE O',
+    'N E F E AE O N',
   ],
-  ['plan', { ar: 'الخطة التدريبية', en: 'Training plan' }, false, 'N A F V A N'],
-  ['catalog', { ar: 'دليل الدورات والبرامج', en: 'Catalog & programs' }, false, 'N V F E V V'],
+  ['plan', { ar: 'الخطة التدريبية', en: 'Training plan' }, false, 'N A F V A N A'],
+  ['catalog', { ar: 'دليل الدورات والبرامج', en: 'Catalog & programs' }, false, 'N V F E V V N'],
   [
     'sessions',
     { ar: 'الجلسات والجدولة', en: 'Sessions & scheduling' },
     false,
-    'N V F F V V:enrolled',
+    'N V F F V V:enrolled N',
   ],
-  ['venues', { ar: 'المقرات والموارد', en: 'Venues & resources' }, false, 'N N F E N N'],
+  ['venues', { ar: 'المقرات والموارد', en: 'Venues & resources' }, false, 'N N F E N N N'],
   [
     'instructors',
     { ar: 'المدربون وجهات التدريب', en: 'Instructors & providers' },
     false,
-    'N V F E N N',
+    'N V F E N N N',
   ],
   [
     'enrollments',
     { ar: 'التسجيلات والموافقات', en: 'Enrollments & approvals' },
     false,
-    'N E F E A O',
+    'N E F E A O N',
   ],
-  ['logistics', { ar: 'مهام التجهيز', en: 'Logistics tasks' }, false, 'N N F F N N'],
-  ['attendance', { ar: 'الحضور', en: 'Attendance' }, false, 'N V F F V O'],
+  ['logistics', { ar: 'مهام التجهيز', en: 'Logistics tasks' }, false, 'N N F F N N N'],
+  ['attendance', { ar: 'الحضور', en: 'Attendance' }, false, 'N V F F V O N'],
   [
     'assessments',
     { ar: 'الاختبارات والاستبيانات', en: 'Assessments & evaluations' },
     false,
-    'N V F E V O',
+    'N V F E V O N',
   ],
   [
     'certificates',
     { ar: 'الشهادات والشهادات الخارجية', en: 'Certificates & external certificates' },
     false,
-    'N EA F E V O',
+    'N EA F E V O N',
   ],
   [
     'compliance',
     { ar: 'قواعد الامتثال وتقاريره', en: 'Compliance rules & reports' },
     false,
-    'N F E V V O',
+    'N F E V V O N',
   ],
   [
     'ojt',
     { ar: 'التدريب على رأس العمل والملاحظة', en: 'On-the-job training & observation' },
     false,
-    'N V F E V O',
+    'N V F E V O N',
   ],
   [
     'finance',
@@ -126,17 +127,22 @@ const ROWS: readonly [string, LocalizedText, boolean, string][] = [
       en: 'Budgets, purchase orders, invoices, payments',
     },
     true,
-    'N V E V V:dept N',
+    'N V E V V:dept N V',
   ],
-  ['reports', { ar: 'التقارير والتحليلات', en: 'Reports & analytics' }, false, 'N F F E V:dept O'],
+  [
+    'reports',
+    { ar: 'التقارير والتحليلات', en: 'Reports & analytics' },
+    false,
+    'N F F E V:dept O N',
+  ],
   [
     'integrations',
     { ar: 'التكاملات وواجهة البرمجة', en: 'Integrations & API' },
     true,
-    'F E:hris N N N N',
+    'F E:hris N N N N N',
   ],
-  ['ai', { ar: 'ميزات الذكاء الاصطناعي', en: 'AI features' }, false, 'F:config U U U U U'],
-  ['audit', { ar: 'سجل التدقيق', en: 'Audit log' }, true, 'V N N N N N'],
+  ['ai', { ar: 'ميزات الذكاء الاصطناعي', en: 'AI features' }, false, 'F:config U U U U U U'],
+  ['audit', { ar: 'سجل التدقيق', en: 'Audit log' }, true, 'V N N N N N N'],
 ];
 
 const LEVELS: ReadonlySet<string> = new Set(['F', 'E', 'A', 'V', 'O', 'U', 'N', 'AE', 'EA', 'FA']);

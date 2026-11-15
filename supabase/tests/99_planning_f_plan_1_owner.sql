@@ -19,14 +19,14 @@ declare
 begin
   perform tests.assert_eq(
     (select string_agg(code || ':' || risk || ':' || custom_role_use || ':' || privileged::text, ',' order by code)
-     from platform.ref_permissions where code like 'tms.training\_plan.%'),
+     from platform.ref_permissions where code in ('tms.training_plan.read', 'tms.training_plan.manage')),
     'tms.training_plan.manage:medium:scoped:false,tms.training_plan.read:low:scoped:false',
     'the training-plan permissions: scoped in a custom role, not privileged');
   perform tests.assert_eq(
     (select string_agg(role_code || ':' || permission_code || ':' || scope, ',' order by role_code, permission_code)
-     from platform.ref_role_permissions where permission_code like 'tms.training\_plan.%'),
-    'training_coordinator:tms.training_plan.read:tenant,training_manager:tms.training_plan.manage:tenant,training_manager:tms.training_plan.read:tenant',
-    'the L&D Manager builds the plan, the Training Coordinator reads it, nobody else');
+     from platform.ref_role_permissions where permission_code in ('tms.training_plan.read', 'tms.training_plan.manage')),
+    'finance:tms.training_plan.read:tenant,hr_manager:tms.training_plan.read:tenant,training_coordinator:tms.training_plan.read:tenant,training_manager:tms.training_plan.manage:tenant,training_manager:tms.training_plan.read:tenant',
+    'the L&D Manager builds the plan; the Training Coordinator and its approvers (HR Manager, Finance — WP-LD-03) read it');
   perform tests.assert_eq(private.permission_feature('tms.training_plan.manage'), 'planning',
     'the training plan belongs to the planning feature');
   perform tests.assert(not private.role_is_privileged('a0000000-0000-4000-8000-000000000001', 'training_coordinator'),
@@ -64,7 +64,11 @@ begin
     'anonymous callers cannot ask');
 
   -- Grants: only the columns the application writes; the stamps and snapshots are the database's.
-  perform tests.assert(not has_column_privilege('authenticated', 'tms.training_plans', 'status', 'UPDATE')
+  -- WP-LD-03 (migration 20261116100200): the state moves through the approval guard; a statement names the new
+  -- state (and a send-back comment) only, every stamp is the database's.
+  perform tests.assert(not has_column_privilege('authenticated', 'tms.training_plans', 'plan_version', 'UPDATE')
+                       and not has_column_privilege('authenticated', 'tms.training_plans', 'approval_step', 'UPDATE')
+                       and not has_column_privilege('authenticated', 'tms.training_plans', 'submitted_by', 'UPDATE')
                        and not has_table_privilege('authenticated', 'tms.training_plans', 'DELETE')
                        and not has_column_privilege('authenticated', 'tms.training_plans', 'opened_by', 'INSERT'),
     'training_plans: opened by the database, its state moves with the approval (WP-LD-03)');
@@ -189,8 +193,8 @@ begin
     array['23505'], 'one plan per cycle');
   perform tests.assert_fails($q$insert into tms.training_plans (cycle_id) values ('be000000-0000-4000-8000-000000000001')$q$,
     array['23503', '42501'], 'never a plan of another organization''s cycle');
-  perform tests.assert_privilege_denied(format($q$update tms.training_plans set status = 'approved' where id = %L$q$, p),
-    'the plan''s state is not changed by a statement (WP-LD-03)');
+  perform tests.assert_fails(format($q$update tms.training_plans set status = 'approved' where id = %L$q$, p),
+    array['JK001'], 'a draft is never approved by a statement (WP-LD-03: submitted, then decided)');
   perform tests.assert_privilege_denied(format($q$delete from tms.training_plans where id = %L$q$, p), 'a plan is kept');
 
   insert into tms.plan_lines (plan_id, cycle_id, group_key, title, quarter, edited_at) values
@@ -389,11 +393,12 @@ begin
     array['23503', '42501'], 'nor adds a line to it');
 end $$;
 
--- Frozen in approval (WP-LD-03 moves the state; written here as a platform operation): nothing changes.
+-- Frozen in approval (WP-LD-03 moves the state — 99_planning_g_approval_*; written here as a platform operation):
+-- nothing changes.
 reset role;
 reset session authorization;
 alter table tms.training_plans disable trigger training_plans_guard;
-update tms.training_plans set status = 'in_approval' where id = tests.tp_plan();
+update tms.training_plans set status = 'in_approval', approval_step = 'hr' where id = tests.tp_plan();
 alter table tms.training_plans enable trigger training_plans_guard;
 set local session authorization app_server;
 set local role authenticated;

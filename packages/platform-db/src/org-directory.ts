@@ -175,3 +175,46 @@ export async function listDepartmentTeam(
     limit ${TEAM_LIMIT}`);
   return rows.map((r) => ({ personId: r.person_id, nameAr: r.name_ar, nameEn: r.name_en }));
 }
+
+/** How many holders of a role are named at most (the approvers of a step, WP-LD-03). */
+export const ROLE_HOLDERS_LIMIT = 50;
+
+/**
+ * The active members holding a STANDARD role now (role assignments in force, active membership and person), by
+ * name — e.g. the HR Managers and the Finance members who decide a training plan's step (WP-LD-03: approval goes by
+ * role, any holder decides). Names only, at most ROLE_HOLDERS_LIMIT per role; row-level security still applies.
+ */
+export async function listRoleHolders(
+  tx: UserTx,
+  roleCodes: readonly string[],
+): Promise<readonly (MemberOption & { readonly roleCode: string })[]> {
+  const codes = [...new Set(roleCodes.filter((c) => /^[a-z][a-z_]{1,39}$/.test(c)))];
+  if (codes.length === 0) return [];
+  const rows = await tx.execute<{
+    role_code: string;
+    person_id: string;
+    name_ar: string | null;
+    name_en: string | null;
+  }>(sql`
+    select x.role_code, x.person_id, x.name_ar, x.name_en
+    from (
+      select ra.role_code, p.id as person_id, p.display_name_ar as name_ar, p.display_name_en as name_en,
+             row_number() over (partition by ra.role_code
+                                order by coalesce(p.display_name_ar, p.display_name_en), p.id) as n
+      from platform.role_assignments ra
+      join platform.tenant_memberships m on m.tenant_id = ra.tenant_id and m.id = ra.membership_id
+      join platform.persons p on p.tenant_id = m.tenant_id and p.id = m.person_id
+      where ra.role_code = any (${`{${codes.join(',')}}`}::text[])
+        and m.status = 'active' and p.status = 'active'
+        and (ra.valid_from is null or ra.valid_from <= now())
+        and (ra.valid_until is null or ra.valid_until > now())
+    ) x
+    where x.n <= ${ROLE_HOLDERS_LIMIT}
+    order by x.role_code, x.n`);
+  return rows.map((r) => ({
+    roleCode: r.role_code,
+    personId: r.person_id,
+    nameAr: r.name_ar,
+    nameEn: r.name_en,
+  }));
+}

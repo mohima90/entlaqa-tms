@@ -89,6 +89,17 @@ export async function SuiteShell({
               current={current === entry.link.page}
               icon={<Icon name={entry.icon} />}
               tooltip={t(entry.key)}
+              count={
+                entry.count === undefined ? undefined : (
+                  <span
+                    className="grid min-w-5 place-items-center rounded-full bg-warning-subtle px-1.5 font-bold text-warning-strong"
+                    data-testid={`nav-count-${entry.key}`}
+                  >
+                    {entry.count}
+                    <span className="sr-only"> {t('waitingForYou')}</span>
+                  </span>
+                )
+              }
             >
               {t(entry.key)}
             </NavItem>

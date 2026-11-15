@@ -151,9 +151,17 @@ describe('reads', () => {
 
   it('falls back to the built-in reminders until the organization saves its own', async () => {
     const fresh = fakeTx([]);
-    expect(await repo.getSettings(fresh.tx)).toEqual({ version: null, reminderDays: [7, 2] });
-    const saved = fakeTx([{ reminder_days: [10], version: 2 }]);
-    expect(await repo.getSettings(saved.tx)).toEqual({ version: 2, reminderDays: [10] });
+    expect(await repo.getSettings(fresh.tx)).toEqual({
+      version: null,
+      reminderDays: [7, 2],
+      financeConfirms: false,
+    });
+    const saved = fakeTx([{ reminder_days: [10], finance_confirms: true, version: 2 }]);
+    expect(await repo.getSettings(saved.tx)).toEqual({
+      version: 2,
+      reminderDays: [10],
+      financeConfirms: true,
+    });
     // A default approval chain stored before 12 Nov 2026 is not read (EP-PLN §13).
     for (const { executed } of [fresh, saved]) {
       expect(executed).toHaveLength(1);
@@ -232,6 +240,11 @@ describe('writes', () => {
     expect(settings.executed).toHaveLength(1);
     expect(settings.executed[0]?.sql).toContain('planning_settings');
     expect(settings.executed[0]?.sql).not.toContain('planning_default_steps');
+    // «Finance confirms the plan» (WP-LD-03) is written only when sent.
+    expect(settings.executed[0]?.sql).not.toContain('finance_confirms');
+    const finance = fakeTx([{ version: 4 }]);
+    expect(await repo.saveSettings(finance.tx, [7], true)).toBe(4);
+    expect(finance.executed[0]?.sql).toContain('finance_confirms');
   });
 
   it('turns the guard’s launch refusals into outcomes; anything else is thrown', async () => {

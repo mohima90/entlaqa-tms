@@ -8,11 +8,11 @@ import { getSystemRole, type SystemRoleCode } from './system-roles';
  * permissions, data scope), and the Organization Admin edits it before saving a custom role. They replace
  * the former Instructor, Line Manager, Finance, Compliance Officer and Auditor system roles with their
  * former platform permissions. Module permissions (sessions, grading, budgets, …) join them as those
- * modules ship.
+ * modules ship. The «Finance approver» template is gone: the ready-made Finance role replaced it (PO, 12 Nov
+ * 2026; BRD v3.6 §4.2; WP-LD-03).
  */
 export const ROLE_TEMPLATE_KEYS = [
   'instructor',
-  'finance_approver',
   'line_manager',
   'compliance_officer',
   'auditor',
@@ -38,16 +38,6 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     // "Assigned sessions only" is not one of the four scopes yet (sessions ship with M4): their team.
     dataScope: 'team',
     permissions: ['platform.user.read', 'platform.org.read'],
-  },
-  {
-    key: 'finance_approver',
-    name: { ar: 'معتمد مالي', en: 'Finance approver' },
-    description: {
-      ar: 'يعتمد التكلفة والميزانية في خطوة المالية، ويرى الميزانيات وتقارير التكلفة عند توفرها.',
-      en: 'Approves cost and budget at the finance step; sees budgets and cost reports when they ship.',
-    },
-    dataScope: 'organization',
-    permissions: ['platform.user.read', 'platform.role.read', 'platform.org.read'],
   },
   {
     key: 'line_manager',

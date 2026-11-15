@@ -131,7 +131,9 @@
       "refreshed": "This changed while you had it open. Here is the latest version.",
       "offer": "This changed while you had it open. What you typed is still here: load the latest version, then make your change again.",
       "load": "Load the latest version"
-    }
+    },
+    "approvals": "Approvals",
+    "waitingForYou": "waiting for you"
   },
   "errors": {
     "malformedRequest": "We couldn't process this request. Refresh the page and try again.",
@@ -161,7 +163,10 @@
     "trainingPlanAlreadyOpen": "The plan of this cycle has already been built. Refresh the page to see it.",
     "trainingPlanFrozen": "The plan can't change now: it is waiting for approval or already approved.",
     "trainingPlanLineOutsideScope": "This line includes needs of departments you don't plan for. Ask the L&D Manager to change it.",
-    "trainingPlanNeedsNotSubmitted": "These needs aren't submitted right now, so they can't enter the plan. They can once the department resubmits."
+    "trainingPlanNeedsNotSubmitted": "These needs aren't submitted right now, so they can't enter the plan. They can once the department resubmits.",
+    "trainingPlanNotSubmittable": "The plan can't be submitted yet: cost every line in the plan, give a reason for each department over its budget, and add the needs still waiting.",
+    "trainingPlanAlreadyDecided": "Another approver has already decided on this plan. Reload to see where it stands.",
+    "trainingPlanOwnSubmission": "You submitted this plan, or already approved it: another person decides."
   },
   "auth": {
     "signInTitle": "Sign in",
@@ -4072,7 +4077,8 @@
     "lineStatus": {
       "inPlan": "In the plan",
       "needsCost": "Needs a cost",
-      "leftOut": "Left out"
+      "leftOut": "Left out",
+      "approved": "Approved"
     },
     "priority": {
       "critical": "Critical",
@@ -4310,6 +4316,197 @@
       "total": "Organization total",
       "totalScoped": "Total of your departments",
       "footnote": "Being over a budget never blocks the plan. A department that is over needs a one-line reason; the HR Manager sees it next to the figures. Amber means less than 10% over, red 10% or more."
+    }
+  },
+  "planApproval": {
+    "submit": "Submit for approval",
+    "submitTitle": "Submit {plan} for approval?",
+    "submitIntro": "The plan is frozen while it waits. Nobody can change it until it is approved or sent back.",
+    "tiles": {
+      "label": "The plan you submit",
+      "lines": "Lines",
+      "linesHint": "{count, plural, =0 {none left out} one {# left out} other {# left out}}",
+      "people": "People",
+      "peopleHint": "{count, plural, one {# department} other {# departments}}",
+      "sessions": "Sessions",
+      "cost": "Cost",
+      "ofBudget": "of {amount}",
+      "noBudget": "no budget set"
+    },
+    "overTitle": "{count, plural, one {# department over its budget} other {# departments over their budget}}",
+    "overBy": "+{amount}",
+    "whoDecides": "Who decides",
+    "hrStep": "HR Manager approves",
+    "hrStepNames": "{names} — the first decision counts. They approve, or send it back to you with a comment.",
+    "hrStepNobody": "Nobody holds the HR Manager role yet: ask your Organization Admin to give it, or the plan will wait.",
+    "financeStep": "Finance confirms",
+    "financeStepOff": "Finance confirms — off",
+    "financeOffHint": "Not asked: «Finance confirms the plan» is off in Planning settings.",
+    "financeStepNames": "{names} — after the HR Manager; the first decision counts.",
+    "financeStepNobody": "«Finance confirms the plan» is on, but nobody holds the Finance role: ask your Organization Admin to give it, or the plan will wait.",
+    "or": " or ",
+    "problem": {
+      "needs_open": "A department may still change its needs (it was returned for changes or reopened). Wait for it, or until its deadline passes.",
+      "needs_not_added": "A department resubmitted its needs: add them to the plan first («Needs your attention»).",
+      "uncosted": "A line in the plan has no session size or cost yet: cost it, or leave it out with a reason.",
+      "over_budget": "A department is over its budget without a reason: write one in «Budget by department».",
+      "unknown": "The plan can't be submitted yet. Reload the page to see what is missing."
+    },
+    "submitted": "Submitted for approval. The HR Managers see it on their Home page.",
+    "cancel": "Cancel",
+    "close": "Close",
+    "waitingHr": "Waiting for the HR Manager since {date}. The plan is frozen: nobody can change it until it is approved or sent back.",
+    "waitingFinance": "Approved by the HR Manager; waiting for Finance since {date}. The plan is frozen until Finance decides.",
+    "sentBackBy": "Sent back by {name} on {date}:",
+    "sentBackHint": "Change what was asked, then submit the plan again: it goes through the same steps.",
+    "approvedBanner": "Approved by {name} on {date}. Version {version} is locked and each Department Head now sees their result. To change anything, choose «Revise plan»: it opens version {next}, approved through the same steps; version {version} is kept.",
+    "approvedBadge": "Approved · v{version}",
+    "revisionBanner": "Version {version} is a revision of the approved version {previous} (kept in Versions). Submit it when it is ready.",
+    "versions": "Versions",
+    "versionItem": "Version {version} · approved {date}",
+    "versionsEmpty": "No approved version yet",
+    "revise": "Revise plan",
+    "reviseTitle": "Revise {plan}?",
+    "reviseBody": "This opens version {next} as a draft of the same lines. Version {version} stays as approved, in Versions. Version {next} is approved through the same steps.",
+    "revised": "Version {version} is open as a draft.",
+    "status": {
+      "waitingForYou": "Waiting for your approval",
+      "hr": "Waiting for the HR Manager",
+      "finance": "Waiting for Finance",
+      "approved": "Approved",
+      "sent_back": "Sent back",
+      "draft": "Draft"
+    },
+    "version": "Version {version}",
+    "submittedBy": "Submitted by {name} · {date}",
+    "anyHr": "any HR Manager can decide; the first decision counts",
+    "anyFinance": "any Finance member can decide; the first decision counts",
+    "overWithReasons": "{count, plural, one {# department over its budget, with a reason} other {# departments over their budget, with reasons}}",
+    "page": {
+      "title": "Approvals",
+      "intro": "The training plans waiting for your decision, and where the others stand.",
+      "breadcrumb": "Approvals",
+      "pendingBanner": "{plan} waits for your approval. {name} submitted it on {date}.",
+      "review": "Review the plan",
+      "open": "Open the plan",
+      "waitingTitle": "Waiting for you",
+      "allTitle": "All plans",
+      "emptyWaitingTitle": "Nothing waits for you",
+      "emptyWaitingBody": "When the L&D Manager submits a training plan, it appears here and on your Home page.",
+      "emptyAllTitle": "No plan submitted yet",
+      "emptyAllBody": "Training plans appear here once they are submitted for approval.",
+      "notConfigured": "Approvals appear here once this environment is connected to its database.",
+      "loadFailed": "The approvals could not be loaded. Reference: {correlationId}"
+    },
+    "review": {
+      "frozenInfo": "The plan is frozen while it waits. Approve it, or send it back to {name} with a comment. Any {role} can decide; the first decision counts.",
+      "roleHr": "HR Manager",
+      "roleFinance": "Finance member",
+      "ownSubmission": "You submitted this plan: another person decides.",
+      "decided": "This step is decided. Here is the plan as it stands.",
+      "approve": "Approve",
+      "confirm": "Confirm",
+      "sendBack": "Send back",
+      "approveTitle": "Approve {plan}?",
+      "confirmTitle": "Confirm {plan} for Finance?",
+      "approveFinanceNext": "Finance confirms it next; the plan stays frozen until then.",
+      "approveLast": "The plan becomes version {version}, locked, and each Department Head sees their result.",
+      "approved": "Approved. Finance confirms it next.",
+      "approvedLast": "Approved: version {version} is locked.",
+      "sendBackTitle": "Send the plan back to {name}?",
+      "sendBackBody": "The plan becomes a draft again. After the changes, {name} submits it again and it comes back through the same steps.",
+      "comment": "Comment",
+      "commentHint": "{name} sees this comment at the top of the plan.",
+      "commentRequired": "Write what should change.",
+      "sentBack": "Sent back to {name}.",
+      "linesTitle": "Plan lines"
+    },
+    "steps": {
+      "title": "Approval steps",
+      "submitted": "Submitted",
+      "notSubmitted": "Not submitted yet",
+      "hr": "HR Manager approves",
+      "finance": "Finance confirms",
+      "waiting": "Waiting · {names}",
+      "waitingNobody": "Waiting · nobody holds the role yet",
+      "done": "{name} · {date}",
+      "off": "Off in Planning settings — not asked",
+      "later": "After the HR Manager · {names}",
+      "notStarted": "Asked once the plan is submitted",
+      "you": "{name} (you)"
+    },
+    "leftOut": {
+      "title": "Left out of the plan",
+      "empty": "No line is left out.",
+      "who": "{departments} · {count, plural, one {# person} other {# people}}"
+    },
+    "history": {
+      "title": "History",
+      "submitted": "{name} submitted version {version}",
+      "approved": "{name} approved it for HR",
+      "confirmed": "{name} confirmed it for Finance",
+      "sent_back": "{name} sent it back",
+      "revised": "{name} opened version {version}",
+      "opened": "Needs closed; the plan was built",
+      "someone": "Someone"
+    },
+    "home": {
+      "waitingTitle": "Waiting for you",
+      "orgTitle": "Your organization",
+      "plansInApproval": "Training plans in approval"
+    },
+    "result": {
+      "banner": "The {plan} training plan is approved. Here is what your team gets. The L&D team picks the month of each session when it schedules them.",
+      "badge": "Plan approved · v{version}",
+      "approvedOn": "Approved on {date}",
+      "readOnly": "Read only",
+      "summaryLabel": "Your team's result",
+      "trainings": "Trainings approved",
+      "trainingsHint": "{count, plural, one {from # need line} other {from # need lines}}",
+      "places": "Places for your team",
+      "placesHint": "some people may attend more than one",
+      "leftOut": "Left out",
+      "leftOutHint": "with the reason below",
+      "share": "Your share of the cost",
+      "ofBudget": "of {amount} budget",
+      "noBudget": "No budget set",
+      "overApproved": "Over by {amount} — approved with the reason",
+      "within": "Within · {amount} left",
+      "approvedTitle": "Your approved trainings",
+      "approvedEmpty": "None of your team's needs is in the approved plan.",
+      "notInPlanTitle": "Not in the plan",
+      "columns": {
+        "training": "Training",
+        "people": "Your people",
+        "when": "When",
+        "share": "Your share",
+        "sharedWith": "Shared with",
+        "status": "Status",
+        "reason": "Reason"
+      },
+      "onlyYou": "Only {department}",
+      "approved": "Approved",
+      "leftOutStatus": "Left out",
+      "homeTitle": "Your training plan results",
+      "homeIntro": "The approved plans and what your team gets.",
+      "homeCard": "{approved, plural, one {# training approved} other {# trainings approved}} · {leftOut, plural, =0 {none left out} one {# left out} other {# left out}}",
+      "see": "See the result",
+      "title": "Training plan result"
+    },
+    "versionPage": {
+      "title": "{plan} · version {version}",
+      "intro": "Approved on {date} by {name}. Read only: the plan as it was approved.",
+      "back": "Back to the plan",
+      "linesTitle": "Lines as approved",
+      "budgetTitle": "Budget by department as approved"
+    },
+    "settings": {
+      "title": "Plan approval",
+      "intro": "The HR Manager always approves the plan. Finance can confirm it after them.",
+      "financeLabel": "Finance confirms the plan",
+      "financeHint": "On: after the HR Manager approves, every member with the Finance role is asked to confirm. A plan already waiting keeps the steps it was submitted with.",
+      "financeOn": "On",
+      "financeOff": "Off"
     }
   }
 }

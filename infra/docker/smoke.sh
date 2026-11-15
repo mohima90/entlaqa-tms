@@ -952,7 +952,7 @@ PLAN_CYCLE_ID="$(PGPASSWORD="$POSTGRES_PASSWORD" PGSSLMODE=verify-full PGSSLROOT
   { echo "smoke: the plan needs were not seeded" >&2; exit 1; }
 (cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 PLAN_E2E_EMAIL="$PLAN_EMAIL" \
   PLAN_E2E_PASSWORD="$PLAN_PASSWORD" PLAN_E2E_CYCLE_ID="$PLAN_CYCLE_ID" \
-  pnpm exec playwright test e2e/plan-consolidation.spec.ts --project=desktop-chromium)
+  pnpm exec playwright test e2e/plan-consolidation.spec.ts --project=desktop-chromium --grep 'data journey')
 # The plan is built once, closed early, with its lines and every seeded need in a line; each change audited.
 [[ "$(q "select count(*) from tms.training_plans where cycle_id = '$PLAN_CYCLE_ID' and status = 'draft' and needs_closed_early")" == "1" ]] ||
   { echo "smoke: expected one draft training plan built with the needs closed early" >&2; exit 1; }

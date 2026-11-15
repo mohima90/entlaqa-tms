@@ -135,7 +135,9 @@ describe('the Plan tab', () => {
       expect.stringContaining('Q2'),
       expect.stringContaining('Q3'),
     ]);
-    expect(window.location.search).toContain('group=quarter');
+    expect(router.replace).toHaveBeenLastCalledWith(expect.stringContaining('group=quarter'), {
+      scroll: false,
+    });
   });
 
   it('opens the bulk bar for ticked lines and merges two of them into the larger', async () => {
@@ -233,7 +235,9 @@ describe('the Plan tab', () => {
     actions.setBudgetReasonAction.mockResolvedValue({ ok: true, value: {} });
     mount(tab());
     click(byTest('plan-view-budget'));
-    expect(window.location.search).toContain('view=budget');
+    expect(router.replace).toHaveBeenLastCalledWith(expect.stringContaining('view=budget'), {
+      scroll: false,
+    });
     const rows = allByTest('plan-budget-row');
     expect(rows).toHaveLength(4);
     const hr = rows.find((r) => r.textContent.includes('Human Resources'));

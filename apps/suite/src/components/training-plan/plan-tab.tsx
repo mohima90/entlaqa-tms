@@ -54,13 +54,20 @@ type Dialogs =
   | null;
 
 /** Keeps the view and grouping in the address (deep links, back to the same place after a reload). */
-function rememberInAddress(values: Readonly<Record<string, string | null>>) {
+/**
+ * Keeps the view and the grouping in the address through the router (not `history.replaceState`): a later
+ * `router.refresh()` after a change rewrites the address from the router's own state and would drop them.
+ */
+function rememberInAddress(
+  router: ReturnType<typeof useRouter>,
+  values: Readonly<Record<string, string | null>>,
+) {
   const url = new URL(window.location.href);
   for (const [key, value] of Object.entries(values)) {
     if (value === null) url.searchParams.delete(key);
     else url.searchParams.set(key, value);
   }
-  window.history.replaceState(window.history.state, '', url);
+  router.replace(`${url.pathname}${url.search}`, { scroll: false });
 }
 
 /**
@@ -129,7 +136,7 @@ export function PlanTab(props: PlanTabProps) {
 
   const showView = (next: PlanSubview) => {
     setSubview(next);
-    rememberInAddress({ view: next === 'budget' ? 'budget' : null });
+    rememberInAddress(router, { view: next === 'budget' ? 'budget' : null });
   };
 
   const run = (
@@ -626,7 +633,7 @@ export function PlanTab(props: PlanTabProps) {
                       aria-pressed={grouping === key}
                       onClick={() => {
                         setGrouping(key);
-                        rememberInAddress({ group: key === 'topic' ? null : key });
+                        rememberInAddress(router, { group: key === 'topic' ? null : key });
                       }}
                       className={cn(
                         'min-h-9 whitespace-nowrap rounded-full px-3.5 text-sm font-medium',
@@ -655,7 +662,7 @@ export function PlanTab(props: PlanTabProps) {
                         onValueChange={(value) => {
                           const next = value as PlanGrouping;
                           setGrouping(next);
-                          rememberInAddress({ group: next === 'topic' ? null : next });
+                          rememberInAddress(router, { group: next === 'topic' ? null : next });
                         }}
                       >
                         {PLAN_GROUPINGS.map((key) => (

@@ -4,6 +4,8 @@ export * from './planning/definitions';
 export * from './planning/needs-definitions';
 export * from './planning/consolidation-model';
 export * from './planning/consolidation-definitions';
+export * from './planning/approval-model';
+export * from './planning/approval-definitions';
 export { SessionDraftInput, type SessionDraft, buildSessionDraft } from './services/session-draft';
 export * from './courses/model';
 

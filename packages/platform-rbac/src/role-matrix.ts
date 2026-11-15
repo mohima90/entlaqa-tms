@@ -129,7 +129,12 @@ const ROWS: readonly [string, LocalizedText, boolean, string][] = [
     true,
     'N V E V V:dept N V',
   ],
-  ['reports', { ar: 'التقارير والتحليلات', en: 'Reports & analytics' }, false, 'N F F E V:dept O N'],
+  [
+    'reports',
+    { ar: 'التقارير والتحليلات', en: 'Reports & analytics' },
+    false,
+    'N F F E V:dept O N',
+  ],
   [
     'integrations',
     { ar: 'التكاملات وواجهة البرمجة', en: 'Integrations & API' },

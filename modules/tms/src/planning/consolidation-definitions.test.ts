@@ -368,10 +368,15 @@ beforeEach(() => {
 
 describe('who reaches the plan (deny by default)', () => {
   it('refuses the Employee, the Department Head and the Organization Admin', async () => {
-    for (const role of ['learner', 'department_head', 'tenant_admin', 'hr_manager']) {
+    for (const role of ['learner', 'department_head', 'tenant_admin', 'hr_manager', 'finance']) {
       const { query, action } = runtime(role);
       const view = await query(defs.planQueryDefinition())({ cycleId: CYCLE });
-      expect(!view.ok && view.error.code, role).toBe('FORBIDDEN');
+      // WP-LD-03: the HR Manager and Finance read the plan they approve (never change it).
+      if (role === 'hr_manager' || role === 'finance') {
+        expect(view.ok && view.value.can, role).toMatchObject({ manage: false, open: false });
+      } else {
+        expect(!view.ok && view.error.code, role).toBe('FORBIDDEN');
+      }
       const changed = await action(defs.updatePlanLineActionDefinition())({
         lineId: LEAD,
         version: 3,

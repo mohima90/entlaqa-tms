@@ -186,14 +186,14 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
 
   it('approves the training plan by role: the HR Manager approves, Finance confirms (WP-LD-03, EP-PLN §13)', () => {
     const holders = (code: string) =>
-      SYSTEM_ROLES.filter((r) => r.grants.some((g) => g.permission.code === code)).map((r) => r.code);
+      SYSTEM_ROLES.filter((r) => r.grants.some((g) => g.permission.code === code)).map(
+        (r) => r.code,
+      );
     expect(holders('tms.training_plan.approve')).toEqual(['hr_manager']);
     expect(holders('tms.training_plan.confirm')).toEqual(['finance']);
     expect(holders('tms.training_plan.manage')).toEqual(['training_manager']);
     // Finance reads the plan and its budgets (BRD §4.2), the departments' names and its own record — nothing else.
-    expect(
-      getSystemRole('finance').grants.map((g) => `${g.permission.code}:${g.scope}`),
-    ).toEqual([
+    expect(getSystemRole('finance').grants.map((g) => `${g.permission.code}:${g.scope}`)).toEqual([
       'platform.user.read:own',
       'platform.org.read:tenant',
       'tms.training_plan.read:tenant',

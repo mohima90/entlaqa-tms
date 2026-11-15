@@ -250,6 +250,8 @@ export interface CycleView {
 export interface SettingsView {
   /** The default reminders every new cycle starts from. */
   readonly reminderDays: readonly number[];
+  /** «Finance confirms the plan» (WP-LD-03): after the HR Manager, the Finance role confirms. Off by default. */
+  readonly financeConfirms: boolean;
   readonly canManage: boolean;
 }
 
@@ -580,7 +582,11 @@ export function planningSettingsQueryDefinition(): QueryDefinition<
     input: CyclesListInput,
     handler: async ({ ctx }) => {
       const settings = await repo.getSettings(ctx.tx);
-      return ok({ reminderDays: settings.reminderDays, canManage: ctx.can(MANAGE, 'tenant') });
+      return ok({
+        reminderDays: settings.reminderDays,
+        financeConfirms: settings.financeConfirms,
+        canManage: ctx.can(MANAGE, 'tenant'),
+      });
     },
   };
 }
@@ -1055,12 +1061,14 @@ export function deletePlanCycleActionDefinition(): ActionDefinition<
 
 export interface SettingsSaved {
   readonly version: number;
-  readonly before: { readonly reminderDays: readonly number[] };
+  readonly before: { readonly reminderDays: readonly number[]; readonly financeConfirms: boolean };
 }
 
 /**
- * Planning settings: the default reminders. The default approval chain is no longer set here (EP-PLN §13;
- * PO, 12 Nov 2026): approval is by role and the same for every cycle. A stored default chain stays.
+ * Planning settings: the default reminders and «Finance confirms the plan» (WP-LD-03; EP-PLN §13 c, d — off by
+ * default; a plan keeps the steps it was submitted with). The default approval chain is no longer set here
+ * (EP-PLN §13; PO, 12 Nov 2026): approval is by role and the same for every cycle. A stored default chain stays.
+ * Turning the Finance step on or off is audited with its before and after.
  */
 export function savePlanningSettingsActionDefinition(): ActionDefinition<
   typeof SaveSettingsInput,
@@ -1072,16 +1080,33 @@ export function savePlanningSettingsActionDefinition(): ActionDefinition<
     input: SaveSettingsInput,
     handler: async ({ ctx, input }) => {
       const before = await repo.getSettings(ctx.tx);
-      const version = await repo.saveSettings(ctx.tx, input.reminderDays);
-      return ok({ version, before: { reminderDays: before.reminderDays } });
+      const version =
+        input.financeConfirms === undefined
+          ? await repo.saveSettings(ctx.tx, input.reminderDays)
+          : await repo.saveSettings(ctx.tx, input.reminderDays, input.financeConfirms);
+      return ok({
+        version,
+        before: { reminderDays: before.reminderDays, financeConfirms: before.financeConfirms },
+      });
     },
-    audit: (input, output) => ({
-      action: 'tms.planning_settings.changed',
-      entityType: 'planning_settings',
-      data: {
-        before: { reminderDays: output.before.reminderDays },
-        after: { reminderDays: input.reminderDays },
-      },
-    }),
+    audit: (input, output) => {
+      const financeChanged =
+        input.financeConfirms !== undefined &&
+        input.financeConfirms !== output.before.financeConfirms;
+      return {
+        action: 'tms.planning_settings.changed',
+        entityType: 'planning_settings',
+        data: {
+          before: {
+            reminderDays: output.before.reminderDays,
+            ...(financeChanged ? { financeConfirms: output.before.financeConfirms } : {}),
+          },
+          after: {
+            reminderDays: input.reminderDays,
+            ...(financeChanged ? { financeConfirms: input.financeConfirms } : {}),
+          },
+        },
+      };
+    },
   };
 }

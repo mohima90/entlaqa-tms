@@ -166,7 +166,14 @@
     "trainingPlanNeedsNotSubmitted": "These needs aren't submitted right now, so they can't enter the plan. They can once the department resubmits.",
     "trainingPlanNotSubmittable": "The plan can't be submitted yet: cost every line in the plan, give a reason for each department over its budget, and add the needs still waiting.",
     "trainingPlanAlreadyDecided": "Another approver has already decided on this plan. Reload to see where it stands.",
-    "trainingPlanOwnSubmission": "You submitted this plan, or already approved it: another person decides."
+    "trainingPlanOwnSubmission": "You submitted this plan, or already approved it: another person decides.",
+    "sessionPlanNotApproved": "Courses and draft sessions come from the approved plan. Approve the plan (or its new version) first.",
+    "sessionLineLeftOut": "This line was left out of the plan, so it needs no course and no sessions.",
+    "sessionLineNeedsCourse": "Give this line its course first, then create its draft sessions.",
+    "sessionLineNeedsSize": "This line has no session size yet, so the plan can't say how many sessions it needs.",
+    "sessionLineAllDrafted": "This line already has the draft sessions the plan works out.",
+    "sessionLineHasDrafts": "This line has draft sessions, so it keeps its course. Delete its drafts to change it.",
+    "sessionLineOutsideScope": "This line includes departments you don't plan sessions for. Ask the L&D Manager."
   },
   "auth": {
     "signInTitle": "Sign in",

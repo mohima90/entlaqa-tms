@@ -9,7 +9,7 @@ import {
   PasswordResetErrors,
 } from '@jadarat/platform-identity';
 import { MfaResetErrors } from '@jadarat/platform-rbac';
-import { PlanningErrors } from '@jadarat/tms';
+import { DraftSessionErrors, PlanningErrors } from '@jadarat/tms';
 import { describe, expect, it } from 'vitest';
 
 function lookup(messages: unknown, key: string): unknown {
@@ -38,6 +38,8 @@ describe('platform error messages (ADR 0011 §3)', () => {
         ...Object.values(FileErrors),
         // Planning cycles (EP-PLN, T-M3-04).
         ...Object.values(PlanningErrors),
+        // Draft sessions and the course of an approved line (WP-LD-04).
+        ...Object.values(DraftSessionErrors),
       ]) {
         const message = lookup(getMessages(locale), def.messageKey);
         expect(typeof message, `${locale}: ${def.messageKey}`).toBe('string');

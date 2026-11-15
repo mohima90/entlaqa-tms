@@ -331,7 +331,10 @@ export function ApprovalSide(props: PlanReviewProps) {
     });
 
   return (
-    <aside className="flex flex-col gap-5" data-testid="approval-side">
+    <aside
+      className="grid items-start gap-5 lg:grid-cols-3 min-[1680px]:grid-cols-1"
+      data-testid="approval-side"
+    >
       <section
         aria-labelledby="approval-steps-title"
         className="rounded-xl border border-border bg-surface p-5 shadow-1"

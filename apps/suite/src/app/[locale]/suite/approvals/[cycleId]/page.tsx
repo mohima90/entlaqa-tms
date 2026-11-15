@@ -151,7 +151,9 @@ export default async function PlanReviewPage({
       content = (
         <div className="flex flex-col gap-6">
           {info}
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+          {/* The side column sits beside the plan only on wide screens: next to the sidebar a narrower plan
+              wraps the figures and clips the budget table; below that the steps follow the plan. */}
+          <div className="grid gap-6 min-[1680px]:grid-cols-[minmax(0,1fr)_340px]">
             <PlanTab
               locale={locale}
               view={view}

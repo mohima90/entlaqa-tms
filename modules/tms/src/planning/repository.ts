@@ -149,9 +149,17 @@ export async function getCycle(tx: UserTx, id: string): Promise<CycleRecord | nu
   if (!row) return null;
   const scope = await tx.execute(sql`
     select department_id, branch_id from tms.plan_cycle_scope where cycle_id = ${id} order by created_at, id`);
+  // The departments the caller reads; the plan's organization-wide readers who do not read them (the HR Manager
+  // and Finance, who approve the plan — WP-LD-03 review M1) see their envelopes, form status and own deadline
+  // through private.training_plan_departments (never the answers or the return note). Same rows: one each.
   const departments = await tx.execute(sql`
-    select department_id, budget_amount::text as budget_amount, status, deadline_on
-    from tms.plan_cycle_departments where cycle_id = ${id} order by created_at, id`);
+    select department_id, budget_amount, status, deadline_on from (
+      select department_id, budget_amount::text as budget_amount, status, deadline_on, created_at, id
+      from tms.plan_cycle_departments where cycle_id = ${id}
+      union
+      select department_id, budget_amount::text, status, deadline_on, created_at, id
+      from private.training_plan_departments where cycle_id = ${id}) d
+    order by created_at, id`);
   // The approval chain a cycle created before 12 Nov 2026 may still store (tms.plan_cycle_steps) is not
   // read: nothing shows it, asks for it or records it any more (EP-PLN §13 e).
   return {

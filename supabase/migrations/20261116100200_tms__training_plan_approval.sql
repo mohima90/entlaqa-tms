@@ -22,7 +22,13 @@
 --     it for HR (JK011). Sending back needs a comment (JK012).
 --   * revise: the organization-wide L&D Manager opens the next version as a draft of the same lines.
 -- Frozen in approval, locked once approved: the line, link and reason guards of 20261115100200 already refuse every
--- change unless the plan is a draft or sent back (JK008).
+-- change unless the plan is a draft or sent back (JK008). One moment for the plan (review H1): a change of state
+-- takes the organization's plan lock exclusive (private.training_plan_lock); private.training_plan_editable (replaced
+-- here) and the department guard while the plan is consolidated (private.plan_cycle_department_guard, replaced here)
+-- take it shared and read the state afterwards — a change and a submit never pass each other.
+-- What the approvers read (review M1): the plan, not the departments' raw needs — the read policies of
+-- tms.plan_cycle_departments, tms.plan_needs and tms.plan_need_people no longer let tms.training_plan.read alone in;
+-- the envelopes come through the view private.training_plan_departments.
 --
 -- New tables (insert-only; written by the AFTER trigger private.training_plans_record, SECURITY DEFINER owned by
 -- the new role plan_approval_guard — NOLOGIN NOINHERIT NOBYPASSRLS as the other guards; nobody writes them by a
@@ -142,11 +148,13 @@ returns boolean
 language sql stable
 set search_path = ''
 as $$
-  select private.request_claims() ->> 'role' = 'authenticated'
-         and p_tenant_id = private.current_tenant_id()
-         and private.member_has_permission(p_tenant_id, private.request_user_id(),
-               case p_step when 'hr' then 'tms.training_plan.approve'
-                           when 'finance' then 'tms.training_plan.confirm' end);
+  -- Never null (review L4): an unknown step, or no claims, is a plain «no».
+  select coalesce(private.request_claims() ->> 'role' = 'authenticated'
+                  and p_tenant_id = private.current_tenant_id()
+                  and private.member_has_permission(p_tenant_id, private.request_user_id(),
+                        case p_step when 'hr' then 'tms.training_plan.approve'
+                                    when 'finance' then 'tms.training_plan.confirm' end),
+                  false);
 $$;
 
 comment on function private.may_decide_training_plan(uuid, text) is
@@ -219,6 +227,37 @@ revoke all on function private.training_plan_submit_problem(uuid, uuid, uuid) fr
 grant execute on function private.training_plan_submit_problem(uuid, uuid, uuid) to authenticated;
 
 -- ---------------------------------------------------------------------------------------------------
+-- One moment for the plan (review H1)
+-- ---------------------------------------------------------------------------------------------------
+-- The organization's training-plan lock, held until the end of the transaction: EXCLUSIVE for a change of a plan's
+-- state (submit, decide, revise — rare), SHARED for a change of what a plan is made of or of a department of a cycle
+-- being consolidated (lines, links, budget reasons, a department returned, reopened or resubmitted) — those never
+-- wait for one another. Each caller reads the plan's state in a LATER statement, so it reads what was committed
+-- while it waited. One lock per organization (one plan per cycle; dedicated key namespace): a department head, who
+-- cannot read the plan, takes it without having to find the plan first.
+create or replace function private.training_plan_lock(p_tenant_id uuid, p_exclusive boolean)
+returns void
+language plpgsql
+volatile
+set search_path = ''
+as $$
+begin
+  if p_exclusive then
+    perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('tms.training_plans:' || p_tenant_id::text, 0));
+  else
+    perform pg_catalog.pg_advisory_xact_lock_shared(
+      pg_catalog.hashtextextended('tms.training_plans:' || p_tenant_id::text, 0));
+  end if;
+end
+$$;
+
+comment on function private.training_plan_lock(uuid, boolean) is
+  'SECURITY-RELEVANT (WP-LD-03, review H1). The organization''s training-plan advisory lock until commit: exclusive for a change of a plan''s state, shared for a change of its lines, links, reasons or of a department while the plan is consolidated.';
+
+revoke all on function private.training_plan_lock(uuid, boolean) from public;
+grant execute on function private.training_plan_lock(uuid, boolean) to authenticated;
+
+-- ---------------------------------------------------------------------------------------------------
 -- The state machine (replaces the guard of 20261115100200: opening is unchanged)
 -- ---------------------------------------------------------------------------------------------------
 create or replace function private.training_plans_guard()
@@ -284,6 +323,11 @@ begin
   new.approved_at := old.approved_at;
   new.approved_by := old.approved_by;
   if new.status is not distinct from old.status then
+    -- Review L1: a member's statement that moves nothing is the L&D Manager's only — an approver's would still
+    -- count as a change of the plan (its version and stamps). Platform operations (no member claims) stay possible.
+    if private.request_claims() ->> 'role' = 'authenticated' and not private.may_manage_training_plan(new.tenant_id) then
+      raise insufficient_privilege using message = 'only the L&D Manager changes a training plan without moving its state';
+    end if;
     new.send_back_comment := old.send_back_comment;
     return new;
   end if;
@@ -291,14 +335,17 @@ begin
     raise exception 'the state of a training plan changes through its approval only' using errcode = 'JK001';
   end if;
   v_person := private.request_person_id();
+  -- One moment for the plan (review H1): every change of state takes the organization's plan lock EXCLUSIVE. Line,
+  -- link, reason and department changes take it SHARED before they read the plan's state (private.training_plan_lock
+  -- below): those already in flight finish first, and the checks below — each statement reads anew — see them; later
+  -- ones wait for this change and then find the plan frozen.
+  perform private.training_plan_lock(new.tenant_id, true);
 
   -- Submit for approval (step 8): the organization-wide L&D Manager; the plan is frozen from now on.
   if old.status in ('draft', 'sent_back') and new.status = 'in_approval' then
     if not private.may_manage_training_plan(new.tenant_id) then
       raise insufficient_privilege using message = 'the organization-wide L&D Manager submits the training plan';
     end if;
-    -- Line changes already in flight finish first (their guards saw a draft); later ones see the plan frozen.
-    perform 1 from tms.plan_lines l where l.tenant_id = new.tenant_id and l.plan_id = new.id for update;
     v_problem := private.training_plan_submit_problem(new.tenant_id, new.id, new.cycle_id);
     if v_problem is not null then
       raise exception 'the training plan cannot be submitted: %', v_problem using errcode = 'JK010';
@@ -379,6 +426,205 @@ $$;
 
 comment on function private.training_plans_guard() is
   'SECURITY-RELEVANT (WP-LD-02, WP-LD-03). A training plan is opened for a closed cycle as a draft; it is submitted by the organization-wide L&D Manager once ready, decided by the step''s role (never by its submitter; the first decision settles the step) and revised into a new version — the database stamps every step.';
+
+-- What the plan is made of changes only while it is a draft (or sent back) — as 20261115100200, now after the
+-- organization's plan lock SHARED (review H1): a submit in flight is waited for, and the state is read afterwards
+-- (VOLATILE: each statement reads anew). Fails closed as before.
+create or replace function private.training_plan_editable(p_tenant_id uuid, p_plan_id uuid)
+returns void
+language plpgsql
+volatile
+set search_path = ''
+as $$
+declare
+  v_status text;
+begin
+  perform private.training_plan_lock(p_tenant_id, false);
+  if current_user = 'authenticated' then
+    v_status := private.training_plan_status(p_tenant_id, p_plan_id);
+  else
+    select p.status into v_status from tms.training_plans p where p.tenant_id = p_tenant_id and p.id = p_plan_id;
+  end if;
+  if v_status is null then
+    raise insufficient_privilege using message = 'the training plan is not known';
+  end if;
+  if v_status not in ('draft', 'sent_back') then
+    raise exception 'the training plan is frozen while it waits for approval and locked once approved'
+      using errcode = 'JK008';
+  end if;
+end
+$$;
+
+comment on function private.training_plan_editable(uuid, uuid) is
+  'SECURITY-RELEVANT (WP-LD-02, WP-LD-03 review H1). A plan''s lines, links and reasons change only while it is a draft or sent back; read after the organization''s plan lock (shared), so a submit in flight is waited for.';
+
+-- A department of a cycle being consolidated: as 20261115100400, after the organization's plan lock (review H1).
+create or replace function private.plan_cycle_department_guard()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+declare
+  v_row record := case when tg_op = 'DELETE' then old else new end;
+  v_cycle tms.plan_cycles%rowtype;
+  v_today date;
+  v_deadline date;
+  v_manager boolean;
+  v_head boolean;
+  v_consolidating boolean;
+begin
+  select * into v_cycle from tms.plan_cycles c where c.tenant_id = v_row.tenant_id and c.id = v_row.cycle_id;
+  if v_cycle.id is null then
+    -- No such cycle, or not this organization's: the policies and the composite key refuse the row.
+    return v_row;
+  end if;
+  if tg_op = 'UPDATE' and (new.cycle_id is distinct from old.cycle_id or new.department_id is distinct from old.department_id) then
+    raise exception 'a row cannot move to another planning cycle' using errcode = 'JK001';
+  end if;
+
+  if v_cycle.status = 'draft' then
+    -- Set-up is the L&D Manager's alone (review F1): the head's update policy reaches draft rows too, and the
+    -- envelope must never be the head's to change. Platform operations (the owner, no claims) stay possible.
+    if current_user = 'authenticated' and not private.may_manage_plan_cycles(v_row.tenant_id) then
+      raise exception 'the scope, budget and approval chain of a planning cycle are set up by the L&D Manager'
+        using errcode = 'JK001';
+    end if;
+    if tg_op <> 'DELETE' and (new.status <> 'not_started' or new.submitted_at is not null or new.submitted_by is not null
+                              or new.returned_at is not null or new.returned_by is not null or new.return_note is not null
+                              or new.deadline_on is not null or new.answers <> '{}'::jsonb) then
+      raise exception 'a department''s needs form starts with the launch of the cycle' using errcode = 'JK001';
+    end if;
+    return v_row;
+  end if;
+
+  if tg_op <> 'UPDATE' then
+    raise exception 'the scope, budget and approval chain of a planning cycle change only while it is a draft'
+      using errcode = 'JK001';
+  end if;
+  if new.budget_amount is distinct from old.budget_amount then
+    raise exception 'the scope, budget and approval chain of a planning cycle change only while it is a draft'
+      using errcode = 'JK001';
+  end if;
+
+  -- Stamps are never taken from the statement.
+  new.submitted_at := old.submitted_at;
+  new.submitted_by := old.submitted_by;
+  new.returned_at := old.returned_at;
+  new.returned_by := old.returned_by;
+
+  v_today := private.plan_cycle_today(new.tenant_id);
+  -- Review H1: once the needs are closed a department's change counts against the plan being consolidated — it takes
+  -- the organization's plan lock SHARED first, so a submit in flight is waited for and then seen (the plan no longer
+  -- consolidates), and a submit waits for it.
+  if v_cycle.status = 'closed' then
+    perform private.training_plan_lock(new.tenant_id, false);
+  end if;
+  -- The needs are closed and the training plan is being consolidated (WP-LD-02): the L&D Manager may still return a
+  -- department for changes or reopen one, each with a deadline of its own — the only deadline that counts then.
+  v_consolidating := v_cycle.status = 'closed' and private.plan_cycle_consolidating(new.tenant_id, new.cycle_id);
+  v_deadline := case when v_consolidating then old.deadline_on
+                     else greatest(v_cycle.deadline_on, coalesce(old.deadline_on, v_cycle.deadline_on)) end;
+  v_manager := private.may_manage_plan_cycles(new.tenant_id);
+  v_head := private.may_submit_plan_needs(new.tenant_id, new.department_id);
+
+  -- An extension for this department (the L&D Manager; business flow §6, PO decision Q3).
+  if new.deadline_on is distinct from old.deadline_on then
+    if not v_manager then
+      raise exception 'only the L&D Manager extends a department''s deadline' using errcode = 'JK001';
+    end if;
+    if v_consolidating then
+      if new.deadline_on is null or new.deadline_on < v_today or new.deadline_on > v_cycle.period_end_on then
+        raise exception 'a department reopened during consolidation gets a deadline from today, within the planning period'
+          using errcode = 'JK004';
+      end if;
+    elsif v_cycle.status <> 'open' then
+      raise exception 'the planning cycle is not open' using errcode = 'JK005';
+    elsif new.deadline_on is null or new.deadline_on <= v_deadline or new.deadline_on < v_today
+       or new.deadline_on > v_cycle.period_end_on then
+      raise exception 'a department''s deadline can only move later, not before today, within the planning period'
+        using errcode = 'JK004';
+    end if;
+    v_deadline := new.deadline_on;
+  end if;
+
+  if new.status is distinct from old.status then
+    if v_cycle.status <> 'open' and not v_consolidating then
+      raise exception 'the planning cycle is not open' using errcode = 'JK005';
+    end if;
+    if old.status = 'submitted' and new.status = 'returned' then
+      -- The L&D Manager asks for changes (business flow D14).
+      if not v_manager then
+        raise exception 'only the L&D Manager returns a submission' using errcode = 'JK001';
+      end if;
+      if new.return_note is null or new.return_note !~ '[^\s​-‏ ﻿]' then
+        raise exception 'returning a submission needs a note for the head' using errcode = 'JK006';
+      end if;
+      if v_consolidating and (v_deadline is null or v_deadline < v_today) then
+        raise exception 'a department returned during consolidation needs its own deadline, today or later'
+          using errcode = 'JK004';
+      end if;
+      new.returned_at := now();
+      new.returned_by := private.request_person_id();
+      new.submitted_at := null;
+      new.submitted_by := null;
+    elsif old.status = 'submitted' and new.status = 'draft' then
+      -- Recall (business flow C8): the head, before the effective deadline.
+      if not v_head then
+        raise exception 'only the department''s head recalls its submission' using errcode = 'JK001';
+      end if;
+      if v_consolidating then
+        raise exception 'the needs are closed: the L&D Manager returns a department for changes' using errcode = 'JK005';
+      end if;
+      if v_today > v_deadline then
+        raise exception 'the deadline of this department has passed' using errcode = 'JK005';
+      end if;
+      new.submitted_at := null;
+      new.submitted_by := null;
+      new.return_note := old.return_note;
+    elsif old.status in ('not_started', 'draft', 'returned') and new.status = 'submitted' then
+      if not v_head then
+        raise exception 'only the department''s head submits its needs' using errcode = 'JK001';
+      end if;
+      if v_deadline is null or v_today > v_deadline then
+        raise exception 'the deadline of this department has passed' using errcode = 'JK005';
+      end if;
+      if not exists (select 1 from tms.plan_needs n
+                     where n.tenant_id = new.tenant_id and n.cycle_id = new.cycle_id and n.department_id = new.department_id) then
+        raise exception 'nothing to submit: add at least one training need' using errcode = 'JK006';
+      end if;
+      new.submitted_at := now();
+      new.submitted_by := private.request_person_id();
+      new.returned_at := null;
+      new.returned_by := null;
+      new.return_note := null;
+    elsif old.status = 'not_started' and new.status = 'draft' then
+      if not v_head then
+        raise exception 'only the department''s head enters its needs' using errcode = 'JK001';
+      end if;
+      new.return_note := old.return_note;
+    else
+      raise exception 'this change of a department''s form status is not allowed' using errcode = 'JK001';
+    end if;
+  elsif new.return_note is distinct from old.return_note then
+    raise exception 'the note belongs to the return of a submission' using errcode = 'JK001';
+  end if;
+
+  -- Department-level answers: the head, while entry is open and the department is not submitted.
+  if new.answers is distinct from old.answers then
+    if not v_head then
+      raise exception 'only the department''s head enters its needs' using errcode = 'JK001';
+    end if;
+    if (v_cycle.status <> 'open' and not v_consolidating) or v_deadline is null or v_today > v_deadline
+       or new.status = 'submitted' then
+      raise exception 'the department''s needs can no longer change' using errcode = 'JK005';
+    end if;
+    if new.status = 'not_started' then
+      new.status := 'draft';
+    end if;
+  end if;
+  return new;
+end
+$$;
 
 -- ---------------------------------------------------------------------------------------------------
 -- plan_approval_guard: the history, the versions and the departments' results
@@ -569,6 +815,8 @@ create policy tenant_isolation on tms.training_plan_events
 create policy training_plan_events_read on tms.training_plan_events for select to authenticated
   using ((select private.may_read_training_plan((select private.current_tenant_id())))
          or cardinality((select private.training_plan_units((select private.current_tenant_id()), false))) > 0);
+comment on policy training_plan_events_read on tms.training_plan_events is
+  'The plan''s history: its organization-wide readers, and a department-limited planner of any unit — who reads every event, send-back comments included: a comment is about the whole plan (one per send-back, Q5 = A), not a department''s needs (review L6, accepted).';
 create policy training_plan_events_plan_approval_guard_insert on tms.training_plan_events for insert
   to plan_approval_guard with check (true);
 grant select on tms.training_plan_events to authenticated;
@@ -601,3 +849,53 @@ create policy training_plan_department_results_read on tms.training_plan_departm
 create policy training_plan_department_results_plan_approval_guard_insert on tms.training_plan_department_results
   for insert to plan_approval_guard with check (true);
 grant select on tms.training_plan_department_results to authenticated;
+
+-- ---------------------------------------------------------------------------------------------------
+-- What the approvers read (review M1)
+-- ---------------------------------------------------------------------------------------------------
+-- The HR Manager and Finance read the training plan (tms.training_plan.read) to decide on it: its lines with each
+-- department's seats and share, the envelopes, the reasons, the lines left out and the history — never the
+-- departments' raw needs (their free text, the department-level answers, the return notes, who is named). The raw
+-- needs are read, as before WP-LD-03, by the cycle readers (tms.plan_cycle.read / .manage organization-wide: the L&D
+-- Manager, the Training Coordinator), a department's effective head and a department-limited planner of its units
+-- — and by whoever BUILDS the plan organization-wide (tms.training_plan.manage). Holding tms.training_plan.read alone
+-- (the approvers, or a custom role) no longer reads them.
+drop policy plan_cycle_departments_read on tms.plan_cycle_departments;
+create policy plan_cycle_departments_read on tms.plan_cycle_departments for select to authenticated
+  using ((select private.may_read_plan_cycles((select private.current_tenant_id())))
+         or (select private.may_manage_training_plan((select private.current_tenant_id())))
+         or private.may_submit_plan_needs(tenant_id, department_id)
+         or department_id = any ((select private.training_plan_units((select private.current_tenant_id()), false))::uuid[]));
+
+drop policy plan_needs_read on tms.plan_needs;
+create policy plan_needs_read on tms.plan_needs for select to authenticated
+  using ((select private.may_read_plan_cycles((select private.current_tenant_id())))
+         or (select private.may_manage_training_plan((select private.current_tenant_id())))
+         or private.may_submit_plan_needs(tenant_id, department_id)
+         or department_id = any ((select private.training_plan_units((select private.current_tenant_id()), false))::uuid[]));
+
+drop policy plan_need_people_read on tms.plan_need_people;
+create policy plan_need_people_read on tms.plan_need_people for select to authenticated
+  using ((select private.may_read_plan_cycles((select private.current_tenant_id())))
+         or (select private.may_manage_training_plan((select private.current_tenant_id())))
+         or private.may_submit_plan_needs(tenant_id, department_id)
+         or department_id = any ((select private.training_plan_units((select private.current_tenant_id()), false))::uuid[]));
+
+-- A cycle's departments as the plan is checked against them — envelope, form status and own deadline, never the
+-- answers or the return note — for the organization-wide readers of the training plan. A view owned by
+-- plan_approval_guard, which reads those columns (and only those) under its own policy; the WHERE runs as the
+-- caller (functions in a view are the caller's): the caller's organization, and only while the caller holds
+-- tms.training_plan.read / .manage organization-wide. security_barrier: the caller's own conditions never run first.
+grant select (status, deadline_on, created_at, id) on tms.plan_cycle_departments to plan_approval_guard;
+create view private.training_plan_departments with (security_barrier = true) as
+  select d.tenant_id, d.cycle_id, d.department_id, d.budget_amount, d.status, d.deadline_on, d.created_at, d.id
+  from tms.plan_cycle_departments d
+  where d.tenant_id = (select private.current_tenant_id())
+    and (select private.may_read_training_plan((select private.current_tenant_id())));
+comment on view private.training_plan_departments is
+  'SECURITY-RELEVANT (WP-LD-03, review M1). The departments of a cycle as its training plan is checked against them (envelope, form status, own deadline; never answers or return notes), for the organization-wide readers of the plan. Owner plan_approval_guard.';
+grant create on schema private to plan_approval_guard;
+alter view private.training_plan_departments owner to plan_approval_guard;
+revoke create on schema private from plan_approval_guard;
+revoke all on private.training_plan_departments from public;
+grant select on private.training_plan_departments to authenticated;

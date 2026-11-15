@@ -885,9 +885,26 @@ begin
         failures := failures || format('plan_approval_guard must not have CREATE on schema %s', r.nspname);
       end if;
     end loop;
-    if exists (select 1 from pg_class c where c.relowner = (select oid from pg_roles where rolname = 'plan_approval_guard')) then
-      failures := failures || 'plan_approval_guard must own no relations'::text;
+    -- It owns one view: the departments' envelopes for the plan's approvers (review M1), readable by authenticated.
+    if exists (select 1 from pg_class c where c.relowner = (select oid from pg_roles where rolname = 'plan_approval_guard')
+                 and c.oid is distinct from to_regclass('private.training_plan_departments')) then
+      failures := failures || 'plan_approval_guard must own no relations but private.training_plan_departments'::text;
     end if;
+    if to_regclass('private.training_plan_departments') is null
+       or (select pg_get_userbyid(relowner) from pg_class where oid = to_regclass('private.training_plan_departments'))
+          <> 'plan_approval_guard'
+       or not coalesce((select 'security_barrier=true' = any (reloptions) from pg_class
+                        where oid = to_regclass('private.training_plan_departments')), false) then
+      failures := failures || 'private.training_plan_departments must exist, owned by plan_approval_guard, security_barrier'::text;
+    end if;
+    for r in
+      select distinct pg_get_userbyid(a.grantee) || ' ' || a.privilege_type as t
+      from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+      where c.oid = to_regclass('private.training_plan_departments') and a.grantee <> c.relowner
+        and not (a.grantee = (select oid from pg_roles where rolname = 'authenticated') and a.privilege_type = 'SELECT')
+    loop
+      failures := failures || format('private.training_plan_departments: unexpected privilege %s', r.t);
+    end loop;
     for r in
       select distinct u.rolname from pg_auth_members m
       join pg_roles g on g.oid = m.roleid join pg_roles u on u.oid = m.member
@@ -900,6 +917,7 @@ begin
       select distinct c.oid::regclass::text as t
       from pg_class c join pg_namespace n on n.oid = c.relnamespace, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
       where n.nspname = any (module_schemas) and a.grantee = (select oid from pg_roles where rolname = 'plan_approval_guard')
+        and c.oid is distinct from to_regclass('private.training_plan_departments')
       union
       select distinct att.attrelid::regclass::text || ' (' || a.privilege_type || ')'
       from pg_attribute att join pg_class c on c.oid = att.attrelid join pg_namespace n on n.oid = c.relnamespace,

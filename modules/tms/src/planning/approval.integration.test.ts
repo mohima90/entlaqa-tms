@@ -31,6 +31,7 @@ import * as approval from './approval-definitions';
 import * as plan from './consolidation-definitions';
 import * as cycles from './definitions';
 import * as needs from './needs-definitions';
+import { dbError } from './repository';
 
 const ownerUrl = process.env.TEST_DATABASE_URL;
 const appServerUrl = process.env.TEST_APP_SERVER_URL;
@@ -43,7 +44,10 @@ if ((process.env.CI || process.env.JADARAT_REQUIRE_INTEGRATION) && !configured) 
 describe.skipIf(!configured)('the training plan approval against PostgreSQL', () => {
   const ownerDb = createDatabase(ownerUrl ?? '', { max: 1 });
   const serverDb = createDatabase(appServerUrl ?? '', { max: 1 });
+  // A second connection, for a transaction kept open while another runs (review H1).
+  const secondDb = createDatabase(appServerUrl ?? '', { max: 1 });
   const withUserTx = createWithUserTx(() => serverDb);
+  const withSecondTx = createWithUserTx(() => secondDb);
   const id = () => randomUUID();
   const tenant = id();
   const other = id();
@@ -68,6 +72,18 @@ describe.skipIf(!configured)('the training plan approval against PostgreSQL', ()
   };
 
   const unexpected: unknown[] = [];
+  const claimsOf = (m: ReturnType<typeof member>) => {
+    const claims = brandVerifiedClaims({
+      sub: m.user,
+      role: 'authenticated',
+      aal: 'aal1',
+      session_id: m.session,
+      tenant_id: m.tenantId,
+      person_id: m.person,
+    });
+    if (!claims.ok) throw new Error('bad fixture');
+    return claims.value;
+  };
   const as = (m: ReturnType<typeof member>) => {
     const runtime: ActionRuntime<UserTx> = {
       loadSessionFacts: (tx) => loadSessionFacts(tx),
@@ -83,18 +99,7 @@ describe.skipIf(!configured)('the training plan approval against PostgreSQL', ()
       logError: (error) => {
         unexpected.push(error);
       },
-      getClaims: () => {
-        const claims = brandVerifiedClaims({
-          sub: m.user,
-          role: 'authenticated',
-          aal: 'aal1',
-          session_id: m.session,
-          tenant_id: m.tenantId,
-          person_id: m.person,
-        });
-        if (!claims.ok) throw new Error('bad fixture');
-        return Promise.resolve(ok(claims.value));
-      },
+      getClaims: () => Promise.resolve(ok(claimsOf(m))),
       withUserTx: (claims, fn) => withUserTx(claims, fn),
     };
     return {
@@ -139,6 +144,7 @@ describe.skipIf(!configured)('the training plan approval against PostgreSQL', ()
     expect(unexpected).toEqual([]);
     await ownerDb.$client.end();
     await serverDb.$client.end();
+    await secondDb.$client.end();
   });
 
   it('submits, sends back, approves by role, confirms for Finance, locks version 1 and revises', async () => {
@@ -283,6 +289,18 @@ describe.skipIf(!configured)('the training plan approval against PostgreSQL', ()
       'Public speaking',
     ]);
     expect(reviewPlan.ok && reviewPlan.value.can.manage).toBe(false);
+    // Review M1: the plan with each department's seats, share and envelope — never the raw needs.
+    if (!reviewPlan.ok) throw new Error(reviewPlan.error.code);
+    expect(reviewPlan.value.budget.departments.map((d) => d.departmentId).sort()).toEqual(
+      [dept.sales, dept.hr].sort(),
+    );
+    expect(reviewPlan.value.lines.find((l) => l.title === 'Excel')?.departments).toMatchObject([
+      { departmentId: dept.sales, seats: 20, share: '4000' },
+      { departmentId: dept.hr, seats: 10, share: '2000' },
+    ]);
+    expect(reviewPlan.value.lines.flatMap((l) => l.needs)).toEqual([]);
+    const lndPlan = await lnd.query(plan.planQueryDefinition())({ cycleId });
+    expect(lndPlan.ok && lndPlan.value.lines.flatMap((l) => l.needs).length).toBe(3);
     for (const who of [
       people.finance,
       people.coordinator,
@@ -447,5 +465,149 @@ describe.skipIf(!configured)('the training plan approval against PostgreSQL', ()
     ]);
     expect(JSON.stringify(audits)).not.toContain('quarter for Excel');
     expect(audits[1]?.data).toMatchObject({ commentLength: 33 });
+  });
+
+  it('never lets a change of the plan slip past its submission at the same moment (review H1)', async () => {
+    const lnd = as(people.lnd);
+    const list = await lnd.query(cycles.planCyclesListQueryDefinition())({});
+    if (!list.ok || !list.value.setup) throw new Error('set-up choices');
+    const created = await lnd.action(cycles.createPlanCycleActionDefinition())({
+      nameAr: null,
+      nameEn: 'Plan 2028',
+      ...list.value.setup.defaults,
+      departmentIds: [dept.sales],
+    });
+    if (!created.ok) throw new Error(created.error.code);
+    const cycleId = created.value.id;
+    const launched = await lnd.action(cycles.launchPlanCycleActionDefinition())({
+      id: cycleId,
+      version: created.value.version,
+    });
+    if (!launched.ok) throw new Error(launched.error.code);
+    const head = as(people.salesHead);
+    const added = await head.action(needs.addNeedActionDefinition())({
+      cycleId,
+      departmentId: dept.sales,
+      topic: 'Excel',
+      courseId: null,
+      peopleCount: 12,
+      personIds: [],
+      estimatedCost: '',
+      answers: {},
+    });
+    if (!added.ok) throw new Error(added.error.code);
+    const needsView = await head.query(needs.departmentNeedsQueryDefinition())({
+      cycleId,
+      departmentId: dept.sales,
+    });
+    if (!needsView.ok) throw new Error(needsView.error.code);
+    const sent = await head.action(needs.submitNeedsActionDefinition())({
+      cycleId,
+      departmentId: dept.sales,
+      version: needsView.value.department.version,
+    });
+    if (!sent.ok) throw new Error(sent.error.code);
+    const opened = await lnd.action(plan.openConsolidationActionDefinition())({ cycleId });
+    if (!opened.ok) throw new Error(opened.error.code);
+    const planId = opened.value.planId;
+    const lines = await lnd.query(plan.planQueryDefinition())({ cycleId });
+    const excel = lines.ok ? lines.value.lines[0] : undefined;
+    if (!excel) throw new Error('one line');
+    const costed = await lnd.action(plan.updatePlanLineActionDefinition())({
+      lineId: excel.id,
+      version: excel.version,
+      maxPerSession: 15,
+      costPerSession: '2000',
+    });
+    if (!costed.ok) throw new Error(costed.error.code);
+    const approvalOf = async () => {
+      const view = await lnd.query(approval.planApprovalQueryDefinition())({ cycleId });
+      if (!view.ok || !view.value) throw new Error('approval view');
+      return view.value;
+    };
+    expect((await approvalOf()).submitProblem).toBeNull();
+    const uncostedLine = sql`insert into tms.plan_lines (plan_id, cycle_id, group_key, title, quarter)
+      values (${planId}::uuid, ${cycleId}::uuid, 'topic:late', 'Late', 1) returning id`;
+    const gate = () => {
+      let open: () => void = () => undefined;
+      const passed = new Promise<void>((resolve) => {
+        open = resolve;
+      });
+      return {
+        passed,
+        open: () => {
+          open();
+        },
+      };
+    };
+    const settled = <T>(promise: Promise<T>) => {
+      const state = { done: false };
+      return {
+        state,
+        promise: promise.finally(() => {
+          state.done = true;
+        }),
+      };
+    };
+
+    // 1. A line without a cost is being added (not committed yet) when the L&D Manager submits: the submit waits for
+    //    it, then sees the line and refuses — the plan is never frozen with a line its checks did not see.
+    const inserted = gate();
+    const release = gate();
+    const insert = withSecondTx(claimsOf(people.lnd), async (tx) => {
+      const [row] = await tx.execute(uncostedLine);
+      inserted.open();
+      await release.passed;
+      return String(row?.id);
+    });
+    await inserted.passed;
+    const submit = settled(
+      lnd.action(approval.submitPlanActionDefinition())({
+        planId,
+        version: (await approvalOf()).plan.version,
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(submit.state.done).toBe(false);
+    release.open();
+    const lateLine = await insert;
+    const refused = await submit.promise;
+    expect(!refused.ok && refused.error.code).toBe('TRAINING_PLAN_NOT_SUBMITTABLE');
+    expect(!refused.ok && refused.error.params).toEqual({ problem: 'uncosted' });
+    expect((await approvalOf()).plan.status).toBe('draft');
+    await withSecondTx(claimsOf(people.lnd), (tx) =>
+      tx.execute(sql`delete from tms.plan_lines where id = ${lateLine}::uuid`),
+    );
+
+    // 2. The other way round: the submit is in flight (not committed) when a line without a cost is added — the
+    //    insert waits for it, then finds the plan frozen (JK008) and adds nothing.
+    const submitting = gate();
+    const releaseSubmit = gate();
+    const version = (await approvalOf()).plan.version;
+    const submitNow = withSecondTx(claimsOf(people.lnd), async (tx) => {
+      const rows = await tx.execute(sql`update tms.training_plans set status = 'in_approval'
+        where id = ${planId}::uuid and version = ${version} returning id`);
+      submitting.open();
+      await releaseSubmit.passed;
+      return rows.length;
+    });
+    await submitting.passed;
+    const late = settled(
+      withUserTx(claimsOf(people.lnd), (tx) => tx.execute(uncostedLine)).then(
+        () => null,
+        (error: unknown) => dbError(error)?.code ?? 'unknown',
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(late.state.done).toBe(false);
+    releaseSubmit.open();
+    expect(await submitNow).toBe(1);
+    expect(await late.promise).toBe('JK008');
+    const frozen = await approvalOf();
+    expect(frozen.plan.status).toBe('in_approval');
+    const [count] = await ownerDb.execute<{ n: number }>(
+      sql`select count(*)::int as n from tms.plan_lines where plan_id = ${planId}::uuid`,
+    );
+    expect(count?.n).toBe(1);
   });
 });

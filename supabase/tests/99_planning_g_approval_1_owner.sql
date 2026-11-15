@@ -49,9 +49,32 @@ begin
                                      and not u.rolsuper and u.rolname <> current_user),
     'nobody acts as plan_approval_guard');
   perform tests.assert(not has_schema_privilege('plan_approval_guard', 'private', 'CREATE')
-                       and not has_schema_privilege('plan_approval_guard', 'tms', 'CREATE')
-                       and not exists (select 1 from pg_class c where c.relowner = 'plan_approval_guard'::regrole),
-    'plan_approval_guard creates and owns no relations');
+                       and not has_schema_privilege('plan_approval_guard', 'tms', 'CREATE'),
+    'plan_approval_guard creates nothing');
+  perform tests.assert_eq((select string_agg(c.oid::regclass::text || ':' || c.relkind::text, ',') from pg_class c
+                           where c.relowner = 'plan_approval_guard'::regrole),
+    'private.training_plan_departments:v', 'it owns one view: the envelopes for the approvers (review M1)');
+  perform tests.assert((select 'security_barrier=true' = any (reloptions) from pg_class
+                        where oid = 'private.training_plan_departments'::regclass)
+                       and has_table_privilege('authenticated', 'private.training_plan_departments', 'SELECT')
+                       and not has_table_privilege('authenticated', 'private.training_plan_departments', 'INSERT, UPDATE, DELETE')
+                       and not exists (select 1 from pg_attribute a
+                                       where a.attrelid = 'private.training_plan_departments'::regclass
+                                         and a.attname in ('answers', 'return_note', 'submitted_by', 'returned_by')),
+    'a security-barrier view, read only, without the answers, the return note or who submitted');
+  perform tests.assert(not has_column_privilege('plan_approval_guard', 'tms.plan_cycle_departments', 'answers', 'SELECT')
+                       and not has_column_privilege('plan_approval_guard', 'tms.plan_cycle_departments', 'return_note', 'SELECT'),
+    'its owner cannot read the answers or the return note either');
+  -- Review H1: the plan's editability and the state machine share one lock; the state is read after it.
+  perform tests.assert((select provolatile = 'v' from pg_proc where oid = 'private.training_plan_editable(uuid, uuid)'::regprocedure)
+                       and position('training_plan_lock' in pg_get_functiondef('private.training_plan_editable(uuid, uuid)'::regprocedure)) > 0
+                       and position('training_plan_lock' in pg_get_functiondef('private.training_plans_guard()'::regprocedure)) > 0
+                       and position('training_plan_lock' in pg_get_functiondef('private.plan_cycle_department_guard()'::regprocedure)) > 0,
+    'the plan''s changes and its changes of state take the organization''s plan lock (review H1)');
+  -- Review L4: never null.
+  perform tests.assert(private.may_decide_training_plan('a0000000-0000-4000-8000-000000000001', 'hr') is false
+                       and private.may_decide_training_plan('a0000000-0000-4000-8000-000000000001', 'unknown') is false,
+    'may_decide_training_plan answers false, never null, without claims or for an unknown step');
   select string_agg(format('%s%s', p.oid::regprocedure, case when p.prosecdef then ' (definer)' else '' end), ', '
                     order by p.oid::regprocedure::text)
     into v_list
@@ -310,6 +333,20 @@ declare
 begin
   perform tests.assert_eq((select count(*) from tms.plan_lines where plan_id = p), 2::bigint, 'the HR Manager reads the lines');
   perform tests.assert_eq((select count(*) from tms.plan_budget_reasons where plan_id = p), 1::bigint, 'and the reasons');
+  perform tests.assert_eq((select string_agg(x.seats::text, ',' order by x.seats) from tms.plan_line_needs x where x.plan_id = p),
+    '6,20', 'and each line''s seats by department');
+  -- Review M1: the plan, never the departments' raw needs.
+  perform tests.assert_eq((select count(*) from tms.plan_needs) + (select count(*) from tms.plan_need_people)
+                          + (select count(*) from tms.plan_cycle_departments), 0::bigint,
+    'the HR Manager reads no need, no named person and no department''s answers or return note');
+  perform tests.assert_eq((select string_agg(department_id::text || ':' || (budget_amount = 7000)::text || ':' || status, ',')
+                           from private.training_plan_departments where cycle_id = 'ae000000-0000-4000-8000-000000000001'),
+    'a3000000-0000-4000-8000-000000000004:true:submitted', 'it reads the envelopes the plan is checked against');
+  -- Review L1: a statement that moves nothing is not the approver's.
+  perform tests.assert_fails(format($q$update tms.training_plans set status = status where id = %L$q$, p), array['42501'],
+    'the HR Manager does not touch the plan without deciding');
+  perform tests.assert_eq((select version::text from tms.training_plans where id = p), current_setting('tests.ga_version'),
+    'its version is unchanged');
   perform tests.assert_fails($q$select tests.ga_decide('sent_back', 'hr')$q$, array['JK012'], 'sending back needs a comment');
   perform tests.assert_fails($q$select tests.ga_decide('sent_back', 'hr', '   ')$q$, array['JK012', '23514'],
     'a comment with visible text');
@@ -426,6 +463,12 @@ declare
   v_result jsonb;
 begin
   perform tests.assert_eq((select count(*) from tms.plan_lines where plan_id = p), 2::bigint, 'Finance reads the plan');
+  perform tests.assert_eq((select count(*) from tms.plan_needs) + (select count(*) from tms.plan_need_people)
+                          + (select count(*) from tms.plan_cycle_departments), 0::bigint,
+    'Finance reads no need, no named person and no department''s answers (review M1)');
+  perform tests.assert_eq((select count(*) from private.training_plan_departments), 1::bigint, 'only the envelopes');
+  perform tests.assert_fails(format($q$update tms.training_plans set send_back_comment = 'x' where id = %L$q$, p), array['42501'],
+    'Finance does not touch the plan without deciding (review L1)');
   perform tests.assert_eq(tests.ga_decide('approved', 'finance'), 1::bigint, 'Finance confirms');
   perform tests.assert((select status = 'approved' and approval_step is null and plan_version = 1
                                and approved_by = 'a1000000-0000-4000-8000-00000000e0a6'::uuid and approved_at is not null
@@ -513,6 +556,71 @@ begin
   update tms.plan_lines set quarter = 3 where id = tests.ga_line('Excel');
   perform tests.assert_eq((select (snapshot -> 'lines' -> 0 ->> 'quarter') from tms.training_plan_versions where plan_id = p),
     '1', 'a change in version 2 leaves version 1 as it was');
+end $$;
+
+-- Review M1: a person named for a need (written here as a platform operation) — read by the L&D Manager and the
+-- head, never by the HR Manager or Finance; the envelopes' view answers nobody else.
+select tests.set_claims(null);
+reset role;
+reset session authorization;
+alter table tms.plan_need_people disable trigger user;
+insert into tms.plan_need_people (tenant_id, need_id, department_id, person_id)
+values ('a0000000-0000-4000-8000-000000000001', tests.ga_need('Excel'), 'a3000000-0000-4000-8000-000000000004',
+        'a1000000-0000-4000-8000-00000000e0a3');
+alter table tms.plan_need_people enable trigger user;
+alter table tms.plan_cycle_departments disable trigger user;
+update tms.plan_cycle_departments set answers = '{"why": "growth"}'
+where cycle_id = 'ae000000-0000-4000-8000-000000000001';
+alter table tms.plan_cycle_departments enable trigger user;
+set local session authorization app_server;
+set local role authenticated;
+select tests.set_claims(tests.ga_claims('uL'));
+do $$
+begin
+  perform tests.assert_eq((select count(*) from tms.plan_need_people) || ':' || (select count(*) from tms.plan_needs)
+                          || ':' || (select answers ->> 'why' from tms.plan_cycle_departments
+                                     where cycle_id = 'ae000000-0000-4000-8000-000000000001'),
+    '1:2:growth', 'the L&D Manager, who builds the plan, reads the needs, who is named and the answers');
+end $$;
+select tests.set_claims(tests.ga_claims('uH'));
+do $$
+begin
+  perform tests.assert_eq((select count(*) from tms.plan_need_people), 1::bigint, 'so does the head of SAL');
+  perform tests.assert_eq((select count(*) from private.training_plan_departments), 0::bigint,
+    'who does not read the plan''s envelopes through the approvers'' view');
+end $$;
+select tests.set_claims(tests.ga_claims('uT'));
+do $$
+begin
+  perform tests.assert_eq((select count(*) from tms.plan_need_people), 1::bigint,
+    'and the Training Coordinator (a reader of the cycles, as before WP-LD-03)');
+end $$;
+select tests.set_claims(tests.ga_claims('uAB'));
+do $$
+begin
+  perform tests.assert_eq((select count(*) from tms.plan_needs) + (select count(*) from tms.plan_need_people)
+                          + (select count(*) from tms.plan_cycle_departments where answers ? 'why'), 0::bigint,
+    'the HR Manager reads neither the needs, nor who is named, nor the answers');
+end $$;
+select tests.set_claims(tests.ga_claims('uF'));
+do $$
+begin
+  perform tests.assert_eq((select count(*) from tms.plan_needs) + (select count(*) from tms.plan_need_people)
+                          + (select count(*) from tms.plan_cycle_departments where answers ? 'why'), 0::bigint,
+    'nor does Finance');
+end $$;
+select tests.set_claims(tests.ga_claims('uE'));
+do $$
+begin
+  perform tests.assert_eq((select count(*) from private.training_plan_departments), 0::bigint,
+    'an Employee reads no envelope');
+end $$;
+select tests.set_claims(tests.ga_claims('B'));
+do $$
+begin
+  perform tests.assert_eq((select count(*) from private.training_plan_departments
+                           where tenant_id = 'a0000000-0000-4000-8000-000000000001'), 0::bigint,
+    'nor another organization''s L&D Manager (its own organization''s only)');
 end $$;
 rollback;
 

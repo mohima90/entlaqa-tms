@@ -366,9 +366,10 @@ begin
     array['42501'], 'an Employee does not lock a needs form');
   perform tests.set_claims(tests.uab_claims());
   -- WP-LD-03: the HR Manager approves the training plan (tms.training_plan.read, BRD Appendix B «V»), so it reads
-  -- the cycles and their departments' envelopes the plan is checked against — still no set-up.
+  -- the cycles whose plan it approves — still no set-up, and never the departments' rows (their answers and return
+  -- notes, review M1: the envelopes come through private.training_plan_departments).
   foreach v_table in array array['tms.planning_settings', 'tms.planning_default_steps',
-                                 'tms.plan_cycle_scope', 'tms.plan_cycle_steps'] loop
+                                 'tms.plan_cycle_scope', 'tms.plan_cycle_departments', 'tms.plan_cycle_steps'] loop
     execute format('select count(*) from %s', v_table) into v_count;
     perform tests.assert_eq(v_count, 0::bigint, format('%s: the HR Manager reads nothing', v_table));
   end loop;

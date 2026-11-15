@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   type ConsolidationNeed,
+  amountMilli,
   attachNeeds,
   budgetCheck,
   budgetState,
@@ -45,6 +46,74 @@ describe('amounts (exact thousandths)', () => {
     expect(fromMilli(15_000_000n)).toBe('15000');
     expect(fromMilli(1n)).toBe('0.001');
     expect(fromMilli(-4_473_000n)).toBe('-4473');
+  });
+
+  it('keeps the database cap for typed and stored amounts, none for what the rules work out', () => {
+    expect(() => toMilli('1234567890123456')).toThrow();
+    expect(amountMilli('1234567890123456789012.5')).toBe(1_234_567_890_123_456_789_012_500n);
+    expect(amountMilli('-12.25')).toBe(-12_250n);
+    expect(amountMilli(null)).toBeNull();
+    expect(() => amountMilli('1,000')).toThrow();
+    expect(() => amountMilli('1e9')).toThrow();
+  });
+
+  it('works out the largest plan without failing (M4)', () => {
+    // The largest inputs the database accepts: 10,000 people per session, 999,999,999,999.999 per session and per
+    // person, and 2,000,000 seats in one line (200 needs of 100,000 per department × 100 departments, say).
+    const max = '999999999999.999';
+    const departments = Array.from({ length: 100 }, (_, i) => ({
+      departmentId: `d${String(i)}`,
+      seats: 20_000,
+      named: 0,
+    }));
+    const figures = lineFigures(
+      { minPerSession: 1, maxPerSession: 1, costPerSession: max, costPerPerson: max, departments },
+      3,
+    );
+    // 2,000,000 sessions × max + 2,000,000 people × max.
+    expect(figures.cost).toBe('3999999999999996000');
+    expect(figures.shares.size).toBe(100);
+    const check = budgetCheck(
+      departments.map((d) => ({ departmentId: d.departmentId, envelope: max })),
+      [
+        {
+          lineId: 'l',
+          status: 'in_plan',
+          cost: figures.cost,
+          shares: figures.shares,
+          departments,
+        },
+        {
+          lineId: 'm',
+          status: 'in_plan',
+          cost: figures.cost,
+          shares: figures.shares,
+          departments,
+        },
+      ],
+    );
+    expect(check.total.cost).toBe('7999999999999992000');
+    expect(check.total.envelope).toBe('99999999999999.9');
+    expect(check.total.state).toMatchObject({ kind: 'over', severity: 'red' });
+    expect(check.departments[0]?.cost).toBe('79999999999999920');
+    const grouped = groupLines(
+      [
+        {
+          id: 'l',
+          status: 'in_plan',
+          quarter: 1,
+          deliveryType: null,
+          category: null,
+          cost: check.total.cost,
+          sessions: 2_000_000,
+          shares: figures.shares,
+          departments,
+        },
+      ],
+      'branch',
+    );
+    expect(grouped[0]?.cost).toBe(figures.cost);
+    expect(budgetState(check.total.cost, '0')).toMatchObject({ kind: 'over', percentOver: null });
   });
 
   it('knows the three-decimal currencies of the region', () => {

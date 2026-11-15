@@ -67,14 +67,36 @@ export const OVER_BUDGET_RED_PERCENT = 10;
 // ---------------------------------------------------------------------------------------------------
 
 const AMOUNT_RE = /^\d{1,15}(\.\d{1,4})?$/;
+/** An amount the rules worked out: any number of digits (bigint), negative for «over by». */
+const COMPUTED_AMOUNT_RE = /^-?\d+(\.\d{1,4})?$/;
 
-/** A canonical amount text ("1200.5") as thousandths (1200500n); null for null. Throws on anything else. */
+function milliOf(amount: string): bigint {
+  const negative = amount.startsWith('-');
+  const [whole = '0', fraction = ''] = (negative ? amount.slice(1) : amount).split('.');
+  // The database keeps 4 decimals (numeric(19,4)); amounts are written with at most 3 (its check).
+  const value = BigInt(whole) * 1000n + BigInt((fraction + '000').slice(0, 3));
+  return negative ? -value : value;
+}
+
+/**
+ * An amount as stored or typed — a canonical amount text ("1200.5") — as thousandths (1200500n); null for null.
+ * Throws on anything else, a value of more than 15 digits before the point included (the database's limits).
+ */
 export function toMilli(amount: string | null): bigint | null {
   if (amount === null) return null;
   if (!AMOUNT_RE.test(amount)) throw new Error('not an amount');
-  const [whole = '0', fraction = ''] = amount.split('.');
-  // The database keeps 4 decimals (numeric(19,4)); amounts are written with at most 3 (its check).
-  return BigInt(whole) * 1000n + BigInt((fraction + '000').slice(0, 3));
+  return milliOf(amount);
+}
+
+/**
+ * An amount the rules worked out (a line's cost, a share, a department's or the plan's total, a sum of envelopes)
+ * as thousandths: exact whatever its size — 500 sessions of the largest cost per session already have more digits
+ * than a stored amount may (toMilli's cap is for what is typed and stored). Throws on anything that is not a number.
+ */
+export function amountMilli(amount: string | null): bigint | null {
+  if (amount === null) return null;
+  if (!COMPUTED_AMOUNT_RE.test(amount)) throw new Error('not an amount');
+  return milliOf(amount);
 }
 
 /** Thousandths as a canonical amount text: 1200500n → "1200.5", 0n → "0". */
@@ -464,7 +486,7 @@ export function splitBySeats(
 ): Map<string, string> {
   const result = new Map<string, string>();
   const totalSeats = seats.reduce((n, s) => n + Math.max(0, s.seats), 0);
-  const milli = toMilli(total) ?? 0n;
+  const milli = amountMilli(total) ?? 0n;
   if (seats.length === 0) return result;
   if (totalSeats === 0) {
     seats.forEach((s, i) => result.set(s.key, fromMilli(i === 0 ? milli : 0n)));
@@ -563,8 +585,8 @@ export type BudgetState =
 /** A department's (or the organization's) estimated cost against its envelope. */
 export function budgetState(cost: string, envelope: string | null): BudgetState {
   if (envelope === null) return { kind: 'none' };
-  const spent = toMilli(cost) ?? 0n;
-  const limit = toMilli(envelope) ?? 0n;
+  const spent = amountMilli(cost) ?? 0n;
+  const limit = amountMilli(envelope) ?? 0n;
   if (spent <= limit) return { kind: 'within', left: fromMilli(limit - spent) };
   const over = spent - limit;
   // Tenths of a percent, rounded half up.
@@ -629,7 +651,7 @@ export function budgetCheck(
       people += seats;
       const share = line.shares.get(department.departmentId);
       if (line.cost === null || share === undefined) uncosted += 1;
-      else cost += toMilli(share) ?? 0n;
+      else cost += amountMilli(share) ?? 0n;
     }
     const text = fromMilli(cost);
     return {
@@ -642,7 +664,7 @@ export function budgetCheck(
       state: budgetState(text, department.envelope),
     };
   });
-  const totalCost = inPlan.reduce((n, l) => n + (toMilli(l.cost) ?? 0n), 0n);
+  const totalCost = inPlan.reduce((n, l) => n + (amountMilli(l.cost) ?? 0n), 0n);
   const totalPeople = inPlan.reduce(
     (n, l) => n + l.departments.reduce((m, d) => m + d.seats, 0),
     0,
@@ -651,7 +673,7 @@ export function budgetCheck(
   const envelope =
     envelopes.length === 0
       ? null
-      : fromMilli(envelopes.reduce((n, d) => n + (toMilli(d.envelope) ?? 0n), 0n));
+      : fromMilli(envelopes.reduce((n, d) => n + (amountMilli(d.envelope) ?? 0n), 0n));
   return {
     departments: rows,
     total: {
@@ -719,7 +741,7 @@ export function groupLines(
   };
   for (const line of lines) {
     const people = line.departments.reduce((n, d) => n + d.seats, 0);
-    const cost = toMilli(line.cost);
+    const cost = amountMilli(line.cost);
     switch (by) {
       case 'quarter':
         add(String(line.quarter), line, people, cost);
@@ -736,7 +758,7 @@ export function groupLines(
           const branch = branchOf(d.departmentId);
           const entry = perBranch.get(branch) ?? { people: 0, cost: 0n };
           entry.people += d.seats;
-          entry.cost += toMilli(line.shares.get(d.departmentId) ?? null) ?? 0n;
+          entry.cost += amountMilli(line.shares.get(d.departmentId) ?? null) ?? 0n;
           perBranch.set(branch, entry);
         }
         if (perBranch.size === 0) add(null, line, 0, cost);

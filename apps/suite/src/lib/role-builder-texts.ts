@@ -109,6 +109,18 @@ export function roleBuilderGroups(locale: 'ar' | 'en'): BuilderGroup[] {
 }
 
 /**
+ * Notes under scoped permissions whose neighbours stay organization-wide (BACKLOG WP-LD-02: «explain
+ * organization-wide permissions»): a department-limited planner builds its departments' lines, but closing the
+ * needs early, building the plan and returning a department belong to a role that sees the whole organization.
+ */
+const SCOPED_NOTES: Readonly<Record<string, { readonly ar: string; readonly en: string }>> = {
+  'tms.training_plan.manage': {
+    en: 'Closing the needs early, building the plan and returning a department for changes stay with a role that sees the whole organization.',
+    ar: 'يبقى إغلاق الاحتياجات مبكرًا وبناء الخطة وإعادة احتياجات إدارة للتعديل لدورٍ يرى المنشأة كلها.',
+  },
+};
+
+/**
  * A role's page (read-only): the builder's catalogue plus the permissions a custom role never holds but a
  * standard role does (the organization structure — STANDARD_ONLY_PERMISSIONS), so the HR Manager's page
  * still lists it.
@@ -133,6 +145,7 @@ function groupsOf(locale: 'ar' | 'en', entries: readonly CustomRolePermission[])
         highRisk: entry.permission.risk === 'high',
         makesPrivileged: permissionMakesPrivileged(entry.permission.code),
         organizationOnly: entry.use === 'organization_only',
+        scopedNote: SCOPED_NOTES[entry.permission.code]?.[locale],
       })),
   })).filter((group) => group.permissions.length > 0);
 }

@@ -317,7 +317,11 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
             ) : undefined,
             checked,
             disabled: pending || block !== null,
-            note: block ? text(block) : undefined,
+            note: block
+              ? text(block)
+              : values.dataScope !== 'organization'
+                ? permission.scopedNote
+                : undefined,
           };
         }),
     }))

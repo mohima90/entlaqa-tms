@@ -1,4 +1,5 @@
 import { toClientError } from '@jadarat/platform-core';
+import { displayDateFormatter } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { Alert, Badge, Icon, PageHeader } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
@@ -6,6 +7,7 @@ import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { NeedsPage } from '../../../../../../../components/needs/needs-page';
+import { DepartmentResult } from '../../../../../../../components/plan-approval/department-result';
 import { RefreshOnReturn } from '../../../../../../../components/latest-version';
 import { SuiteShell } from '../../../../../../../components/suite-shell';
 import { needsFormsTexts } from '../../../../../../../lib/needs-forms-texts';
@@ -19,6 +21,7 @@ import { dayFormatter } from '../../../../../../../lib/planning-format';
 import { localName } from '../../../../../../../lib/planning-view';
 import { showsUnitLevels, unitNameWithLevel } from '../../../../../../../lib/structure-view';
 import { getSuiteContext } from '../../../../../../../lib/suite-context';
+import { departmentPlanResultQuery } from '../../../../../../../lib/training-plan-queries';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -101,18 +104,35 @@ export default async function DepartmentNeedsPage({
           ) : null}
         </div>
       );
+      // Once the plan is approved (WP-LD-03, design 6b; Q4 = A): the department's result above its needs.
+      const planResult = await departmentPlanResultQuery({ cycleId, departmentId });
+      const resultSection =
+        planResult.ok && planResult.value ? (
+          <DepartmentResult
+            locale={locale}
+            view={planResult.value}
+            approvedOn={displayDateFormatter(
+              locale,
+              context.regional.dateDisplay,
+              context.regional.timeZone,
+            ).date(planResult.value.approvedAt)}
+          />
+        ) : null;
       content = (
-        <NeedsPage
-          locale={locale}
-          view={view}
-          departmentLabel={departmentLabel}
-          statusLabel={statusLabel}
-          display={context.regional.dateDisplay}
-          timeZone={context.regional.timeZone}
-          texts={needsTexts(locale)}
-          formTexts={needsFormsTexts(locale)}
-          errors={await needsErrorTexts(locale)}
-        />
+        <>
+          {resultSection}
+          <NeedsPage
+            locale={locale}
+            view={view}
+            departmentLabel={departmentLabel}
+            statusLabel={statusLabel}
+            display={context.regional.dateDisplay}
+            timeZone={context.regional.timeZone}
+            texts={needsTexts(locale)}
+            formTexts={needsFormsTexts(locale)}
+            errors={await needsErrorTexts(locale)}
+          />
+        </>
       );
     }
   }

@@ -6,6 +6,7 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { type HomeTileGroup, HomeTiles } from '../../../components/home-tiles';
 import { NeedsTaskCards } from '../../../components/needs/needs-task-cards';
+import { ApprovalCard } from '../../../components/plan-approval/approval-card';
 import { RefreshOnReturn } from '../../../components/latest-version';
 import { SuiteShell } from '../../../components/suite-shell';
 import { TeamStats } from '../../../components/users/team-stats';
@@ -15,6 +16,8 @@ import { NEEDS_PATHS } from '../../../lib/needs-view';
 import { dayFormatter } from '../../../lib/planning-format';
 import { localName } from '../../../lib/planning-view';
 import { organizationPlanQuery } from '../../../lib/plan-queries';
+import { approvalReviewHref, personLabel } from '../../../lib/plan-approval-view';
+import { approvalsQuery, myPlanResultsQuery } from '../../../lib/training-plan-queries';
 import { getSuiteContext } from '../../../lib/suite-context';
 import {
   type NavLabelKey,
@@ -97,6 +100,18 @@ export default async function SuiteHomePage({ params }: { params: Promise<{ loca
   const needsT = await getTranslations({ locale, namespace: 'needsEntry' });
   const needsDay = dayFormatter(locale, context.regional.dateDisplay);
   const needsBanner = tasks.find((task) => task.status !== 'submitted') ?? null;
+  // The plans waiting for an approver (WP-LD-03, design 5a) and a head's approved results (design 6b).
+  const approvals = context.live && context.navigation.approvals ? await approvalsQuery({}) : null;
+  const waitingPlans = approvals?.ok ? approvals.value.items.filter((i) => i.waitingForMe) : [];
+  const results =
+    context.live && context.navigation.needsEntry ? await myPlanResultsQuery({}) : null;
+  const planResults = results?.ok ? results.value.results : [];
+  const approvalT = await getTranslations({ locale, namespace: 'planApproval' });
+  const moments = displayDateFormatter(
+    locale,
+    context.regional.dateDisplay,
+    context.regional.timeZone,
+  );
   const users = await getTranslations({ locale, namespace: 'users' });
   const format = await getFormatter({ locale });
 
@@ -177,10 +192,110 @@ export default async function SuiteHomePage({ params }: { params: Promise<{ loca
     </section>
   );
 
+  const firstWaiting = waitingPlans[0];
+  const approvalsBlock =
+    waitingPlans.length > 0 && firstWaiting ? (
+      <>
+        <Alert
+          tone="warning"
+          data-testid="home-approvals-banner"
+          action={
+            <a
+              href={approvalReviewHref(locale, firstWaiting.cycleId)}
+              className={buttonClasses({ variant: 'secondary', size: 'sm' })}
+            >
+              {approvalT('page.review')}
+            </a>
+          }
+        >
+          {approvalT('page.pendingBanner', {
+            plan: localName(locale, firstWaiting.cycleName),
+            name: personLabel(locale, firstWaiting.submittedBy, approvalT('history.someone')),
+            date: firstWaiting.submittedAt ? moments.dateTime(firstWaiting.submittedAt) : '',
+          })}
+        </Alert>
+        <section
+          aria-labelledby="home-approvals-title"
+          className="flex flex-col gap-3"
+          data-testid="home-approvals"
+        >
+          <h2
+            id="home-approvals-title"
+            className="m-0 flex items-center gap-2 text-[22px] font-bold"
+          >
+            {approvalT('home.waitingTitle')}
+            <span className="rounded-full bg-warning-subtle px-2 text-base text-warning-strong tabular-nums">
+              {waitingPlans.length}
+            </span>
+          </h2>
+          {waitingPlans.map((item) => (
+            <ApprovalCard
+              key={item.planId}
+              locale={locale}
+              item={item}
+              moment={(iso) => moments.dateTime(iso)}
+            />
+          ))}
+        </section>
+      </>
+    ) : null;
+  const resultsBlock =
+    planResults.length > 0 ? (
+      <section
+        aria-labelledby="home-results-title"
+        className="rounded-2xl border border-border bg-surface px-5 py-5.5 shadow-2 md:px-7 md:py-6.5"
+        data-testid="home-plan-results"
+      >
+        <header className="mb-4 flex items-start gap-4">
+          <span
+            aria-hidden="true"
+            className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-success-subtle text-success"
+          >
+            <Icon name="success" className="size-5" />
+          </span>
+          <div className="min-w-0">
+            <h2 id="home-results-title" className="m-0 text-[22px] font-bold">
+              {approvalT('result.homeTitle')}
+            </h2>
+            <p className="m-0 mt-1 text-text-muted">{approvalT('result.homeIntro')}</p>
+          </div>
+        </header>
+        <ul className="m-0 flex list-none flex-col divide-y divide-border p-0">
+          {planResults.map((r) => (
+            <li
+              key={`${r.cycleId}:${r.departmentId}`}
+              className="flex flex-wrap items-center justify-between gap-3 py-3"
+              data-testid="home-plan-result"
+            >
+              <span className="flex flex-col">
+                <b>
+                  {localName(locale, r.cycleName)} · {localName(locale, r.departmentName)}
+                </b>
+                <span className="text-text-muted">
+                  {approvalT('result.homeCard', {
+                    approved: r.approvedLines,
+                    leftOut: r.leftOutLines,
+                  })}
+                </span>
+              </span>
+              <a
+                href={`/${locale}${NEEDS_PATHS.mine}/${r.cycleId}/${r.departmentId}`}
+                className={buttonClasses({ variant: 'secondary', size: 'sm' })}
+              >
+                {approvalT('result.see')}
+                <span className="sr-only">: {localName(locale, r.departmentName)}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </section>
+    ) : null;
+
   // The head's planning task — the banner and the task cards — on either home: whoever heads a department
   // enters its needs whatever their role, the Organization Admin included (PO, 12 Nov 2026).
   const needsBlock = (
     <>
+      {approvalsBlock}
       {needsBanner ? (
         <Alert
           tone={needsBanner.status === 'late' ? 'danger' : 'warning'}
@@ -241,6 +356,7 @@ export default async function SuiteHomePage({ params }: { params: Promise<{ loca
           />
         </section>
       ) : null}
+      {resultsBlock}
     </>
   );
 

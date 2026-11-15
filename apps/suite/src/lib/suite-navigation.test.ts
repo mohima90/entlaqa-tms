@@ -19,6 +19,8 @@ const NONE: SuiteNavigationAccess = {
   branding: true,
   emailIntegration: true,
   bulkImport: true,
+  approvals: false,
+  approvalsWaiting: 0,
 };
 
 /** `group: entry entry…`, links marked with their path, «Coming soon» entries with `(soon)`. */
@@ -49,6 +51,8 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
         branding: true,
         emailIntegration: true,
         bulkImport: true,
+        approvals: false,
+        approvalsWaiting: 0,
       }),
     ).toEqual([
       'main: home→/suite',
@@ -97,6 +101,8 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
         branding: true,
         emailIntegration: true,
         bulkImport: true,
+        approvals: false,
+        approvalsWaiting: 0,
       }),
     ).toEqual([
       'main: home→/suite calendar(soon) sessions(soon) courses(soon)',
@@ -167,6 +173,8 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
       branding: true,
       emailIntegration: true,
       bulkImport: true,
+      approvals: false,
+      approvalsWaiting: 0,
     }).flatMap((group) => group.entries);
     expect(all.length).toBe(16);
     expect(all.filter((entry) => !ICON_NAMES.includes(entry.icon))).toEqual([]);
@@ -203,6 +211,8 @@ describe('suiteHome (T-M2-21)', () => {
       branding: true,
       emailIntegration: true,
       bulkImport: true,
+      approvals: false,
+      approvalsWaiting: 0,
     });
     expect(home.kind).toBe('setup');
     expect(home.kind === 'setup' ? home.links.map((l) => l.link?.href) : []).toEqual([
@@ -270,6 +280,8 @@ describe('commandPaletteItems (⌘K / Ctrl K, T-M2-43)', () => {
         branding: true,
         emailIntegration: true,
         bulkImport: true,
+        approvals: false,
+        approvalsWaiting: 0,
       },
       'ar',
       label,

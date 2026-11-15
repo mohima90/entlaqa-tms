@@ -26,7 +26,9 @@ export type SuitePage =
   | 'planningSettings'
   | 'needsForms'
   // My team's needs (WP-LD-01): the Department Head's needs entry.
-  | 'myNeeds';
+  | 'myNeeds'
+  // Approvals (WP-LD-03): the training plans the HR Manager and Finance decide.
+  | 'approvals';
 
 /** Message keys (namespace `shell`) of every navigation label. */
 export type NavLabelKey =
@@ -46,7 +48,8 @@ export type NavLabelKey =
   | 'auditLog'
   | (typeof tmsPlanningNavigation)[number]['key']
   | 'needsForms'
-  | 'myNeeds';
+  | 'myNeeds'
+  | 'approvals';
 
 /** Message keys (namespace `shell`) of the group headings; `main` has none. */
 export type NavGroupKey = 'main' | 'groupPlanning' | 'groupOrganization' | 'groupSettings';
@@ -56,6 +59,8 @@ export interface NavEntry {
   readonly icon: IconName;
   /** A page that exists: its locale-less path and the shell's `current` value. */
   readonly link?: { readonly href: string; readonly page: SuitePage };
+  /** A count after the label (Approvals: the plans waiting for the member). */
+  readonly count?: number;
 }
 
 export interface NavGroupModel {
@@ -85,6 +90,8 @@ export const SUITE_PATHS = {
   needsForms: '/suite/planning/needs-forms',
   // My team's needs (WP-LD-01): the Department Head enters the needs of the departments they head.
   myNeeds: '/suite/my-team/needs',
+  // Approvals (WP-LD-03): the training plans waiting for the HR Manager or Finance.
+  approvals: '/suite/approvals',
 } as const satisfies Record<SuitePage, string>;
 
 const TMS_ICONS: Readonly<Record<(typeof tmsNavigation)[number]['key'], IconName>> = {
@@ -129,6 +136,14 @@ export function suiteNavigation(access: SuiteNavigationAccess): NavGroupModel[] 
     });
   // My team's needs (WP-LD-01): right after Home for a Department Head — their one planning task.
   if (access.needsEntry) main.splice(1, 0, page('myNeeds', 'form', 'myNeeds'));
+  // Approvals (WP-LD-03, design 5a): right after Home for whoever decides a training plan, with the count of the
+  // plans waiting for them.
+  if (access.approvals) {
+    main.splice(1, 0, {
+      ...page('approvals', 'inbox', 'approvals'),
+      ...(access.approvalsWaiting > 0 ? { count: access.approvalsWaiting } : {}),
+    });
+  }
   const setup = access.organizationSetup;
   const groups: NavGroupModel[] = [
     { key: 'main', entries: main },

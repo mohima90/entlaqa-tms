@@ -146,6 +146,8 @@ export interface PlanApprovalView {
     readonly approvedBy: ApprovalPerson | null;
   }[];
   readonly viewer: {
+    /** The viewer (marked «you» among the deciders). */
+    readonly personId: string | null;
     /** The viewer submitted the plan now waiting: another person decides. */
     readonly submitted: boolean;
   };
@@ -258,6 +260,7 @@ async function approvalView(ctx: Ctx, plan: approvals.ApprovalRecord): Promise<P
       approvedBy: person(v.approvedBy),
     })),
     viewer: {
+      personId: ctx.actor.personId,
       submitted: plan.status === 'in_approval' && plan.submittedBy === ctx.actor.personId,
     },
     can: {

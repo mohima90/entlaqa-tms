@@ -10,8 +10,10 @@ import {
  * The permissions standard roles grant — course library (T-M3-03), planning cycles (EP-PLN) and needs forms
  * (T-M3-10) — are declared in platform-rbac (course-permissions.ts, tms-planning-permissions.ts,
  * tmsRolePermissions in platform-permissions.ts: the platform's roles and role builder name them, and a
- * platform package never imports a module) and re-exported here, so the module has one registry. The session
- * permissions are not held by any role yet.
+ * platform package never imports a module) and re-exported here, so the module has one registry. Draft sessions
+ * (WP-LD-04) use `tms.session.manage` (tms-planning-permissions.ts, held by the L&D Manager and the Training
+ * Coordinator); the read and enrollment codes below are skeletons for WP-LD-08 / M4, held by no role and not in the
+ * database catalogue yet. (The former skeleton `tms.session.create` was replaced by `tms.session.manage`.)
  */
 const sessionPermissions = definePermissions('tms', [
   {
@@ -22,13 +24,6 @@ const sessionPermissions = definePermissions('tms', [
       en: 'View training sessions within scope',
     },
     risk: 'low',
-    requiresAal2: false,
-  },
-  {
-    code: 'tms.session.create',
-    label: { ar: 'إنشاء جلسة', en: 'Create session' },
-    description: { ar: 'إنشاء جلسة تدريبية جديدة', en: 'Create a new training session' },
-    risk: 'medium',
     requiresAal2: false,
   },
   {
@@ -43,7 +38,7 @@ const sessionPermissions = definePermissions('tms', [
   },
 ]);
 
-/** Every TMS permission: courses, sessions (skeleton), planning cycles and needs forms. */
+/** Every TMS permission: courses, sessions, planning cycles, the training plan and needs forms. */
 export const tmsPermissions = Object.freeze({
   ...coursePermissions,
   ...sessionPermissions,

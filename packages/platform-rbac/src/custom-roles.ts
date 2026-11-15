@@ -156,6 +156,13 @@ export const CUSTOM_ROLE_PERMISSIONS: readonly CustomRolePermission[] = [
     group: 'planning',
     use: 'scoped',
   },
+  // Draft sessions (WP-LD-04; migration 20261117100000): follow the role's scope, as the training plan — a role
+  // limited to «A department» drafts the sessions of the lines of that unit and everything under it.
+  {
+    permission: tmsPlanningPermissions['tms.session.manage'],
+    group: 'planning',
+    use: 'scoped',
+  },
   // Needs forms (T-M3-10; usable in custom roles since PO, 17 Oct 2026 — migration 20261020200000): the
   // forms library is organization data without personal data (like the course library); designing forms
   // is administrative (a role that sees the whole organization).

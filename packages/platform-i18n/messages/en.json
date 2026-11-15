@@ -173,6 +173,7 @@
     "sessionLineNeedsSize": "This line has no session size yet, so the plan can't say how many sessions it needs.",
     "sessionLineAllDrafted": "This line already has the draft sessions the plan works out.",
     "sessionLineHasDrafts": "This line has draft sessions, so it keeps its course. Delete its drafts to change it.",
+    "trainingPlanLineHasDrafts": "This line has draft sessions, so while the plan is revised it keeps its course and its place in the plan, and needs whose people are planned stay in it. Seats and session size can still change. Delete its draft sessions first (Courses and sessions).",
     "sessionLineOutsideScope": "This line includes departments you don't plan sessions for. Ask the L&D Manager."
   },
   "auth": {
@@ -4728,6 +4729,18 @@
       "notPlaced": "not in a session yet",
       "inAnother": "in another draft session",
       "remove": "Remove {name}",
+      "personMenu": "Actions for {name}",
+      "moveTo": "Move to another session",
+      "moveUnsaved": "Save your changes first",
+      "removeFrom": "Remove from this session",
+      "moveTitle": "Move {name} to another session",
+      "moveHint": "Draft sessions of this line. {name} moves now; both sessions are saved.",
+      "moveOption": "Session {number} · {month} · {count} of {seats} seats",
+      "moveFull": "Full",
+      "moveConfirm": "Move",
+      "moving": "Moving…",
+      "moved": "{name} moved to session {number}.",
+      "noOtherSessions": "This line has no other draft session.",
       "unnamed": "+ {count} more from {department} (names later)",
       "notScheduled": "Not scheduled yet: the day, time, room and trainer are set when you schedule this session (next step).",
       "readOnly": "This draft includes departments you don't plan sessions for, so you can only look at it.",
@@ -4750,7 +4763,8 @@
         "NOT_FOUND": "This branch no longer exists. Choose another one.",
         "NOT_NAMED": "Someone here is no longer named for this line. Close and open the draft again.",
         "DUPLICATE": "Someone is in the list twice.",
-        "ALREADY_PLANNED": "Someone is already in another session of this line."
+        "ALREADY_PLANNED": "Someone is already in another session of this line.",
+        "NOT_PLANNED": "This person is no longer in this session. Close and open the draft again."
       }
     },
     "calendar": {

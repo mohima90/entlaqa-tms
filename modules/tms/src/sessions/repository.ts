@@ -8,7 +8,8 @@ import { dbError } from '../planning/repository';
  * 20261117100200). Runs inside the action's withUserTx transaction: row-level security limits every row to the
  * claims' organization and to the caller's session scope (tms.session.manage organization-wide, or the lines of its
  * units for a department-limited planner — private.session_units), and the guards enforce the rules (JK013 not
- * ready, JK014 all drafted, JK015 outside the planning period, JK016 seats, JK008 the approved plan is locked).
+ * ready, JK014 all drafted, JK015 outside the planning period, JK016 seats, JK017 the line has drafts, JK008 the
+ * approved plan is locked).
  */
 
 type Row = Record<string, unknown>;
@@ -32,6 +33,7 @@ export type SessionRefusal =
   | 'frozen'
   | 'not_allowed'
   | 'person_taken'
+  | 'has_drafts'
   | 'refused';
 
 export function sessionRefusalOf(error: unknown): SessionRefusal | null {
@@ -44,6 +46,8 @@ export function sessionRefusalOf(error: unknown): SessionRefusal | null {
       return 'outside_period';
     case 'JK016':
       return 'seats';
+    case 'JK017':
+      return 'has_drafts';
     case 'JK008':
       return 'frozen';
     case '42501':
@@ -98,6 +102,17 @@ export async function listLineCourses(tx: UserTx, planId: string): Promise<LineC
     courseOrigin: (text(r.course_origin) as 'created' | 'linked' | null) ?? null,
     courseSetAt: timestamp(r.course_set_at),
   }));
+}
+
+/**
+ * Does the line have draft sessions — whether or not the caller reads them (private.plan_line_has_sessions, SECURITY
+ * DEFINER: the L&D Manager may hold no tms.session.manage; review M1)?
+ */
+export async function lineHasSessions(tx: UserTx, lineId: string): Promise<boolean> {
+  const [row] = await tx.execute(
+    sql`select private.plan_line_has_sessions(${lineId}::uuid) as has`,
+  );
+  return row?.has === true;
 }
 
 /**
@@ -330,7 +345,7 @@ export async function updateSession(
   session: { readonly id: string; readonly lineId: string; readonly version: number },
   patch: SessionPatch,
   people: readonly { readonly personId: string; readonly needId: string }[] | null,
-): Promise<Guarded<number | null>> {
+): Promise<Guarded<{ version: number; movedFrom: string[] } | null>> {
   return guarded(tx, async () => {
     const set: SQL[] = [];
     if (patch.month !== undefined) set.push(sql`month = ${patch.month}::date`);
@@ -342,17 +357,24 @@ export async function updateSession(
       update tms.sessions set ${sql.join(set, sql`, `)}
       where id = ${session.id}::uuid and version = ${session.version} returning version`);
     if (!row) return null;
+    let movedFrom: string[] = [];
     if (people !== null) {
       const keep = people.map((p) => p.personId);
       await tx.execute(sql`
         delete from tms.session_participants
         where session_id = ${session.id}::uuid and not (person_id = any (${pgArray(keep)}::uuid[]))`);
       if (keep.length > 0) {
-        // Moved from another draft of the line.
-        await tx.execute(sql`
-          update tms.session_participants set session_id = ${session.id}::uuid
-          where plan_line_id = ${session.lineId}::uuid and session_id <> ${session.id}::uuid
-            and person_id = any (${pgArray(keep)}::uuid[])`);
+        // Moved from another draft of the line: that draft changes too (a new version, review L6).
+        const moved = await tx.execute(sql`
+          with moved as (
+            update tms.session_participants p set session_id = ${session.id}::uuid
+            from tms.session_participants o
+            where o.id = p.id and p.plan_line_id = ${session.lineId}::uuid and p.session_id <> ${session.id}::uuid
+              and p.person_id = any (${pgArray(keep)}::uuid[])
+            returning o.session_id)
+          select distinct session_id from moved`);
+        movedFrom = moved.map((r: Row) => String(r.session_id)).sort();
+        if (movedFrom.length > 0) await touchSessions(tx, movedFrom);
         const [present] = await tx.execute(sql`
           select coalesce(array_agg(person_id::text), '{}') as ids from tms.session_participants
           where session_id = ${session.id}::uuid`);
@@ -374,7 +396,41 @@ export async function updateSession(
         where id = ${session.id}::uuid and seats <> ${patch.seats} returning version`);
       if (shrunk) version = Number(shrunk.version);
     }
-    return version;
+    return { version, movedFrom };
+  });
+}
+
+/** A new version of drafts whose planned participants changed through another draft (people moved away). */
+async function touchSessions(tx: UserTx, sessionIds: readonly string[]): Promise<void> {
+  const rows = await tx.execute(sql`
+    update tms.sessions set seats = seats where id = any (${pgArray(sessionIds)}::uuid[]) returning id`);
+  if (rows.length !== sessionIds.length) throw new Refused('not_allowed');
+}
+
+/**
+ * Moves one planned participant from a draft (at `version`) to another draft of the same line (review L6): both
+ * drafts get a new version; the guards check the other draft's seats (JK016). Null: the draft is not at that
+ * version, or the person is not planned in it.
+ */
+export async function moveParticipant(
+  tx: UserTx,
+  from: { readonly id: string; readonly version: number },
+  toSessionId: string,
+  personId: string,
+): Promise<Guarded<{ fromVersion: number; toVersion: number } | null>> {
+  return guarded(tx, async () => {
+    const [source] = await tx.execute(sql`
+      update tms.sessions set seats = seats where id = ${from.id}::uuid and version = ${from.version}
+      returning version`);
+    if (!source) return null;
+    const moved = await tx.execute(sql`
+      update tms.session_participants set session_id = ${toSessionId}::uuid
+      where session_id = ${from.id}::uuid and person_id = ${personId}::uuid returning id`);
+    if (moved.length !== 1) throw new Refused('refused');
+    const [target] = await tx.execute(sql`
+      update tms.sessions set seats = seats where id = ${toSessionId}::uuid returning version`);
+    if (!target) throw new Refused('not_allowed');
+    return { fromVersion: Number(source.version), toVersion: Number(target.version) };
   });
 }
 
@@ -459,6 +515,22 @@ export async function listPlansOverlapping(
     periodEnd: day(r.period_end_on) ?? '',
     currency: text(r.currency)?.trim() ?? '',
   }));
+}
+
+/**
+ * The year the planning period of the latest approved plan with drafts (the caller reads) starts in — the year the
+ * training calendar opens on (review L7). Null: no such plan.
+ */
+export async function latestDraftedPlanYear(tx: UserTx): Promise<number | null> {
+  const [row] = await tx.execute(sql`
+    select extract(year from c.period_start_on)::int as year
+    from tms.training_plans p
+    join tms.plan_cycles c on c.tenant_id = p.tenant_id and c.id = p.cycle_id
+    where p.status = 'approved'
+      and exists (select 1 from tms.sessions s where s.tenant_id = p.tenant_id and s.plan_id = p.id)
+    order by c.period_start_on desc, p.id
+    limit 1`);
+  return row ? Number(row.year) : null;
 }
 
 export async function getPlanSource(tx: UserTx, planId: string): Promise<PlanSourceRecord | null> {

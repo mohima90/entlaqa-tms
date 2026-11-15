@@ -114,6 +114,11 @@ export const TrainingPlanErrors = defineErrorCodes({
     status: 409,
     messageKey: 'errors.trainingPlanNeedsNotSubmitted',
   },
+  /**
+   * A revised plan keeps its draft sessions (WP-LD-04 review M3): a line with drafts keeps its course and its place,
+   * a need whose people are planned stays in its line — delete the drafts first (JK017).
+   */
+  TRAINING_PLAN_LINE_HAS_DRAFTS: { status: 409, messageKey: 'errors.trainingPlanLineHasDrafts' },
 });
 
 type Ctx = ActionContext<UserTx>;
@@ -348,6 +353,8 @@ function refusalError(refusal: plans.PlanRefusal): AppError {
       return appError(TrainingPlanErrors.TRAINING_PLAN_FROZEN);
     case 'not_submitted':
       return appError(TrainingPlanErrors.TRAINING_PLAN_NEEDS_NOT_SUBMITTED);
+    case 'has_drafts':
+      return appError(TrainingPlanErrors.TRAINING_PLAN_LINE_HAS_DRAFTS);
     case 'not_allowed':
       return appError(TrainingPlanErrors.TRAINING_PLAN_LINE_OUTSIDE_SCOPE);
     case 'conflict':

@@ -8,7 +8,10 @@
  * Negotiation; the Training Coordinator drafts Excel's sessions from the proposal (by branch, with the named people),
  * changes one, deletes one and drafts it again; a department-limited planner for Sales drafts Negotiation but not a
  * line shared with Finance; nobody else — an Employee, a head, the HR Manager, the other organization — sees a draft.
- * Every change is audited without the people's ids.
+ * Every change is audited without the people's ids. Review fixes (15 Nov 2026): the Training Coordinator links a
+ * course (M4); an organization-wide planner without tms.session.manage is refused a drafted line's course (M1); a
+ * course linked and a draft added at the same moment never disagree (M2, two connections); a person moves to another
+ * draft (L6); the calendar opens on the plan's year (L7); a revised plan keeps its drafts and their lines (M3).
  */
 import { randomUUID } from 'node:crypto';
 import { ok } from '@jadarat/platform-core';
@@ -30,6 +33,7 @@ import {
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createCourseActionDefinition } from '../courses/actions';
+import { dbError } from '../planning/repository';
 import * as approval from '../planning/approval-definitions';
 import * as plan from '../planning/consolidation-definitions';
 import * as cycles from '../planning/definitions';
@@ -47,7 +51,9 @@ if ((process.env.CI || process.env.JADARAT_REQUIRE_INTEGRATION) && !configured) 
 describe.skipIf(!configured)('draft sessions from the approved plan against PostgreSQL', () => {
   const ownerDb = createDatabase(ownerUrl ?? '', { max: 1 });
   const serverDb = createDatabase(appServerUrl ?? '', { max: 1 });
+  const secondDb = createDatabase(appServerUrl ?? '', { max: 1 });
   const withUserTx = createWithUserTx(() => serverDb);
+  const withSecondTx = createWithUserTx(() => secondDb);
   const id = () => randomUUID();
   const tenant = id();
   const other = id();
@@ -55,6 +61,9 @@ describe.skipIf(!configured)('draft sessions from the approved plan against Post
   const dept = { finance: id(), sales: id(), hr: id() };
   const customRole = id();
   const customCode = `custom_${tenant.replace(/-/g, '').slice(0, 12)}`;
+  // An organization-wide custom role that builds the plan and reads the library, without tms.session.manage (M1).
+  const builderRole = id();
+  const builderCode = `custom_${tenant.replace(/-/g, '').slice(12, 24)}`;
   const member = (role: string | null, tenantId = tenant) => ({
     person: id(),
     user: id(),
@@ -73,6 +82,7 @@ describe.skipIf(!configured)('draft sessions from the approved plan against Post
     fin2: member('learner'),
     hr1: member('learner'),
     salesPlanner: member(customCode),
+    planBuilder: member(builderCode),
     otherLnd: member('training_manager', other),
   };
 
@@ -131,6 +141,12 @@ describe.skipIf(!configured)('draft sessions from the approved plan against Post
       (${tenant}, ${customRole}, 'tms.training_plan.read'),
       (${tenant}, ${customRole}, 'tms.course.read'),
       (${tenant}, ${customRole}, 'tms.session.manage')`);
+    await run(sql`insert into platform.custom_roles (id, tenant_id, code, name_en, name_ar, description, data_scope)
+      values (${builderRole}, ${tenant}, ${builderCode}, 'Plan builder', 'معد الخطة', null, 'organization')`);
+    await run(sql`insert into platform.custom_role_permissions (tenant_id, custom_role_id, permission_code) values
+      (${tenant}, ${builderRole}, 'tms.training_plan.read'),
+      (${tenant}, ${builderRole}, 'tms.training_plan.manage'),
+      (${tenant}, ${builderRole}, 'tms.course.read')`);
     for (const [index, m] of Object.values(people).entries()) {
       await run(
         sql`insert into auth.users (id, email) values (${m.user}, ${`${m.user}@example.test`})`,
@@ -172,6 +188,7 @@ describe.skipIf(!configured)('draft sessions from the approved plan against Post
     expect(unexpected).toEqual([]);
     await ownerDb.$client.end();
     await serverDb.$client.end();
+    await secondDb.$client.end();
   });
 
   it('turns the approved plan into courses and draft sessions for the L&D team only', async () => {
@@ -309,7 +326,7 @@ describe.skipIf(!configured)('draft sessions from the approved plan against Post
     expect([excel.courseDraft.titleEn, excel.courseDraft.titleAr]).toContain('Advanced Excel');
     expect(before.counts).toEqual({ needsCourse: 2, needsSessions: 0, sessionsCreated: 0 });
 
-    // «Create course» from the line: the Training Coordinator may add courses but gives no line a course.
+    // «Create course» from the line: the L&D Manager; a department-limited planner gives no line a course (M4).
     const courseValues = {
       titleEn: excel.courseDraft.titleEn,
       titleAr: excel.courseDraft.titleAr,
@@ -324,12 +341,10 @@ describe.skipIf(!configured)('draft sessions from the approved plan against Post
       estCostPerSession: excel.courseDraft.estCostPerSession,
       estCostPerParticipant: excel.courseDraft.estCostPerParticipant,
     };
-    const byCoordinator = await coordinator.action(defs.createCourseFromLineActionDefinition())({
-      lineId: excel.lineId,
-      lineVersion: excel.version,
-      course: courseValues,
-    });
-    expect(!byCoordinator.ok && byCoordinator.error.code).toBe('FORBIDDEN');
+    const byPlanner = await as(people.salesPlanner).action(
+      defs.createCourseFromLineActionDefinition(),
+    )({ lineId: excel.lineId, lineVersion: excel.version, course: courseValues });
+    expect(!byPlanner.ok && byPlanner.error.code).toBe('FORBIDDEN');
     const excelCourse = await lnd.action(defs.createCourseFromLineActionDefinition())({
       lineId: excel.lineId,
       lineVersion: excel.version,
@@ -345,7 +360,7 @@ describe.skipIf(!configured)('draft sessions from the approved plan against Post
     });
     expect(!stale.ok && stale.error.code).toBe('CONFLICT_VERSION');
 
-    // «Link course» for Negotiation: a course of the library.
+    // «Link course» for Negotiation: a course of the library, by the Training Coordinator (tms.course.manage, M4).
     const library = await lnd.action(createCourseActionDefinition())({
       ...courseValues,
       titleEn: 'Negotiation skills',
@@ -355,7 +370,15 @@ describe.skipIf(!configured)('draft sessions from the approved plan against Post
     if (!library.ok) throw new Error(library.error.code);
     const negotiation = (await delivery()).lines.find((l) => l.lineId === negotiationLine.id);
     if (!negotiation) throw new Error('negotiation');
-    const linked = await lnd.action(defs.linkLineCourseActionDefinition())({
+    const byPlannerLink = await as(people.salesPlanner).action(
+      defs.linkLineCourseActionDefinition(),
+    )({
+      lineId: negotiation.lineId,
+      lineVersion: negotiation.version,
+      courseId: library.value.after.id,
+    });
+    expect(!byPlannerLink.ok && byPlannerLink.error.code).toBe('FORBIDDEN');
+    const linked = await coordinator.action(defs.linkLineCourseActionDefinition())({
       lineId: negotiation.lineId,
       lineVersion: negotiation.version,
       courseId: library.value.after.id,
@@ -366,6 +389,101 @@ describe.skipIf(!configured)('draft sessions from the approved plan against Post
       ['Advanced Excel', 'created', 'needs_sessions'],
       ['Negotiation', 'linked', 'needs_sessions'],
     ]);
+    // ---- Review M2: a course linked and a draft added at the same moment, on two connections — never a draft of a
+    //      course the line no longer has.
+    const another = await lnd.action(createCourseActionDefinition())({
+      ...courseValues,
+      titleEn: 'Negotiation lab',
+      titleAr: 'مختبر التفاوض',
+      code: null,
+    });
+    if (!another.ok) throw new Error(another.error.code);
+    const gate = () => {
+      let open: () => void = () => undefined;
+      const passed = new Promise<void>((resolve) => {
+        open = resolve;
+      });
+      return {
+        passed,
+        open: () => {
+          open();
+        },
+      };
+    };
+    const settled = <T>(promise: Promise<T>) => {
+      const state = { done: false };
+      return {
+        state,
+        promise: promise.finally(() => {
+          state.done = true;
+        }),
+      };
+    };
+    const firstMonth = `${before.cycle.periodStart.slice(0, 7)}-01`;
+    const rawDraft = (courseId: string) => sql`
+      insert into tms.sessions (plan_id, cycle_id, plan_line_id, course_id, delivery_type, month, seats)
+      values (${planId}::uuid, ${cycleId}::uuid, ${negotiation.lineId}::uuid, ${courseId}::uuid, 'classroom',
+              ${firstMonth}::date, 6) returning id`;
+    const relink = (courseId: string) => sql`
+      update tms.plan_lines set course_id = ${courseId}::uuid where id = ${negotiation.lineId}::uuid returning id`;
+    // 1. The course is being changed (not committed) when a draft of the old course comes: the draft waits for the
+    //    line, then sees the new course and is refused (JK013).
+    const relinked = gate();
+    const releaseLink = gate();
+    const linking = withSecondTx(claimsOf(people.lnd), async (tx) => {
+      const rows = await tx.execute(relink(another.value.after.id));
+      relinked.open();
+      await releaseLink.passed;
+      return rows.length;
+    });
+    await relinked.passed;
+    const lateDraft = settled(
+      withUserTx(claimsOf(people.coordinator), (tx) =>
+        tx.execute(rawDraft(library.value.after.id)),
+      ).then(
+        () => null,
+        (error: unknown) => dbError(error)?.code ?? 'unknown',
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(lateDraft.state.done).toBe(false);
+    releaseLink.open();
+    expect(await linking).toBe(1);
+    expect(await lateDraft.promise).toBe('JK013');
+    // 2. The other way round: a draft is being added (not committed) when the course changes — the change waits for
+    //    the line, then sees the draft and is refused (JK017).
+    const drafting = gate();
+    const releaseDraft = gate();
+    const inserting = withSecondTx(claimsOf(people.coordinator), async (tx) => {
+      const [row] = await tx.execute(rawDraft(another.value.after.id));
+      drafting.open();
+      await releaseDraft.passed;
+      return String(row?.id);
+    });
+    await drafting.passed;
+    const lateLink = settled(
+      withUserTx(claimsOf(people.lnd), (tx) => tx.execute(relink(library.value.after.id))).then(
+        () => null,
+        (error: unknown) => dbError(error)?.code ?? 'unknown',
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(lateLink.state.done).toBe(false);
+    releaseDraft.open();
+    const rawId = await inserting;
+    expect(await lateLink.promise).toBe('JK017');
+    const [kept] = (await ownerDb.execute(sql`
+      select l.course_id::text as line_course, s.course_id::text as draft_course
+      from tms.sessions s join tms.plan_lines l on l.id = s.plan_line_id where s.id = ${rawId}::uuid`)) as unknown as {
+      line_course: string;
+      draft_course: string;
+    }[];
+    expect(kept).toEqual({
+      line_course: another.value.after.id,
+      draft_course: another.value.after.id,
+    });
+    await ownerDb.execute(sql`delete from tms.sessions where id = ${rawId}::uuid`);
+
     // The approved plan did not change: version 1 as approved, the line's other values as they were.
     const version = await lnd.query(approval.planVersionQueryDefinition())({
       cycleId,
@@ -499,6 +617,43 @@ describe.skipIf(!configured)('draft sessions from the approved plan against Post
     expect(!tooFew.ok && tooFew.error.fieldErrors).toEqual([
       { path: 'seats', code: 'FEWER_THAN_PEOPLE' },
     ]);
+    // HR's person came from session 2: that draft has a new version too (L6).
+    const secondAfter = await coordinator.query(defs.draftSessionQueryDefinition())({
+      sessionId: second.id,
+    });
+    expect(secondAfter.ok && secondAfter.value.session.version).toBe(2);
+    expect(updated.value.movedFrom).toEqual([second.id]);
+    // «Move to another session» from the ⋯ menu: HR's person back to session 2; both drafts move on (L6).
+    expect(moved.ok && moved.value.otherSessions.map((o) => [o.id, o.participants])).toEqual([
+      [second.id, 0],
+      [third.id, 0],
+    ]);
+    const movedBack = await coordinator.action(defs.moveDraftParticipantActionDefinition())({
+      sessionId: first.id,
+      version: updated.value.version,
+      personId: people.hr1.person,
+      toSessionId: second.id,
+    });
+    if (!movedBack.ok) throw new Error(JSON.stringify(movedBack.error));
+    expect(movedBack.value).toMatchObject({
+      version: updated.value.version + 1,
+      toVersion: 3,
+      from: { before: 3, after: 2 },
+      to: { before: 0, after: 1 },
+    });
+    const backHere = await coordinator.query(defs.draftSessionQueryDefinition())({
+      sessionId: second.id,
+    });
+    expect(backHere.ok && backHere.value.participants.map((p) => p.personId)).toEqual([
+      people.hr1.person,
+    ]);
+    const staleMove = await coordinator.action(defs.moveDraftParticipantActionDefinition())({
+      sessionId: first.id,
+      version: updated.value.version,
+      personId: people.fin1.person,
+      toSessionId: second.id,
+    });
+    expect(!staleMove.ok && staleMove.error.code).toBe('CONFLICT_VERSION');
 
     // Delete the Jeddah draft; «Create sessions» proposes it again.
     const deleted = await lnd.action(defs.deleteDraftSessionActionDefinition())({
@@ -562,7 +717,7 @@ describe.skipIf(!configured)('draft sessions from the approved plan against Post
     expect(!foreignDetail.ok && foreignDetail.error.code).toBe('NOT_FOUND');
     const foreignDelete = await otherOrg.action(defs.deleteDraftSessionActionDefinition())({
       sessionId: first.id,
-      version: updated.value.version,
+      version: movedBack.value.version,
     });
     expect(!foreignDelete.ok && foreignDelete.error.code).toBe('NOT_FOUND');
     const foreignDraft = await otherOrg.action(defs.createDraftSessionsActionDefinition())({
@@ -586,12 +741,88 @@ describe.skipIf(!configured)('draft sessions from the approved plan against Post
       'tms.training_plan.line_course_linked',
       'tms.session.drafts_created',
       'tms.session.draft_updated',
+      'tms.session.draft_participant_moved',
       'tms.session.draft_deleted',
       'tms.session.drafts_created',
     ]);
     for (const p of [people.fin1, people.fin2, people.hr1]) {
       expect(audits.some((a) => a.data.includes(p.person))).toBe(false);
     }
+
+    // ---- The calendar opens on the plan's year when no year is asked (L7).
+    const openedOn = await coordinator.query(defs.trainingCalendarQueryDefinition())({});
+    expect(openedOn.ok && openedOn.value.year).toBe(year);
+
+    // ---- Review M1: an organization-wide planner without tms.session.manage reads no draft — and is still refused
+    //      a drafted line's course, by the application and by the database.
+    const builder = as(people.planBuilder);
+    const drafts1 = await builder.query(defs.trainingCalendarQueryDefinition())({ year });
+    expect(!drafts1.ok && drafts1.error.code).toBe('FORBIDDEN');
+    const excelNow = (await ownerDb.execute(
+      sql`select version from tms.plan_lines where id = ${excel.lineId}::uuid`,
+    )) as unknown as { version: number }[];
+    const builderLink = await builder.action(defs.linkLineCourseActionDefinition())({
+      lineId: excel.lineId,
+      lineVersion: Number(excelNow[0]?.version),
+      courseId: another.value.after.id,
+    });
+    expect(!builderLink.ok && builderLink.error.code).toBe('SESSION_LINE_HAS_DRAFTS');
+    const builderSql = await withUserTx(claimsOf(people.planBuilder), (tx) =>
+      tx.execute(sql`update tms.plan_lines set course_id = ${another.value.after.id}::uuid
+                     where id = ${excel.lineId}::uuid`),
+    ).then(
+      () => null,
+      (error: unknown) => dbError(error)?.code ?? 'unknown',
+    );
+    expect(builderSql).toBe('JK017');
+
+    // ---- Review M3: a revised plan keeps its drafts — and the line with drafts keeps its place: leaving it out or
+    //      moving a need whose people are planned is refused («delete its draft sessions first»); sizes still change.
+    const approvedState = await lnd.query(approval.planApprovalQueryDefinition())({ cycleId });
+    if (!approvedState.ok || !approvedState.value) throw new Error('approval view');
+    const revised = await lnd.action(approval.revisePlanActionDefinition())({
+      planId,
+      version: approvedState.value.plan.version,
+    });
+    if (!revised.ok) throw new Error(revised.error.code);
+    const revisedDelivery = await delivery();
+    expect(revisedDelivery.plan.status).toBe('draft');
+    expect(revisedDelivery.summary.sessionsDrafted).toBe(3);
+    const revisedLines = await lnd.query(plan.planQueryDefinition())({ cycleId });
+    const excelRevised = revisedLines.ok
+      ? revisedLines.value.lines.find((l) => l.id === excel.lineId)
+      : undefined;
+    if (!excelRevised) throw new Error('excel line');
+    const leftOut = await lnd.action(plan.leaveOutPlanLineActionDefinition())({
+      lineId: excel.lineId,
+      version: excelRevised.version,
+      reason: 'Merged into another programme',
+    });
+    expect(!leftOut.ok && leftOut.error.code).toBe('TRAINING_PLAN_LINE_HAS_DRAFTS');
+    const [financeNeed] = (await ownerDb.execute(sql`
+      select need_id::text as need_id from tms.plan_line_needs
+      where line_id = ${excel.lineId}::uuid and department_id = ${dept.finance}::uuid`)) as unknown as {
+      need_id: string;
+    }[];
+    const movedOut = await lnd.action(plan.moveNeedOutActionDefinition())({
+      lineId: excel.lineId,
+      version: excelRevised.version,
+      needId: financeNeed?.need_id ?? '',
+    });
+    expect(!movedOut.ok && movedOut.error.code).toBe('TRAINING_PLAN_LINE_HAS_DRAFTS');
+    const resized = await lnd.action(plan.updatePlanLineActionDefinition())({
+      lineId: excel.lineId,
+      version: excelRevised.version,
+      maxPerSession: 25,
+    });
+    expect(resized.ok).toBe(true);
+    const stillThere = (await ownerDb.execute(sql`
+      select l.status, (select count(*)::int from tms.sessions s where s.plan_line_id = l.id) as drafts
+      from tms.plan_lines l where l.id = ${excel.lineId}::uuid`)) as unknown as {
+      status: string;
+      drafts: number;
+    }[];
+    expect(stillThere).toEqual([{ status: 'in_plan', drafts: 2 }]);
   });
 });
 

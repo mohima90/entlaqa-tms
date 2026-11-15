@@ -86,9 +86,19 @@ export type DraftSessionRef = z.output<typeof DraftSessionRef>;
 export const DeleteDraftSessionInput = z.strictObject({ sessionId: Id, version: Version });
 export type DeleteDraftSessionInput = z.output<typeof DeleteDraftSessionInput>;
 
+/** «Move to another session» (review L6): one planned participant of a draft to another draft of the same line. */
+export const MoveDraftParticipantInput = z.strictObject({
+  sessionId: Id,
+  version: Version,
+  personId: Id,
+  toSessionId: Id,
+});
+export type MoveDraftParticipantInput = z.output<typeof MoveDraftParticipantInput>;
+
 /** The training calendar: a year, filtered by quarter, branch (`none`: no branch) and course. */
 export const TrainingCalendarInput = z.strictObject({
-  year: z.int().min(2000).max(2100),
+  /** Absent: the year of the latest approved plan with drafts the viewer reads (else this year). */
+  year: z.int().min(2000).max(2100).optional(),
   quarter: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).optional(),
   branchId: z.union([z.literal('none'), Id]).optional(),
   courseId: Id.optional(),

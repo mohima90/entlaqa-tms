@@ -63,6 +63,7 @@ describe('refusals', () => {
         'JK014',
         'JK015',
         'JK016',
+        'JK017',
         'JK008',
         '42501',
         '23505',
@@ -75,6 +76,7 @@ describe('refusals', () => {
       'all_drafted',
       'outside_period',
       'seats',
+      'has_drafts',
       'frozen',
       'not_allowed',
       'person_taken',
@@ -296,11 +298,11 @@ describe('writes', () => {
         { personId: P2, needId: 'n2' },
       ],
     );
-    expect(result).toEqual({ ok: true, value: 4 });
+    expect(result).toEqual({ ok: true, value: { version: 4, movedFrom: [] } });
     expect(executed.map((e) => e.sql.split(/\s+/).slice(0, 4).join(' ').trim())).toEqual([
       'update tms.sessions set',
       'delete from tms.session_participants',
-      'update tms.session_participants set',
+      'with moved as',
       "select coalesce(array_agg(person_id::text), '{}')",
       'insert into tms.session_participants',
       'update tms.sessions set',
@@ -311,7 +313,7 @@ describe('writes', () => {
     const touch = fakeTx([{ version: 3 }]);
     expect(
       await repo.updateSession(touch.tx, { id: SESSION, lineId: LINE, version: 2 }, {}, null),
-    ).toEqual({ ok: true, value: 3 });
+    ).toEqual({ ok: true, value: { version: 3, movedFrom: [] } });
     expect(touch.executed[0]?.sql).toContain('seats = seats');
     expect(
       await repo.updateSession(fakeTx([]).tx, { id: SESSION, lineId: LINE, version: 2 }, {}, null),
@@ -325,8 +327,24 @@ describe('writes', () => {
         { seats: 4 },
         [],
       ),
-    ).toEqual({ ok: true, value: 3 });
+    ).toEqual({ ok: true, value: { version: 3, movedFrom: [] } });
     expect(empty.executed).toHaveLength(3);
+    // People moved here from other drafts: those drafts get a new version too (review L6).
+    const OTHER = '11111111-1111-4111-8111-111111111112';
+    const moved = fakeTx(
+      [{ version: 3 }],
+      [],
+      [{ session_id: OTHER }],
+      [{ id: OTHER }],
+      [{ ids: [P1] }],
+    );
+    expect(
+      await repo.updateSession(moved.tx, { id: SESSION, lineId: LINE, version: 2 }, {}, [
+        { personId: P1, needId: 'n1' },
+      ]),
+    ).toEqual({ ok: true, value: { version: 3, movedFrom: [OTHER] } });
+    expect(moved.executed[3]?.sql).toContain('seats = seats');
+    expect(moved.executed[3]?.params).toEqual([`{${OTHER}}`]);
     expect(
       await repo.updateSession(
         fakeTx(pgError('JK016')).tx,
@@ -335,6 +353,44 @@ describe('writes', () => {
         null,
       ),
     ).toEqual({ ok: false, refusal: 'seats' });
+  });
+
+  it('moves one planned participant to another draft, both at a new version (review L6)', async () => {
+    const OTHER = '11111111-1111-4111-8111-111111111112';
+    const { tx, executed } = fakeTx([{ version: 3 }], [{ id: 'p' }], [{ version: 5 }]);
+    expect(await repo.moveParticipant(tx, { id: SESSION, version: 2 }, OTHER, P1)).toEqual({
+      ok: true,
+      value: { fromVersion: 3, toVersion: 5 },
+    });
+    expect(executed.map((e) => e.params)).toEqual([[SESSION, 2], [OTHER, SESSION, P1], [OTHER]]);
+    expect(
+      await repo.moveParticipant(fakeTx([]).tx, { id: SESSION, version: 2 }, OTHER, P1),
+    ).toEqual({ ok: true, value: null });
+    expect(
+      await repo.moveParticipant(
+        fakeTx([{ version: 3 }], []).tx,
+        { id: SESSION, version: 2 },
+        OTHER,
+        P1,
+      ),
+    ).toEqual({ ok: false, refusal: 'refused' });
+    expect(
+      await repo.moveParticipant(
+        fakeTx([{ version: 3 }], pgError('JK016')).tx,
+        { id: SESSION, version: 2 },
+        OTHER,
+        P1,
+      ),
+    ).toEqual({ ok: false, refusal: 'seats' });
+  });
+
+  it('asks the database whether a line has drafts, and the year of the latest drafted plan', async () => {
+    const has = fakeTx([{ has: true }]);
+    expect(await repo.lineHasSessions(has.tx, LINE)).toBe(true);
+    expect(has.executed[0]?.sql).toContain('private.plan_line_has_sessions');
+    expect(await repo.lineHasSessions(fakeTx([{ has: false }]).tx, LINE)).toBe(false);
+    expect(await repo.latestDraftedPlanYear(fakeTx([{ year: 2027 }]).tx)).toBe(2027);
+    expect(await repo.latestDraftedPlanYear(fakeTx([]).tx)).toBeNull();
   });
 
   it('deletes a draft at the version seen', async () => {

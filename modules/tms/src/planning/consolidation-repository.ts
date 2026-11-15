@@ -9,7 +9,7 @@ import { dbError } from './repository';
  * withUserTx transaction: row-level security limits every row to the claims' organization and to the caller's
  * planning scope — organization-wide for the L&D Manager and the Training Coordinator, the lines holding a need of
  * its units for a department-limited L&D Manager (private.training_plan_units) — and the guards enforce the plan's
- * state (JK008 frozen, JK009 not submitted). Platform data (structure, people) comes from platform-db services.
+ * state (JK008 frozen, JK009 not submitted, JK017 a line or need with draft sessions in a revised plan). Platform data (structure, people) comes from platform-db services.
  */
 
 type Row = Record<string, unknown>;
@@ -24,7 +24,8 @@ const int = (value: unknown): number | null =>
 const pgArray = (values: readonly string[]) => `{${values.join(',')}}`;
 
 /** Why the database refused a change of the plan. */
-export type PlanRefusal = 'frozen' | 'not_submitted' | 'not_allowed' | 'refused' | 'conflict';
+export type PlanRefusal =
+  'frozen' | 'not_submitted' | 'not_allowed' | 'refused' | 'conflict' | 'has_drafts';
 
 /** The guards' and policies' refusals as outcomes (null: not one of them — rethrow). */
 export function planRefusalOf(error: unknown): PlanRefusal | null {
@@ -34,6 +35,8 @@ export function planRefusalOf(error: unknown): PlanRefusal | null {
       return 'frozen';
     case 'JK009':
       return 'not_submitted';
+    case 'JK017':
+      return 'has_drafts';
     case '42501':
       return 'not_allowed';
     case '23505':
@@ -359,8 +362,9 @@ export async function deleteEmptyLines(tx: UserTx, lineIds: readonly string[]): 
       delete from tms.plan_lines l
       where l.id = any (${pgArray(lineIds)}::uuid[])
         and not exists (select 1 from tms.plan_line_needs x where x.tenant_id = l.tenant_id and x.line_id = l.id)
-        -- A line with draft sessions stays (WP-LD-04: a revised plan keeps its drafts; the foreign key agrees).
-        and not exists (select 1 from tms.sessions s where s.tenant_id = l.tenant_id and s.plan_line_id = l.id)
+        -- A line with draft sessions stays (WP-LD-04: a revised plan keeps its drafts; the guard agrees) — asked of
+        -- the database, as the L&D Manager may read no draft (review M1).
+        and not private.plan_line_has_sessions(l.id)
       returning l.id`);
     return rows.map((r: Row) => String(r.id));
   });

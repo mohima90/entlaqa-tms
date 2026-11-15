@@ -51,6 +51,7 @@ import {
   DraftSessionRef,
   type LineSessionState,
   LinkLineCourseInput,
+  MoveDraftParticipantInput,
   PlanDeliveryInput,
   PlanLineRef,
   type ProposalDepartment,
@@ -77,8 +78,10 @@ import * as repo from './repository';
  * defineQuery in the app; unit-tested with a fake runtime. The database repeats every rule (migration
  * 20261117100200).
  *
- *   course of an approved line   tms.training_plan.manage organization-wide (the L&D Manager) — and tms.course.manage
- *                                to create the course («Create course»), tms.course.read to link one («Link course»)
+ *   course of an approved line   tms.training_plan.manage organization-wide (the L&D Manager) or tms.course.manage
+ *                                (organization-only: the Training Coordinator too — approved design README); and
+ *                                tms.course.manage to create the course («Create course»), tms.course.read to link
+ *                                one («Link course»). Never a department-limited planner
  *   draft sessions               tms.session.manage — organization-wide (L&D Manager, Training Coordinator), or a
  *                                custom role limited to «A department»: reads the drafts of lines holding a need of
  *                                its units, changes those whose every department is in them (it also needs to read
@@ -272,6 +275,8 @@ function refusalError(refusal: repo.SessionRefusal): AppError {
       return appError(DraftSessionErrors.SESSION_LINE_OUTSIDE_SCOPE);
     case 'person_taken':
       return appError('CONFLICT_VERSION');
+    case 'has_drafts':
+      return appError(DraftSessionErrors.SESSION_LINE_HAS_DRAFTS);
     case 'refused':
       return appError('PRECONDITION_FAILED');
   }
@@ -472,7 +477,7 @@ export function planDeliveryQueryDefinition(): QueryDefinition<
         ).map((course) => [course.id, course]),
       );
       const approved = plan.status === 'approved';
-      const lineCourses = approved && ctx.can(PLAN_MANAGE, 'tenant');
+      const lineCourses = approved && mayGiveLinesCourses(ctx);
       const canCreateCourse = lineCourses && ctx.can(c['tms.course.manage'], 'tenant');
       const canLinkCourse = lineCourses && ctx.can(c['tms.course.read'], 'tenant');
       const locale = await getTenantDefaultLocale(ctx.tx);
@@ -607,7 +612,19 @@ export interface LineCourseSet {
   readonly previousCourseId: string | null;
 }
 
-/** May the line get (another) course now? The approved plan, a line in it, no drafts yet. */
+/**
+ * Who gives an approved line its course (review M4): the organization-wide L&D Manager (tms.training_plan.manage for
+ * the whole organization) or a holder of tms.course.manage (organization-only: the Training Coordinator). A
+ * department-limited planner never (the database agrees: private.plan_lines_guard).
+ */
+function mayGiveLinesCourses(ctx: Ctx): boolean {
+  return ctx.can(PLAN_MANAGE, 'tenant') || ctx.can(c['tms.course.manage'], 'tenant');
+}
+
+/**
+ * May the line get (another) course now? The approved plan, a line in it, no drafts yet — asked of the database
+ * (private.plan_line_has_sessions), as the caller may hold no tms.session.manage and then reads no draft (review M1).
+ */
 async function courseProblem(
   ctx: Ctx,
   lineId: string,
@@ -621,7 +638,7 @@ async function courseProblem(
     return err(appError(DraftSessionErrors.SESSION_PLAN_NOT_APPROVED));
   if (line.status !== 'in_plan') return err(appError(DraftSessionErrors.SESSION_LINE_LEFT_OUT));
   if (line.version !== lineVersion) return err(appError('CONFLICT_VERSION'));
-  if ((await repo.listLineSessions(ctx.tx, [line.id])).length > 0) {
+  if (await repo.lineHasSessions(ctx.tx, line.id)) {
     return err(appError(DraftSessionErrors.SESSION_LINE_HAS_DRAFTS));
   }
   return ok({ line, plan });
@@ -637,11 +654,7 @@ async function setCourse(
   const written = await repo.setLineCourse(ctx.tx, line.id, lineVersion, course.id, origin);
   if (!written.ok) {
     return err(
-      written.refusal === 'refused'
-        ? appError(DraftSessionErrors.SESSION_LINE_HAS_DRAFTS)
-        : written.refusal === 'not_allowed'
-          ? appError('FORBIDDEN')
-          : refusalError(written.refusal),
+      written.refusal === 'not_allowed' ? appError('FORBIDDEN') : refusalError(written.refusal),
     );
   }
   if (written.value === null) return err(appError('CONFLICT_VERSION'));
@@ -682,10 +695,11 @@ export function createCourseFromLineActionDefinition(): ActionDefinition<
   LineCourseSet
 > {
   return {
-    permission: PLAN_MANAGE,
+    // The course is created in the library: tms.course.manage (organization-only) — the L&D Manager or the Training
+    // Coordinator (review M4).
+    permission: c['tms.course.manage'],
     input: CreateCourseFromLineInput,
     handler: async ({ ctx, input }) => {
-      if (!ctx.can(c['tms.course.manage'], 'tenant')) return err(appError('FORBIDDEN'));
       const ready = await courseProblem(ctx, input.lineId, input.lineVersion);
       if (!ready.ok) return ready;
       const costsVisible = ctx.can(c['tms.course_cost.read'], 'tenant');
@@ -722,10 +736,10 @@ export function linkLineCourseActionDefinition(): ActionDefinition<
   LineCourseSet
 > {
   return {
-    permission: PLAN_MANAGE,
+    permission: c['tms.course.read'],
     input: LinkLineCourseInput,
     handler: async ({ ctx, input }) => {
-      if (!ctx.can(c['tms.course.read'], 'tenant')) return err(appError('FORBIDDEN'));
+      if (!mayGiveLinesCourses(ctx)) return err(appError('FORBIDDEN'));
       const ready = await courseProblem(ctx, input.lineId, input.lineVersion);
       if (!ready.ok) return ready;
       const course = await getCourse(ctx.tx, input.courseId);
@@ -1222,6 +1236,15 @@ export interface DraftSessionDetailView {
   }[];
   /** The line's other named people («Add or move people»): in another draft (`sessionId`) or in none. */
   readonly candidates: readonly LinePersonView[];
+  /** The line's other drafts, in «1 of 3» order — where a planned participant can move (review L6). */
+  readonly otherSessions: readonly {
+    readonly id: string;
+    readonly ordinal: number;
+    /** `YYYY-MM`. */
+    readonly month: string | null;
+    readonly seats: number;
+    readonly participants: number;
+  }[];
   /** Seats a department asked for without naming people (design: «+ 11 more from Finance»). */
   readonly unnamedSeats: readonly { readonly departmentId: string; readonly seats: number }[];
   readonly branches: readonly { readonly id: string; readonly name: LocalName }[];
@@ -1254,11 +1277,6 @@ export function draftSessionQueryDefinition(): QueryDefinition<
       const sessionOf = new Map(participants.map((p) => [p.personId, p.sessionId]));
       const [course] = await repo.listCourseBriefs(ctx.tx, [session.courseId]);
       const month = draftMonth(session);
-      const namedByDepartment = new Map<string, number>();
-      for (const person of uniquePeople(named)) {
-        const department = departmentOfNeed(named, person);
-        namedByDepartment.set(department, (namedByDepartment.get(department) ?? 0) + 1);
-      }
       return ok({
         session: {
           id: session.id,
@@ -1313,11 +1331,23 @@ export function draftSessionQueryDefinition(): QueryDefinition<
             needId: n.needId,
             sessionId: sessionOf.get(n.personId) ?? null,
           })),
+        otherSessions: sessions.flatMap((s, index) =>
+          s.id === session.id
+            ? []
+            : [
+                {
+                  id: s.id,
+                  ordinal: index + 1,
+                  month: draftMonth(s),
+                  seats: s.seats,
+                  participants: participants.filter((p) => p.sessionId === s.id).length,
+                },
+              ],
+        ),
+        // From the line's figures (seats and named people per department, as submitted), never from the named people
+        // the viewer reads: a department-limited planner reads only its units' people (review L5).
         unnamedSeats: context.departments
-          .map((d) => ({
-            departmentId: d.departmentId,
-            seats: Math.max(0, d.seats - (namedByDepartment.get(d.departmentId) ?? 0)),
-          }))
+          .map((d) => ({ departmentId: d.departmentId, seats: Math.max(0, d.seats - d.named) }))
           .filter((d) => d.seats > 0),
         branches: branchesOf(structure),
         canEdit: draftsLine(context.scope, context.departmentIds),
@@ -1341,6 +1371,8 @@ export interface DraftUpdated {
   readonly after: DraftValues;
   /** People added, moved here from another draft of the line, and removed (counts only). */
   readonly people: { readonly added: number; readonly moved: number; readonly removed: number };
+  /** The drafts people moved here from (each has a new version too). */
+  readonly movedFrom: readonly string[];
 }
 
 /**
@@ -1406,6 +1438,7 @@ export function updateDraftSessionActionDefinition(): ActionDefinition<
       );
       if (!written.ok) return err(refusalError(written.refusal));
       if (written.value === null) return err(appError('CONFLICT_VERSION'));
+      const { version, movedFrom } = written.value;
       const ownIds = new Set(own.map((p) => p.personId));
       const listed = new Set(list?.map((p) => p.personId) ?? ownIds);
       const elsewhere = new Set(
@@ -1415,7 +1448,8 @@ export function updateDraftSessionActionDefinition(): ActionDefinition<
       return ok({
         sessionId: session.id,
         lineId: session.lineId,
-        version: written.value,
+        version,
+        movedFrom,
         before: {
           month: draftMonth(session),
           branchId: session.branchId,
@@ -1441,6 +1475,90 @@ export function updateDraftSessionActionDefinition(): ActionDefinition<
         before: output.before,
         after: output.after,
         people: output.people,
+        ...(output.movedFrom.length > 0 ? { movedFrom: output.movedFrom } : {}),
+      }),
+  };
+}
+
+export interface DraftParticipantMoved {
+  readonly sessionId: string;
+  readonly lineId: string;
+  readonly version: number;
+  readonly toSessionId: string;
+  readonly toVersion: number;
+  /** Planned participants of both drafts before and after (counts only — never who). */
+  readonly from: { readonly before: number; readonly after: number };
+  readonly to: { readonly before: number; readonly after: number };
+}
+
+/**
+ * «Move to another session» (design screen 5, a planned participant's ⋯ menu; review L6): one person from this draft
+ * to another draft of the same line, within its seats. Both drafts get a new version; the audit names both, with
+ * their counts only.
+ */
+export function moveDraftParticipantActionDefinition(): ActionDefinition<
+  typeof MoveDraftParticipantInput,
+  DraftParticipantMoved,
+  UserTx
+> {
+  return {
+    permission: SESSION_MANAGE,
+    input: MoveDraftParticipantInput,
+    scoped: true,
+    handler: async ({ ctx, input }) => {
+      const session = await repo.getSession(ctx.tx, input.sessionId);
+      if (!session) return err(appError('NOT_FOUND'));
+      const context = await lineContext(ctx, session.lineId);
+      if (!context) return err(appError('NOT_FOUND'));
+      if (!draftsLine(context.scope, context.departmentIds)) {
+        return err(appError(DraftSessionErrors.SESSION_LINE_OUTSIDE_SCOPE));
+      }
+      if (session.version !== input.version) return err(appError('CONFLICT_VERSION'));
+      const personId = input.personId.toLowerCase();
+      const toSessionId = input.toSessionId.toLowerCase();
+      const target = context.sessions.find((s) => s.id === toSessionId);
+      if (!target || target.id === session.id) {
+        return validation([{ path: 'toSessionId', code: 'NOT_FOUND' }]);
+      }
+      const count = (id: string) => context.participants.filter((p) => p.sessionId === id).length;
+      if (
+        !context.participants.some((p) => p.sessionId === session.id && p.personId === personId)
+      ) {
+        return validation([{ path: 'personId', code: 'NOT_PLANNED' }]);
+      }
+      if (count(target.id) >= target.seats) {
+        return validation([{ path: 'toSessionId', code: 'MORE_THAN_SEATS' }]);
+      }
+      const moved = await repo.moveParticipant(
+        ctx.tx,
+        { id: session.id, version: input.version },
+        target.id,
+        personId,
+      );
+      if (!moved.ok) {
+        return moved.refusal === 'seats'
+          ? validation([{ path: 'toSessionId', code: 'MORE_THAN_SEATS' }])
+          : err(refusalError(moved.refusal));
+      }
+      if (moved.value === null) return err(appError('CONFLICT_VERSION'));
+      const from = count(session.id);
+      const to = count(target.id);
+      return ok({
+        sessionId: session.id,
+        lineId: session.lineId,
+        version: moved.value.fromVersion,
+        toSessionId: target.id,
+        toVersion: moved.value.toVersion,
+        from: { before: from, after: from - 1 },
+        to: { before: to, after: to + 1 },
+      });
+    },
+    audit: (_input, output) =>
+      audit('tms.session.draft_participant_moved', 'session', output.sessionId, {
+        lineId: output.lineId,
+        toSessionId: output.toSessionId,
+        from: output.from,
+        to: output.to,
       }),
   };
 }
@@ -1588,11 +1706,14 @@ export function trainingCalendarQueryDefinition(): QueryDefinition<
     input: TrainingCalendarInput,
     scoped: true,
     handler: async ({ ctx, input }) => {
-      const from = `${String(input.year)}-01-01`;
-      const to = `${String(input.year + 1)}-01-01`;
+      // No year asked: the year of the latest approved plan with drafts (else this year) — review L7.
+      const year =
+        input.year ?? (await repo.latestDraftedPlanYear(ctx.tx)) ?? new Date().getUTCFullYear();
+      const from = `${String(year)}-01-01`;
+      const to = `${String(year + 1)}-01-01`;
       const structure = await listOrgStructure(ctx.tx);
       const scope = sessionScope(ctx, structure);
-      const sources = await repo.listPlansOverlapping(ctx.tx, from, `${String(input.year)}-12-31`);
+      const sources = await repo.listPlansOverlapping(ctx.tx, from, `${String(year)}-12-31`);
       const yearSessions = await repo.listSessionsBetween(ctx.tx, from, to);
       // Plans of drafts planned in this year but made from a plan of another period (moved out of it).
       const sourceIds = new Set(sources.map((s) => s.planId));
@@ -1696,7 +1817,7 @@ export function trainingCalendarQueryDefinition(): QueryDefinition<
         (l) =>
           l.source.status === 'approved' &&
           l.line.status === 'in_plan' &&
-          quarterMonths(l.source.periodStart, l.line.quarter)[0].startsWith(String(input.year)) &&
+          quarterMonths(l.source.periodStart, l.line.quarter)[0].startsWith(String(year)) &&
           keepCourse(l.line.courseId),
       );
       const stateOf = (l: LineInfo) =>
@@ -1710,7 +1831,7 @@ export function trainingCalendarQueryDefinition(): QueryDefinition<
       const quarters = [1, 2, 3, 4]
         .filter((q) => input.quarter === undefined || q === input.quarter)
         .map((quarter) => {
-          const first = `${String(input.year)}-${String((quarter - 1) * 3 + 1).padStart(2, '0')}`;
+          const first = `${String(year)}-${String((quarter - 1) * 3 + 1).padStart(2, '0')}`;
           const months = [first, addMonths(first, 1), addMonths(first, 2)].map((month) => {
             const inMonth = drafts
               .filter((d) => d.month === month)
@@ -1761,7 +1882,7 @@ export function trainingCalendarQueryDefinition(): QueryDefinition<
         ),
       );
       return ok({
-        year: input.year,
+        year: year,
         plans: sources.map((s) => ({
           planId: s.planId,
           cycleId: s.cycleId,

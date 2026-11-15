@@ -6,6 +6,7 @@ import {
   createDraftSessionsActionDefinition,
   deleteDraftSessionActionDefinition,
   linkLineCourseActionDefinition,
+  moveDraftParticipantActionDefinition,
   updateDraftSessionActionDefinition,
 } from '../sessions/definitions';
 
@@ -20,3 +21,4 @@ export const linkLineCourseAction = defineAction(linkLineCourseActionDefinition(
 export const createDraftSessionsAction = defineAction(createDraftSessionsActionDefinition());
 export const updateDraftSessionAction = defineAction(updateDraftSessionActionDefinition());
 export const deleteDraftSessionAction = defineAction(deleteDraftSessionActionDefinition());
+export const moveDraftParticipantAction = defineAction(moveDraftParticipantActionDefinition());

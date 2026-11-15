@@ -55,6 +55,9 @@ const repo = vi.hoisted(() => ({
   deleteSession: vi.fn(),
   listCourseBriefs: vi.fn(),
   listPlansOverlapping: vi.fn(),
+  lineHasSessions: vi.fn(),
+  moveParticipant: vi.fn(),
+  latestDraftedPlanYear: vi.fn(),
 }));
 vi.mock('./repository', () => repo);
 
@@ -213,6 +216,7 @@ function example(over: { line?: Record<string, unknown>; plan?: Record<string, u
     { lineId: LINE, needId: 'n-hr', departmentId: HR, personId: personId(3) },
   ]);
   repo.listLineSessions.mockResolvedValue([]);
+  repo.lineHasSessions.mockResolvedValue(false);
   repo.listLineParticipants.mockResolvedValue([]);
   repo.listCourseBriefs.mockResolvedValue([
     {
@@ -526,15 +530,21 @@ describe('the course of an approved line (design screen 2)', () => {
     ]);
   });
 
-  it('is the organization-wide L&D Manager’s, on an approved plan, before any draft', async () => {
+  it('is the L&D Manager’s or the Training Coordinator’s (review M4), on an approved plan, before any draft', async () => {
     example({ line: { courseId: null } });
-    for (const role of ['training_coordinator', CUSTOM, 'hr_manager', 'learner']) {
+    for (const role of [CUSTOM, 'hr_manager', 'learner', 'department_head']) {
       const refused = await runtime(role).action(defs.createCourseFromLineActionDefinition())({
         lineId: LINE,
         lineVersion: 3,
         course: values,
       });
       expect(!refused.ok && refused.error.code, role).toBe('FORBIDDEN');
+      const notLinked = await runtime(role).action(defs.linkLineCourseActionDefinition())({
+        lineId: LINE,
+        lineVersion: 3,
+        courseId: COURSE,
+      });
+      expect(!notLinked.ok && notLinked.error.code, role).toBe('FORBIDDEN');
     }
     example({ plan: { status: 'in_approval' } });
     const frozen = await runtime('training_manager').action(defs.linkLineCourseActionDefinition())({
@@ -550,14 +560,40 @@ describe('the course of an approved line (design screen 2)', () => {
       courseId: COURSE,
     });
     expect(!out.ok && out.error.code).toBe('SESSION_LINE_LEFT_OUT');
+    // Review M1: the drafts are asked of the database (a planner may read none of them), never of the rows read.
     example();
-    repo.listLineSessions.mockResolvedValue([{ id: 's', createdAt: new Date(0), month: null }]);
+    repo.listLineSessions.mockResolvedValue([]);
+    repo.lineHasSessions.mockResolvedValue(true);
     const drafted = await runtime('training_manager').action(defs.linkLineCourseActionDefinition())(
       { lineId: LINE, lineVersion: 3, courseId: COURSE },
     );
     expect(!drafted.ok && drafted.error.code).toBe('SESSION_LINE_HAS_DRAFTS');
+    expect(repo.lineHasSessions).toHaveBeenCalledWith({}, LINE);
     expect(courses.createCourse).not.toHaveBeenCalled();
     expect(repo.setLineCourse).not.toHaveBeenCalled();
+  });
+
+  it('lets the Training Coordinator create or link the course of an approved line (review M4)', async () => {
+    example({ line: { courseId: null } });
+    courses.createCourse.mockResolvedValue(
+      ok({ before: null, after: created, categoryCreated: null }),
+    );
+    repo.setLineCourse.mockResolvedValue({ ok: true, value: 4 });
+    const createdByCoordinator = await runtime('training_coordinator').action(
+      defs.createCourseFromLineActionDefinition(),
+    )({ lineId: LINE, lineVersion: 3, course: values });
+    expect(createdByCoordinator.ok && createdByCoordinator.value.origin).toBe('created');
+    courseDb.getCourse.mockResolvedValue(created);
+    const linkedByCoordinator = await runtime('training_coordinator').action(
+      defs.linkLineCourseActionDefinition(),
+    )({ lineId: LINE, lineVersion: 3, courseId: COURSE });
+    expect(linkedByCoordinator.ok && linkedByCoordinator.value.origin).toBe('linked');
+    // The database's last word: drafts made at the same moment (JK017).
+    repo.setLineCourse.mockResolvedValue({ ok: false, refusal: 'has_drafts' });
+    const late = await runtime('training_coordinator').action(
+      defs.linkLineCourseActionDefinition(),
+    )({ lineId: LINE, lineVersion: 3, courseId: COURSE });
+    expect(!late.ok && late.error.code).toBe('SESSION_LINE_HAS_DRAFTS');
   });
 
   it('links an active course only', async () => {
@@ -627,14 +663,22 @@ describe('planDeliveryQueryDefinition (design screen 1)', () => {
     expect(second?.course?.origin).toBe('needs');
     expect(second?.state).toBe('needs_sessions');
     expect(view.value.counts).toEqual({ needsCourse: 1, needsSessions: 1, sessionsCreated: 0 });
-    // The Training Coordinator drafts but gives no line a course.
+    // The Training Coordinator drafts and, holding tms.course.manage, gives lines their course (review M4).
     const coordinator = await runtime('training_coordinator').query(
       defs.planDeliveryQueryDefinition(),
     )({ cycleId: CYCLE });
-    expect(coordinator.ok && coordinator.value.lines[1]?.can).toEqual({
+    expect(coordinator.ok && coordinator.value.lines[0]?.can).toEqual({
+      createCourse: true,
+      linkCourse: true,
+      createSessions: false,
+    });
+    // A department-limited planner drafts its units' lines but gives no line a course.
+    const planner = await runtime(CUSTOM).query(defs.planDeliveryQueryDefinition())({
+      cycleId: CYCLE,
+    });
+    expect(planner.ok && planner.value.lines[0]?.can).toMatchObject({
       createCourse: false,
       linkCourse: false,
-      createSessions: true,
     });
   });
 });
@@ -717,6 +761,10 @@ describe('a draft opened, changed and deleted (design screen 5)', () => {
       { departmentId: SALES, seats: 15 },
       { departmentId: HR, seats: 11 },
     ]);
+    expect(view.value.otherSessions).toEqual([
+      { id: S1, ordinal: 1, month: '2027-01', seats: 16, participants: 2 },
+      { id: S2, ordinal: 2, month: '2027-02', seats: 16, participants: 1 },
+    ]);
     expect(view.value.canEdit).toBe(true);
     const first = await runtime('training_coordinator').query(defs.draftSessionQueryDefinition())({
       sessionId: S1,
@@ -732,9 +780,29 @@ describe('a draft opened, changed and deleted (design screen 5)', () => {
     expect(!gone.ok && gone.error.code).toBe('NOT_FOUND');
   });
 
+  it('counts the seats waiting for names from the line, not from the people a limited planner reads (review L5)', async () => {
+    drafted();
+    // A planner for Finance reads Finance's named people only; HR named one person it cannot read.
+    repo.listNamedPeople.mockResolvedValue([
+      { lineId: LINE, needId: 'n-fin', departmentId: FINANCE, personId: personId(1) },
+      { lineId: LINE, needId: 'n-fin', departmentId: FINANCE, personId: personId(2) },
+    ]);
+    repo.listLineParticipants.mockResolvedValue([participant(1, S1), participant(2, S1)]);
+    const view = await runtime(CUSTOM).query(defs.draftSessionQueryDefinition())({
+      sessionId: S3,
+    });
+    if (!view.ok) throw new Error(view.error.code);
+    expect(view.value.canEdit).toBe(false);
+    expect(view.value.unnamedSeats).toEqual([
+      { departmentId: FINANCE, seats: 18 },
+      { departmentId: SALES, seats: 15 },
+      { departmentId: HR, seats: 11 },
+    ]);
+  });
+
   it('moves people, changes month and seats, and audits counts', async () => {
     drafted();
-    repo.updateSession.mockResolvedValue({ ok: true, value: 5 });
+    repo.updateSession.mockResolvedValue({ ok: true, value: { version: 5, movedFrom: [S2] } });
     const { action, audits } = runtime('training_manager');
     const updated = await action(defs.updateDraftSessionActionDefinition())({
       sessionId: S1,
@@ -763,9 +831,101 @@ describe('a draft opened, changed and deleted (design screen 5)', () => {
           before: { month: '2027-01', branchId: RUH, seats: 16, participants: 2 },
           after: { month: '2027-04', branchId: RUH, seats: 17, participants: 2 },
           people: { added: 0, moved: 1, removed: 1 },
+          // The draft the person came from (it has a new version too: review L6).
+          movedFrom: [S2],
         },
       },
     ]);
+    expect(updated.value.movedFrom).toEqual([S2]);
+  });
+
+  it('moves one planned participant to another draft of the line, both new versions, audited as counts (review L6)', async () => {
+    drafted();
+    repo.moveParticipant.mockResolvedValue({ ok: true, value: { fromVersion: 3, toVersion: 4 } });
+    const { action, audits } = runtime('training_coordinator');
+    const moved = await action(defs.moveDraftParticipantActionDefinition())({
+      sessionId: S1,
+      version: 2,
+      personId: personId(2).toUpperCase(),
+      toSessionId: S3,
+    });
+    if (!moved.ok) throw new Error(JSON.stringify(moved.error));
+    expect(repo.moveParticipant).toHaveBeenCalledWith({}, { id: S1, version: 2 }, S3, personId(2));
+    expect(moved.value).toMatchObject({ version: 3, toSessionId: S3, toVersion: 4 });
+    expect(audits).toEqual([
+      {
+        action: 'tms.session.draft_participant_moved',
+        entityType: 'session',
+        entityId: S1,
+        data: {
+          lineId: LINE,
+          toSessionId: S3,
+          from: { before: 2, after: 1 },
+          to: { before: 0, after: 1 },
+        },
+      },
+    ]);
+    expect(JSON.stringify(audits)).not.toContain(personId(2));
+  });
+
+  it('refuses a move to an unknown or full draft, of someone not in the draft, at a stale version, outside the planner’s units', async () => {
+    drafted();
+    const { action } = runtime('training_manager');
+    const move = (over: Record<string, unknown>) =>
+      action(defs.moveDraftParticipantActionDefinition())({
+        sessionId: S1,
+        version: 2,
+        personId: personId(1),
+        toSessionId: S2,
+        ...over,
+      });
+    const unknown = await move({ toSessionId: S9 });
+    expect(!unknown.ok && unknown.error.fieldErrors).toEqual([
+      { path: 'toSessionId', code: 'NOT_FOUND' },
+    ]);
+    const itself = await move({ toSessionId: S1 });
+    expect(!itself.ok && itself.error.fieldErrors).toEqual([
+      { path: 'toSessionId', code: 'NOT_FOUND' },
+    ]);
+    const notHere = await move({ personId: personId(3) });
+    expect(!notHere.ok && notHere.error.fieldErrors).toEqual([
+      { path: 'personId', code: 'NOT_PLANNED' },
+    ]);
+    const stale = await move({ version: 1 });
+    expect(!stale.ok && stale.error.code).toBe('CONFLICT_VERSION');
+    repo.listLineSessions.mockResolvedValue([
+      sessionRecord(),
+      sessionRecord({ id: S2, month: '2027-02-01', seats: 1, participants: 1 }),
+    ]);
+    const full = await move({});
+    expect(!full.ok && full.error.fieldErrors).toEqual([
+      { path: 'toSessionId', code: 'MORE_THAN_SEATS' },
+    ]);
+    drafted();
+    repo.moveParticipant.mockResolvedValue({ ok: false, refusal: 'seats' });
+    const late = await move({});
+    expect(!late.ok && late.error.fieldErrors).toEqual([
+      { path: 'toSessionId', code: 'MORE_THAN_SEATS' },
+    ]);
+    repo.moveParticipant.mockResolvedValue({ ok: true, value: null });
+    const lost = await move({});
+    expect(!lost.ok && lost.error.code).toBe('CONFLICT_VERSION');
+    const shared = await runtime(CUSTOM).action(defs.moveDraftParticipantActionDefinition())({
+      sessionId: S1,
+      version: 2,
+      personId: personId(1),
+      toSessionId: S2,
+    });
+    expect(!shared.ok && shared.error.code).toBe('SESSION_LINE_OUTSIDE_SCOPE');
+    const refused = await runtime('hr_manager').action(defs.moveDraftParticipantActionDefinition())(
+      {
+        sessionId: S1,
+        version: 2,
+        personId: personId(1),
+        toSessionId: S2,
+      },
+    );
+    expect(!refused.ok && refused.error.code).toBe('FORBIDDEN');
   });
 
   it('refuses a stale version, months outside the period, unknown branches, people not named, too few seats', async () => {
@@ -928,6 +1088,21 @@ describe('trainingCalendarQueryDefinition (design screen 4)', () => {
     expect(view.value.plans).toEqual([
       expect.objectContaining({ planId: PLAN, status: 'approved', planVersion: 1 }),
     ]);
+  });
+
+  it('opens on the year of the latest approved plan with drafts when no year is asked (review L7)', async () => {
+    calendar();
+    repo.latestDraftedPlanYear.mockResolvedValue(2027);
+    const q = runtime('training_coordinator').query(defs.trainingCalendarQueryDefinition());
+    const latest = await q({});
+    expect(latest.ok && latest.value.year).toBe(2027);
+    expect(repo.listPlansOverlapping).toHaveBeenLastCalledWith({}, '2027-01-01', '2027-12-31');
+    repo.latestDraftedPlanYear.mockResolvedValue(null);
+    const none = await q({});
+    expect(none.ok && none.value.year).toBe(new Date().getUTCFullYear());
+    const asked = await q({ year: 2029 });
+    expect(asked.ok && asked.value.year).toBe(2029);
+    expect(repo.latestDraftedPlanYear).toHaveBeenCalledTimes(2);
   });
 
   it('filters by quarter, branch and course', async () => {

@@ -49,8 +49,8 @@ begin
     into v_list
   from pg_proc p where p.proowner = 'training_plan_guard'::regrole;
   perform tests.assert_eq(v_list,
-    'private.plan_cycle_consolidating(uuid,uuid) (definer), private.plan_line_departments(uuid) (definer)',
-    'training_plan_guard owns two functions');
+    'private.plan_cycle_consolidating(uuid,uuid) (definer), private.plan_line_departments(uuid) (definer), private.training_plan_status(uuid,uuid) (definer)',
+    'training_plan_guard owns three functions');
   perform tests.assert(not has_table_privilege('training_plan_guard', 'tms.plan_line_needs', 'SELECT')
                        and has_column_privilege('training_plan_guard', 'tms.plan_line_needs', 'department_id', 'SELECT')
                        and not has_column_privilege('training_plan_guard', 'tms.plan_line_needs', 'need_id', 'SELECT')
@@ -59,7 +59,8 @@ begin
                        and not has_table_privilege('training_plan_guard', 'platform.persons', 'SELECT'),
     'training_plan_guard reads a line''s departments and a plan''s cycle and status — nothing else');
   perform tests.assert(not has_function_privilege('anon', 'private.plan_line_departments(uuid)', 'EXECUTE')
-                       and not has_function_privilege('anon', 'private.plan_cycle_consolidating(uuid, uuid)', 'EXECUTE'),
+                       and not has_function_privilege('anon', 'private.plan_cycle_consolidating(uuid, uuid)', 'EXECUTE')
+                       and not has_function_privilege('anon', 'private.training_plan_status(uuid, uuid)', 'EXECUTE'),
     'anonymous callers cannot ask');
 
   -- Grants: only the columns the application writes; the stamps and snapshots are the database's.
@@ -73,8 +74,10 @@ begin
     'plan_lines: what a line was built from, its plan and its edit stamp never change from a statement');
   perform tests.assert(not has_column_privilege('authenticated', 'tms.plan_line_needs', 'seats', 'INSERT')
                        and not has_column_privilege('authenticated', 'tms.plan_line_needs', 'seats', 'UPDATE')
+                       and not has_column_privilege('authenticated', 'tms.plan_line_needs', 'topic', 'INSERT')
+                       and not has_column_privilege('authenticated', 'tms.plan_line_needs', 'course_id', 'UPDATE')
                        and not has_column_privilege('authenticated', 'tms.plan_line_needs', 'need_id', 'UPDATE'),
-    'plan_line_needs: the seats are taken from the need; a need moves from line to line only');
+    'plan_line_needs: the seats, topic and course are taken from the need; a need moves from line to line only');
 end $$;
 
 -- ---- the journey --------------------------------------------------------------------------------------
@@ -205,6 +208,16 @@ begin
   perform tests.assert_eq(
     (select string_agg(seats || '/' || named, ',' order by seats desc) from tms.plan_line_needs where plan_id = p),
     '20/1,15/0,5/0,4/0', 'the seats and named people are what each department submitted');
+  perform tests.assert_eq(
+    (select string_agg(x.topic || '/' || coalesce(x.course_id::text, '-'), ',' order by x.seats desc)
+     from tms.plan_line_needs x where x.plan_id = p),
+    'Excel – advanced formulas/-,excel advanced formulas!/-,Leadership/-,Instructional design/-',
+    'and the topic and course they submitted (to see later whether a resubmitted need changed its training)');
+  -- A second plan, of the earlier cycle (ae…02, closed above; none of SAL's), for the department-limited checks.
+  insert into tms.training_plans (cycle_id) values ('ae000000-0000-4000-8000-000000000002')
+    returning id into p;
+  perform set_config('tests.tp_plan_earlier', p::text, true);
+  p := tests.tp_plan();
   perform tests.assert_eq(private.plan_line_departments(tests.tp_line('Excel – advanced formulas')),
     array['a3000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000004']::uuid[],
     'a line''s departments');
@@ -263,7 +276,15 @@ begin
     'uM1 reads nothing organization-wide');
   perform tests.assert_eq(private.training_plan_units('a0000000-0000-4000-8000-000000000001', true), array[sal],
     'uM1 builds the plan of SAL (no unit below it)');
-  perform tests.assert_eq((select count(*) from tms.training_plans), 1::bigint, 'uM1 sees the plan');
+  perform tests.assert_eq((select string_agg(cycle_id::text, ',') from tms.training_plans), c::text,
+    'uM1 sees the plan of the cycle SAL takes part in, not the earlier cycle''s (L2)');
+  -- M1: never a line (not even an empty one) in the plan of a cycle without its units.
+  perform tests.assert_fails(format($q$insert into tms.plan_lines (plan_id, cycle_id, group_key, title, quarter) values (%L, 'ae000000-0000-4000-8000-000000000002', 'topic:x', 'Not my cycle', 1)$q$,
+      current_setting('tests.tp_plan_earlier')),
+    array['42501'], 'a department-limited planner adds no line to the plan of a cycle without its units');
+  perform tests.assert_fails(format($q$insert into tms.plan_lines (plan_id, cycle_id, group_key, title, quarter, edited_at) values (%L, 'ae000000-0000-4000-8000-000000000002', 'topic:x', 'Not my cycle', 1, now())$q$,
+      current_setting('tests.tp_plan_earlier')),
+    array['42501'], 'not even one it made itself');
   perform tests.assert_eq((select string_agg(title, ',' order by title) from tms.plan_lines),
     'Excel – advanced formulas,Leadership', 'the lines with a need of SAL (not TD-PRG''s)');
   perform tests.assert_eq((select count(*) from tms.plan_line_needs), 3::bigint,
@@ -357,6 +378,13 @@ begin
     'nor learns a line''s departments');
   perform tests.assert(not private.plan_cycle_consolidating('a0000000-0000-4000-8000-000000000001', 'ae000000-0000-4000-8000-000000000001'),
     'nor whether A''s cycle is consolidated');
+  perform tests.assert(private.training_plan_status('a0000000-0000-4000-8000-000000000001', current_setting('tests.tp_plan')::uuid) is null,
+    'nor the state of A''s plan');
+  -- L1: the guards fail closed on a plan they cannot find (another organization's, or none).
+  perform tests.assert_fails(format($q$select private.training_plan_editable('a0000000-0000-4000-8000-000000000001', %L)$q$, current_setting('tests.tp_plan')),
+    array['42501'], 'a plan the guard cannot find is never editable (fail closed)');
+  perform tests.assert_fails($q$select private.training_plan_editable('b0000000-0000-4000-8000-000000000001', gen_random_uuid())$q$,
+    array['42501'], 'nor a plan that does not exist');
   perform tests.assert_fails(format($q$insert into tms.plan_lines (plan_id, cycle_id, group_key, title, quarter) values (%L, 'ae000000-0000-4000-8000-000000000001', 'topic:x', 'Intruder', 1)$q$, current_setting('tests.tp_plan')),
     array['23503', '42501'], 'nor adds a line to it');
 end $$;

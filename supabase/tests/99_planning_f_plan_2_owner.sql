@@ -30,6 +30,9 @@ begin
   insert into tms.plan_cycle_departments (cycle_id, department_id, budget_amount) values (c, sal, 30000);
   update tms.plan_cycles set needs_form_id = 'a7000000-0000-4000-8000-000000000001' where id = c;
   update tms.plan_cycles set status = 'open' where id = c;
+  -- An extension for SAL while the cycle is open (still to come when the needs close early, L7).
+  update tms.plan_cycle_departments set deadline_on = (select deadline_on + 2 from tms.plan_cycles where id = c)
+    where cycle_id = c and department_id = sal;
 end $$;
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-00000000e0a4', '10000000-0000-4000-8000-00000000e0a4',
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-00000000e0a4'));
@@ -57,6 +60,7 @@ begin
   perform tests.assert_fails(format($q$update tms.plan_cycle_departments set status = 'returned', return_note = 'x', deadline_on = private.plan_cycle_today(tenant_id) where cycle_id = %L and department_id = %L$q$, c, sal),
     array['JK005'], 'a closed cycle without a plan returns nothing');
   insert into tms.training_plans (cycle_id) values (c) returning id into p;
+  perform set_config('tests.tp_plan_id', p::text, true);
   insert into tms.plan_lines (plan_id, cycle_id, group_key, title, quarter) values (p, c, 'topic:excel', 'Excel', 1) returning id into l1;
   insert into tms.plan_lines (plan_id, cycle_id, group_key, title, quarter) values (p, c, 'topic:negotiation', 'Negotiation', 1) returning id into l2;
   insert into tms.plan_line_needs (plan_id, cycle_id, line_id, need_id, department_id) values
@@ -65,7 +69,7 @@ begin
   perform set_config('tests.tp_line1', l1::text, true);
 
   -- Returning during consolidation needs a note and a deadline of the department's own, today or later.
-  perform tests.assert_fails(format($q$update tms.plan_cycle_departments set status = 'returned', return_note = 'Please split by level' where cycle_id = %L and department_id = %L$q$, c, sal),
+  perform tests.assert_fails(format($q$update tms.plan_cycle_departments set status = 'returned', return_note = 'Please split by level', deadline_on = null where cycle_id = %L and department_id = %L$q$, c, sal),
     array['JK004'], 'a return during consolidation needs a deadline');
   perform tests.assert_fails(format($q$update tms.plan_cycle_departments set status = 'returned', return_note = 'x', deadline_on = private.plan_cycle_today(tenant_id) - 1 where cycle_id = %L and department_id = %L$q$, c, sal),
     array['JK004'], 'not in the past');
@@ -73,7 +77,27 @@ begin
     array['JK004'], 'not after the planning period');
   perform tests.assert_fails(format($q$update tms.plan_cycle_departments set status = 'returned', deadline_on = private.plan_cycle_today(tenant_id) where cycle_id = %L and department_id = %L$q$, c, sal),
     array['JK006'], 'and a note');
-  perform tests.assert_eq(tests.rows_affected(format($q$update tms.plan_cycle_departments set status = 'returned', return_note = 'Please split by level', deadline_on = private.plan_cycle_today(tenant_id) where cycle_id = %L and department_id = %L$q$, c, sal)),
+end $$;
+
+-- L7: the needs closed early with SAL's extension still to come — the submitted department is not open again.
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-00000000e0a4', '10000000-0000-4000-8000-00000000e0a4',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-00000000e0a4'));
+do $$
+begin
+  perform tests.assert(not private.plan_needs_entry_open('a0000000-0000-4000-8000-000000000001',
+      'ae000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000004'),
+    'a submitted department is not open while the plan is consolidated, whatever its deadline');
+  perform tests.assert_fails($q$insert into tms.plan_needs (cycle_id, department_id, topic, people_count) values ('ae000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000004', 'Late', 1)$q$,
+    array['JK005'], 'its head adds nothing');
+  perform tests.assert(private.training_plan_status('a0000000-0000-4000-8000-000000000001', current_setting('tests.tp_plan_id')::uuid) = 'draft',
+    'the guards learn the plan''s state for a head who cannot read it');
+  perform tests.assert_eq((select count(*) from tms.training_plans), 0::bigint, 'the head still reads no plan');
+end $$;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-00000000e0a1', '10000000-0000-4000-8000-00000000e0a1',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-00000000e0a1'));
+do $$
+begin
+  perform tests.assert_eq(tests.rows_affected($q$update tms.plan_cycle_departments set status = 'returned', return_note = 'Please split by level', deadline_on = private.plan_cycle_today(tenant_id) where cycle_id = 'ae000000-0000-4000-8000-000000000001' and department_id = 'a3000000-0000-4000-8000-000000000004'$q$),
     1::bigint, 'the L&D Manager returns SAL for changes until today');
 end $$;
 
@@ -93,6 +117,7 @@ begin
     'and only for it');
   update tms.plan_needs set people_count = 25 where id = tests.tp_need('Excel');
   insert into tms.plan_needs (cycle_id, department_id, topic, people_count) values (c, sal, 'Excel for managers', 4);
+  -- Removing a need takes it out of the plan too (the plan's guard learns the plan's state for the head).
   delete from tms.plan_needs where id = tests.tp_need('Negotiation');
   update tms.plan_cycle_departments set answers = '{"s1": [{"f1": "Updated"}]}'::jsonb where cycle_id = c and department_id = sal;
   perform tests.assert_eq(tests.rows_affected(format($q$update tms.plan_cycle_departments set status = 'submitted' where cycle_id = %L and department_id = %L$q$, c, sal)),

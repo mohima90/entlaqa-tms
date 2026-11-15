@@ -7,6 +7,7 @@ import {
   decidersLabel,
   personLabel,
   planVersionHref,
+  stepDeciderWarning,
 } from './plan-approval-view';
 
 const person = (personId: string, ar: string | null, en: string | null) => ({
@@ -59,5 +60,15 @@ describe('plan approval view helpers (WP-LD-03)', () => {
     ]);
     expect(moments['2026-11-15T08:00:00.000Z']).toMatch(/2026/);
     expect(approvalMoments(null, displayDateFormatter('en', 'gregorian', 'UTC'))).toEqual({});
+  });
+
+  it('warns when nobody but the submitting viewer could decide a step (review M2)', () => {
+    const me = person('me', 'أنا', 'Me');
+    const other = person('other', 'منى', 'Mona');
+    expect(stepDeciderWarning([], 'me')).toBe('nobody');
+    expect(stepDeciderWarning([me], 'me')).toBe('onlyYou');
+    expect(stepDeciderWarning([me, other], 'me')).toBeNull();
+    expect(stepDeciderWarning([other], 'me')).toBeNull();
+    expect(stepDeciderWarning([me], null)).toBeNull();
   });
 });

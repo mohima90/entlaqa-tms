@@ -66,3 +66,16 @@ export function decidersLabel(
     })
     .join(separator);
 }
+
+/**
+ * Whether a step of the submit popup needs a warning (review M2): nobody holds its role (`nobody`), or only the
+ * viewer does (`onlyYou`) — the submitter never decides on their own plan, so it would wait for good. Null when
+ * someone else can decide.
+ */
+export function stepDeciderWarning(
+  deciders: readonly Pick<ApprovalPerson, 'personId'>[],
+  viewerPersonId: string | null,
+): 'nobody' | 'onlyYou' | null {
+  if (deciders.length === 0) return 'nobody';
+  return deciders.some((d) => d.personId !== viewerPersonId) ? null : 'onlyYou';
+}

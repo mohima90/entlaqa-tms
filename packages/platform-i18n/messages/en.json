@@ -4339,11 +4339,13 @@
     "hrStep": "HR Manager approves",
     "hrStepNames": "{names} — the first decision counts. They approve, or send it back to you with a comment.",
     "hrStepNobody": "Nobody holds the HR Manager role yet: ask your Organization Admin to give it, or the plan will wait.",
+    "hrStepOnlyYou": "You are the only HR Manager. Someone else must approve the plan — ask the Organization Admin to give the HR Manager role to another person.",
     "financeStep": "Finance confirms",
     "financeStepOff": "Finance confirms — off",
     "financeOffHint": "Not asked: «Finance confirms the plan» is off in Planning settings.",
     "financeStepNames": "{names} — after the HR Manager; the first decision counts.",
     "financeStepNobody": "«Finance confirms the plan» is on, but nobody holds the Finance role: ask your Organization Admin to give it, or the plan will wait.",
+    "financeStepOnlyYou": "You are the only person with the Finance role. Someone else must confirm the plan — ask the Organization Admin to give the Finance role to another person.",
     "or": " or ",
     "problem": {
       "needs_open": "A department may still change its needs (it was returned for changes or reopened). Wait for it, or until its deadline passes.",

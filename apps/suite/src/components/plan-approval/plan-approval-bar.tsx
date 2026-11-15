@@ -15,7 +15,12 @@ import {
 } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
-import { decidersLabel, personLabel, planVersionHref } from '../../lib/plan-approval-view';
+import {
+  decidersLabel,
+  personLabel,
+  planVersionHref,
+  stepDeciderWarning,
+} from '../../lib/plan-approval-view';
 import type { ErrorTexts } from '../auth/error-text';
 import { LoadLatestVersion } from '../latest-version';
 import { planModel } from '../training-plan/plan-shared';
@@ -191,7 +196,8 @@ export function PlanApprovalBar(props: PlanApprovalBarProps) {
 /**
  * «Submit Training plan 2027 for approval?» (design 4; 560 px): the totals, the departments over their budget with
  * their reasons, who decides — the HR Manager (named holders, the first decision counts) and Finance (named, or
- * «off») — and a warning when nobody holds a role that will be asked. Refused with the reason while not ready.
+ * «off») — and a warning when nobody, or nobody but the viewer (who submits, so never decides), holds a role that
+ * will be asked (review M2). Refused with the reason while not ready.
  */
 function SubmitPlanDialog(props: PlanApprovalBarProps & { readonly onClose: () => void }) {
   const { view, approval, locale, onClose } = props;
@@ -209,6 +215,11 @@ function SubmitPlanDialog(props: PlanApprovalBarProps & { readonly onClose: () =
   const hrNames = decidersLabel(locale, approval.steps.hr.deciders, or);
   const financeOn = approval.financeSwitch;
   const financeNames = decidersLabel(locale, approval.steps.finance.deciders, or);
+  // The viewer submits, so never decides (review M2): warn when nobody else holds the step's role.
+  const hrWarning = stepDeciderWarning(approval.steps.hr.deciders, approval.viewer.personId);
+  const financeWarning = financeOn
+    ? stepDeciderWarning(approval.steps.finance.deciders, approval.viewer.personId)
+    : null;
   const problem = approval.submitProblem;
 
   function submit() {
@@ -368,13 +379,15 @@ function SubmitPlanDialog(props: PlanApprovalBarProps & { readonly onClose: () =
               </span>
               <span className="flex flex-col gap-0.5">
                 <b>{t('approval.hrStep')}</b>
-                {hrNames ? (
+                {hrWarning === null ? (
                   <span className="text-text-muted">
                     {t('approval.hrStepNames', { names: hrNames })}
                   </span>
                 ) : (
                   <span className="font-semibold text-warning" data-testid="plan-submit-no-hr">
-                    {t('approval.hrStepNobody')}
+                    {hrWarning === 'onlyYou'
+                      ? t('approval.hrStepOnlyYou')
+                      : t('approval.hrStepNobody')}
                   </span>
                 )}
               </span>
@@ -393,13 +406,15 @@ function SubmitPlanDialog(props: PlanApprovalBarProps & { readonly onClose: () =
                 <b>{financeOn ? t('approval.financeStep') : t('approval.financeStepOff')}</b>
                 {!financeOn ? (
                   <span className="text-text-muted">{t('approval.financeOffHint')}</span>
-                ) : financeNames ? (
+                ) : financeWarning === null ? (
                   <span className="text-text-muted">
                     {t('approval.financeStepNames', { names: financeNames })}
                   </span>
                 ) : (
                   <span className="font-semibold text-warning" data-testid="plan-submit-no-finance">
-                    {t('approval.financeStepNobody')}
+                    {financeWarning === 'onlyYou'
+                      ? t('approval.financeStepOnlyYou')
+                      : t('approval.financeStepNobody')}
                   </span>
                 )}
               </span>

@@ -166,6 +166,8 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       // Consolidates the needs into the training plan and checks the budget (WP-LD-02).
       pln['tms.training_plan.read'],
       pln['tms.training_plan.manage'],
+      // Drafts the sessions of the approved plan's lines (WP-LD-04; BRD Appendix B, Sessions & scheduling «F»).
+      pln['tms.session.manage'],
       // Designs the needs forms (T-M3-10; PO, 17 Oct 2026, business flow EP-PLN §12).
       tms['tms.needs_form.read'],
       tms['tms.needs_form.manage'],
@@ -189,6 +191,8 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       pln['tms.plan_cycle.read'],
       // Reads the training plan (BRD Appendix B, Training plan «V»; WP-LD-02).
       pln['tms.training_plan.read'],
+      // Drafts sessions too (WP-LD-04; BRD Appendix B, Sessions & scheduling «F»; EP-PLN step 21).
+      pln['tms.session.manage'],
       // Reads the needs forms (T-M3-10; PO, 17 Oct 2026).
       tms['tms.needs_form.read'],
     ),

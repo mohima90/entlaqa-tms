@@ -141,6 +141,9 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
       // record, so the L&D Manager and the Training Coordinator stay ordinary roles.
       'tms.training_plan.read',
       'tms.training_plan.manage',
+      // WP-LD-04 (reviewed): drafting the sessions of the approved plan's lines (month, branch, seats, planned
+      // participants) is training work — it changes no person, structure, organization setting or audit record.
+      'tms.session.manage',
     ];
     for (const role of SYSTEM_ROLES.filter((r) => !r.privileged)) {
       for (const grant of role.grants) {
@@ -200,6 +203,16 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
       'tms.training_plan.confirm:tenant',
     ]);
     expect(getSystemRole('finance').name).toEqual({ ar: 'المالية', en: 'Finance' });
+  });
+
+  it('shows draft sessions to the L&D team only (WP-LD-04, proposal §3)', () => {
+    const holders = SYSTEM_ROLES.filter((r) =>
+      r.grants.some((g) => g.permission.code === 'tms.session.manage'),
+    ).map((r) => [r.code, r.grants.find((g) => g.permission.code === 'tms.session.manage')?.scope]);
+    expect(holders).toEqual([
+      ['training_manager', 'tenant'],
+      ['training_coordinator', 'tenant'],
+    ]);
   });
 
   it('lets only the HR Manager maintain the organization structure (PO, 11 Oct 2026; T-M2-19)', () => {

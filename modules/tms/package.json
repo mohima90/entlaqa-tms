@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Jadarat TMS module: domain services, server actions, permissions (schema `tms`). Course library (T-M3-03), planning cycles (EP-PLN), needs forms (T-M3-10).",
+  "description": "Jadarat TMS module: domain services, server actions, permissions (schema `tms`). Course library (T-M3-03), planning cycles (EP-PLN), needs forms (T-M3-10), the training plan (WP-LD-02/03) and draft sessions (WP-LD-04).",
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
@@ -20,7 +20,8 @@
     "./planning-rules": "./src/planning/rules.ts",
     "./amount-text": "./src/planning/amount-text.ts",
     "./consolidation-rules": "./src/planning/consolidation-rules.ts",
-    "./approval-rules": "./src/planning/approval-rules.ts"
+    "./approval-rules": "./src/planning/approval-rules.ts",
+    "./session-rules": "./src/sessions/rules.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

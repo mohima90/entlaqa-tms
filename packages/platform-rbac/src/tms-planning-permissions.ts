@@ -76,6 +76,20 @@ export const tmsPlanningPermissions = definePermissions('tms', [
     risk: 'medium',
     requiresAal2: false,
   },
+  {
+    // WP-LD-04 (FR-PLN-09, FR-SCH-01 core; migration 20261117100000): the draft sessions of the approved plan's lines
+    // — month, branch, seats, planned participants — and the training calendar of drafts. The only way to see a
+    // draft (proposal WP-LD-04 §3: only the L&D team sees drafts). Scoped in a custom role (FR-IAM-08 R1 note): a
+    // role limited to «A department» drafts the sessions of the lines of that unit and everything under it.
+    code: 'tms.session.manage',
+    label: { ar: 'إعداد مسودات الجلسات', en: 'Draft training sessions' },
+    description: {
+      ar: 'إنشاء مسودات جلسات بنود الخطة المعتمدة وتعديل شهرها وفرعها ومقاعدها والمشاركين المخطَّطين وحذفها، وعرض تقويم التدريب ضمن النطاق',
+      en: 'Create, change and delete the draft sessions of the approved plan’s lines — month, branch, seats and planned participants — and see the training calendar, within scope',
+    },
+    risk: 'medium',
+    requiresAal2: false,
+  },
 ]);
 
 export type TmsPlanningPermissionCode = keyof typeof tmsPlanningPermissions;

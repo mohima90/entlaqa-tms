@@ -990,6 +990,48 @@ plan_member "$APPROVAL_HR_EMAIL" "$(create_user "$APPROVAL_HR_EMAIL" "$APPROVAL_
 [[ "$(q "select count(*) from platform.audit_events where action like 'tms.training_plan.%' and data::text like '%explain the Excel cost%'")" == "0" ]] ||
   { echo "smoke: the send-back comment's words reached the audit log" >&2; exit 1; }
 unset APPROVAL_HR_PASSWORD
+echo "smoke: plan to sessions (WP-LD-04, T-M3-08) — the L&D Manager creates the approved Excel line's course from the line and its draft sessions; in Arabic, the training calendar shows them, a draft's seats change, a draft is deleted and drafted again"
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 PLAN_E2E_EMAIL="$PLAN_EMAIL" \
+  PLAN_E2E_PASSWORD="$PLAN_PASSWORD" PLAN_E2E_CYCLE_ID="$PLAN_CYCLE_ID" \
+  pnpm exec playwright test e2e/plan-to-sessions.spec.ts --project=desktop-chromium --grep 'data journey')
+# The Excel line got a course created from it; its drafts carry that course, the plan's session count and a month;
+# the approved plan did not change (still v1).
+[[ "$(q "select count(*) from tms.plan_lines l join tms.training_plans p on p.id = l.plan_id
+        where p.cycle_id = '$PLAN_CYCLE_ID' and l.title like 'Excel%' and l.course_origin = 'created' and l.course_id is not null")" == "1" ]] ||
+  { echo "smoke: expected the Excel line with a course created from it" >&2; exit 1; }
+[[ "$(q "select status || ':' || plan_version from tms.training_plans where cycle_id = '$PLAN_CYCLE_ID'")" == "approved:1" ]] ||
+  { echo "smoke: giving lines courses and drafts must not change the approved plan" >&2; exit 1; }
+SESSION_COUNTS="$(q "select count(*) || ':' || count(*) filter (where s.status = 'draft' and s.month is not null and s.course_id = l.course_id)
+        from tms.sessions s join tms.plan_lines l on l.id = s.plan_line_id where s.cycle_id = '$PLAN_CYCLE_ID'")"
+[[ "$SESSION_COUNTS" =~ ^([1-9][0-9]*):([0-9]+)$ && "${BASH_REMATCH[1]}" == "${BASH_REMATCH[2]}" ]] ||
+  { echo "smoke: expected draft sessions with the line's course and a month (got $SESSION_COUNTS)" >&2; exit 1; }
+# As many drafts as the plan works out: people ÷ maximum per session, rounded up.
+[[ "$(q "select (select count(*) from tms.sessions s where s.plan_line_id = l.id)
+          = ceil((select sum(n.seats) from tms.plan_line_needs n where n.line_id = l.id)::numeric / l.max_per_session)
+        from tms.plan_lines l join tms.training_plans p on p.id = l.plan_id
+        where p.cycle_id = '$PLAN_CYCLE_ID' and l.title like 'Excel%'")" == "t" ]] ||
+  { echo "smoke: expected the plan's session count for the Excel line" >&2; exit 1; }
+# Planned participants: at least one (seed-plan-needs.sql names each department's head for the Excel need; the
+# proposal places them), and only people named for the line's needs, each in one session.
+[[ "$(q "select count(*) from tms.session_participants sp join tms.sessions s on s.id = sp.session_id
+        where s.cycle_id = '$PLAN_CYCLE_ID'")" =~ ^[1-9][0-9]*$ ]] ||
+  { echo "smoke: expected planned participants in the Excel line's drafts" >&2; exit 1; }
+[[ "$(q "select count(*) from tms.session_participants sp join tms.sessions s on s.id = sp.session_id
+        where s.cycle_id = '$PLAN_CYCLE_ID' and not exists (
+          select 1 from tms.plan_line_needs n join tms.plan_need_people np on np.need_id = n.need_id
+          where n.line_id = s.plan_line_id and np.person_id = sp.person_id)")" == "0" ]] ||
+  { echo "smoke: a planned participant is not named for the line" >&2; exit 1; }
+# Every step audited; the audit rows count planned participants and never name them.
+[[ "$(q "select count(distinct action) from platform.audit_events where action in
+        ('tms.training_plan.line_course_created', 'tms.session.drafts_created', 'tms.session.draft_updated', 'tms.session.draft_deleted')")" == "4" ]] ||
+  { echo "smoke: expected the course, the drafts, the change and the deletion in the audit trail" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events a join platform.persons p on p.tenant_id = a.tenant_id
+        where (a.action like 'tms.session.%' or a.action like 'tms.training_plan.line_course_%')
+          and (a.data::text like '%' || p.id::text || '%'
+            or (p.display_name_en is not null and a.data::text like '%' || p.display_name_en || '%')
+            or (p.display_name_ar is not null and a.data::text like '%' || p.display_name_ar || '%'))")" == "0" ]] ||
+  { echo "smoke: a person's id or name reached the audit log of the draft sessions" >&2; exit 1; }
+unset SESSION_COUNTS
 unset PLAN_CYCLE_ID
 unset PLAN_PASSWORD PLAN_COORD_PASSWORD
 

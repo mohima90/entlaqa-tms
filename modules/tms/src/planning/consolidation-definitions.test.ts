@@ -756,6 +756,17 @@ describe('changing lines', () => {
     expect(plans.updateLine).not.toHaveBeenCalled();
   });
 
+  it('says to delete the drafts first when a revised plan would leave a drafted line out (WP-LD-04 review M3)', async () => {
+    const { action } = runtime('training_manager');
+    plans.updateLine.mockResolvedValue({ outcome: 'has_drafts' });
+    const refused = await action(defs.updatePlanLineActionDefinition())({
+      lineId: EXCEL,
+      version: 3,
+      quarter: 1,
+    });
+    expect(!refused.ok && refused.error.code).toBe('TRAINING_PLAN_LINE_HAS_DRAFTS');
+  });
+
   it('lets a department-limited L&D Manager change its own line, never a shared one (feedback #4)', async () => {
     const { action } = runtime(CUSTOM);
     const shared = await action(defs.updatePlanLineActionDefinition())({

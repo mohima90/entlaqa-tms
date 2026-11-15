@@ -47,6 +47,7 @@ const CATALOGUE_MIGRATIONS = [
   '_platform__add_plan_needs_permission.sql',
   '_platform__add_training_plan_permissions.sql',
   '_platform__finance_role_and_plan_decisions.sql',
+  '_platform__add_session_permissions.sql',
 ];
 
 /** The one rewrite of the catalogue the parsers understand: a permission's custom_role_use. */
@@ -238,8 +239,10 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
     // Reading people and roles follows the role's scope; everything that changes something is
     // organization-wide only — except building the training plan of the role's unit (WP-LD-02; test feedback
     // #4, agreed 17 Oct 2026: the department-limited L&D Manager), whose every row the database checks
-    // against the unit (private.training_plan_units, migrations 20261115100100–100300). Reviewed; nothing else.
-    const scopedChanges = ['tms.training_plan.manage'];
+    // against the unit (private.training_plan_units, migrations 20261115100100–100300) — and drafting the sessions of
+    // the unit's plan lines (WP-LD-04: private.session_units, migrations 20261117100100–100200, the same check per
+    // row). Reviewed; nothing else.
+    const scopedChanges = ['tms.training_plan.manage', 'tms.session.manage'];
     for (const entry of CUSTOM_ROLE_PERMISSIONS) {
       const code = entry.permission.code;
       if (entry.use === 'scoped' && !scopedChanges.includes(code)) expect(code).toMatch(/\.read$/);
@@ -247,7 +250,10 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
         expect(entry.use).toBe('organization_only');
       }
     }
-    expect(scopedChanges.map((code) => customRolePermission(code)?.use)).toEqual(['scoped']);
+    expect(scopedChanges.map((code) => customRolePermission(code)?.use)).toEqual([
+      'scoped',
+      'scoped',
+    ]);
   });
 
   it('makes a role privileged by any high-risk or user/role management permission (PO, 5 and 17 Oct 2026)', () => {

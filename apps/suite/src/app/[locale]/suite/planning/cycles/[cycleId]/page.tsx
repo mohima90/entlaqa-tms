@@ -17,10 +17,14 @@ import { ProgressTable } from '../../../../../../components/planning/progress-ta
 import { RefreshOnReturn } from '../../../../../../components/latest-version';
 import { SuiteShell } from '../../../../../../components/suite-shell';
 import { PlanApprovalBar } from '../../../../../../components/plan-approval/plan-approval-bar';
+import { DeliveryCard } from '../../../../../../components/plan-delivery/delivery-card';
 import { PlanNotOpen } from '../../../../../../components/training-plan/plan-not-open';
 import { PlanTab } from '../../../../../../components/training-plan/plan-tab';
 import { cycleDepartmentHref } from '../../../../../../lib/needs-view';
 import { approvalMoments } from '../../../../../../lib/plan-approval-view';
+import { planDeliveryQuery } from '../../../../../../lib/plan-delivery-queries';
+import { asksPlanDelivery } from '../../../../../../lib/plan-delivery-shown';
+import { calendarPath, deliveryPath, periodYear } from '../../../../../../lib/plan-delivery-view';
 import { dayFormatter, formatAmount } from '../../../../../../lib/planning-format';
 import {
   planCycleQuery,
@@ -90,6 +94,7 @@ export default async function PlanCyclePage({
 
   const plans = await getTranslations({ locale, namespace: 'trainingPlan' });
   const approvalT = await getTranslations({ locale, namespace: 'planApproval' });
+  const deliveryTexts = await getTranslations({ locale, namespace: 'planDelivery' });
   let title = t('list.title');
   let description: ReactNode;
   let content: ReactNode;
@@ -110,6 +115,18 @@ export default async function PlanCyclePage({
     // The Plan tab is for whoever may read the training plan (organization-wide or for their departments).
     const planView = planResult.ok ? planResult.value : null;
     const tab: CycleTab = requestedTab === 'plan' && planView ? 'plan' : 'progress';
+    // From the approved plan to courses and draft sessions (WP-LD-04): the «Courses and sessions» view and the
+    // Plan tab's card, for holders of tms.session.manage once the plan is approved (or has drafts). A revised plan
+    // (a draft again, version 2 or more) is asked too: its drafts stay, so the tab and the card stay (review L1).
+    const deliveryResult = asksPlanDelivery(planView?.plan)
+      ? await planDeliveryQuery({ cycleId })
+      : null;
+    const delivery =
+      deliveryResult?.ok &&
+      (deliveryResult.value.plan.status === 'approved' ||
+        deliveryResult.value.summary.sessionsDrafted > 0)
+        ? deliveryResult.value
+        : null;
     const day = dayFormatter(locale, context.regional.dateDisplay);
     const planContent = async () => {
       if (!planView) return null;
@@ -150,6 +167,14 @@ export default async function PlanCyclePage({
               errors={errors}
             />
           ) : null}
+          {delivery ? (
+            <DeliveryCard
+              locale={locale}
+              summary={delivery.summary}
+              sessionsHref={`/${locale}${deliveryPath(cycleId)}`}
+              calendarHref={`/${locale}${calendarPath({ year: periodYear(delivery.cycle.periodStart) })}`}
+            />
+          ) : null}
           <PlanTab
             locale={locale}
             view={planView}
@@ -176,6 +201,15 @@ export default async function PlanCyclePage({
               label: plans('tabs.plan'),
               count: planView.plan ? planView.lines.length : undefined,
             },
+            ...(delivery
+              ? [
+                  {
+                    key: 'sessions',
+                    href: `/${locale}${deliveryPath(cycleId)}`,
+                    label: deliveryTexts('tab'),
+                  },
+                ]
+              : []),
           ]}
         />
       );

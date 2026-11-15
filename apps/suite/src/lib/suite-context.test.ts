@@ -20,6 +20,7 @@ vi.mock('@jadarat/platform-rbac', () => ({
     'tms.plan_cycle.read': { code: 'tms.plan_cycle.read' },
     'tms.training_plan.approve': { code: 'tms.training_plan.approve' },
     'tms.training_plan.confirm': { code: 'tms.training_plan.confirm' },
+    'tms.session.manage': { code: 'tms.session.manage' },
   },
   tmsRolePermissions: {
     'tms.needs_form.read': { code: 'tms.needs_form.read' },
@@ -47,6 +48,7 @@ describe('navigationFor', () => {
       organizationSetup: false,
       training: true,
       courses: false,
+      calendar: false,
       planning: false,
       needsForms: false,
       needsEntry: false,
@@ -68,6 +70,7 @@ describe('navigationFor', () => {
       organizationSetup: false,
       training: true,
       courses: false,
+      calendar: false,
       planning: false,
       needsForms: false,
       needsEntry: false,
@@ -103,6 +106,7 @@ describe('navigationFor', () => {
       organizationSetup: false,
       training: true,
       courses: false,
+      calendar: false,
       planning: false,
       needsForms: false,
       needsEntry: false,
@@ -123,6 +127,7 @@ describe('navigationFor', () => {
         organizationSetup: false,
         training: true,
         courses: false,
+        calendar: false,
         planning: false,
         needsForms: false,
         needsEntry: false,
@@ -143,6 +148,7 @@ describe('navigationFor', () => {
       organizationSetup: false,
       training: true,
       courses: false,
+      calendar: false,
       planning: false,
       needsForms: false,
       needsEntry: false,
@@ -170,6 +176,7 @@ describe('navigationFor', () => {
       organizationSetup: false,
       training: true,
       courses: false,
+      calendar: false,
       planning: false,
       needsForms: false,
       needsEntry: false,
@@ -191,6 +198,7 @@ describe('navigationFor', () => {
       organizationSetup: false,
       training: true,
       courses: false,
+      calendar: false,
       planning: false,
       needsForms: false,
       needsEntry: false,
@@ -215,6 +223,7 @@ describe('navigationFor', () => {
       organizationSetup: false,
       training: true,
       courses: false,
+      calendar: false,
       planning: false,
       needsForms: false,
       needsEntry: false,
@@ -235,6 +244,7 @@ describe('navigationFor', () => {
         organizationSetup: false,
         training: true,
         courses: false,
+        calendar: false,
         planning: false,
         needsForms: false,
         needsEntry: false,
@@ -267,6 +277,23 @@ describe('navigationFor', () => {
     expect(navigationFor([{ permission: 'tms.course.read', scope: { type: 'own' } }]).courses).toBe(
       false,
     );
+  });
+
+  it('shows the training calendar to members who plan draft sessions, in any scope (WP-LD-04)', () => {
+    expect(
+      navigationFor([{ permission: 'tms.session.manage', scope: { type: 'tenant' } }]).calendar,
+    ).toBe(true);
+    expect(
+      navigationFor([
+        {
+          permission: 'tms.session.manage',
+          scope: { type: 'org_units', orgUnitIds: ['u1'], includeDescendants: true },
+        },
+      ]).calendar,
+    ).toBe(true);
+    expect(
+      navigationFor([{ permission: 'tms.plan_cycle.read', scope: { type: 'tenant' } }]).calendar,
+    ).toBe(false);
   });
 
   it('shows Planning to members who read planning cycles organization-wide (EP-PLN)', () => {
@@ -307,6 +334,7 @@ describe('navigationFor', () => {
       organizationSetup: true,
       training: true,
       courses: true,
+      calendar: true,
       planning: true,
       needsForms: true,
       needsEntry: true,
@@ -352,6 +380,7 @@ describe('navigationFor', () => {
       organizationSetup: true,
       training: false,
       courses: false,
+      calendar: false,
       planning: false,
       needsForms: false,
       needsEntry: false,
@@ -372,6 +401,7 @@ describe('navigationFor', () => {
         organizationSetup: false,
         training: true,
         courses: false,
+        calendar: false,
         needsForms: false,
         needsEntry: false,
         branding: true,

@@ -22,12 +22,15 @@ export function BudgetView({ model }: { readonly model: PlanModel }) {
 
   const stateCell = (row: PlanBudgetDepartment) => (
     <div className="flex min-w-40 flex-col gap-1.5">
-      <BudgetMeter
-        cost={row.cost}
-        envelope={row.envelope}
-        state={row.state}
-        label={t('budget.meterLabel', { department: model.departmentName(row.departmentId) })}
-      />
+      {/* No budget set: no meter (a full bar would read as «spent it all»). */}
+      {row.envelope === null ? null : (
+        <BudgetMeter
+          cost={row.cost}
+          envelope={row.envelope}
+          state={row.state}
+          label={t('budget.meterLabel', { department: model.departmentName(row.departmentId) })}
+        />
+      )}
       <BudgetStateText state={row.state} model={model} />
       {row.uncostedLines > 0 ? (
         <span className="text-sm text-warning">

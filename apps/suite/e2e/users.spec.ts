@@ -422,15 +422,16 @@ test.describe('users pages', () => {
     await expectNoSeriousA11yViolations(page);
   });
 
-  test('Roles & permissions: six standard roles and the custom roles, the matrix, counts that match the list', async ({
+  test('Roles & permissions: seven ready-made roles and the custom roles, the matrix, counts that match the list', async ({
     page,
   }) => {
     await signIn(page);
     await mainNavigation(page).getByRole('link', { name: 'Roles & permissions' }).click();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Roles & permissions');
-    // Six standard roles and the organization's custom «Line Manager» role (seed-users.sql).
-    // Each group is a table in a card (WP-UX-01 e): one row per role.
-    await expect(page.getByTestId('roles-standard').locator('tbody tr')).toHaveCount(6);
+    // Seven ready-made roles — the six standard roles and Finance (FR-IAM-07, WP-LD-03) — and the
+    // organization's custom «Line Manager» role (seed-users.sql). Each group is a table in a card (WP-UX-01 e).
+    await expect(page.getByTestId('roles-standard').locator('tbody tr')).toHaveCount(7);
+    await expect(page.getByTestId('role-row-finance')).toContainText('Finance');
     await expect(page.getByTestId('roles-custom').locator('tbody tr')).toHaveCount(1);
     await expect(page.getByTestId('role-row-tenant_admin')).toContainText('Privileged');
     await expect(page.getByTestId('role-row-custom_5eed00000001')).toContainText('3 permissions');

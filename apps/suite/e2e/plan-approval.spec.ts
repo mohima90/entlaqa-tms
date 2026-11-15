@@ -101,13 +101,16 @@ test.describe('the plan is submitted, sent back, approved and locked (data journ
       const uncosted = page
         .getByTestId('plan-line-row')
         .filter({ has: page.getByTestId('plan-line-status').getByText(TEXTS.en.needsCost) });
-      if ((await uncosted.count()) === 0) break;
+      const left = await uncosted.count();
+      if (left === 0) break;
       await uncosted.first().getByTestId('plan-line-menu').click();
       await page.getByTestId('plan-line-menu-leave-out').click();
       const leave = page.getByTestId('plan-leave-out-dialog');
       await leave.getByTestId('plan-leave-out-reason').fill('E2E: not costed this year.');
       await leave.getByTestId('plan-leave-out-confirm').click();
       await expect(leave).toBeHidden();
+      // Wait for the refreshed list before looking again (else the same line is offered twice).
+      await expect(uncosted).toHaveCount(left - 1);
     }
     // A department over its budget needs a reason.
     await page.getByTestId('plan-view-budget').click();

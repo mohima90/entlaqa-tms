@@ -76,7 +76,7 @@ begin
                        and private.may_decide_training_plan('a0000000-0000-4000-8000-000000000001', 'unknown') is false,
     'may_decide_training_plan answers false, never null, without claims or for an unknown step');
   select string_agg(format('%s%s', p.oid::regprocedure, case when p.prosecdef then ' (definer)' else '' end), ', '
-                    order by p.oid::regprocedure::text)
+                    order by p.oid::regprocedure::text collate "C")
     into v_list
   from pg_proc p where p.proowner = 'plan_approval_guard'::regrole;
   perform tests.assert_eq(v_list,

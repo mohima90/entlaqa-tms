@@ -4,12 +4,17 @@ import type { CycleStatus, FormStatus, ScopeUnitOption } from '@jadarat/tms';
 import { type ScopeSelection, departmentsInScope } from '@jadarat/tms/planning-rules';
 import type { BadgeTone } from '@jadarat/ui';
 import { type LevelLabel, showsUnitLevels, unitNameWithLevel } from './structure-view';
+import type { StatusFilter } from './planning-keys';
 
 /**
  * Planning pages helpers (EP-PLN, T-M3-04; the Kawadir pattern, WP-UX-01 a / T-M3-20): pure, unit-tested.
  * A cycle is created in one popup on the list, launched from its row menu and — optionally — completed on
  * its own Settings page (forms standard rule 9).
  */
+
+// The status chips and field-error keys live in a small file of their own, so that client components which
+// need only them do not load the rest of this file (bundle budget, CI gate 9).
+export { STATUS_FILTERS, type StatusFilter, fieldErrorKey } from './planning-keys';
 
 /** The cycles list filtered by its summary cards: `?status=` of the list page (All by default). */
 export const LIST_FILTERS = ['all', 'draft', 'open', 'closed'] as const;
@@ -251,17 +256,6 @@ export function sameScope(a: ScopeSelection, b: ScopeSelection): boolean {
   return same(a.departmentIds, b.departmentIds) && same(a.branchIds, b.branchIds);
 }
 
-/** The progress table's status chips (cycle overview): All, then every form status. */
-export const STATUS_FILTERS = [
-  'all',
-  'not_started',
-  'draft',
-  'submitted',
-  'returned',
-  'late',
-] as const;
-export type StatusFilter = (typeof STATUS_FILTERS)[number];
-
 /** How many units have each form status (the chips' counts). */
 export function statusCounts(
   statuses: readonly FormStatus[],
@@ -283,25 +277,6 @@ export function sumAmounts(amounts: readonly (string | null)[]): number {
     const value = amount === null || amount.trim() === '' ? 0 : Number(amount.replace(/,/g, ''));
     return Number.isFinite(value) ? total + value : total;
   }, 0);
-}
-
-/** Field error codes (ADR 0011) → text keys under `setup.fieldErrors`. */
-const FIELD_ERROR_KEYS: Readonly<Record<string, string>> = {
-  REQUIRED: 'required',
-  TOO_SMALL: 'required',
-  INVALID_DATE: 'invalidDate',
-  BEFORE_START: 'beforeStart',
-  TOO_LONG: 'tooLong',
-  AFTER_PERIOD: 'afterPeriod',
-  INVALID_AMOUNT: 'invalidAmount',
-  NOT_LATER: 'notLater',
-  IN_PAST: 'inPast',
-  UNKNOWN: 'unknown',
-  NOT_IN_SCOPE: 'unknown',
-};
-
-export function fieldErrorKey(code: string): string {
-  return `setup.fieldErrors.${FIELD_ERROR_KEYS[code] ?? 'invalid'}`;
 }
 
 /** The departments' form statuses in numbers (cycle progress, business flow C9). */

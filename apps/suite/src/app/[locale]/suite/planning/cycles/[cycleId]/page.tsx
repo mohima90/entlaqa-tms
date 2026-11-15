@@ -11,7 +11,7 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { FlagToast } from '../../../../../../components/flag-toast';
-import { ExtendDeadlineButton } from '../../../../../../components/planning/cycle-action-buttons';
+import { ExtendDeadlineButton } from '../../../../../../components/planning/extend-deadline-button';
 import { PlanningHeader } from '../../../../../../components/planning/planning-header';
 import { ProgressTable } from '../../../../../../components/planning/progress-table';
 import { RefreshOnReturn } from '../../../../../../components/latest-version';

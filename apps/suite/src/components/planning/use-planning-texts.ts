@@ -2,7 +2,7 @@
 import type { AppError } from '@jadarat/platform-core';
 import { useCallback } from 'react';
 import { fillText } from '../../lib/fill-text';
-import { fieldErrorKey } from '../../lib/planning-view';
+import { fieldErrorKey } from '../../lib/planning-keys';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useLatestVersion } from '../latest-version';
 

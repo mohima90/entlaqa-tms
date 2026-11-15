@@ -18,6 +18,7 @@
     "./needs-forms/server": "./src/needs-forms/server.ts",
     "./planning-model": "./src/planning/model.ts",
     "./planning-rules": "./src/planning/rules.ts",
+    "./amount-text": "./src/planning/amount-text.ts",
     "./consolidation-rules": "./src/planning/consolidation-rules.ts",
     "./approval-rules": "./src/planning/approval-rules.ts"
   },

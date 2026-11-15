@@ -268,7 +268,7 @@ Listed in Appendix F; the list grows each milestone.
 14. OpenAPI breaking-change check
 15. Self-hosted (sovereign) parity — **nightly** at 23:59 Riyadh time on `main`, not per PR (PO, 14 Oct 2026); a failure opens an issue and is fixed before further merges
 
-Nightly: gate 15, full E2E suite, DAST baseline scan (e.g., OWASP ZAP) against a preview deployment (not production once customers exist), dependency update PRs (Dependabot).
+Nightly: gate 15, full E2E suite, DAST baseline scan (e.g., OWASP ZAP) against a preview deployment (not production once customers exist), dependency updates checked by Claude about once a month and brought to the PO as one tested PR (the Dependabot update bot was stopped by the PO, 15 Nov 2026; GitHub security alerts stay on).
 
 ### 5.4 Defect Severity & Response
 

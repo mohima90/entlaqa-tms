@@ -230,8 +230,13 @@ export function treeOrder(units: readonly StructureUnit[]): { id: string; depth:
 export function canonicalAmount(value: string | null): string | null {
   if (value === null) return null;
   const [whole = '0', fraction = ''] = value.split('.');
-  const integer = whole.replace(/^0+(?=\d)/, '');
-  const decimals = fraction.replace(/0+$/, '');
+  // Plain scans, not regular expressions: linear on any input (CodeQL js/polynomial-redos).
+  let start = 0;
+  while (start < whole.length - 1 && whole[start] === '0') start += 1;
+  let end = fraction.length;
+  while (end > 0 && fraction[end - 1] === '0') end -= 1;
+  const integer = whole.slice(start);
+  const decimals = fraction.slice(0, end);
   return decimals ? `${integer}.${decimals}` : integer;
 }
 

@@ -963,6 +963,33 @@ PLAN_CYCLE_ID="$(PGPASSWORD="$POSTGRES_PASSWORD" PGSSLMODE=verify-full PGSSLROOT
         ('tms.training_plan.opened', 'tms.training_plan.line_changed', 'tms.training_plan.line_left_out',
          'tms.training_plan.line_brought_back', 'tms.training_plan.lines_quarter_changed')")" == "5" ]] ||
   { echo "smoke: expected the plan's changes in the audit trail" >&2; exit 1; }
+echo "smoke: plan approval (WP-LD-03, T-M3-07) — the L&D Manager makes the plan ready and submits it; an HR Manager sends it back with a comment from Home; it is submitted again and approved in Arabic from the Approvals menu; version 1 is locked and each department's result kept"
+# An HR Manager of the organization (the role decides the HR step; no Finance step: the switch is off).
+APPROVAL_HR_EMAIL="hr-approver-$(date +%s)@sovereign.example"
+APPROVAL_HR_PASSWORD="Hr-$(openssl rand -hex 16)"
+plan_member "$APPROVAL_HR_EMAIL" "$(create_user "$APPROVAL_HR_EMAIL" "$APPROVAL_HR_PASSWORD")" 'خالد عمر' 'Khalid Omar' hr_manager
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 PLAN_E2E_EMAIL="$PLAN_EMAIL" \
+  PLAN_E2E_PASSWORD="$PLAN_PASSWORD" PLAN_E2E_CYCLE_ID="$PLAN_CYCLE_ID" \
+  APPROVAL_E2E_HR_EMAIL="$APPROVAL_HR_EMAIL" APPROVAL_E2E_HR_PASSWORD="$APPROVAL_HR_PASSWORD" \
+  pnpm exec playwright test e2e/plan-approval.spec.ts --project=desktop-chromium --grep 'data journey')
+# Approved once, version 1 locked, its snapshot and one result per department of the cycle kept; the history and
+# the audit trail hold every step — the send-back comment in the plan's history, never in the audit log.
+[[ "$(q "select status || ':' || plan_version || ':' || (approved_by is not null) from tms.training_plans where cycle_id = '$PLAN_CYCLE_ID'")" == "approved:1:true" ]] ||
+  { echo "smoke: expected the plan approved as version 1" >&2; exit 1; }
+[[ "$(q "select count(*) from tms.training_plan_versions where cycle_id = '$PLAN_CYCLE_ID' and plan_version = 1")" == "1" ]] ||
+  { echo "smoke: expected version 1 kept as approved" >&2; exit 1; }
+[[ "$(q "select (select count(*) from tms.training_plan_department_results r where r.cycle_id = '$PLAN_CYCLE_ID')
+        = (select count(*) from tms.plan_cycle_departments d where d.cycle_id = '$PLAN_CYCLE_ID')")" == "t" ]] ||
+  { echo "smoke: expected one approved result per department of the cycle" >&2; exit 1; }
+[[ "$(q "select string_agg(kind, ',' order by occurred_at) from tms.training_plan_events where cycle_id = '$PLAN_CYCLE_ID'")" == "submitted,sent_back,submitted,approved" ]] ||
+  { echo "smoke: expected the plan's history: submitted, sent back, submitted, approved" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action in
+        ('tms.training_plan.submitted', 'tms.training_plan.sent_back', 'tms.training_plan.approved')
+        and entity_id = (select id::text from tms.training_plans where cycle_id = '$PLAN_CYCLE_ID')")" == "4" ]] ||
+  { echo "smoke: expected the submissions and decisions in the audit trail" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action like 'tms.training_plan.%' and data::text like '%explain the Excel cost%'")" == "0" ]] ||
+  { echo "smoke: the send-back comment's words reached the audit log" >&2; exit 1; }
+unset APPROVAL_HR_PASSWORD
 unset PLAN_CYCLE_ID
 unset PLAN_PASSWORD PLAN_COORD_PASSWORD
 

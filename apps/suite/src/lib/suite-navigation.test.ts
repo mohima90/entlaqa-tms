@@ -61,6 +61,28 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
     ]);
   });
 
+  it('gives whoever decides a training plan «Approvals» after Home, with the count waiting (WP-LD-03)', () => {
+    const groups = suiteNavigation({
+      ...NONE,
+      training: true,
+      approvals: true,
+      approvalsWaiting: 2,
+    });
+    const main = groups.find((g) => g.key === 'main')?.entries ?? [];
+    expect(main.map((e) => e.key).slice(0, 2)).toEqual(['home', 'approvals']);
+    expect(main[1]).toMatchObject({
+      link: { href: '/suite/approvals', page: 'approvals' },
+      count: 2,
+    });
+    const none = suiteNavigation({ ...NONE, training: true, approvals: true, approvalsWaiting: 0 });
+    expect(none.find((g) => g.key === 'main')?.entries[1]).not.toHaveProperty('count');
+    expect(
+      suiteNavigation({ ...NONE, training: true })
+        .flatMap((g) => g.entries)
+        .some((e) => e.key === 'approvals'),
+    ).toBe(false);
+  });
+
   it('never shows the Organization Admin a notifications section (moved to the L&D Manager)', () => {
     const keys = suiteNavigation({ ...NONE, organizationSetup: true }).flatMap((group) => [
       group.key,

@@ -7,7 +7,8 @@ import { afterSignIn, fillSignIn } from './sign-in';
  * approved screens docs/design/screens/m3-plan-to-sessions/README.md). Without a database (the default CI run):
  * the cycle's «Courses and sessions» page and the Training calendar show the example plan — the Course and Draft
  * sessions columns, the filter pills, «A course for …», «Create draft sessions», the year by quarter, the list, a
- * draft's popup — in English and Arabic, with the accessibility scan and no horizontal overflow (phone too). With
+ * draft's popup — in English and Arabic, with the accessibility scan and no horizontal overflow; on a phone
+ * (the mobile project) the line cards and the calendar's list. With
  * data (the self-hosted stack, infra/docker/smoke.sh, after plan-approval.spec.ts left the plan approved as v1):
  * the L&D Manager creates the Excel line's course from the line and its draft sessions; then, in Arabic, opens the
  * calendar, changes a draft's seats, deletes a draft and creates it again from «Not drafted yet». Needs
@@ -37,7 +38,10 @@ const PREVIEW_CYCLE = '40000000-0000-4000-8000-000000000001';
 const PREVIEW_DRAFT = '90000000-0000-4000-8000-000000000001';
 
 for (const locale of ['en', 'ar'] as const) {
-  test(`${locale}: «Courses and sessions» and its popups without a database`, async ({ page }) => {
+  test(`${locale}: «Courses and sessions» and its popups without a database`, async ({
+    page,
+    isMobile,
+  }) => {
     const errors: string[] = [];
     page.on('console', (message) => {
       if (message.type() === 'error') errors.push(message.text());
@@ -46,7 +50,8 @@ for (const locale of ['en', 'ar'] as const) {
     await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
     await expect(page.getByTestId('delivery-card')).toBeVisible();
     await expect(page.getByTestId('cycle-tabs')).toBeVisible();
-    const rows = page.getByTestId('delivery-line-row');
+    // A table on wider screens, one card per line on a phone (design 4p): the same cells and buttons.
+    const rows = visible(page, isMobile ? 'delivery-line-card' : 'delivery-line-row');
     await expect(rows).toHaveCount(5);
     await expect(rows.filter({ has: page.getByTestId('delivery-drafts') })).toHaveCount(1);
     await expectNoSeriousA11yViolations(page);
@@ -86,13 +91,31 @@ for (const locale of ['en', 'ar'] as const) {
     expect(errors).toEqual([]);
   });
 
-  test(`${locale}: the Training calendar without a database`, async ({ page }) => {
+  test(`${locale}: the Training calendar without a database`, async ({ page, isMobile }) => {
     const errors: string[] = [];
     page.on('console', (message) => {
       if (message.type() === 'error') errors.push(message.text());
     });
     await page.goto(`/${locale}/suite/calendar`);
     await expect(page.getByTestId('calendar-summary')).toBeVisible();
+    if (isMobile) {
+      // A phone opens the list (design 4p), with the filters behind one button; a draft opens in its popup.
+      await expect(page.getByTestId('calendar-list')).toBeVisible();
+      await expect(page.getByTestId('calendar-year')).toBeHidden();
+      await expect(visible(page, 'calendar-draft')).toHaveCount(3);
+      await expectNoSeriousA11yViolations(page);
+      await expectNoHorizontalOverflow(page);
+      await visible(page, 'calendar-draft').first().click();
+      await expect(page).toHaveURL(new RegExp(`draft=${PREVIEW_DRAFT}`));
+      const draft = page.getByTestId('draft-session-dialog');
+      await expect(draft).toBeVisible();
+      await expectNoSeriousA11yViolations(page);
+      await expectNoHorizontalOverflow(page);
+      await draft.getByTestId('draft-session-cancel').click();
+      await expect(draft).toBeHidden();
+      expect(errors).toEqual([]);
+      return;
+    }
     await expect(page.getByTestId('calendar-year')).toBeVisible();
     await expect(visible(page, 'calendar-quarter')).toHaveCount(4);
     await expect(visible(page, 'calendar-draft')).toHaveCount(3);
@@ -125,16 +148,6 @@ for (const locale of ['en', 'ar'] as const) {
     await expect(draft).toBeHidden();
     await expect(page).not.toHaveURL(/draft=/);
 
-    // A phone opens the list (design 4p), with the filters behind one button.
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(`/${locale}/suite/calendar`);
-    await expect(page.getByTestId('calendar-list')).toBeVisible();
-    await expect(page.getByTestId('calendar-year')).toBeHidden();
-    await expectNoSeriousA11yViolations(page);
-    await expectNoHorizontalOverflow(page);
-    await page.goto(`/${locale}/suite/planning/cycles/${PREVIEW_CYCLE}/sessions`);
-    await expect(visible(page, 'delivery-line-card')).toHaveCount(5);
-    await expectNoHorizontalOverflow(page);
     expect(errors).toEqual([]);
   });
 }

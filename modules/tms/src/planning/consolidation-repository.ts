@@ -359,6 +359,8 @@ export async function deleteEmptyLines(tx: UserTx, lineIds: readonly string[]): 
       delete from tms.plan_lines l
       where l.id = any (${pgArray(lineIds)}::uuid[])
         and not exists (select 1 from tms.plan_line_needs x where x.tenant_id = l.tenant_id and x.line_id = l.id)
+        -- A line with draft sessions stays (WP-LD-04: a revised plan keeps its drafts; the foreign key agrees).
+        and not exists (select 1 from tms.sessions s where s.tenant_id = l.tenant_id and s.plan_line_id = l.id)
       returning l.id`);
     return rows.map((r: Row) => String(r.id));
   });

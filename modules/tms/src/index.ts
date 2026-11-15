@@ -6,7 +6,8 @@ export * from './planning/consolidation-model';
 export * from './planning/consolidation-definitions';
 export * from './planning/approval-model';
 export * from './planning/approval-definitions';
-export { SessionDraftInput, type SessionDraft, buildSessionDraft } from './services/session-draft';
+export * from './sessions/model';
+export * from './sessions/definitions';
 export * from './courses/model';
 
 /** Navigation entries the TMS module registers with the suite shell (docs/design/suite-shell.md). */

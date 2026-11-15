@@ -945,7 +945,8 @@ export async function listMyDepartments(tx: UserTx): Promise<MyDepartmentRow[]> 
     join tms.plan_cycles c on c.tenant_id = d.tenant_id and c.id = d.cycle_id
     where private.may_submit_plan_needs(d.tenant_id, d.department_id)
       and (c.status = 'open'
-           or (c.status = 'closed' and d.deadline_on >= private.plan_cycle_today(c.tenant_id)
+           or (c.status = 'closed' and d.status <> 'submitted'
+               and d.deadline_on >= private.plan_cycle_today(c.tenant_id)
                and private.plan_cycle_consolidating(c.tenant_id, c.id)))
     order by c.deadline_on, c.id, d.created_at, d.id
     limit 100`);

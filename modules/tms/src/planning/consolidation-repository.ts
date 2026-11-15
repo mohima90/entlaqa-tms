@@ -202,6 +202,18 @@ export async function listLines(tx: UserTx, planId: string): Promise<LineRecord[
   return rows.map((r: Row) => lineRecord(r));
 }
 
+/** The lines of several plans the caller may read (the Approvals list's figures: one query for every plan). */
+export async function listLinesOfPlans(
+  tx: UserTx,
+  planIds: readonly string[],
+): Promise<LineRecord[]> {
+  if (planIds.length === 0) return [];
+  const rows = await tx.execute(sql`
+    select ${LINE_COLUMNS} from tms.plan_lines where plan_id = any (${pgArray(planIds)}::uuid[])
+    order by plan_id, sort_order, created_at, id`);
+  return rows.map((r: Row) => lineRecord(r));
+}
+
 export async function getLines(tx: UserTx, lineIds: readonly string[]): Promise<LineRecord[]> {
   if (lineIds.length === 0) return [];
   const rows = await tx.execute(sql`
@@ -375,6 +387,27 @@ export async function listLinks(tx: UserTx, planId: string): Promise<LinkRecord[
     select need_id, line_id, department_id, seats, named, topic, course_id from tms.plan_line_needs
     where plan_id = ${planId}::uuid order by created_at, id`);
   return rows.map((r: Row) => ({
+    needId: String(r.need_id),
+    lineId: String(r.line_id),
+    departmentId: String(r.department_id),
+    seats: Number(r.seats),
+    named: Number(r.named),
+    topic: text(r.topic),
+    courseId: text(r.course_id),
+  }));
+}
+
+/** The links of several plans the caller may read, with their plan (the Approvals list's figures). */
+export async function listLinksOfPlans(
+  tx: UserTx,
+  planIds: readonly string[],
+): Promise<(LinkRecord & { readonly planId: string })[]> {
+  if (planIds.length === 0) return [];
+  const rows = await tx.execute(sql`
+    select plan_id, need_id, line_id, department_id, seats, named, topic, course_id from tms.plan_line_needs
+    where plan_id = any (${pgArray(planIds)}::uuid[]) order by plan_id, created_at, id`);
+  return rows.map((r: Row) => ({
+    planId: String(r.plan_id),
     needId: String(r.need_id),
     lineId: String(r.line_id),
     departmentId: String(r.department_id),

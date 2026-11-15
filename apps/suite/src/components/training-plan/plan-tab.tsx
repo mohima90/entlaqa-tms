@@ -44,6 +44,8 @@ export interface PlanTabProps {
   readonly errors: ErrorTexts;
   readonly initialSubview: PlanSubview;
   readonly initialGrouping: PlanGrouping;
+  /** The plan review of an approver (WP-LD-03, design 5b): read only, without «Needs your attention». */
+  readonly review?: boolean;
 }
 
 type Dialogs =
@@ -564,7 +566,7 @@ export function PlanTab(props: PlanTabProps) {
         </div>
       </StatGrid>
 
-      {attention.length > 0 ? (
+      {attention.length > 0 && !props.review ? (
         <AttentionStrip title={t('attention.title')} data-testid="plan-attention">
           {attention}
         </AttentionStrip>

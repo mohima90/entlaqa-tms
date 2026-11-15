@@ -469,10 +469,12 @@ export {
   type OrgBranch,
   type OrgDepartment,
   type OrgStructure,
+  ROLE_HOLDERS_LIMIT,
   TEAM_LIMIT,
   getMemberOptionsByIds,
   listDepartmentTeam,
   listOrgStructure,
+  listRoleHolders,
 } from './org-directory';
 export {
   EVENT_TYPE_PATTERN,

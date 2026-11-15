@@ -46,6 +46,7 @@ const CATALOGUE_MIGRATIONS = [
   '_platform__add_person_hr_permissions.sql',
   '_platform__add_plan_needs_permission.sql',
   '_platform__add_training_plan_permissions.sql',
+  '_platform__finance_role_and_plan_decisions.sql',
 ];
 
 /** The one rewrite of the catalogue the parsers understand: a permission's custom_role_use. */
@@ -211,6 +212,9 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
     expect(STANDARD_ONLY_PERMISSIONS.map((e) => e.permission.code)).toEqual([
       'platform.org.manage',
       'tms.plan_needs.submit',
+      // WP-LD-03: the plan's decisions go by role (HR Manager, Finance).
+      'tms.training_plan.approve',
+      'tms.training_plan.confirm',
     ]);
     // …which still makes a role privileged (a role copied from the HR Manager, a platform operation).
     expect(permissionMakesPrivileged('platform.org.manage')).toBe(true);
@@ -219,7 +223,8 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
       Object.keys(platformPermissions).length -
         3 +
         Object.keys(coursePermissions).length +
-        Object.keys(tmsPlanningPermissions).length +
+        Object.keys(tmsPlanningPermissions).length -
+        2 + // tms.training_plan.approve / .confirm: standard roles only (above)
         Object.keys(tmsRolePermissions).length -
         1, // tms.plan_needs.submit: standard roles only (above)
     );
@@ -332,7 +337,6 @@ describe('role templates («start from», BRD Appendix B)', () => {
   it('are presets from the catalogue, not roles', () => {
     expect(ROLE_TEMPLATES.map((t) => t.key)).toEqual([
       'instructor',
-      'finance_approver',
       'line_manager',
       'compliance_officer',
       'auditor',

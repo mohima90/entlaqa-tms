@@ -35,6 +35,15 @@ export default async function PlanningSettingsPage({
   const setup = await getTranslations({ locale, namespace: 'planning.setup' });
   const texts = planningTexts(locale);
   const errors = await planningErrorTexts(locale);
+  const approval = await getTranslations({ locale, namespace: 'planApproval.settings' });
+  const financeTexts = {
+    title: approval('title'),
+    intro: approval('intro'),
+    label: approval('financeLabel'),
+    hint: approval('financeHint'),
+    on: approval('financeOn'),
+    off: approval('financeOff'),
+  };
 
   let content: ReactNode;
   if (!context.live) {
@@ -48,6 +57,8 @@ export default async function PlanningSettingsPage({
           texts={texts}
           errors={errors}
           initialDays={DEFAULT_REMINDER_DAYS}
+          initialFinance={false}
+          financeTexts={financeTexts}
         />
       </>
     );
@@ -75,6 +86,8 @@ export default async function PlanningSettingsPage({
           texts={texts}
           errors={errors}
           initialDays={view.reminderDays}
+          initialFinance={view.financeConfirms}
+          financeTexts={financeTexts}
         />
       ) : (
         <ReadOnlySettings
@@ -83,6 +96,7 @@ export default async function PlanningSettingsPage({
           remindersIntro={setup('reminders.intro')}
           days={view.reminderDays.map((days) => setup('reminders.chip', { days }))}
           none={setup('reminders.none')}
+          finance={`${financeTexts.label}: ${view.financeConfirms ? financeTexts.on : financeTexts.off}`}
         />
       );
     }
@@ -114,6 +128,8 @@ function ReadOnlySettings(props: {
   /** The reminders as chip texts («7 days before»). */
   days: readonly string[];
   none: string;
+  /** «Finance confirms the plan: On / Off» (WP-LD-03). */
+  finance: string;
 }) {
   return (
     <div className="flex flex-col gap-4" data-testid="planning-settings-read-only">
@@ -134,6 +150,11 @@ function ReadOnlySettings(props: {
         ) : (
           <p className="m-0 text-text-muted">{props.none}</p>
         )}
+      </Card>
+      <Card>
+        <p className="m-0 font-semibold" data-testid="planning-settings-finance">
+          {props.finance}
+        </p>
       </Card>
     </div>
   );

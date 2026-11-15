@@ -2,7 +2,17 @@ import 'server-only';
 import { PlatformErrors } from '@jadarat/platform-core';
 import { type AppLocale, getMessages } from '@jadarat/platform-i18n';
 import { defineQuery } from '@jadarat/platform-rbac';
-import { PlanningErrors, TrainingPlanErrors, planQueryDefinition } from '@jadarat/tms';
+import {
+  PlanApprovalErrors,
+  PlanningErrors,
+  TrainingPlanErrors,
+  approvalsQueryDefinition,
+  departmentPlanResultQueryDefinition,
+  myPlanResultsQueryDefinition,
+  planApprovalQueryDefinition,
+  planQueryDefinition,
+  planVersionQueryDefinition,
+} from '@jadarat/tms';
 import { getTranslations } from 'next-intl/server';
 import { flattenTexts } from './flatten-texts';
 
@@ -26,11 +36,38 @@ export async function trainingPlanQuery(
   return planThroughManage(input);
 }
 
+/**
+ * Where a cycle's plan stands in its approval (WP-LD-03, T-M3-07; FR-PLN-08): the Plan tab's banner and actions,
+ * the submit popup's steps, the review's side column. Through read, then manage, as the Plan tab.
+ */
+const approvalThroughRead = defineQuery(planApprovalQueryDefinition('read'));
+const approvalThroughManage = defineQuery(planApprovalQueryDefinition('manage'));
+
+export async function planApprovalQuery(
+  input: Parameters<typeof approvalThroughRead>[0],
+): ReturnType<typeof approvalThroughRead> {
+  const read = await approvalThroughRead(input);
+  if (read.ok || read.error.code !== 'FORBIDDEN') return read;
+  return approvalThroughManage(input);
+}
+
+/** The Approvals page and the approvers' Home card (with the plans' figures). */
+export const approvalsQuery = defineQuery(approvalsQueryDefinition());
+/** The menu's count of plans waiting for the viewer (no figures). */
+export const approvalsCountQuery = defineQuery(approvalsQueryDefinition({ figures: false }));
+/** An approved version, read only («Versions»). */
+export const planVersionQuery = defineQuery(planVersionQueryDefinition());
+/** A department's result once the plan is approved (its effective head). */
+export const departmentPlanResultQuery = defineQuery(departmentPlanResultQueryDefinition());
+/** The Department Head's approved results (Home). */
+export const myPlanResultsQuery = defineQuery(myPlanResultsQueryDefinition());
+
 /** Message keys the training plan's actions can return (platform + planning + training plan registries). */
 export const TRAINING_PLAN_ERROR_KEYS: readonly string[] = [
   ...Object.values(PlatformErrors).map((def) => def.messageKey),
   ...Object.values(PlanningErrors).map((def) => def.messageKey),
   ...Object.values(TrainingPlanErrors).map((def) => def.messageKey),
+  ...Object.values(PlanApprovalErrors).map((def) => def.messageKey),
 ];
 
 /** Raw error texts for the Plan tab's client components (`{correlationId}` stays a placeholder). */
@@ -48,4 +85,10 @@ export function trainingPlanTexts(locale: AppLocale): Record<string, string> {
     required: messages.common.required,
     optional: messages.common.optional,
   };
+}
+
+/** The Plan tab's texts and the approval's (`approval.*`, namespace `planApproval`), for its client components. */
+export function planApprovalTexts(locale: AppLocale): Record<string, string> {
+  const messages = getMessages(locale);
+  return { ...trainingPlanTexts(locale), ...flattenTexts({ approval: messages.planApproval }) };
 }

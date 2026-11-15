@@ -19,6 +19,8 @@ const NONE: SuiteNavigationAccess = {
   branding: true,
   emailIntegration: true,
   bulkImport: true,
+  approvals: false,
+  approvalsWaiting: 0,
 };
 
 /** `group: entry entry…`, links marked with their path, «Coming soon» entries with `(soon)`. */
@@ -49,12 +51,36 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
         branding: true,
         emailIntegration: true,
         bulkImport: true,
+        approvals: false,
+        approvalsWaiting: 0,
       }),
     ).toEqual([
       'main: home→/suite',
       'groupOrganization: teamMembers→/suite/admin/users roles→/suite/admin/roles',
       'groupSettings: general→/suite/admin/settings branding→/suite/admin/branding emailIntegration→/suite/admin/settings/email security→/suite/admin/security subscription→/suite/admin/subscription integrations(soon) auditLog(soon)',
     ]);
+  });
+
+  it('gives whoever decides a training plan «Approvals» after Home, with the count waiting (WP-LD-03)', () => {
+    const groups = suiteNavigation({
+      ...NONE,
+      training: true,
+      approvals: true,
+      approvalsWaiting: 2,
+    });
+    const main = groups.find((g) => g.key === 'main')?.entries ?? [];
+    expect(main.map((e) => e.key).slice(0, 2)).toEqual(['home', 'approvals']);
+    expect(main[1]).toMatchObject({
+      link: { href: '/suite/approvals', page: 'approvals' },
+      count: 2,
+    });
+    const none = suiteNavigation({ ...NONE, training: true, approvals: true, approvalsWaiting: 0 });
+    expect(none.find((g) => g.key === 'main')?.entries[1]).not.toHaveProperty('count');
+    expect(
+      suiteNavigation({ ...NONE, training: true })
+        .flatMap((g) => g.entries)
+        .some((e) => e.key === 'approvals'),
+    ).toBe(false);
   });
 
   it('never shows the Organization Admin a notifications section (moved to the L&D Manager)', () => {
@@ -97,6 +123,8 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
         branding: true,
         emailIntegration: true,
         bulkImport: true,
+        approvals: false,
+        approvalsWaiting: 0,
       }),
     ).toEqual([
       'main: home→/suite calendar(soon) sessions(soon) courses(soon)',
@@ -167,6 +195,8 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
       branding: true,
       emailIntegration: true,
       bulkImport: true,
+      approvals: false,
+      approvalsWaiting: 0,
     }).flatMap((group) => group.entries);
     expect(all.length).toBe(16);
     expect(all.filter((entry) => !ICON_NAMES.includes(entry.icon))).toEqual([]);
@@ -203,6 +233,8 @@ describe('suiteHome (T-M2-21)', () => {
       branding: true,
       emailIntegration: true,
       bulkImport: true,
+      approvals: false,
+      approvalsWaiting: 0,
     });
     expect(home.kind).toBe('setup');
     expect(home.kind === 'setup' ? home.links.map((l) => l.link?.href) : []).toEqual([
@@ -270,6 +302,8 @@ describe('commandPaletteItems (⌘K / Ctrl K, T-M2-43)', () => {
         branding: true,
         emailIntegration: true,
         bulkImport: true,
+        approvals: false,
+        approvalsWaiting: 0,
       },
       'ar',
       label,

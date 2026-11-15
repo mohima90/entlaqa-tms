@@ -1,7 +1,7 @@
 import type { AppLocale } from '@jadarat/platform-i18n';
 import { normalizeDigits, searchKey } from '@jadarat/platform-i18n/text';
 import type { PlanView } from '@jadarat/tms';
-import { budgetAmountText } from '@jadarat/tms/planning-rules';
+import { budgetAmountText } from '@jadarat/tms/amount-text';
 import {
   type BudgetState,
   type LineFigures,

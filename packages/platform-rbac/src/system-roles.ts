@@ -5,8 +5,9 @@ import { tmsPlanningPermissions } from './tms-planning-permissions';
 
 /**
  * The six standard roles of every organization (EP-ROLES, PO 17 Oct 2026; BRD v3.1 §4.2, Appendix B;
- * FR-IAM-07). Platform Super Admin is ENTLAQA-only (platform console, ADR 0003 §6) and is NOT a tenant
- * role (PO, 4 Oct 2026).
+ * FR-IAM-07) and the ready-made Finance role beside them (PO, 12 Nov 2026; BRD v3.6 §4.2; WP-LD-03): it is
+ * given and shown like the standard roles and cannot be changed either. Platform Super Admin is ENTLAQA-only
+ * (platform console, ADR 0003 §6) and is NOT a tenant role (PO, 4 Oct 2026).
  *
  * Standard roles live in code, versioned with the permissions they grant: organizations cannot edit them
  * (FR-IAM-07), and the database keeps their codes (`platform.ref_roles`) and grants
@@ -22,6 +23,8 @@ export const SYSTEM_ROLE_CODES = [
   'training_coordinator',
   'department_head',
   'learner',
+  // The ready-made Finance role (WP-LD-03, migration 20261116100000).
+  'finance',
 ] as const;
 
 /**
@@ -135,6 +138,10 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       p['platform.person.hr_details'],
       c['tms.course.read'],
       c['tms.course_cost.read'],
+      // Approves the training plan (WP-LD-03; EP-PLN §13: every HR Manager is asked, the first decision settles
+      // it) and reads it to do so (BRD Appendix B, Training plan «V»).
+      pln['tms.training_plan.read'],
+      pln['tms.training_plan.approve'],
     ),
   },
   {
@@ -218,6 +225,24 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     // comes with the employees' own catalogue (FR-CAT-10 views, enrolment — M4). (Granting it no longer
     // affects who may give the Employee role: who can give what, PO 17 Oct 2026.)
     grants: [{ permission: p['platform.user.read'], scope: 'own' }],
+  },
+  {
+    code: 'finance',
+    // The ready-made Finance role «المالية» (PO, 12 Nov 2026; BRD v3.6 §4.2; WP-LD-03).
+    name: { ar: 'المالية', en: 'Finance' },
+    description: {
+      ar: 'يؤكد الخطة التدريبية بعد اعتماد مدير الموارد البشرية حين تفعّل المنظمة هذه الخطوة، ويرى الخطة وميزانياتها.',
+      en: 'Confirms the training plan after the HR Manager approves it, where the organization uses that step; sees the plan and its budgets.',
+    },
+    // Privileged (only the Organization Admin gives it): the Finance step checks the plan the HR Manager approved,
+    // so the HR Manager does not choose who confirms it (BRD §4.2: finance approval makes a role privileged).
+    privileged: true,
+    grants: [
+      { permission: p['platform.user.read'], scope: 'own' },
+      { permission: p['platform.org.read'], scope: 'tenant' },
+      { permission: pln['tms.training_plan.read'], scope: 'tenant' },
+      { permission: pln['tms.training_plan.confirm'], scope: 'tenant' },
+    ],
   },
 ];
 

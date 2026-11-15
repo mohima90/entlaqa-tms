@@ -131,7 +131,8 @@ describe('users list query', () => {
         selfPersonId: '33333333-3333-4333-8333-333333333333',
       }),
     );
-    expect(result.ok && result.value.roles).toHaveLength(6);
+    // The six standard roles and the ready-made Finance role (WP-LD-03).
+    expect(result.ok && result.value.roles).toHaveLength(7);
     expect(db.listUsers).toHaveBeenCalledWith(TX, {
       scope: expect.objectContaining({ all: true }),
       actorPersonId: ME,

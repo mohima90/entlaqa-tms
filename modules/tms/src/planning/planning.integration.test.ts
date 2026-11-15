@@ -461,7 +461,11 @@ describe.skipIf(!configured)('planning cycles against PostgreSQL', () => {
     });
     if (!saved.ok) throw new Error(saved.error.code);
     const view = await lnd.query(defs.planningSettingsQueryDefinition())({});
-    expect(view.ok && view.value).toEqual({ reminderDays: [14, 3], canManage: true });
+    expect(view.ok && view.value).toEqual({
+      reminderDays: [14, 3],
+      financeConfirms: false,
+      canManage: true,
+    });
     const defaults = await ownerDb.execute<{ approver_person_id: string | null }>(sql`
       select approver_person_id from tms.planning_default_steps where tenant_id = ${tenant}`);
     expect(defaults.map((row) => row.approver_person_id)).toEqual([people.cfo.person]);

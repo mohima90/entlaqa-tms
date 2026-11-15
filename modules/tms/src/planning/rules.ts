@@ -347,12 +347,8 @@ export function toFieldErrors(
   }));
 }
 
-/** An amount as typed: digits with up to 3 decimals, separators ignored; '' = no envelope (Q2). */
-export function budgetAmountText(value: string): string | null | undefined {
-  const plain = value.trim().replace(/[,\s\u066C]/gu, '');
-  if (plain === '') return null;
-  return /^\d{1,12}(\.\d{1,3})?$/.test(plain) ? plain : undefined;
-}
+/** An amount as typed (`amount-text.ts`, the light entry for the browser). */
+export { budgetAmountText } from './amount-text';
 
 // ---------------------------------------------------------------------------------------------------
 // Department needs (WP-LD-01, T-M3-05; FR-PLN-03, FR-MGR-05 — PO decisions Q1–Q3, 27 Oct 2026)

@@ -3,7 +3,7 @@ import { type Page, expect, test } from '@playwright/test';
 
 /**
  * Roles & permissions without a database (EP-ROLES, FR-IAM-07/08; the default CI run; redesign package 3):
- * the six standard roles as the Standard group, a standard role's page (view only: each permission
+ * the seven ready-made roles (the six standard roles and Finance) as the Standard group, a standard role's page (view only: each permission
  * Allowed / Not allowed, the data it sees and the matrix in their own tabs), in English and Arabic. Building, giving and deleting custom roles needs data: the
  * last journey of users.spec.ts (self-hosted smoke).
  */
@@ -49,15 +49,15 @@ const TEXTS = {
 for (const locale of ['en', 'ar'] as const) {
   const t = TEXTS[locale];
 
-  test(`${locale}: the six standard roles in the Standard group`, async ({ page }) => {
+  test(`${locale}: the seven ready-made roles in the Standard group`, async ({ page }) => {
     await page.goto(`/${locale}/suite/admin/roles`);
     await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
     await expect(page.getByTestId('roles-not-configured')).toBeVisible();
     const group = page.getByTestId('roles-standard');
     await expect(group.getByRole('heading', { level: 2 })).toContainText(t.standard);
     const table = page.getByTestId('roles-table');
-    // A table in a card (WP-UX-01 e): one row per role.
-    await expect(table.locator('tbody tr')).toHaveCount(6);
+    // A table in a card (WP-UX-01 e): one row per role — the six standard roles and Finance (WP-LD-03).
+    await expect(table.locator('tbody tr')).toHaveCount(7);
     for (const code of [
       'tenant_admin',
       'hr_manager',
@@ -65,6 +65,7 @@ for (const locale of ['en', 'ar'] as const) {
       'training_coordinator',
       'department_head',
       'learner',
+      'finance',
     ]) {
       await expect(table.getByTestId(`role-row-${code}`)).toBeVisible();
     }

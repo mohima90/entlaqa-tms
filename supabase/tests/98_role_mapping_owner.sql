@@ -130,11 +130,12 @@ begin
     (select string_agg(b.n::text, ',' order by b.n) from pg_temp.before b
      where not (pg_temp.before_permissions(b.n) <@ (b.permissions || array['platform.user.read']))),
     null::text, 'nobody gains a permission (beyond viewing their own record)');
-  -- (In byte order: the HR Manager also reads the course library since T-M3-03 and holds the HR-only fields
-  -- permission since WP-ADM-04.)
+  -- (In byte order: the HR Manager also reads the course library since T-M3-03, holds the HR-only fields
+  -- permission since WP-ADM-04, and reads and approves the training plan since WP-LD-03.)
   perform tests.assert_eq((select array_agg(c order by c collate "C") from unnest(pg_temp.before_permissions(4)) c),
     array['platform.org.manage', 'platform.org.read', 'platform.person.hr_details', 'platform.role.assign', 'platform.role.read', 'platform.user.deactivate',
-          'platform.user.invite', 'platform.user.read', 'platform.user.update', 'tms.course.read', 'tms.course_cost.read'],
+          'platform.user.invite', 'platform.user.read', 'platform.user.update', 'tms.course.read', 'tms.course_cost.read',
+          'tms.training_plan.approve', 'tms.training_plan.read'],
     'HR Manager kept');
   perform tests.assert(private.tenant_has_admin('a0000000-0000-4000-8000-000000000001'), 'the Organization Admin stays');
   perform tests.assert_eq(
@@ -149,8 +150,8 @@ begin
                            where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     array['tenant_admin'], 'security policy: former roles leave the authenticator-app list');
   perform tests.assert_eq((select string_agg(code, ',' order by sort_order) from platform.ref_roles),
-    'tenant_admin,training_manager,training_coordinator,hr_manager,department_head,learner',
-    'the former roles leave ref_roles: the six standard roles');
+    'tenant_admin,training_manager,training_coordinator,hr_manager,department_head,learner,finance',
+    'the former roles leave ref_roles: the six standard roles (and the ready-made Finance role of WP-LD-03)');
   perform tests.assert(to_regprocedure('private.ep_roles_kept_assignments()') is null, 'the migration''s helper is gone');
   perform tests.assert(exists (select 1 from pg_trigger where tgrelid = 'platform.invitations'::regclass
                                and tgname = 'invitations_check' and tgenabled = 'O')

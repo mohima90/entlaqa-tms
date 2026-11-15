@@ -178,6 +178,10 @@ export const STANDARD_ONLY_PERMISSIONS: readonly Omit<CustomRolePermission, 'use
   // Needs entry (WP-LD-01) belongs to the department's effective head — a fact of the structure, not a role's
   // data scope — so no custom role can carry it (the database checks the head either way).
   { permission: tmsRolePermissions['tms.plan_needs.submit'], group: 'planning' },
+  // The training plan's decisions (WP-LD-03, EP-PLN §13 a, b): by role — every HR Manager approves, every holder of
+  // the ready-made Finance role confirms — so no custom role carries them.
+  { permission: tmsPlanningPermissions['tms.training_plan.approve'], group: 'planning' },
+  { permission: tmsPlanningPermissions['tms.training_plan.confirm'], group: 'planning' },
 ];
 
 const PERMISSIONS_BY_CODE: ReadonlyMap<string, PermissionDefinition> = new Map(

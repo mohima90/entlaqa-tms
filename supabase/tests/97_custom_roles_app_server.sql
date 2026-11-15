@@ -264,9 +264,11 @@ insert into platform.custom_roles (id, name_en, name_ar, data_scope) values
   ('a6000000-0000-4000-8000-0000000000e6', 'Leaver desk', 'مكتب المغادرين', 'organization');
 insert into platform.custom_role_permissions (custom_role_id, permission_code)
 -- (Every permission of the HR Manager but the organization structure, never part of a custom role — the
--- course library's included since who can give what, PO 17 Oct 2026.)
+-- course library's included since who can give what, PO 17 Oct 2026 — and the plan approval, held by the role
+-- alone, WP-LD-03.)
 select 'a6000000-0000-4000-8000-0000000000e5', rp.permission_code from platform.ref_role_permissions rp
-where rp.role_code = 'hr_manager' and rp.permission_code <> 'platform.org.manage';
+where rp.role_code = 'hr_manager' and rp.permission_code <> 'platform.org.manage'
+  and rp.permission_code <> 'tms.training_plan.approve';
 insert into platform.custom_role_permissions (custom_role_id, permission_code) values
   ('a6000000-0000-4000-8000-0000000000e6', 'platform.user.read'),
   ('a6000000-0000-4000-8000-0000000000e6', 'platform.user.deactivate');
@@ -435,11 +437,12 @@ declare
   v_auditor text := (select code from platform.custom_roles where id = 'a6000000-0000-4000-8000-0000000000e9');
 begin
   -- Never in a custom role: role management, privileged role assignment, the organization structure, and needs
-  -- entry (WP-LD-01: it follows the headed department, which only the standard Department Head role has).
+  -- entry (WP-LD-01: it follows the headed department, which only the standard Department Head role has), and the
+  -- training plan's decisions (WP-LD-03: by role — the HR Manager approves, Finance confirms).
   perform tests.assert_eq((select string_agg(code, ',' order by code collate "C") from platform.ref_permissions
                            where custom_role_use = 'none'),
-    'platform.org.manage,platform.role.assign_privileged,platform.role.manage,tms.plan_needs.submit',
-    'permissions no custom role carries (custom_role_use none): the admin-only ones and the Department Head''s own needs entry');
+    'platform.org.manage,platform.role.assign_privileged,platform.role.manage,tms.plan_needs.submit,tms.training_plan.approve,tms.training_plan.confirm',
+    'permissions no custom role carries (custom_role_use none): the admin-only ones, the Department Head''s own needs entry and the plan''s decisions');
   -- The permissions that make a role privileged (only the Organization Admin gives such a role): exactly these.
   perform tests.assert_eq((select string_agg(code, ',' order by code collate "C") from platform.ref_permissions
                            where privileged),

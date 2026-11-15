@@ -11,7 +11,7 @@ import {
   tableClasses,
 } from '@jadarat/ui';
 import { useState } from 'react';
-import { STATUS_FILTERS, type StatusFilter } from '../../lib/planning-view';
+import { STATUS_FILTERS, type StatusFilter } from '../../lib/planning-keys';
 
 export interface ProgressRow {
   readonly id: string;
